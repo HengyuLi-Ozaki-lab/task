@@ -200,7 +200,7 @@ CONTAINS
 !             1 : WITH    SYMMETRY
 !            -1 : WITH   ASYMMETRY
 !
-!     MODELN:  0: parabolic with pn=0 in SOL
+!     model_prof:  0: parabolic with pn=0 in SOL
 !              1: parabolic with pn=pns in SOL
 !             10: linear with pn=0 in SOL
 !             11: linear with pn=pns in SOL
@@ -232,7 +232,7 @@ CONTAINS
     NZMAX= 1
 
     NMODEL= 5
-    MODELN= 0
+    model_prof= 0
 
     NPRINT= 0
     NFILE = 0

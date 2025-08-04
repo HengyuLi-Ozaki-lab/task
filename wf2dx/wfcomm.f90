@@ -25,8 +25,10 @@ MODULE wfcomm_parm
   INTEGER:: model_config
   INTEGER:: model_shape
   
-  REAL(rkind):: xr_min,xr_max,yr_min,yr_max
-  REAL(rkind):: del_xr,del_yr
+  REAL(rkind):: xdiv_min,xdiv_max,ydiv_min,ydiv_max
+  REAL(rkind):: del_xdiv,del_ydiv
+  REAL(rkind):: rdiv_min,rdiv_max,thdiv_min,thdiv_max
+  REAL(rkind):: del_rdiv,del_thdiv
 
   ! === RF parameters ===
   
