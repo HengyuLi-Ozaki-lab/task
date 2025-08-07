@@ -10,8 +10,8 @@ subroutine wfmenu
   
   integer  :: MODE
   integer  :: IERR
-  INTEGER:: idebug_save
   character:: KID*1,LINE*80
+  INTEGER:: IDEBUG_SAVE
   INTEGER:: input_error_count
 
   input_error_count=0
@@ -56,9 +56,7 @@ subroutine wfmenu
   elseif (KID.eq.'G') then
      if (nrank.eq.0) call WFGOUT
   elseif (KID.eq.'S') then
-     call wfsave
-  elseif (KID.eq.'F') then
-     CALL wfload
+     if (nrank.eq.0) call wfsave
   elseif (KID.eq.'L') then
      IDEBUG_SAVE=IDEBUG
      IDEBUG=1

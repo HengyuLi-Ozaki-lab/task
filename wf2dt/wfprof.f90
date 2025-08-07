@@ -84,7 +84,7 @@ END SUBROUTINE WFBPSI
 
 SUBROUTINE WFSMAG(R,Z,BABS,AL)
 
-  USE wfcomm,ONLY: MODELG,rkind,modelb_wf
+  USE wfcomm,ONLY: MODELG,rkind,modelb_wf,idebug_wf
   USE plload
   implicit none
   real(rkind),intent(in) :: R,Z
@@ -191,7 +191,7 @@ SUBROUTINE WFSMAG3(x,y,BABS,AL)
   integer :: I
   real(rkind),intent(in) :: x,y
   real(rkind),intent(out):: BABS,AL(3)
-  real(rkind) :: BLO(3)
+  real(rkind) :: BLO(3),LR,LZ
   real(rkind) :: R,PH,Q
 
 ! L : distance from the center of plasma
@@ -258,6 +258,12 @@ SUBROUTINE WFSDEN(R,Z,RN,RTPR,RTPP,RZCL)
         ELSE
            factor=1.D0
         END IF
+     CASE(11)
+        IF(ABS(R-xpos_coll_enhance) .LE. xwidth_coll_enhance)THEN
+           factor=factor_coll_enhance
+        ELSE
+           factor=1.D0
+        END IF       
      CASE(2)
         arg=(Z-ypos_coll_enhance)**2/ywidth_coll_enhance**2
         IF(arg.LE.44.D0) THEN

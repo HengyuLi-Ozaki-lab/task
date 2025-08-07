@@ -11,8 +11,8 @@ include ../mtxp/make.mtxp
 #LIB_MTX=$(LIBXMTX_KSP)
 #LIBX_MTX=$(LIBX_MTX_KSP)
 
-#FFLAGS = $(OFLAGS)
-FFLAGS = $(DFLAGS) -Wall
+FFLAGS = $(OFLAGS)
+#FFLAGS = $(DFLAGS) -Wall
 
 OBJDIR   = ./obj
 ${OBJDIR}/%.o:%.f
@@ -64,7 +64,7 @@ libs:
 	make libwf.a
 
 wf : libs $(OBJDIR)/wfmain.o
-	$(FLINKER) $(OBJDIR)/wfmain.o $(LIBS) -o $@ $(FFLAGS) $(LIBX_MTX) $(FLIBS) 
+	$(FLINKER) $(OBJDIR)/wfmain.o $(LIBS) -o $@ $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
 clean:
 	-rm -f core a.out $(OBJDIR)/*.o *.a ./#* ./*~ ./mod/*.mod
