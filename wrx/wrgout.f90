@@ -33,7 +33,7 @@ CONTAINS
     END IF
 
 1   WRITE(6,*) &
-         '## INPUT GRAPH TYPE : ray:1,2,3,4,5,6,7,8,9 beam:A,B,C,D prof:P  help:?  end:X'
+         '## INPUT GRAPH TYPE : ray:1,2,3,4,5,6,7,8,9 beam:A,B,C,D prof:P/E  help:?  end:X'
     READ(5,'(A1)',ERR=1,END=9000) KID
     CALL toupper(KID)
 
@@ -77,6 +77,7 @@ CONTAINS
        IF(KID.EQ.'4'.AND.NSTAT.GE.2) CALL WRGRFB4
     END IF
     IF(KID.EQ.'P') CALL pl_gout
+    IF(KID.EQ.'E') CALL eqgout(0)
     IF(KID.EQ.'?') CALL wr_grf_help
     IF(KID.EQ.'X') GOTO 9000
 

@@ -90,13 +90,13 @@ CONTAINS
 
        SELECT CASE(model_div)
        CASE(1)
-          CALL wf_div_exec
+          CALL wf_div_rect_exec
        CASE(2)
-          CALL wf_layer_exec
+          CALL wf_div_layer_exec
        CASE(3)
-          CALL wf_circle_exec
+          CALL wf_div_circle_exec
        CASE(4)
-          CALL wf_eq_exec
+          CALL wf_div_eq_exec
        END SELECT
 
        CALL fem_mesh_allocate
@@ -130,24 +130,24 @@ CONTAINS
        ! *** load element data ***
        !     CALL wf_load_element(ierr)
      
-  elseif(KID.eq.'P') then
-     if(nrank.eq.0) call WF_PARM(0,'WF',IERR)
-     call wfparm_broadcast
+    CASE('P')
+       if(nrank.eq.0) call WF_PARM(0,'WF',IERR)
+       call wfparm_broadcast
      
-  elseif(KID.eq.'V') then
-     if (nrank.eq.0) call WF_VIEW
+    CASE('V')
+       if (nrank.eq.0) call WF_VIEW
      
-  elseif(KID.eq.'S') then
-     !     if (nrank.eq.0) call WFWELM(0)
+    CASE('S')
+       !     if (nrank.eq.0) call WFWELM(0)
      
-  elseif(KID.eq.'X') then
+    CASE('X')
      goto 9000
-  end if
-  goto 1
+  END SELECT
+  GO TO 1
   
-9000 continue
-  return
-end subroutine wf_div
+9000 CONTINUE
+  RETURN
+END SUBROUTINE wf_div
 
 ! *** rectangular mesh ***
 
@@ -163,13 +163,13 @@ subroutine SETNODX
   real(rkind) :: dx,dy,xlen,ylen
 
   xlen=xdiv_max-xdiv_min
-  ylen=ynode_max-ydiv_min
+  ylen=ydiv_max-ydiv_min
 
   ! --- set node_max ---
-  nxmax=NINT(xlen/delx)
+  nxmax=NINT(xlen/del_xdiv)
   if(MOD(nxmax,2).eq.0) nxmax=nxmax+1
   dx=DBLE(xlen/(nxmax-1))
-  nymax=NINT(ylen/dely)
+  nymax=NINT(ylen/del_ydiv)
   if(MOD(nymax,2).eq.0) nymax=nymax+1
   dy=DBLE(ylen/(nxmax-1))
   node_max=nxmax*nymax
@@ -182,8 +182,8 @@ subroutine SETNODX
   do ny=1,nymax
      do nx=1,nxmax
         node=node+1
-        xnode(node)=xdiv_min+dx*(nx-1)
-        ynode(node)=ydiv_min+dy*(ny-1)
+        xnode(node)=xdiv_min+del_xdiv*(nx-1)
+        ynode(node)=ydiv_min+del_ydiv*(ny-1)
      end do
   end do
   
@@ -258,7 +258,7 @@ subroutine SETNODC
 
   ! --- set the number of rings ---
                                 
-  NRMAX=NINT(RB/delx)+1
+  NRMAX=NINT(RB/del_xdiv)+1
   DR=DBLE(RB/(NRMAX-1))
   allocate(NTHMAX(NRMAX))
 
@@ -413,7 +413,7 @@ end function INNODE
 
 
 !     ****** List Element Data ******
-subroutine WFLDIV
+subroutine wf_list_element
 
   use wfcomm
   implicit none
@@ -475,7 +475,7 @@ subroutine WFLDIV
 500 format(' ','BOUNDARY NODE DATA',4X,'mtx_len=',I4/&
           (' ',4(I5,'(',I1,') ')))
   return
-end subroutine WFLDIV
+end subroutine wf_list_element
 
 !-- broadcast data --
 subroutine wfdiv_broadcast
@@ -490,9 +490,9 @@ subroutine wfdiv_broadcast
      rdata(1)=xdiv_min
      rdata(2)=xdiv_max
      rdata(3)=ydiv_min
-     rdata(4)=ynode_max
-     rdata(5)=delx
-     rdata(6)=dely
+     rdata(4)=ydiv_max
+     rdata(5)=del_xdiv
+     rdata(6)=del_ydiv
      rdata(7)=RB
   end if
   
@@ -502,9 +502,9 @@ subroutine wfdiv_broadcast
   xdiv_min=rdata(1)
   xdiv_max=rdata(2)
   ydiv_min=rdata(3)
-  ynode_max=rdata(4)
-  delx  =rdata(5)
-  dely  =rdata(6)
+  ydiv_max=rdata(4)
+  del_xdiv=rdata(5)
+  del_ydiv=rdata(6)
   RB    =rdata(7)
 
   call mtx_broadcast_real8(r_corner,3)

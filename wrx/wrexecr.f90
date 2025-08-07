@@ -23,7 +23,6 @@ CONTAINS
     REAL(rkind):: RK,PABSN
     INTEGER:: NRAY,nstp,nsa
 
-    WRITE(6,*) '@@@ point 31'
     nsamax_dp=nsamax_wr
     CALL GUTIME(TIME1)
     DO NRAY=1,NRAYMAX
@@ -33,11 +32,9 @@ CONTAINS
        rnv=VC/omega
 
        CALL wr_setup_start_point(NRAY,RAYS(0,0,NRAY),nstp,IERR)
-       WRITE(6,*) '@@@ point 32'
        nstpmax_nray(nray)=nstp
        IF(IERR.NE.0) CYCLE
        CALL wr_exec_single_ray(NRAY,RAYS(0,0,NRAY),nstp,IERR)
-       WRITE(6,*) '@@@ point 33'
        nstpmax_nray(nray)=nstp
        IF(IERR.NE.0) CYCLE
 
@@ -95,7 +92,6 @@ CONTAINS
     REAL(rkind):: alpha_1,alpha_2,diff_1,diff_2
     COMPLEX(rkind):: cepola(3),cenorm(3)
 
-    WRITE(6,*) '@@@ point 311'
     IERR=0
     deg=PI/180.D0
 

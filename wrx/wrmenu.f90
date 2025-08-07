@@ -67,14 +67,10 @@ CONTAINS
       ELSEIF(KID.EQ.'R') THEN
          CALL wr_prep(ierr)
          IF(ierr.NE.0) GO TO 1
-         WRITE(6,*) '@@@ point 1'
          CALL wr_allocate
-         WRITE(6,*) '@@@ point 2'
          CALL wr_setup(ierr)
-         WRITE(6,*) '@@@ point 3'
          IF(ierr.NE.0) GO TO 1
          CALL wr_exec(nstat,ierr)
-         WRITE(6,*) '@@@ point 4'
       ELSEIF(KID.EQ.'G') THEN
          CALL WR_GOUT(NSTAT)
       ELSEIF(KID.EQ.'S') THEN

@@ -16,7 +16,7 @@ MODULE wfdiv_eq
   
 CONTAINS
 
-  SUBROUTINE wf_div_circle_input
+  SUBROUTINE wf_div_eq_input
     IMPLICIT NONE
     
 1   WRITE(6,'(A,3F10.4)') &
@@ -37,9 +37,9 @@ CONTAINS
     
 9   CONTINUE
     RETURN
-  END SUBROUTINE wf_div_circle_input
+  END SUBROUTINE wf_div_eq_input
            
-  SUBROUTINE wf_div_circle_exec
+  SUBROUTINE wf_div_eq_exec
     USE femcomm
     IMPLICIT NONE
 
@@ -182,7 +182,7 @@ CONTAINS
     END DO
 
     RETURN
-  END SUBROUTINE wf_div_circle_exec
+  END SUBROUTINE wf_div_eq_exec
 
   ! ***** the number of innner-ring-nodes *****
   
@@ -195,4 +195,4 @@ CONTAINS
     RETURN
   END FUNCTION NODE_NR
 
-END MODULE wfdiv_circle
+END MODULE wfdiv_eq

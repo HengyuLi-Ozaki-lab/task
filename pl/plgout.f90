@@ -37,11 +37,8 @@ CONTAINS
        END DO
     END DO
 
-    WRITE(6,*) '@@@@ point 1'
     CALL PAGES
-    WRITE(6,*) '@@@@ point 2'
     CALL GRD1D(1,rho,rn,nrmax,nrmax,nsmax,'@n vs rho@')
-    WRITE(6,*) '@@@@ point 3'
     CALL GRD1D(2,rho,rtpr,nrmax,nrmax,nsmax,'@T_para vs rho@')
     CALL GRD1D(3,rho,ru,nrmax,nrmax,nsmax,'@u vs rho@')
     CALL GRD1D(4,rho,rtpp,nrmax,nrmax,nsmax,'@T_pepr vs rho@')

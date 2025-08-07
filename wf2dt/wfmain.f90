@@ -60,7 +60,7 @@ program wfmain
   CALL wf_node_deallocate
   if(sidinit.ne.0) call wfsid_deallocate
   if(srtinit.ne.0) call wfsrt_deallocate
-  if(medinit.ne.0) call wfmed_deallocate
+!  if(medinit.ne.0) call wfmed_deallocate
   if(fldinit.ne.0) call wffld_deallocate
   if((nrank.eq.0).and.(wininit.ne.0)) call wfwin_deallocate
 
