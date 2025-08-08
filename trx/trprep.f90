@@ -14,7 +14,7 @@ CONTAINS
     USE trprof
     USE trbpsd
     USE trmetric
-    USE libsigma
+    USE libnf
     IMPLICIT NONE
     INTEGER,INTENT(OUT):: ierr
     INTEGER:: nr,ns,nnf,npm
@@ -58,8 +58,11 @@ CONTAINS
 
     icount_of_pellet=0
 
-    CALL set_usigmavmal_dt
-!    CALL set_spl_usigmavm(2)  ! DT
+!     *** initialize fusion reaction ***
+
+    CALL set_usigmav_nf
+
+    
 
 !     *** set initial profile ***
 

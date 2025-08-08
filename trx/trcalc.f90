@@ -36,8 +36,8 @@
       AJRFV(1:NRMAX,3)=0.D0
       AJRF(1:NRMAX)=0.D0
       AJBS(1:NRMAX)=0.D0
-      SPSC(1:NRMAX,1:NSMAX)=0.D0
-      SPE(1:NRMAX,1:NSMAX)=0.D0
+      SPSC_NSNR(1:NSMAX,1:NRMAX)=0.D0
+      SPE_NSNR(1:NSMAX,1:NRMAX)=0.D0
       PRFV(1:NRMAX,1:NSM,1)=0.D0
       PRFV(1:NRMAX,1:NSM,2)=0.D0
       PRFV(1:NRMAX,1:NSM,3)=0.D0
@@ -134,19 +134,19 @@
                IF(NS.LE.NSMAX) THEN
                   IF(NS.EQ.NS_e) THEN
                      SSIN(NR,NS_e)= SIE(NR) &
-                          +SNB_NSNR(NS_e,NR)+SEX(NR,NS_e)+SPSC(NR,NS_e)
+                          +SNB_NSNR(NS_e,NR)+SEX(NR,NS_e)+SPSC_NSNR(NS_e,NR)
                   ELSE IF(NS.EQ.NS_D) THEN
                      SSIN(NR,NS_D)= PN(NS_D)*SIE(NR)/(PN(NS_D)+PN(NS_T)) &
                           +SNF_NSNR(NS_D,NR)+SNB_NSNR(NS_D,NR) &
-                          +SEX(NR,NS_D)+SPSC(NR,NS_D)
+                          +SEX(NR,NS_D)+SPSC_NSNR(NS_D,NR)
                   ELSE IF(NS.EQ.NS_T) THEN
                      SSIN(NR,NS_T)= PN(NS_T)*SIE(NR)/(PN(NS_D)+PN(NS_T)) &
                           +SNF_NSNR(NS_T,NR)+SNB_NSNR(NS_T,NR) &
-                          +SEX(NR,NS_T)+SPSC(NR,NS_T)
+                          +SEX(NR,NS_T)+SPSC_NSNR(NS_T,NR)
                   ELSE IF(NS.EQ.NS_He4) THEN
                      SSIN(NR,NS_He4) &
                           =SNF_NSNR(NS_He4,NR)+SNB_NSNR(NS_He4,NR) &
-                          +SEX(NR,NS_He4)+SPSC(NR,NS_He4)
+                          +SEX(NR,NS_He4)+SPSC_NSNR(NS_He4,NS)
                   END IF
                ELSEIF(NS.EQ.NSMAX+NSZMAX+1) THEN
                   SSIN(NR,NSMAX+NSZMAX+1)=-SIE(NR)        -SCX(NR)
@@ -158,16 +158,16 @@
             DO NS=1,NSMAX
                IF(NS.EQ.NS_e) THEN
                   SSIN(NR,NS_e)=          SNB_NSNR(NS_e,NR) &
-                       +SEX(NR,NS_e)+SPSC(NR,NS_e)
+                       +SEX(NR,NS_e)+SPSC_NSNR(NS_e,NR)
                ELSEIF(NS.EQ.NS_D) THEN
                   SSIN(NR,NS_D)=SNF_NSNR(NS_D,NR)+SNB_NSNR(NS_D,NR) &
-                       +SEX(NR,NS_D)+SPSC(NR,NS_D)
+                       +SEX(NR,NS_D)+SPSC_NSNR(NS_D,NR)
                ELSEIF(NS.EQ.NS_T) THEN
                   SSIN(NR,NS_T)=SNF_NSNR(NS_T,NR)+SNB_NSNR(NS_T,NR) &
-                       +SEX(NR,NS_T)+SPSC(NR,NS_T)
+                       +SEX(NR,NS_T)+SPSC_NSNR(NS_T,NR)
                ELSEIF(NS.EQ.NS_He4) THEN
                   SSIN(NR,NS_He4)=SNF_NSNR(NS_He4,NR)+SNB_NSNR(NS_He4,NR) &
-                       +SEX(NR,NS_He4)+SPSC(NR,NS_He4)
+                       +SEX(NR,NS_He4)+SPSC_NSNR(NS_He4,NR)
                ELSE IF(NS.EQ.NS_C) THEN
                   SSIN(NR,NS_C)=0.D0
                ELSE IF(NS.EQ.NS_Fe) THEN

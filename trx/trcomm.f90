@@ -146,6 +146,7 @@ MODULE trcomm_parm
   REAL(rkind), DIMENSION(npscm) :: &
        PSCIN_MAX
 
+  INTEGER:: model_pnf
   INTEGER:: NNFMAX,model_nnf(nnfm),ns_nnf(nnfm)
 
   ! === current drive parameters ===

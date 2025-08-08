@@ -24,12 +24,12 @@ ${OBJDIR}/%.o:%.f
 ${OBJDIR}/%.o:%.f90
 	$(FCFREE) $(FFLAGS) -c $< -o $@ $(MODDIR) $(MODINCLUDE)
 
-SRCS=trcomm.f90 trbpsd.f90 libsigma.f90 \
+SRCS=trcomm.f90 trbpsd.f90 libnf.f90 \
      trinit.f90 trparm.f90 trview.f90 \
      trmetric.f90 trprof.f90 trprep.f90 \
      trncls.f90 trcytran.f90 trcoll.f90 \
      trfile.f90 trhelp.f90 \
-     trsigmavnf.f90 trpnf.f90 \
+     trpnf.f90 \
      trexec.f90 trcalc.f90 \
      tradat.f90 trmodels.f90 trcoef.f90 tritg.f90 \
      trrslt.f90 trpnb.f90 trprf.f90 trpel.f90 trpsc.f90 \
@@ -128,7 +128,7 @@ $(OBJDIR)/trajbs.o : trajbs.f90 trcomm.f90
 $(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90 
 $(OBJDIR)/trprf.o  : trprf.f90  trcomm.f90 
 $(OBJDIR)/trsigmavnf.o  : trsigmavnf.f90 trcomm.f90 
-$(OBJDIR)/libsigma.o  : libsigma.f90 trcomm.f90 
+$(OBJDIR)/libnf.o  : libnf.f90 trcomm.f90 
 $(OBJDIR)/trpnf.o  : trpnf.f90  trsigmavnf.f90 trcomm.f90 
 $(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90 
 $(OBJDIR)/trpsc.o  : trpsc.f90  trcomm.f90 

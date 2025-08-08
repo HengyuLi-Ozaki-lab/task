@@ -150,7 +150,7 @@ CONTAINS
   SUBROUTINE TRNFDT(nnf)
 
     USE TRCOMM
-    USE libsigma
+    USE libnf
     IMPLICIT NONE
     INteGER,INTENT(IN):: nnf
     REAL(rkind)   :: &
@@ -297,14 +297,14 @@ CONTAINS
 
       FUNCTION SIGMAM(TD,TT)
          USE bpsd_kinds
-         USE libsigma
+         USE libnf
          IMPLICIT NONE
          REAL(rkind),INTENT(IN)::  TD,TT
          REAL(rkind):: TI,SIGMAM
 
          TI = (3.D0*ABS(TD)+2.D0*ABS(TT))/5.D0
 
-         SIGMAM=sigmavm_dt(TI)*(1E-6)
+         SIGMAM=sigmav_nf(id_nf_dt,TI)*(1E-6)
          
          RETURN
          END FUNCTION SIGMAM
@@ -317,7 +317,8 @@ CONTAINS
 
       SUBROUTINE TRNFDD(nnf)
 
-         USE TRCOMM
+        USE TRCOMM
+        USE libnf
          IMPLICIT NONE
          INteGER,INTENT(IN):: nnf
          REAL(rkind)   :: &
@@ -335,7 +336,7 @@ CONTAINS
              TE = RT(NR,NS_e)
              TD = RT(NR,NS_D)
              TT = RT(NR,NS_T)
-             SS = SIGMAM_DD(TD)
+             SS = sigmav_nf(id_nf_dt,TD)
              IF(model_nnf(nnf).GE.13) THEN
                !  ZEFFM = (PZ(NS_D)*PZ(NS_D)*RN(NR,NS_D)/PA(NS_D) &
                !          +PZ(NS_T)*PZ(NS_T)*RN(NR,NS_T)/PA(NS_T) &

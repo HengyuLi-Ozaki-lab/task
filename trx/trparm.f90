@@ -17,7 +17,7 @@ MODULE trparm
        CHP,CK0,CK1,CWEB,CALF,CKALFA,CKBETA,CKGUMA, &
        DT,NRMAX,NTMAX,NTSTEP,NGTSTP,NGRSTP,NGPST,TSST, &
        EPSLTR,LMAXTR,TPRST,MDLST,IZERO, &
-       nnfmax,model_nnf, &
+       model_pnf,nnfmax,model_nnf, &
        NNBMAX,NECMAX,NLHMAX,NICMAX,NPELMAX,NPSCMAX, &
        model_nnb,MDLEC,MDLLH,MDLIC,MDLPEL,MDLPSC, &
        PNBIN,PNBR0,PNBRW,PNBCD,PNBVY,PNBVW,PNBENG,PNBRTG, &
@@ -136,6 +136,7 @@ CONTAINS
              ' ',8X,'PELTIM,PELPAT'/ &
              ' ',8X,'pellet_time_start,pellet_time_interval'/ &
              ' ',8X,'number_of_pellet_repeat'/ &
+             ' ',8X,'model_pnf,nnf_max,model_nnf'/ &
              ' ',8X,'MDLPR,SYNCABS,SYNCSELF,MODELG,NTEQIT'/&
              ' ',8X,'MDEDGE,MDLIMP,model_prof,knam_prof,'/ &
              ' ',8X,'MDLXP,MDLUF,MDLNCL,MDLWLD,MDLFLX,MDLER,MDCD05'/ &

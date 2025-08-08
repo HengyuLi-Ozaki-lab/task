@@ -389,7 +389,7 @@
 
       DO NS=1,NSMAX
          DO NR=1,NRMAX
-            GYR(NR,NS) = GUCLIP(SPSC(NR,NS))
+            GYR(NR,NS) = GUCLIP(SPSC_NSNR(NS,NR))
          END DO
       END DO
       CALL TRGR1D(15.5,24.5, 2.0, 8.0,GRM,GYR,NRMP,NRMAX,NSMAX, &

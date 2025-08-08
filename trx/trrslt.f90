@@ -125,7 +125,7 @@
 !     *** Particle source ***
 
       DO NS=1,NSMAX
-         SPSCT(NS) = SUM(SPSC(1:NRMAX,NS)*DVRHO(1:NRMAX))*DR
+         SPSCT(NS) = SUM(SPSC_NSNR(NS,1:NRMAX)*DVRHO(1:NRMAX))*DR
       END DO
 
 !     *** Ohmic, NBI and fusion powers ***
@@ -259,7 +259,7 @@
 !     *** Pellet injection fuelling ***
 
       DO NS=1,NSMAX
-         SPET(NS) = SUM(SPE(1:NRMAX,NS)*DVRHO(1:NRMAX))*DR/RKAP
+         SPET(NS) = SUM(SPE_NSNR(NS,1:NRMAX)*DVRHO(1:NRMAX))*DR/RKAP
       ENDDO
 
 !     *** Input and output sources and powers ***
