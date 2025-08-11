@@ -1592,7 +1592,7 @@ CONTAINS
                     +(-VI(NEQ,NEQ,2,NSW)+C83*DI(NEQ,NEQ,2,NSW))*RNV(NR,NSSN)
             ELSE
                IF(NSVN.EQ.1) THEN
-                  D(NEQ,NR) = (SSIN(NR,NSSN)+SPE_NSNR(NSSN,NR)/DT)*DV11 &
+                  D(NEQ,NR) = (SSIN(NR,NSSN)+SPEL_NSNR(NSSN,NR)/DT)*DV11 &
                        +(-VI(NEQ,NEQ,2,NSW)+C83*DI(NEQ,NEQ,2,NSW))*RNV(NR,NSSN)
                ELSEIF(NSVN.EQ.2) THEN
                   D(NEQ,NR) = (PIN(NR,NSSN)/(RKEV*1.D20)  )*DV53 &
@@ -1628,7 +1628,7 @@ CONTAINS
                ENDDO
             ELSE
                IF(NSVN.EQ.1) THEN
-                  D(NEQ,NR) = (SSIN(NR,NSSN)+SPE_NSNR(NSSN,NR)/DT)*DV11
+                  D(NEQ,NR) = (SSIN(NR,NSSN)+SPEL_NSNR(NSSN,NR)/DT)*DV11
                   DO NEQ1=1,NEQMAX
                      NSSN1=NSS(NEQ1)
                      NSVN1=NSV(NEQ1)
@@ -1670,7 +1670,7 @@ CONTAINS
                D(NEQ,NR) = SSIN(NR,NSSN)*DV11
             ELSE
                IF(NSVN.EQ.1) THEN
-                  D(NEQ,NR) = (SSIN(NR,NSSN)+SPE_NSNR(NSSN,NR)/DT)*DV11
+                  D(NEQ,NR) = (SSIN(NR,NSSN)+SPEL_NSNR(NSSN,NR)/DT)*DV11
                ELSEIF(NSVN.EQ.2) THEN
                   D(NEQ,NR) = (PIN(NR,NSSN)/(RKEV*1.D20)    )*DV53
                ELSEIF(NSVN.EQ.3) THEN
@@ -1702,11 +1702,12 @@ CONTAINS
                   NSVN1=NSV(NEQ1)
                   IF(NSSN1.NE.1.AND.NSVN1.EQ.1) THEN
                      D(NEQ,NR) = D(NEQ,NR) &
-                         +PZ(NSSN1)*(SSIN(NR,NSSN1)+SPE_NSNR(NSSN1,NR)/DT)*DV11
+                          +PZ(NSSN1)*(SSIN(NR,NSSN1) &
+                          +SPEL_NSNR(NSSN1,NR)/DT)*DV11
                      VISUMN = VISUMN &
-                         +PZ(NSSN1)*VI(NEQ1,NEQ1,2,NSW)*RNV(NR,NSSN1)
+                          +PZ(NSSN1)*VI(NEQ1,NEQ1,2,NSW)*RNV(NR,NSSN1)
                      DISUMN = DISUMN &
-                         +PZ(NSSN1)*DI(NEQ1,NEQ1,2,NSW)*RNV(NR,NSSN1)
+                          +PZ(NSSN1)*DI(NEQ1,NEQ1,2,NSW)*RNV(NR,NSSN1)
                   ENDIF
                ENDDO
                D(NEQ,NR) = D(NEQ,NR)+(-VISUMN+C83*DISUMN)

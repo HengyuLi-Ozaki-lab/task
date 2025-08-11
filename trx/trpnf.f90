@@ -4,6 +4,12 @@ MODULE trpnf
 
   PRIVATE
   PUBLIC tr_pnf
+  PRIVATE tr_nf_dd1
+  PRIVATE tr_nf_dd2
+  PRIVATE tr_nf_dt
+  PRIVATE tr_nf_dhe3
+  PRIVATE tr_nf_tt
+  PRIVATE tr_nf_the3
   PUBLIC trnfdt
   PUBLIC trnfdd
   PUBLIC sigmam   ! DT Maxwellian
@@ -17,129 +23,245 @@ CONTAINS
   SUBROUTINE tr_pnf
 
     USE trcomm
+    USE libnf
     IMPLICIT NONE
     INTEGER:: ns,nnf,nr
 
-    SNF_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0
-    PNF_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0
-    PNFIN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0
-    PNFCL_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0
+    SNF_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0   ! particle source
+    PNFCL_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0 ! collisional transfer in
+    SNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron number
+    PNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron power
     
     DO nnf=1,nnfmax
        SELECT CASE(model_nnf(nnf))
-       CASE(0)
-          TAUF(nnf,1:NRMAX)=1.D0
-       CASE(1:4)
-          CALL TRNFDT(nnf)
-       CASE(11:14)
-          CALL TRNFDD(nnf)
-       CASE(21:24)
-          CALL TRNFDHE3(nnf)
+       CASE(id_nf_dd1)
+          CALL tr_nf_dd1(nnf)
+       CASE(id_nf_dd2)
+          CALL tr_nf_dd2(nnf)
+       CASE(id_nf_dt)
+          CALL tr_nf_dt(nnf)
        END SELECT
     END DO
 
+    ! --- following variables are used in trcalc at every step ---
+    
     DO NR=1,NRMAX
        DO NS=1,NSMAX
-          SNF_NSNR(NS,NR)=0.D0
-          PNF_NSNR(NS,NR)=0.D0
-          DO NNF=1,NNFMAX
-!             WRITE(6,'(A,3I4,2ES12.4)') &
-!                  '--- SNF:',NS,NNF,NR,SNF_NSNNFNR(NS,NNF,NR), &
-!                  PNF_NSNNFNR(NS,NNF,NR)
-             SNF_NSNR(NS,NR)=SNF_NSNR(NS,NR)+SNF_NSNNFNR(NS,NNF,NR)
-             PNF_NSNR(NS,NR)=PNF_NSNR(NS,NR)+PNF_NSNNFNR(NS,NNF,NR)
-          END DO
+          SNF_NSNR(NS,NR)=SUM(SNF_NSNNFNR(NS,1:NNFMAX,NR))
+          PNFCL_NSNR(NS,NR)=SUM(PNFCL_NSNNFNR(NS,1:NNFMAX,NR))
        END DO
-    END DO
-    DO NR=1,NRMAX
-       DO NNF=1,NNFMAX
-          SNF_NNFNR(NNF,NR)=0.D0
-          PNF_NNFNR(NNF,NR)=0.D0
-          DO NS=1,NSMAX
-             SNF_NNFNR(NNF,NR)=SNF_NNFNR(NNF,NR)+SNF_NSNNFNR(NS,NNF,NR)
-             PNF_NNFNR(NNF,NR)=PNF_NNFNR(NNF,NR)+PNF_NSNNFNR(NS,NNF,NR)
-          END DO
-       END DO
-    END DO
-    DO NR=1,NRMAX
-       SNF_NR(NR)=0.D0
-       PNF_NR(NR)=0.D0
-       DO NS=1,NSMAX
-          SNF_NR(NR)=SNF_NR(NR)+SNF_NSNR(NS,NR)
-          PNF_NR(NR)=PNF_NR(NR)+PNF_NSNR(NS,NR)
-       END DO
-    END DO
-    DO NS=1,NSMAX
-       SNF_NS(NS)=0.D0
-       PNF_NS(NS)=0.D0
-       DO NR=1,NRMAX
-          SNF_NS(NS)=SNF_NS(NS)+SNF_NSNR(NS,NR)
-          PNF_NS(NS)=PNF_NS(NS)+PNF_NSNR(NS,NR)
-       END DO
-    END DO
-    DO NNF=1,NNFMAX
-       SNF_NNF(NNF)=0.D0
-       PNF_NNF(NNF)=0.D0
-       DO NR=1,NRMAX
-          SNF_NNF(NNF)=SNF_NNF(NNF)+SNF_NNFNR(NNF,NR)
-          PNF_NNF(NNF)=PNF_NNF(NNF)+PNF_NNFNR(NNF,NR)
-       END DO
-    END DO
-    SNFT=0.D0
-    PNFT=0.D0
-    DO NS=1,NSMAX
-       SNFT=SNFT+SNF_NS(NS)
-       PNFT=PNFT+PNF_NS(NS)
-       IF(PNFT.LT.0D0) &
-            WRITE(6,'(A,I4,2ES12.4)') '--- SNF,PNF:',NS,SNF_NS(NS),PNF_NS(NS)
-    END DO
-
-    DO NR=1,NRMAX
-       DO NS=1,NSMAX
-          PNFCL_NSNR(NS,NR)=0.D0
-          DO NNF=1,NNFMAX
-             PNFCL_NSNR(NS,NR)=PNFCL_NSNR(NS,NR)+PNFCL_NSNNFNR(NS,NNF,NR)
-          END DO
-       END DO
-       DO NNF=1,NNFMAX
-          PNFCL_NNFNR(NNF,NR)=0.D0
-          DO NS=1,NSMAX
-             PNFCL_NNFNR(NNF,NR)=PNFCL_NNFNR(NNF,NR)+PNFCL_NSNNFNR(NS,NNF,NR)
-          END DO
-       END DO
-    END DO
-      
-    DO NS=1,NSMAX
-       PNFCL_NS(NS)=0.D0
-       DO NR=1,NRMAX
-          PNFCL_NS(NS)=PNFCL_NS(NS)+PNFCL_NSNR(NS,NR)
-       END DO
-    END DO
-    DO NNF=1,NNFMAX
-       PNFIN_NNF(NNF)=0.D0
-       PNFCL_NNF(NNF)=0.D0
-       DO NR=1,NRMAX
-          PNFIN_NNF(NNF)=PNFIN_NNF(NNF)+PNFIN_NNFNR(NNF,NR)
-          PNFCL_NNF(NNF)=PNFCL_NNF(NNF)+PNFCL_NNFNR(NNF,NR)
-       END DO
-    END DO
-    DO NR=1,NRMAX
-       PNFIN_NR(NR)=0.D0
-       PNFCL_NR(NR)=0.D0
-       DO NNF=1,NNFMAX
-          PNFIN_NR(NR)=PNFIN_NR(NR)+PNFIN_NNFNR(NNF,NR)
-          PNFCL_NR(NR)=PNFCL_NR(NR)+PNFCL_NNFNR(NNF,NR)
-       END DO
-    END DO
-    PNFIN_TOT=0.D0
-    PNFCL_TOT=0.D0
-    DO NNF=1,NNFMAX
-       PNFIN_TOT=PNFIN_TOT+PNFIN_NNF(NNF)
-       PNFCL_TOT=PNFCL_TOT+PNFCL_NNF(NNF)
     END DO
 
     RETURN
   END SUBROUTINE tr_pnf
+
+  ! *** DD1 reaction ***
+  !        D + D -> T + p
+
+  SUBROUTInE tr_nf_dd1(nnf)
+
+    USE trcomm
+    USE libnf
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: nnf
+    REAL(rkind):: PND,PTD,RATE_NF,SNF
+    INTEGER:: NR
+
+    DO NR=1,NRMAX
+       PND=RN(NR,NS_D)
+       PTD=RT(NR,NS_D)
+       RATE_NF=0.5D0*sigmav_nf(id_nf_dd1,PTD)  ! sigmav for dd1+dd2
+       SNF=PND*PND*1.D20*RATE_NF               ! reaction rate
+       SNF_NSNNFNR(ns_D,nnf,nr)=SNF_NSNNFNR(ns_D,nnf,nr)-2.D0*SNF      ! D
+       SNF_NSNNFNR(ns_T,nnf,nr)=SNF_NSNNFNR(ns_T,nnf,nr)+SNF           ! T
+       PNF_NSNNFNR(ns_T,nnf,nr)=PNF_NSNNFNR(ns_T,nnf,nr)+1.01D3*SNF    ! T
+       SELECT CASE(model_nf_dd1)
+       CASE(0) ! generate (1/2) He4
+          SNF_NSNNFNR(ns_He4,nnf,nr)=SNF_NSNNFNR(ns_He4,nnf,nr)+0.5D0*SNF
+          PNF_NSNNFNR(ns_He4,nnf,nr)=PNF_NSNNFNR(ns_He4,nnf,nr)+3.02D3*RKEV*SNF
+       CASE(1) ! generate p
+          SNF_NSNNFNR(ns_H,nnf,nr)=SNF_NSNNFNR(ns_H,nnf,nr)+SNF
+          PNF_NSNNFNR(ns_H,nnf,nr)=PNF_NSNNFNR(ns_H,nnf,nr)+3.02D3*RKEV*SNF
+       END SELECT
+    END DO
+    RETURN
+  END SUBROUTInE tr_nf_dd1
+
+  ! *** DD2 reaction ***
+  !        D + D -> He3 + n
+
+  SUBROUTInE tr_nf_dd2(nnf)
+
+    USE trcomm
+    USE libnf
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: nnf
+    REAL(rkind):: PND,PTD,RATE_NF,SNF
+    INTEGER:: NR
+
+    DO NR=1,NRMAX
+       PND=RN(NR,NS_D)
+       PTD=RT(NR,NS_D)
+       RATE_NF=0.5D0*sigmav_nf(id_nf_dd2,PTD)  ! sigmav for dd1+dd2
+       SNF=PND*PND*1.D20*RATE_NF               ! reaction rate
+       SNF_NSNNFNR(ns_D,nnf,nr)=SNF_NSNNFNR(ns_D,nnf,nr)-2.D0*SNF
+       SELECT CASE(model_nf_dd2)
+       CASE(0) ! generate He4
+          SNF_NSNNFNR(ns_He4,nnf,nr)=SNF_NSNNFNR(ns_He4,nnf,nr)+SNF
+          PNF_NSNNFNR(ns_He4,nnf,nr)=PNF_NSNNFNR(ns_He4,nnf,nr)+0.82D3*RKEV*SNF
+       CASE(1) ! generate He3
+          SNF_NSNNFNR(ns_He3,nnf,nr)=SNF_NSNNFNR(ns_He3,nnf,nr)+SNF
+          PNF_NSNNFNR(ns_He3,nnf,nr)=PNF_NSNNFNR(ns_He3,nnf,nr)+0.82D3*RKEV*SNF
+       END SELECT
+       SNFNN_NNFNR(nnf,nr)=SNFNN_NNFNR(nnf,nr)+SNF
+       PNFNN_NNFNR(nnf,nr)=PNFNN_NNFNR(nnf,nr)+2.45D3*RKEV*SNF
+    END DO
+    RETURN
+  END SUBROUTInE tr_nf_dd2
+
+  ! *** DT reaction ***
+  !        D + T -> He4 + n
+
+  SUBROUTInE tr_nf_dt(nnf)
+
+    USE trcomm
+    USE libnf
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: nnf
+    REAL(rkind):: PND,PNT,PTD,RATE_NF,SNF
+    INTEGER:: NR
+
+    DO NR=1,NRMAX
+       PND=RN(NR,NS_D)
+       PNT=RN(NR,NS_T)
+       PTD=RT(NR,NS_D)
+       RATE_NF=sigmav_nf(id_nf_dt,PTD)  ! sigmav for dt
+       SNF=PND*PNT*1.D20*RATE_NF
+       SNF_NSNNFNR(ns_D,nnf,nr)=SNF_NSNNFNR(ns_D,nnf,nr)-SNF
+       SNF_NSNNFNR(ns_T,nnf,nr)=SNF_NSNNFNR(ns_T,nnf,nr)-SNF
+       SNF_NSNNFNR(ns_He4,nnf,nr)=SNF_NSNNFNR(ns_He4,nnf,nr)+SNF
+       PNF_NSNNFNR(ns_He4,nnf,nr)=PNF_NSNNFNR(ns_He4,nnf,nr)+3.5D3*RKEV*SNF
+       SNFNN_NNFNR(nnf,nr)=SNFNN_NNFNR(nnf,nr)+SNF
+       PNFNN_NNFNR(nnf,nr)=PNFNN_NNFNR(nnf,nr)+14.1D3*RKEV*SNF
+    END DO
+    RETURN
+  END SUBROUTInE tr_nf_dt
+
+  ! *** DHe3 reaction ***
+  !        D + He3 -> He4 + p
+
+  SUBROUTInE tr_nf_dHe3(nnf)
+
+    USE trcomm
+    USE libnf
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: nnf
+    REAL(rkind):: PND,PNHe3,PNT,PTD,RATE_NF,SNF
+    INTEGER:: NR
+
+    DO NR=1,NRMAX
+       PND=RN(NR,NS_D)
+       PNHe3=RN(NR,NS_He3)
+       PTD=RT(NR,NS_D)
+       RATE_NF=sigmav_nf(id_nf_dhe3,PTD)  ! sigmav for dt
+       SNF=PND*PNHe3*1.D20*RATE_NF
+       SNF_NSNNFNR(ns_D,  nnf,nr)=SNF_NSNNFNR(ns_D,  nnf,nr)-SNF
+       SNF_NSNNFNR(ns_He3,nnf,nr)=SNF_NSNNFNR(ns_He3,nnf,nr)-SNF
+       SNF_NSNNFNR(ns_He4,nnf,nr)=SNF_NSNNFNR(ns_He4,nnf,nr)+SNF
+       SNF_NSNNFNR(ns_H,  nnf,nr)=SNF_NSNNFNR(ns_H,  nnf,nr)+SNF
+       PNF_NSNNFNR(ns_He4,nnf,nr)=PNF_NSNNFNR(ns_He4,nnf,nr)+ 3.6D3*RKEV*SNF
+       PNF_NSNNFNR(ns_H,  nnf,nr)=PNF_NSNNFNR(ns_H,  nnf,nr)+14.7D3*RKEV*SNF
+    END DO
+    RETURN
+  END SUBROUTInE tr_nf_dHe3
+
+  ! *** TT reaction ***
+  !        T + T -> He4 + 2n
+
+  SUBROUTInE tr_nf_tt(nnf)
+
+    USE trcomm
+    USE libnf
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: nnf
+    REAL(rkind):: PNT,PTT,RATE_NF,SNF
+    INTEGER:: NR
+
+    DO NR=1,NRMAX
+       PNT=RN(NR,NS_T)
+       PTT=RT(NR,NS_T)
+       RATE_NF=sigmav_nf(id_nf_tt,PTT)  ! sigmav for tt
+       SNF=PNT*PNT*1.D20*RATE_NF
+       SNF_NSNNFNR(ns_T,  nnf,nr)=SNF_NSNNFNR(ns_T,  nnf,nr)-2.D0*SNF
+       SNF_NSNNFNR(ns_He4,nnf,nr)=SNF_NSNNFNR(ns_He4,nnf,nr)+SNF
+       PNF_NSNNFNR(ns_He4,nnf,nr)=PNF_NSNNFNR(ns_He4,nnf,nr) &
+            +(0.25D0/2.25D0)*11.3D3*RKEV*SNF
+       SNFNN_NNFNR(nnf,nr)=SNFNN_NNFNR(nnf,nr)+2.D0*SNF
+       PNFNN_NNFNR(nnf,nr)=PNFNN_NNFNR(nnf,nr) &
+            +(2.00D0/2.25D0)*11.3D3*RKEV*SNF
+            
+    END DO
+    RETURN
+  END SUBROUTInE tr_nf_tt
+
+  ! *** THe3 reaction ***
+  !        T + He3 -> He4 + p + n; He4 + D; He5 + p
+
+  SUBROUTInE tr_nf_tHe3(nnf)
+
+    USE trcomm
+    USE libnf
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: nnf
+    REAL(rkind):: PNT,PNHe3,PTT,RATE_NF,SNF
+    INTEGER:: NR
+
+    DO NR=1,NRMAX
+       PNT=RN(NR,NS_T)
+       PNHe3=RN(NR,NS_He3)
+       PTT=RT(NR,NS_T)
+       RATE_NF=sigmav_nf(id_nf_the3,PTT)  ! sigmav for tt
+       SNF=PNT*PNHe3*1.D20*RATE_NF
+       SNF_NSNNFNR(ns_T,  nnf,nr)=SNF_NSNNFNR(ns_T,  nnf,nr)-SNF
+       SNF_NSNNFNR(ns_He3,nnf,nr)=SNF_NSNNFNR(ns_He3,nnf,nr)-SNF
+       SNF_NSNNFNR(ns_He4,nnf,nr)=SNF_NSNNFNR(ns_He4,nnf,nr)+0.94D0*SNF
+       SNF_NSNNFNR(ns_H,  nnf,nr)=SNF_NSNNFNR(ns_H,  nnf,nr)+0.57D0*SNF
+       SNF_NSNNFNR(ns_D,  nnf,nr)=SNF_NSNNFNR(ns_D,  nnf,nr)+0.43D0*SNF
+       SELECT CASE(model_nf_the3)
+       CASE(0)
+          SNF_NSNNFNR(ns_He4,nnf,nr)=SNF_NSNNFNR(ns_He4,nnf,nr)+0.06D0*SNF
+       CASE(1)
+          SNF_NSNNFNR(ns_He5,nnf,nr)=SNF_NSNNFNR(ns_He5,nnf,nr)+0.06D0*SNF
+       END SELECT
+          
+       PNF_NSNNFNR(ns_He4,nnf,nr)=PNF_NSNNFNR(ns_He4,nnf,nr) &
+            +0.51D0*(0.25D0/2.25D0)*12.1D3*RKEV*SNF &
+            +0.43D0                *4.80D3*RKEV*SNF
+       PNF_NSNNFNR(ns_H,  nnf,nr)=PNF_NSNNFNR(ns_H,  nnf,nr) &
+            +0.51D0*(1.00D0/2.25D0)*12.1D3*RKEV*SNF &
+            +0.06D0                *9.46D3*RKEV*SNF
+       PNF_NSNNFNR(ns_D,  nnf,nr)=PNF_NSNNFNR(ns_D,  nnf,nr) &
+            +0.43D0                *9.50D3*RKEV*SNF
+       SELECT CASE(model_nf_the3)
+       CASE(0)
+          SNF_NSNNFNR(ns_He4,nnf,nr)=SNF_NSNNFNR(ns_He4,nnf,nr)+0.06D0*SNF
+          PNF_NSNNFNR(ns_He4,nnf,nr)=PNF_NSNNFNR(ns_He4,nnf,nr) &
+               +0.06D0*1.89D3*RKEV*SNF
+       CASE(1)
+          SNF_NSNNFNR(ns_He5,nnf,nr)=SNF_NSNNFNR(ns_He5,nnf,nr)+0.06D0*SNF
+          PNF_NSNNFNR(ns_He5,nnf,nr)=PNF_NSNNFNR(ns_He5,nnf,nr) &
+               +0.06D0*1.89D3*RKEV*SNF
+       END SELECT
+       SNFNN_NNFNR(nnf,nr)=SNFNN_NNFNR(nnf,nr)+0.51D0*SNF
+       PNFNN_NNFNR(nnf,nr)=PNFNN_NNFNR(nnf,nr) &
+            +0.51D0*(1.D0/2.25D0)*12.1D3*RKEV*SNF
+    END DO
+    RETURN
+  END SUBROUTInE tr_nf_tHe3
+
+   
+
+  
 
 !     ***********************************************************
 
@@ -408,11 +530,6 @@ CONTAINS
             PNFCL_NSNNFNR(NS_T,  NNF,NR)=(VCT3/VC3)*HYF*PNFIN_NNFNR(NNF,NR)
             PNFCL_NSNNFNR(NS_He4,NNF,NR)=(VCA3/VC3)*HYF*PNFIN_NNFNR(NNF,NR)
 
-            ! PFIN(NR) = WF*RKEV*1.D20/TAUF(NR)
-            ! PFCL(NR,1)=    (1.D0-HYF)*PFIN(NR)
-            ! PFCL(NR,2)=(VCD3/VC3)*HYF*PFIN(NR)
-            ! PFCL(NR,3)=(VCT3/VC3)*HYF*PFIN(NR)
-            ! PFCL(NR,4)=(VCA3/VC3)*HYF*PFIN(NR)
          ENDDO
    
          RETURN

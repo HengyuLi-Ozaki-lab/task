@@ -10,8 +10,8 @@ include ../mtxp/make.mtxp
 #LIB_MTX=$(LIBXMTX_KSP)
 #LIBX_MTX=$(LIBX_MTX_KSP)
 
-FFLAGS = $(OFLAGS)
-#FFLAGS = $(DFLAGS)
+#FFLAGS = $(OFLAGS)
+FFLAGS = $(DFLAGS)
 
 OBJDIR=./obj
 
@@ -129,7 +129,7 @@ $(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90
 $(OBJDIR)/trprf.o  : trprf.f90  trcomm.f90 
 $(OBJDIR)/trsigmavnf.o  : trsigmavnf.f90 trcomm.f90 
 $(OBJDIR)/libnf.o  : libnf.f90 trcomm.f90 
-$(OBJDIR)/trpnf.o  : trpnf.f90  trsigmavnf.f90 trcomm.f90 
+$(OBJDIR)/trpnf.o  : trpnf.f90  libnf.f90 trsigmavnf.f90 trcomm.f90 
 $(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90 
 $(OBJDIR)/trpsc.o  : trpsc.f90  trcomm.f90 
 

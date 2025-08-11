@@ -45,7 +45,7 @@ MODULE plcomm_parm
       INTEGER:: model_prof,model_nprof,model_coll,model_eqdsk_psi
       INTEGER:: model_prof_time,model_sigv
       INTEGER:: & ! NS of bulk species (first in NS)
-           NS_e,NS_D,NS_T,NS_He4,NS_H,NS_He3,NS_C,NS_Fe
+           NS_e,NS_D,NS_T,NS_He4,NS_He3,NS_H,NS_He5,NS_C,NS_Fe
 
       REAL(rkind):: RR,RA,RB,RKAP,RDLT,BB,Q0,QA,RIP,PROFJ
       REAL(rkind):: RMIR,ZBB,Hpitch1,Hpitch2,RRCH

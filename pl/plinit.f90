@@ -112,6 +112,15 @@
 !        RN(rho)= (PN-PNS)*(1-rho^PROFN1)^PROFN2 + PNS
 !               + PNM*rho^PROFN3*(1-rho^PROFN3)
 !
+
+      NS_e=  1
+      NS_D=  2
+      NS_T=  3
+      NS_He4=4
+      NS_He3=5
+      NS_H  =6
+      NS_He5=7
+      
       NSMAX = 2                  ! Default number of particle species
 
 !     *** electron ***

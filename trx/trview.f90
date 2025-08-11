@@ -73,6 +73,9 @@ CONTAINS
       WRITE(6,602) 'MDLST ',MDLST, 'MDLCD ',MDLCD
       WRITE(6,630) 'model_pnf   ',model_pnf
       WRITE(6,630) 'model_nnf   ',model_nnf
+      WRITE(6,630) 'model_nf_dd1',model_nf_dd1
+      WRITE(6,630) 'model_nf_dd2',model_nf_dd2
+      WRITE(6,640) 'model_nf_the3   ',model_nf_the3
       WRITE(6,630) 'nnfmax      ',nnfmax
 
       IF(MDLIMP.GT.0) THEN
@@ -265,5 +268,6 @@ CONTAINS
 632   FORMAT(' ',I2,1X,A9,I5,4X,3(1X,A6,ES12.4))
 633   FORMAT(' ',I2,4(1X,A6,ES12.4))
 634   FORMAT(' ',I2,2(1X,A9,I5,4X),2(1X,A6,ES12.4))
+640   FORMAT(' ',A16,'=',I16)
     END SUBROUTINE tr_view
 END MODULE trview

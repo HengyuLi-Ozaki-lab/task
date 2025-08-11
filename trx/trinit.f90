@@ -465,6 +465,8 @@ CONTAINS
       !  ==== FUSION REACTION PARAMETERS ====
 
       !  nnfmax : number of fusion product id
+
+      !  model_nf_dd1
       !  model_nnf  : FUSION REACTION MODEL TYPE
       !        0:OFF
       !        1:ON He4 (DT) without particle source
@@ -491,7 +493,18 @@ CONTAINS
       !       52:ON He4 (DHe3) with particle source
       !       53:ON He4 (DHe3) with NB beam component without particle source
       !       54:ON He4 (DHe3) with NB beam component particle source
+      
+      !  model_nf_dd1 =0 : D + D -> T + (He4)/2
+      !                1 : D + D -> T + p
+      !  model_nf_dd2 =0 : D + D -> He4 + n
+      !                1 : D + D -> He3 + n
+      !  model_nf_the3=0 : T + He3 -> He4 + n
+      !                1 : T + He3 -> He5 + n
 
+      model_nf_dd1=0
+      model_nf_dd2=0
+      model_nf_the3=0
+      
       nnfmax=1
       DO nnf=1,nnfm
          model_nnf(nnf)  = 0

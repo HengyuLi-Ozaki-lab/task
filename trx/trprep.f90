@@ -62,7 +62,24 @@ CONTAINS
 
     CALL set_usigmav_nf
 
-    
+    SELECT CASE(model_pnf)
+    CASE(1,2)
+       ns_e=1
+       ns_d=2
+       ns_t=3
+       ns_he4=4
+       nnfmax=1
+       model_nnf(1)=id_nf_dt
+    CASE(11,12)
+       ns_e=1
+       ns_d=2
+       ns_t=3
+       ns_he4=4
+       nnfmax=3
+       model_nnf(1)=id_nf_dd1
+       model_nnf(2)=id_nf_dd2
+       model_nnf(3)=id_nf_dt
+    END SELECT
 
 !     *** set initial profile ***
 

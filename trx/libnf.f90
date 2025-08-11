@@ -36,12 +36,13 @@ MODULE libnf
   
   ! Fusion reaction id
   
-  INTEGER,PARAMETER:: id_nf_DD1=1  ! D + D -> T + p
-  INTEGER,PARAMETER:: id_nf_DD2=2  ! D + D -> He3 + n
-  INTEGER,PARAMETER:: id_nf_DT =3  ! D + T -> He4 + n
-  INTEGER,PARAMETER:: id_nf_DHe=4  ! D + He3 -> He4 + p
-  INTEGER,PARAMETER:: id_nf_TT =5  ! T + T -> He4 + 2n
-  INTEGER,PARAMETER:: id_nf_THe=6  ! T + He3 -> He4 + p + n; He4 + D; He5 + p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DD1=1  ! D + D -> T + p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DD2=2  ! D + D -> He3 + n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DT =3  ! D + T -> He4 + n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DHe3=4 ! D + He3 -> He4 + p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_TT =5  ! T + T -> He4 + 2n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_THe3=6 ! T + He3 ->
+                                          !    He4 + p + n; He4 + D; He5 + p
 
   ! Duane coef (NEL Formulary 2019)
 
@@ -70,23 +71,23 @@ MODULE libnf
                   8.7D-16, 8.5D-16, 6.3D-16, 3.7D-16, 2.7D-16 /)
   ! reaction rate sigmav for DHe3
   REAL(rkind),DIMENSION(10):: &
-       svnf_dhe=(/ 1.0D-26, 1.4D-23, 6.7D-21, 2.3D-19, 3.8D-18, &
-                   5.4D-17, 1.6D-16, 2.4D-16, 2.3D-16, 1.8D-16 /)
+       svnf_dhe3=(/ 1.0D-26, 1.4D-23, 6.7D-21, 2.3D-19, 3.8D-18, &
+                    5.4D-17, 1.6D-16, 2.4D-16, 2.3D-16, 1.8D-16 /)
   ! reaction rate sigmav for TT
   REAL(rkind),DIMENSION(10):: &
        svnf_tt=(/ 3.3D-22, 7.1D-21, 1.4D-19, 7.2D-19, 2.5D-18, &
                   8.7D-18, 1.9D-17, 4.2D-17, 8.4D-17, 8.0D-17 /)
   ! reaction rate sigmav for THe3
   REAL(rkind),DIMENSION(10):: &
-       svnf_the=(/ 1.0D-28, 1.0D-25, 2.1D-22, 1.2D-20, 2.6D-19, &
-                   5.3D-18, 2.7D-17, 9.2D-17, 2.9D-16, 5.2D-16 /)
+       svnf_the3=(/ 1.0D-28, 1.0D-25, 2.1D-22, 1.2D-20, 2.6D-19, &
+                    5.3D-18, 2.7D-17, 9.2D-17, 2.9D-16, 5.2D-16 /)
 
   ! Mass of incident particle
 
   REAL(rkind),DIMENSION(6):: am_nf
   
   REAL(rkind),DIMENSION(4,10):: &
-       usvnf_dd,usvnf_dt,usvnf_dhe,usvnf_tt,usvnf_the
+       usvnf_dd,usvnf_dt,usvnf_dhe3,usvnf_tt,usvnf_the3
   REAL(rkind),DIMENSION(10):: &
        dsvnf,tempa_log
 
@@ -135,12 +136,12 @@ CONTAINS
     REAL(rkind),DIMENSION(10):: dsvnf
     INTEGER:: id_nf,ntemp,ierr
 
-    am_nf(id_nf_dd1)=AMD
-    am_nf(id_nf_dd2)=AMD
-    am_nf(id_nf_dt )=AMD
-    am_nf(id_nf_dhe)=AMD
-    am_nf(id_nf_tt )=AMT
-    am_nf(id_nf_the)=AMT
+    am_nf(id_nf_dd1 )=AMD
+    am_nf(id_nf_dd2 )=AMD
+    am_nf(id_nf_dt  )=AMD
+    am_nf(id_nf_dhe3)=AMD
+    am_nf(id_nf_tt  )=AMT
+    am_nf(id_nf_the3)=AMT
     
     DO ntemp=1,10
        tempa_log(ntemp)=LOG10(tempa(ntemp))
@@ -149,15 +150,15 @@ CONTAINS
     DO id_nf=1,6
        SELECT CASE(id_nf)
        CASE(id_nf_dd1,id_nf_dd2)
-          CALL SPL1D(tempa_log,svnf_dd,dsvnf,usvnf_dd,10,0,ierr)
+          CALL SPL1D(tempa_log,svnf_dd,  dsvnf,usvnf_dd,  10,0,ierr)
        CASE(id_nf_dt)
-          CALL SPL1D(tempa_log,svnf_dt,dsvnf,usvnf_dt,10,0,ierr)
-       CASE(id_nf_dhe)
-          CALL SPL1D(tempa_log,svnf_dhe,dsvnf,usvnf_dhe,10,0,ierr)
+          CALL SPL1D(tempa_log,svnf_dt,  dsvnf,usvnf_dt,  10,0,ierr)
+       CASE(id_nf_dhe3)
+          CALL SPL1D(tempa_log,svnf_dhe3,dsvnf,usvnf_dhe3,10,0,ierr)
        CASE(id_nf_tt)
-          CALL SPL1D(tempa_log,svnf_tt,dsvnf,usvnf_tt,10,0,ierr)
-       CASE(id_nf_the)
-          CALL SPL1D(tempa_log,svnf_the,dsvnf,usvnf_the,10,0,ierr)
+          CALL SPL1D(tempa_log,svnf_tt,  dsvnf,usvnf_tt,  10,0,ierr)
+       CASE(id_nf_the3)
+          CALL SPL1D(tempa_log,svnf_the3,dsvnf,usvnf_the3,10,0,ierr)
        END SELECT
        IF(ierr.NE.0) THEN
           WRITE(6,'(A,I4)') 'XX SPL1D error in set_usvnf: id_nf=',id_nf
@@ -202,12 +203,12 @@ CONTAINS
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_dd,10,ierr)
     CASE(id_nf_dt)
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_dt,10,ierr)
-    CASE(id_nf_dhe)
-       CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_dhe,10,ierr)
+    CASE(id_nf_dhe3)
+       CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_dhe3,10,ierr)
     CASE(id_nf_tt)
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_tt,10,ierr)
-    CASE(id_nf_the)
-       CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_the,10,ierr)
+    CASE(id_nf_the3)
+       CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_the3,10,ierr)
     END SELECT
     IF(ierr.NE.0) THEN
        WRITE(6,'(A,I4)')     'XX SPL1DF error in sigmav_nf: id_nf=',id_nf

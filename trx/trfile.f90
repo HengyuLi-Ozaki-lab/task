@@ -86,15 +86,15 @@ CONTAINS
          WRITE(K5,'(I3)') 100+NTM1
          WRITE(K6,'(I3)') 100+NTS1
          WRITE(16,1670) K1(2:3),K2(2:3),K3(2:3),K4(2:3),K5(2:3),K6(2:3), &
-     &                  RIPS,RIPE,PN(1),PN(2),BB,PICTOT,PLHTOT,PLHNPR
+     &                  RIPS,RIPE,PN(1),PN(2),BB,PIC_TOT,PLH_TOT,PEC_TOT
  1670    FORMAT(' '/ &
      &          ' ','## DATE: ', &
      &              A2,'-',A2,'-',A2,'  ',A2,':',A2,':',A2,' : ', &
      &              '  FILE: ',A40/ &
      &          ' ',3X,'RIPS  =',1PD10.3,'  RIPE  =',1PD10.3, &
      &               '  PNE   =',1PD10.3,'  PNI   =',1PD10.3/ &
-     &          ' ',3X,'BB    =',1PD10.3,'  PICTOT=',1PD10.3, &
-     &               '  PLHTOT=',1PD10.3,'  PLHNPR=',1PD10.3)
+     &          ' ',3X,'BB    =',1PD10.3,' PIC_TOT=',1PD10.3, &
+     &               ' PLH_TOT=',1PD10.3,' PEC_TOT=',1PD10.3)
          WRITE(16,1671) T, &
      &                WPT,TAUE1,TAUE2,TAUE89, &
      &                BETAP0,BETAPA,BETA0,BETAA
@@ -125,7 +125,7 @@ CONTAINS
      &               '  AJNBT =',1PD10.3,'  AJBST =',1PD10.3)
 
          WRITE(16,1674) PINT,POHT,PNBT, &
-     &                PRFT(1)+PRFT(2)+PRFT(3)+PRFT(4), &
+     &                PIC_TOT+PLH_TOT+PEC_TOT, &
      &                POUT,PRLT,PCXT,PIET
  1674    FORMAT(' ',3X,'PINT  =',1PD10.3,'  POHT  =',1PD10.3, &
      &               '  PNBT  =',1PD10.3,'  PRFT  =',1PD10.3/ &

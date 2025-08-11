@@ -12,9 +12,9 @@
 
       IF(npelmax.EQ.0) RETURN
 
-      SPE_NSNR(1:nsmax,1:nrmax)=0.D0
+      SPEL_NSNR(1:nsmax,1:nrmax)=0.D0
       DO npel=1,npelmax
-         SPE_nsnpelnr(1:nsmax,npel,1:nrmax)=0.D0
+         SPEL_nsnpelnr(1:nsmax,npel,1:nrmax)=0.D0
       END DO
       
       DO npel=1,npelmax
@@ -34,7 +34,8 @@
 
       DO NR=1,NRMAX
          DO NS=1,NSMAX
-            SPE_NSNR(ns,nr)=SPE_NSNR(ns,nr)+SUM(SPE_NSNPELNR(ns,1:npelmax,nr))
+            SPEL_NSNR(ns,nr)=SPEL_NSNR(ns,nr) &
+                 +SUM(SPEL_NSNPELNR(ns,1:npelmax,nr))
          END DO
       END DO
       RETURN
@@ -66,12 +67,12 @@
       DO NR=1,NRMAX
          SPEL=S0*DEXP(-((RA*RM(NR)-PELR0(npel))/PELRW(npel))**2)
       DO NS=1,NSMAX
-         SPE_NSNPELNR(NS,NPEL,NR)=PELPAT(NS,npel)*SPEL
+         SPEL_NSNPELNR(NS,NPEL,NR)=PELPAT(NS,npel)*SPEL
       ENDDO
       ENDDO
 
       WRITE(6,*) 'TRPELA:'
-      WRITE(6,'(5ES12.4)') SPE_NSNR(1,1:NRMAX)
+      WRITE(6,'(5ES12.4)') SPEL_NSNR(1,1:NRMAX)
 
       RETURN
       END  SUBROUTINE TRPELA
@@ -168,7 +169,7 @@
       SPEL=ANS*RPEL*0.5D0*(RPEL+RPELPRE)*RPELDOT*4.D0*PI*RA &
            /(DVRHO(NR)*PELVEL(npel))
       DO NS=1,NSMAX
-         SPE_NSNR(NS,NR)=PELPAT(NS,npel)*SPEL
+         SPEL_NSNR(NS,NR)=PELPAT(NS,npel)*SPEL
       ENDDO
 
       NR = NR-1
@@ -236,10 +237,10 @@
 
       SPEL=ANP*RPEL*0.5D0*(RPEL+RPELPRE)*RPELDOT*4.D0*PI*RA &
            /(DVRHO(NR)*PELVEL(npel))
-      SPE_NSNR(1:NSMAX,NR)=PELPAT(1:NSMAX,npel)*SPEL
+      SPEL_NSNR(1:NSMAX,NR)=PELPAT(1:NSMAX,npel)*SPEL
 
       WRITE(6,*) 'TRPELC:'
-      WRITE(6,'(5ES12.4)') SPE_NSNR(1,1:NRMAX)
+      WRITE(6,'(5ES12.4)') SPEL_NSNR(1,1:NRMAX)
 
       NR = NR-1
       GOTO 100
