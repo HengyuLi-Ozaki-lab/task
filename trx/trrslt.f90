@@ -522,7 +522,8 @@
       NGT=NGT+1
 
       GT    (NGT) = GUCLIP(T)
-!
+      !
+      GVT(NGT,1:NCTM)=0.0
       GVT(NGT, 1) = GUCLIP(ANS0(1))
       GVT(NGT, 2) = GUCLIP(ANS0(2))
       GVT(NGT, 3) = GUCLIP(ANS0(3))
@@ -600,8 +601,8 @@
 
       GVT(NGT,65) = GUCLIP(SINT)
       GVT(NGT,66) = GUCLIP(SIET)
-      GVT(NGT,67) = GUCLIP(SNBT)
-      GVT(NGT,68) = GUCLIP(SNFT)
+      GVT(NGT,67) = GUCLIP(SNB_TOT)
+      GVT(NGT,68) = GUCLIP(SNF_TOT)
       GVT(NGT,69) = GUCLIP(SOUT)
       GVT(NGT,70) = GUCLIP(SLT(1))
       GVT(NGT,71) = GUCLIP(SLT(2))
@@ -652,6 +653,30 @@
       GVT(NGT,108)= GUCLIP(PRBT)
       GVT(NGT,109)= GUCLIP(PRCT)
       GVT(NGT,110)= GUCLIP(PRLT)
+
+      GVT(NGT,111)= GUCLIP(SNF_NS(1))
+      GVT(NGT,112)= GUCLIP(SNF_NS(2))
+      GVT(NGT,113)= GUCLIP(SNF_NS(3))
+      GVT(NGT,114)= GUCLIP(SNF_NS(4))
+      IF(NSMAX.GE.5) GVT(NGT,115)= GUCLIP(SNF_NS(5))
+      IF(NSMAX.GE.6) GVT(NGT,116)= GUCLIP(SNF_NS(6))
+
+      GVT(NGT,117)= GUCLIP(PNF_NS(1))
+      GVT(NGT,118)= GUCLIP(PNF_NS(2))
+      GVT(NGT,119)= GUCLIP(PNF_NS(3))
+      GVT(NGT,120)= GUCLIP(PNF_NS(4))
+      IF(NSMAX.GE.5) GVT(NGT,121)= GUCLIP(PNF_NS(5))
+      IF(NSMAX.GE.6) GVT(NGT,122)= GUCLIP(PNF_NS(6))
+
+      GVT(NGT,123)= GUCLIP(SNFNN_NNF(2))
+      GVT(NGT,124)= GUCLIP(SNFNN_NNF(3))
+      IF(NSMAX.GE.5) GVT(NGT,125)= GUCLIP(SNFNN_NNF(5))
+      IF(NSMAX.GE.6) GVT(NGT,126)= GUCLIP(SNFNN_NNF(6))
+
+      GVT(NGT,127)= GUCLIP(PNFNN_NNF(2))
+      GVT(NGT,128)= GUCLIP(PNFNN_NNF(3))
+      IF(NSMAX.GE.5) GVT(NGT,129)= GUCLIP(PNFNN_NNF(5))
+      IF(NSMAX.GE.6) GVT(NGT,130)= GUCLIP(PNFNN_NNF(6))
 
 !     *** FOR 3D ***
 
@@ -1451,10 +1476,10 @@
       KVT(39) = 'PINT      '
       KVT(40) = 'POHT      '
       KVT(41) = 'PNBT      '
-      KVT(42) = 'PRFT(1)   '
-      KVT(43) = 'PRFT(2)   '
-      KVT(44) = 'PRFT(3)   '
-      KVT(45) = 'PRFT(4)   '
+      KVT(42) = 'PICT      '
+      KVT(43) = 'PLHT      '
+      KVT(44) = 'PECT      '
+      KVT(45) = 'PRFT      '
       KVT(46) = 'PNFT      '
 
       KVT(47) = 'PBINT     '
@@ -1531,6 +1556,32 @@
       KVT(108)= 'PRBT      '
       KVT(109)= 'PRCT      '
       KVT(110)= 'PRLT      '
+
+      KVT(111)= 'SNF_e     '
+      KVT(112)= 'SNF_D     '
+      KVT(113)= 'SNF_T     '
+      KVT(114)= 'SNF_He4   '
+      KVT(115)= 'SNF_He3   '
+      KVT(116)= 'SNF_H     '
+
+      KVT(117)= 'PNF_e     '
+      KVT(118)= 'PNF_D     '
+      KVT(119)= 'PNF_T     '
+      KVT(120)= 'PNF_He4   '
+      KVT(121)= 'PNF_He3   '
+      KVT(122)= 'PNF_H     '
+
+      KVT(123)= 'SNN_DD    '
+      KVT(124)= 'SNN_DD    '
+      KVT(125)= 'SNF_TT    '
+      KVT(126)= 'SNF_THe3  '
+
+      KVT(127)= 'PNN_DD    '
+      KVT(128)= 'PNN_DD    '
+      KVT(129)= 'PNF_TT    '
+      KVT(130)= 'PNF_THe3  '
+
+      
 
 !     *** FOR 3D ***
 

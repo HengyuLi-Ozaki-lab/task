@@ -454,10 +454,11 @@
 
       SUBROUTINE TRPBCL(NNB)
 
-      USE TRCOMM
+        USE TRCOMM
+        USE trlib
       IMPLICIT NONE
       INTEGER,INTENT(IN):: NNB
-      REAL(rkind)    :: ANE, AMB, COULOG, EC, EPS, HY, HYB, &
+      REAL(rkind)    :: ANE, AMB, EC, EPS,HYB, &
            P2, P3, P4, PMB, PZB, TAUS, TAUS0, TE, VB, VC3,  &
            VCA3, VCD3, VCR, VCT3, VE, WB, XB, ZEFFM, ZN, PB, EF
       INTEGER :: NR,NS

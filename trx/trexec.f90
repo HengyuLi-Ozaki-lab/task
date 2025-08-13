@@ -38,15 +38,18 @@ CONTAINS
       IERR=0
       ICHCK=0
 
+      WRITE(6,*) '@@@ point 231'
       L=0
 
 !     /* Setting New Variables */
       CALL TRATOX
 
+      WRITE(6,*) '@@@ point 232'
 !     /* Store Variables for Convergence Check */
       forall(J=1:NEQMAX,NR=1:NRMAX) XX(NEQMAX*(NR-1)+J) = XV(J,NR)
       IF(NFMAX.GT.0) YY(1:NFMAX,1:NRMAX) = YV(1:NFMAX,1:NRMAX)
       IF(MDLTC.NE.0) ZZ(1:NSMAX,1:NRMAX) = ZV(1:NSMAX,1:NRMAX)
+      WRITE(6,*) '@@@ point 233'
 
  2000 CONTINUE
 
@@ -54,7 +57,9 @@ CONTAINS
 
 !     /* Calcualte matrix coefficients */
 
+      WRITE(6,*) '@@@ point 234'
       CALL TRMTRX(NEQRMAX)
+      WRITE(6,*) '@@@ point 235'
 
 !     /* Solve matrix equation */
 
@@ -418,9 +423,10 @@ CONTAINS
       INTEGER,INTENT(OUT) :: IERR
       integer:: IDGLOB
 
-
+      WRITE(6,*) '@@@ point 211'
       CALL TRCALC(IERR)
       IF(IERR.ne.0) RETURN
+      WRITE(6,*) '@@@ point 212'
 
       IDGLOB=0
       IF(MOD(NT,NTSTEP).EQ.0) THEN
@@ -428,12 +434,14 @@ CONTAINS
          IDGLOB=1
          CALL TRSNAP
       ENDIF
+      WRITE(6,*) '@@@ point 213'
       IF(MOD(NT,NGTSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB
          IDGLOB=1
          CALL TRATOT
          CALL TRATOTN
       ENDIF
+      WRITE(6,*) '@@@ point 214'
       IF(MOD(NT,NGRSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB
          IDGLOB=1
@@ -454,14 +462,16 @@ CONTAINS
       USE TRCOMM
       USE TRCOMX
       USE trprof
+      USE trlib
       IMPLICIT NONE
       INTEGER, INTENT(INOUT):: NEQRMAX
       INTEGER:: KL, MV, MVV, MW, MWMAX, NEQ, NEQ1, NR
       INTEGER:: NS, NS1, NSTN, NSW, NV, NW, NNB, NNF, NF
-      REAL(rkind)   :: ADV, C1, COEF, COULOG, DV53, FADV, PRV, RDPA, RLP
+      REAL(rkind)   :: ADV, C1, COEF, DV53, FADV, PRV, RDPA, RLP
 
 ! Boundary condition for magnetic diffusion equation
 
+      WRITE(6,*) '@@@ point 2341'
       IF(MDLEQB.NE.0) THEN
          IF(MDLCD.EQ.0) THEN
             RDPS=2.D0*PI*RMU0*RIP*1.D6*DVRHOG(NRMAX)/ABVRHOG(NRMAX)
@@ -477,6 +487,7 @@ CONTAINS
          ENDIF
       ENDIF
 
+      WRITE(6,*) '@@@ point 2342'
       COEF = AEE**4*1.D20/(3.D0*SQRT(2.D0*PI)*PI*EPS0**2)
 
       A(1:NEQMAX,1:NEQMAX,1:NRMAX)=0.D0
@@ -505,6 +516,7 @@ CONTAINS
       PRV=(1.D0-FADV)*DT
       ADV=FADV*DT
 
+      WRITE(6,*) '@@@ point 2343'
 !          +----------+
 !    ***   |   NR=1   |   ***
 !          +----------+
@@ -535,11 +547,14 @@ CONTAINS
          ENDDO
       ENDDO
 
+      WRITE(6,*) '@@@ point 2344'
       CALL TR_IONIZATION(NR)
       CALL TR_CHARGE_EXCHANGE(NR)
+      WRITE(6,*) '@@@ point 2345'
 
       CALL tr_set_profn(nr,t)
       CALL tr_set_proft(nr,t)
+      WRITE(6,*) '@@@ point 2346'
 
 !     ***** RHS Vector *****
 
@@ -554,18 +569,21 @@ CONTAINS
      &                              +C(NV,NW,NR)*XV(NW,NR+1))
       ENDDO
       ENDDO
+      WRITE(6,*) '@@@ point 2347',NNBMAX,NNFMAX
 
 !     ***** Evolution of fast ion components *****
 
-         DO NNB=1,NNBMAX
+      DO NNB=1,NNBMAX
+            WRITE(6,*) '@@@ point 23471',NNB,TAUB(NNB,NR)
             Y(NNB,NR)=(1.D0-PRV/TAUB(NNB,NR))*YV(NNB,NR) &
                  +PNB_NNBNR(NNB,NR)*DT/(RKEV*1.D20)
             AY(NNB,NR)=1.D0+ADV/TAUB(NNB,NR)
          END DO
          
          DO NNF=1,NNFMAX
+            WRITE(6,*) '@@@ point 23472',NNF,TAUF(NNF,NR)
             Y(NNBMAX+NNF,NR)=(1.D0-PRV/TAUF(NNF,NR))*YV(NNBMAX+NNF,NR) &
-                 +PNF_NSNNFNR(NS_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
+                 +PNF_NSNNFNR(NSP1_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
             AY(NNBMAX+NNF,NR)=1.D0+ADV/TAUF(NNF,NR)
 !            IF(NR.LE.2) &
 !                 WRITE(26,'(A12,I4,I3,4ES12.4)') 'YV,PNF,Y,AY:',NT,NR, &
@@ -579,6 +597,7 @@ CONTAINS
             AZ(NS,NR)=1.D0+ADV/TAUK(NR)
          ENDDO
       ENDIF
+      WRITE(6,*) '@@@ point 2348'
 
 !          +---------------------+
 !    ***   |   NR=2 to NRMAX-1   |   ***
@@ -631,7 +650,9 @@ CONTAINS
          ENDDO
          ENDDO
 
-!     ***** Evolution of fast ion components *****
+         WRITE(6,*) '@@@ point 2349'
+
+      !     ***** Evolution of fast ion components *****
 
          DO NNB=1,NNBMAX
             Y(NNB,NR)=(1.D0-PRV/TAUB(NNB,NR))*YV(NNB,NR) &
@@ -640,7 +661,7 @@ CONTAINS
          END DO
          DO NNF=1,NNFMAX
             Y(NNBMAX+NNF,NR)=(1.D0-PRV/TAUF(NNF,NR))*YV(NNBMAX+NNF,NR) &
-                 +PNF_NSNNFNR(NS_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
+                 +PNF_NSNNFNR(NSP1_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
             AY(NNBMAX+NNF,NR)=1.D0+ADV/TAUF(NNF,NR)
 !            IF(NR.LE.2) &
 !                 WRITE(26,'(A12,I4,I3,4ES12.4)') 'YV,PNF,Y,AY:',NT,NR, &
@@ -717,7 +738,7 @@ CONTAINS
       END DO
       DO NNF=1,NNFMAX
          Y(NNBMAX+NNF,NR)=(1.D0-PRV/TAUF(NNF,NR))*YV(NNBMAX+NNF,NR) &
-              +PNF_NSNNFNR(NS_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
+              +PNF_NSNNFNR(NSP1_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
          AY(NNBMAX+NNF,NR)=1.D0+ADV/TAUF(NNF,NR)
       END DO
       IF(MDLTC.NE.0) THEN

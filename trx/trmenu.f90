@@ -20,6 +20,7 @@ CONTAINS
     USE trgout
     USE trfout
     USE trpnf
+    USE libnf
       
     USE libfio
     USE libkio
@@ -33,6 +34,8 @@ CONTAINS
     INTEGER:: NR,NS,NF,NTYPE,id_loop
     REAL(rkind),DIMENSION(npscm),SAVE:: PSCIN_FACTOR=1.D0
     INTEGER:: NPSC
+    INTEGER:: id
+    REAL(rkind):: temp
 
 !     ------ SELECTION OF TASK TYPE ------
 
@@ -79,9 +82,12 @@ CONTAINS
 
     ELSE IF(KID.EQ.'R') THEN
        id_loop=0
+       WRITE(6,*) '@@@ point 1'
        CALL tr_prep(ierr)
        if(ierr.ne.0) GO TO 1
+       WRITE(6,*) '@@@ point 2'
        CALL tr_loop(ierr)
+       WRITE(6,*) '@@@ point 3'
        IF(ierr.NE.0) id_loop=1
          
        INIT=2
@@ -149,9 +155,9 @@ CONTAINS
             
     ELSE IF(KID.EQ.'B') THEN
 7777   CONTINUE
-       WRITE(6,*) '## INPUT T'
-       READ(5,*,END=7779) T
-       WRITE(6,*) '   sigma=',SIGMAM(T,T)
+       WRITE(6,*) '## INPUT id,T(kev)T'
+       READ(5,*,END=7779) id,temp
+       WRITE(6,*) '   sigma=',sigmav_nf(id,temp)
        GOTO 7777
 7779   CONTINUE
 

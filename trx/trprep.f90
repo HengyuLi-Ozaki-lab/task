@@ -14,6 +14,7 @@ CONTAINS
     USE trprof
     USE trbpsd
     USE trmetric
+    USE trpnf
     USE libnf
     IMPLICIT NONE
     INTEGER,INTENT(OUT):: ierr
@@ -26,17 +27,11 @@ CONTAINS
     ! --- Intialize NS_X ---
 
     CALL tr_prep_ns
-          
+              
+    ! --- allocate trcomm variables ---
+    
     NFMAX=NNBMAX+NNFMAX
-    DO NNF=1,NNFMAX
-       IF(model_nnf(nnf).GE. 0.AND.model_nnf(nnf).LT.10) ns_nnf(nnf)=NS_He4
-       IF(model_nnf(nnf).GE.10.AND.model_nnf(nnf).LT.20) ns_nnf(nnf)=NS_T
-       IF(model_nnf(nnf).GE.20.AND.model_nnf(nnf).LT.30) ns_nnf(nnf)=NS_D
-       IF(model_nnf(nnf).GE.30.AND.model_nnf(nnf).LT.40) ns_nnf(nnf)=NS_He3
-       IF(model_nnf(nnf).GE.40.AND.model_nnf(nnf).LT.50) ns_nnf(nnf)=NS_H
-       IF(model_nnf(nnf).GE.50.AND.model_nnf(nnf).LT.60) ns_nnf(nnf)=NS_He4
-    END DO
-
+    WRITE(6,*) '@@@ point 1:nnfmax=',nnfmax
     CALL allocate_trcomm(ierr)
     IF(ierr.NE.0) RETURN
 
@@ -60,26 +55,7 @@ CONTAINS
 
 !     *** initialize fusion reaction ***
 
-    CALL set_usigmav_nf
-
-    SELECT CASE(model_pnf)
-    CASE(1,2)
-       ns_e=1
-       ns_d=2
-       ns_t=3
-       ns_he4=4
-       nnfmax=1
-       model_nnf(1)=id_nf_dt
-    CASE(11,12)
-       ns_e=1
-       ns_d=2
-       ns_t=3
-       ns_he4=4
-       nnfmax=3
-       model_nnf(1)=id_nf_dd1
-       model_nnf(2)=id_nf_dd2
-       model_nnf(3)=id_nf_dt
-    END SELECT
+    CALL tr_prep_pnf
 
 !     *** set initial profile ***
 

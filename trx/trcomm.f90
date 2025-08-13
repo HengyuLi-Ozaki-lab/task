@@ -25,7 +25,7 @@ MODULE trcomm_parm
 
   INTEGER, PARAMETER :: NTM=100001  ! Max number of time steps to save globals
   INTEGER, PARAMETER :: NGM=10001   ! Max number of time steps to save profiles
-  INTEGER, PARAMETER :: NCTM=110   ! Max number of save variables in globals
+  INTEGER, PARAMETER :: NCTM=130    ! Max number of save variables in globals
   INTEGER, PARAMETER :: NCGM=30    ! Max number of save variables in profiles
   INTEGER, PARAMETER :: NCRTM=75   ! Max number of save variables in profiles
   
@@ -147,7 +147,7 @@ MODULE trcomm_parm
        PSCIN_MAX
 
   INTEGER:: model_pnf
-  INTEGER:: NNFMAX,model_nnf(nnfm),ns_nnf(nnfm)
+  INTEGER:: NNFMAX,model_nnf(nnfm)
   INTEGER:: model_nf_dd1,model_nf_dd2,model_nf_the3
 
   ! === current drive parameters ===
@@ -364,7 +364,11 @@ MODULE trcomm
        SNB_TOT,PNB_TOT,PNBIN_TOT,PNBCL_TOT,AJNB_TOT
 
   ! --- nuclear fusion reaction ---
-  
+
+  INTEGER,DIMENSION(:),ALLOCATABLE :: &  ! nss: source, nsp: product species
+       nss1_nnf,nss2_nnf,nsp1_nnf,nsp2_nnf,nsp3_nnf,nspmax_nnf
+  REAL(rkind),DIMENSION(:),ALLOCATABLE :: &
+       eng1_nnf,eng2_nnf,eng3_nnf
   REAL(rkind), DIMENSION(:,:,:),   ALLOCATABLE :: & ! (NS,NNF,NR)
        SNF_NSNNFNR,PNF_NSNNFNR,PNFIN_NSNNFNR,PNFCL_NSNNFNR
   REAL(rkind), DIMENSION(:,:),     ALLOCATABLE :: & ! (NS,NR)
@@ -671,6 +675,16 @@ MODULE trcomm
       IF(IERR.NE.0) GOTO 900
 
 
+
+    ALLOCATE(nss1_nnf(nnfmax),nss2_nnf(nnfmax),STAT=ierr)
+      IF(IERR.NE.0) GOTO 900
+    ALLOCATE(nsp1_nnf(nnfmax),nsp2_nnf(nnfmax),nsp3_nnf(nnfmax),STAT=ierr)
+      IF(IERR.NE.0) GOTO 900
+    ALLOCATE(eng1_nnf(nnfmax),eng2_nnf(nnfmax),eng3_nnf(nnfmax),STAT=ierr)
+      IF(IERR.NE.0) GOTO 900
+    ALLOCATE(nspmax_nnf(nnfmax),STAT=ierr)
+      IF(IERR.NE.0) GOTO 900
+
     ALLOCATE(SNF_NSNNFNR(NSMAX,NNFMAX,NRMAX),STAT=IERR)
       IF(IERR.NE.0) GOTO 900
     ALLOCATE(PNF_NSNNFNR(NSMAX,NNFMAX,NRMAX),STAT=IERR)
@@ -937,6 +951,18 @@ MODULE trcomm
     DEALLOCATE(SNB_NS,PNB_NS,PNBIN_NS,PNBCL_NS)
     DEALLOCATE(SNB_NNB,PNB_NNB,PNBIN_NNB,PNBCL_NNB)
     DEALLOCATE(SNB_NR,PNB_NR,PNBIN_NR,PNBCL_NR)
+
+    DEALLOCATE(nss1_nnf,nss2_nnf,nsp1_nnf,nsp2_nnf,nsp3_nnf)
+    DEALLOCATE(nspmax_nnf)
+    DEALLOCATE(eng1_nnf,eng2_nnf,eng3_nnf)
+    DEALLOCATE(SNF_NSNNFNR,PNF_NSNNFNR,PNFIN_NSNNFNR,PNFCL_NSNNFNR)
+    DEALLOCATE(SNF_NNFNR,PNF_NNFNR,PNFIN_NNFNR,PNFCL_NNFNR)
+    DEALLOCATE(SNF_NSNR,PNF_NSNR,PNFIN_NSNR,PNFCL_NSNR)
+    DEALLOCATE(SNF_NSNNF,PNF_NSNNF,PNFIN_NSNNF,PNFCL_NSNNF)
+    DEALLOCATE(SNF_NS,PNF_NS,PNFIN_NS,PNFCL_NS)
+    DEALLOCATE(SNF_NNF,PNF_NNF,PNFIN_NNF,PNFCL_NNF)
+    DEALLOCATE(SNF_NR,PNF_NR,PNFIN_NR,PNFCL_NR)
+    DEALLOCATE(SNFNN_NNFNR,PNFNN_NNFNR)
 
     DEALLOCATE(POH,PRB,PRC,PRL,PRSUM,PCX,PIE)
     DEALLOCATE(AJNB_NNBNR,PEC_NEC,PLH_NLH,PIC_NIC)

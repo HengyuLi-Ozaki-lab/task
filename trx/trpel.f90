@@ -85,7 +85,8 @@
 
       SUBROUTINE TRPELB(npel)
 
-      USE TRCOMM
+        USE TRCOMM
+        USE trlib
       IMPLICIT NONE
       INTEGER,INTENT(IN):: npel
       REAL(rkind)    :: A1, A2, A3, AMB, AMF, AMPEL, ANE,&
@@ -93,7 +94,6 @@
             RPEL, RPELDOT, RPELPRE, SPEL, TAUS, TE, VCR, VB, VF, SUM, RNZZM
       REAL(rkind),ALLOCATABLE:: VB_NNB(:)
       INTEGER :: NR,NS,NNB,NNF,NSB,NSF
-      REAL(rkind)    :: COULOG   ! FUNCTION
 
       IF(NNBMAX.GT.0) ALLOCATE(VB_NNB(NNBMAX))
 
@@ -135,7 +135,7 @@
          A3=A3+SNB_NNBNR(NNB,NR)*1.D20*AMB*((VB/VCR)**3-LOG(1.D0+(VB/VCR)**3))
       END DO
       DO NNF=1,NNFMAX
-         NSF=NS_NNF(NNF)
+         NSF=NSP1_NNF(NNF)
          AMF=PA(NSF)*AMP
          TAUS = 0.2D0*PA(NSF)*ABS(TE)**1.5D0 &
               /(PZ(NSF)**2*ANE*COULOG(NS_e,NSF,ANE,TE))

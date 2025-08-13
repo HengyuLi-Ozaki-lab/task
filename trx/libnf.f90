@@ -2,7 +2,7 @@
 
 MODULE libnf_local
   USE bpsd_kinds
-  INTEGER:: id_nf_local
+  INTEGER:: id_nf_local,pm_local
   REAL(rkind):: temperature_local
 END MODULE libnf_local
 
@@ -36,15 +36,20 @@ MODULE libnf
   
   ! Fusion reaction id
   
-  INTEGER,PARAMETER,PUBLIC:: id_nf_DD1=1  ! D + D -> T + p
-  INTEGER,PARAMETER,PUBLIC:: id_nf_DD2=2  ! D + D -> He3 + n
-  INTEGER,PARAMETER,PUBLIC:: id_nf_DT =3  ! D + T -> He4 + n
-  INTEGER,PARAMETER,PUBLIC:: id_nf_DHe3=4 ! D + He3 -> He4 + p
-  INTEGER,PARAMETER,PUBLIC:: id_nf_TT =5  ! T + T -> He4 + 2n
-  INTEGER,PARAMETER,PUBLIC:: id_nf_THe3=6 ! T + He3 ->
-                                          !    He4 + p + n; He4 + D; He5 + p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DD1= 1  ! D + D -> T + p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DD2= 2  ! D + D -> He3 + n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DT=  3  ! D + T -> He4 + n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DHe3=4  ! D + He3 -> He4 + p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_TT=  5  ! T + T -> He4 + 2n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_THe3=6  ! T + He3 ->
+                                           !    He4 + p + n; He4 + D; He5 + p
 
-  ! Duane coef (NEL Formulary 2019)
+  Integer,DIMENSION(6),PUBLIC:: &
+       nss1_idnf,nss2_idnf,nsp1_idnf,nsp2_idnf,nsp3_idnf,nspmax_idnf
+  REAL(rkind),DIMENSION(6),PUBLIC::  &
+       eng1_idnf,eng2_idnf,eng3_idnf
+
+       ! Duane coef (NEL Formulary 2019)
 
   REAL(rkind),DIMENSION(5,6):: &
        Duane=reshape((/46.097D0, 372.D0, 4.36D-4,  1.220D0, 0.D0, &
@@ -84,8 +89,6 @@ MODULE libnf
 
   ! Mass of incident particle
 
-  REAL(rkind),DIMENSION(6):: am_nf
-  
   REAL(rkind),DIMENSION(4,10):: &
        usvnf_dd,usvnf_dt,usvnf_dhe3,usvnf_tt,usvnf_the3
   REAL(rkind),DIMENSION(10):: &
@@ -93,12 +96,70 @@ MODULE libnf
 
   ! *** library subroutines ***
 
-  PUBLIC sigma_nf          ! sigma_nf(id_nf,energy)
   PUBLIC set_usigmav_nf    ! set_usigmav_nf
+  PUBLIC sigma_nf          ! sigma_nf(id_nf,energy)
   PUBLIC sigmav_nf         ! sigmav_nf(id_nf,temperature)
 
 CONTAINS
   
+  ! --- set spline coefficients for reaction rate sigmav
+
+  SUBROUTINE set_usigmav_nf
+    USE plcomm
+    USE libspl1d
+    IMPLICIT NONE
+    REAL(rkind),DIMENSION(10):: dsvnf
+    INTEGER:: id_nf,ntemp,ierr
+
+    nspmax_idnf(id_nf_dd1)=2
+    nss1_idnf(id_nf_dd1)=NS_D
+    nss2_idnf(id_nf_dd1)=NS_D
+    nsp1_idnf(id_nf_dd1)=NS_He4
+    nsp2_idnf(id_nf_dd1)=NS_H
+    eng1_idnf(id_nf_dd1)=1.01D3  ! keV
+    eng2_idnf(id_nf_dd1)=3.02D3  ! keV
+
+    nspmax_idnf(id_nf_dd2)=2
+    nss1_idnf(id_nf_dd2)=NS_D
+    nss2_idnf(id_nf_dd2)=NS_D
+    nsp1_idnf(id_nf_dd2)=NS_He3
+    nsp2_idnf(id_nf_dd2)=NS_n
+    eng1_idnf(id_nf_dd2)=0.82D3  ! keV
+    eng2_idnf(id_nf_dd2)=2.45D3  ! keV
+
+    nspmax_idnf(id_nf_dt)=2
+    nss1_idnf(id_nf_dt)=NS_D
+    nss2_idnf(id_nf_dt)=NS_T
+    nsp1_idnf(id_nf_dt)=NS_He4
+    nsp2_idnf(id_nf_dt)=NS_n
+    eng1_idnf(id_nf_dt)= 3.5D3  ! keV
+    eng2_idnf(id_nf_dt)=14.1D3  ! keV
+
+    DO ntemp=1,10
+       tempa_log(ntemp)=LOG10(tempa(ntemp))
+    END DO
+    
+    DO id_nf=1,6
+       SELECT CASE(id_nf)
+       CASE(id_nf_dd1,id_nf_dd2)
+          CALL SPL1D(tempa_log,svnf_dd,  dsvnf,usvnf_dd,  10,0,ierr)
+       CASE(id_nf_dt)
+          CALL SPL1D(tempa_log,svnf_dt,  dsvnf,usvnf_dt,  10,0,ierr)
+       CASE(id_nf_dhe3)
+          CALL SPL1D(tempa_log,svnf_dhe3,dsvnf,usvnf_dhe3,10,0,ierr)
+       CASE(id_nf_tt)
+          CALL SPL1D(tempa_log,svnf_tt,  dsvnf,usvnf_tt,  10,0,ierr)
+       CASE(id_nf_the3)
+          CALL SPL1D(tempa_log,svnf_the3,dsvnf,usvnf_the3,10,0,ierr)
+       END SELECT
+       IF(ierr.NE.0) THEN
+          WRITE(6,'(A,I4)') 'XX SPL1D error in set_usvnf: id_nf=',id_nf
+          STOP
+       END IF
+    END DO
+    RETURN
+  END SUBROUTINE set_usigmav_nf
+
   ! --- cross section of nuclear fusion reaction ---
   ! ---     in barn (10^{-28}m^{-2})
   ! ---     as a function of energy in keV
@@ -128,46 +189,6 @@ CONTAINS
     RETURN
   END FUNCTION sigma_nf
   
-  ! --- set spline coefficients for reaction rate sigmav
-
-  SUBROUTINE set_usigmav_nf
-    USE libspl1d
-    IMPLICIT NONE
-    REAL(rkind),DIMENSION(10):: dsvnf
-    INTEGER:: id_nf,ntemp,ierr
-
-    am_nf(id_nf_dd1 )=AMD
-    am_nf(id_nf_dd2 )=AMD
-    am_nf(id_nf_dt  )=AMD
-    am_nf(id_nf_dhe3)=AMD
-    am_nf(id_nf_tt  )=AMT
-    am_nf(id_nf_the3)=AMT
-    
-    DO ntemp=1,10
-       tempa_log(ntemp)=LOG10(tempa(ntemp))
-    END DO
-    
-    DO id_nf=1,6
-       SELECT CASE(id_nf)
-       CASE(id_nf_dd1,id_nf_dd2)
-          CALL SPL1D(tempa_log,svnf_dd,  dsvnf,usvnf_dd,  10,0,ierr)
-       CASE(id_nf_dt)
-          CALL SPL1D(tempa_log,svnf_dt,  dsvnf,usvnf_dt,  10,0,ierr)
-       CASE(id_nf_dhe3)
-          CALL SPL1D(tempa_log,svnf_dhe3,dsvnf,usvnf_dhe3,10,0,ierr)
-       CASE(id_nf_tt)
-          CALL SPL1D(tempa_log,svnf_tt,  dsvnf,usvnf_tt,  10,0,ierr)
-       CASE(id_nf_the3)
-          CALL SPL1D(tempa_log,svnf_the3,dsvnf,usvnf_the3,10,0,ierr)
-       END SELECT
-       IF(ierr.NE.0) THEN
-          WRITE(6,'(A,I4)') 'XX SPL1D error in set_usvnf: id_nf=',id_nf
-          STOP
-       END IF
-    END DO
-    RETURN
-  END SUBROUTINE set_usigmav_nf
-
   ! --- reaction rate of nuclear fusion: sigmav  ---
   ! ---     as a function of temperature in keV
 
@@ -246,6 +267,7 @@ CONTAINS
   ! --- sigmav for energy --- X=energy/temperature
 
   FUNCTION sigmav_nf_local(X)
+    USE trcomm,ONLY: RKEV
     USE libnf_local
     IMPLICIT NONE
     REAL(rkind),INTENT(IN):: X
@@ -253,7 +275,7 @@ CONTAINS
     REAL(rkind):: energy,velocity
 
     energy=temperature_local*X
-    velocity=SQRT(2.D0*energy/am_nf(id_nf_local))
+    velocity=SQRT(2.D0*energy*RKEV/pm_local)
     sigmav_nf_local=sigma_nf(id_nf_local,energy)*velocity
     RETURN
   END FUNCTION sigmav_nf_local
@@ -261,6 +283,7 @@ CONTAINS
 
   FUNCTION sigmav_nf_int(id_nf,temperature)
 
+    USE plcomm
     USE libnf_local
     USE libde
     IMPLICIT NONE
@@ -289,6 +312,7 @@ CONTAINS
 
     id_nf_local=id_nf
     temperature_local=temperature
+    pm_local=PA(nsp1_idnf(id_nf))*AMP
 
     H0=1.D-4
     EPS=1.D-6
