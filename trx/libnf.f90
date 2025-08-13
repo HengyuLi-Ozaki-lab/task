@@ -105,7 +105,7 @@ CONTAINS
   ! --- set spline coefficients for reaction rate sigmav
 
   SUBROUTINE set_usigmav_nf
-    USE plcomm
+    USE trcomm
     USE libspl1d
     IMPLICIT NONE
     REAL(rkind),DIMENSION(10):: dsvnf
@@ -114,15 +114,23 @@ CONTAINS
     nspmax_idnf(id_nf_dd1)=2
     nss1_idnf(id_nf_dd1)=NS_D
     nss2_idnf(id_nf_dd1)=NS_D
-    nsp1_idnf(id_nf_dd1)=NS_He4
-    nsp2_idnf(id_nf_dd1)=NS_H
+    nsp1_idnf(id_nf_dd1)=NS_T
+    IF(model_nf_dd1.EQ.1) THEN
+       nsp2_idnf(id_nf_dd1)=NS_H
+    ELSE
+       nsp2_idnf(id_nf_dd1)=NS_He4
+    END IF
     eng1_idnf(id_nf_dd1)=1.01D3  ! keV
     eng2_idnf(id_nf_dd1)=3.02D3  ! keV
 
     nspmax_idnf(id_nf_dd2)=2
     nss1_idnf(id_nf_dd2)=NS_D
     nss2_idnf(id_nf_dd2)=NS_D
-    nsp1_idnf(id_nf_dd2)=NS_He3
+    IF(model_nf_dd2.EQ.1) THEN
+       nsp1_idnf(id_nf_dd2)=NS_He3
+    ELSE
+       nsp1_idnf(id_nf_dd2)=NS_He4
+    END IF
     nsp2_idnf(id_nf_dd2)=NS_n
     eng1_idnf(id_nf_dd2)=0.82D3  ! keV
     eng2_idnf(id_nf_dd2)=2.45D3  ! keV

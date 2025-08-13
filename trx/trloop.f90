@@ -27,23 +27,19 @@ CONTAINS
       ierr=0
       IF(NT.GE.NTMAX) GOTO 9000
 
-      WRITE(6,*) '@@@ point 21'
       CALL tr_eval(NT,IERR)
       IF(IERR.NE.0) GOTO 9000
 
       RIP=RIPS
       IF(NTMAX.NE.0) DIPDT=(RIPE-RIPS)/(DBLE(NTMAX)*DT)
       write(6,'(A,1P4E12.4)') "**RIP,RIPS,RIPE,DIP=",RIP,RIPS,RIPE,DIPDT
-      WRITE(6,*) '@@@ point 22'
 
       call tr_bpsd_get(ierr)
       if(ierr.ne.0) GOTO 9000
-      WRITE(6,*) '@@@ point 23'
 
  1000 CONTINUE
 
       CALL tr_exec(IERR)
-      WRITE(6,*) '@@@ point 241'
       IF(IERR.NE.0) GOTO 9000
       
       DO nr=1,nrmax

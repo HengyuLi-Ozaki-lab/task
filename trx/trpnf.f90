@@ -51,15 +51,12 @@ CONTAINS
     REAL(rkind):: ANE,TE,P1,VC3,VCR,WF,VF,TAUS,HYF
     INTEGER:: ns,nnf,nr
 
-    WRITE(6,*) '@@@ point 21181'
-    
     SNF_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0   ! particle source
     PNFCL_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0 ! collisional transfer in
     SNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron number
     PNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron power
     
     DO nnf=1,nnfmax
-       WRITE(6,*) '@@@ point 21182'
        SELECT CASE(model_nnf(nnf))
        CASE(id_nf_dd1)
           CALL tr_nf_dd1(nnf)
@@ -76,35 +73,26 @@ CONTAINS
        END SELECT
     END DO
 
-    WRITE(6,*) '@@@ point 21183'
     DO NR=1,NRMAX
        ANE= RN(NR,NS_e)
        TE = RT(NR,NS_e)
        P1   = 3.D0*SQRT(0.5D0*PI)*AME/ANE *(ABS(TE)*RKEV/AME)**1.5D0
        VC3=0.D0
-    WRITE(6,*) '@@@ point 21184'
        DO NS=1,NSMAX
           IF(PZ(NS).GT.0.D0) &    ! sum over ions
                VC3=VC3+P1*RN(NR,NS)*PZ(NS)**2/(PA(NS)*AMP)
        END DO
-    WRITE(6,*) '@@@ point 21185'
        VCR  = VC3**(1.D0/3.D0)
        DO nnf=1,nnfmax
-          WRITE(6,*) '@@@ point 21186: nnf,ns=',nnf,ns
           ns=nsp1_nnf(nnf)
           WF = RW(NR,NNBMAX+NNF)
-          WRITE(6,*) '@@@ point 21187: nnf,ns,pA=',nnf,ns,PA(ns)
           VF =SQRT(2.D0*eng1_nnf(nnf)*RKEV/(PA(ns)*AMP))
-          WRITE(6,*) '@@@ point 21188: ns,nnf,ANE,TE=',ns,nnf,ANE,TE
-          WRITE(6,*) '@@@ point 21188: VF,VCR=',VF,VCR
           HYF=HY(VF/VCR)
-          WRITE(6,*) '@@@ point 21189: ns,nnf,ANE,TE=',ns,nnf,ANE,TE
           TAUS = 0.2D0*PA(ns)*ABS(TE)**1.5D0 &
                /(PZ(ns)**2*ANE*COULOG(1,ns,ANE,TE))
           TAUF(NNF,NR)= 0.5D0*TAUS*(1.D0-HYF)
        END DO
     END DO
-    WRITE(6,*) '@@@ point 21189'
           
     ! --- following variables are used in trcalc at every step ---
     

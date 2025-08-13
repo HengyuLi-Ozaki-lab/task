@@ -31,7 +31,7 @@ CONTAINS
     ! --- allocate trcomm variables ---
     
     NFMAX=NNBMAX+NNFMAX
-    WRITE(6,*) '@@@ point 1:nnfmax=',nnfmax
+
     CALL allocate_trcomm(ierr)
     IF(ierr.NE.0) RETURN
 

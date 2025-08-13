@@ -17,8 +17,6 @@
       REAL(rkind):: t_pellet(npelmax)
       REAL(rkind),SAVE:: pellet_time_start_save(1:npelm)=-1.D0
 
-      WRITE(6,*) '@@@ point 2111'
-      
       IF(RHOA.NE.1.D0) NRMAX=NROMAX
       IERR=0
 
@@ -62,9 +60,7 @@
 
 !     *** RADIAL ELECTRIC FIELD ***
 
-      WRITE(6,*) '@@@ point 2112'
       CALL TRERAD
-      WRITE(6,*) '@@@ point 2113'
 
       DO npel=1,npelmax
          IF(pellet_time_start(npel).NE.pellet_time_start_save(npel)) THEN
@@ -94,10 +90,8 @@
             T.GE.PELTIM(npel)-0.5D0*DT) CALL TRPELT(npel)
       END DO
 
-      WRITE(6,*) '@@@ point 2114'
       CALL TRPSC
 
-      WRITE(6,*) '@@@ point 2115'
       CALL TRZEFF
 
       IF(MDLPR.GT.0) CALL TR_CYTRAN
@@ -107,9 +101,7 @@
          IF(IERR.NE.0) RETURN
       ENDIF
 
-      WRITE(6,*) '@@@ point 2116'
       CALL TRCOEF
-      WRITE(6,*) '@@@ point 2117'
       CALL TRLOSS
       CALL TRPWRF
       CALL TRPWNB
@@ -133,9 +125,7 @@
          end select
       ENDIF
 
-      WRITE(6,*) '@@@ point 2118'
       CALL tr_pnf
-      WRITE(6,*) '@@@ point 2119'
       
       CALL TRAJOH
 

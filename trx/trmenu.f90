@@ -82,12 +82,9 @@ CONTAINS
 
     ELSE IF(KID.EQ.'R') THEN
        id_loop=0
-       WRITE(6,*) '@@@ point 1'
        CALL tr_prep(ierr)
        if(ierr.ne.0) GO TO 1
-       WRITE(6,*) '@@@ point 2'
        CALL tr_loop(ierr)
-       WRITE(6,*) '@@@ point 3'
        IF(ierr.NE.0) id_loop=1
          
        INIT=2
