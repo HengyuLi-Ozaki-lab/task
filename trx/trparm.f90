@@ -17,8 +17,7 @@ MODULE trparm
        CHP,CK0,CK1,CWEB,CALF,CKALFA,CKBETA,CKGUMA, &
        DT,NRMAX,NTMAX,NTSTEP,NGTSTP,NGRSTP,NGPST,TSST, &
        EPSLTR,LMAXTR,TPRST,MDLST,IZERO, &
-       model_pnf,nnfmax,model_nnf, &
-       model_nf_dd1,model_nf,dd2,model_nf_the3, &
+       model_pnf, &
        NNBMAX,NECMAX,NLHMAX,NICMAX,NPELMAX,NPSCMAX, &
        model_nnb,MDLEC,MDLLH,MDLIC,MDLPEL,MDLPSC, &
        PNBIN,PNBR0,PNBRW,PNBCD,PNBVY,PNBVW,PNBENG,PNBRTG, &
@@ -128,7 +127,7 @@ CONTAINS
              ' ',8X,'AD0,CHP,MDLAD,MDLAVK,CKGUMA,MDLKAI,MDLETA,MDLJBS'/ &
              ' ',8X,'DT,NRMAX,NTMAX,NTSTEP,NGTSTP,NGRSTP,NGPST,TSST'/ &
              ' ',8X,'EPSLTR,LMAXTR,PRST,MDLST,MDLNF,IZERO,PBSCD,MDLCD'/ &
-             ' ',8X,'PNBTOT,PNBR0,PNBRW,PNBVY,PNBVW,PNBENG,PNBRTG'/ &
+             ' ',8X,'PNBIN,PNBR0,PNBRW,PNBVY,PNBVW,PNBENG,PNBRTG'/ &
              ' ',8X,'PNBCD,MDLNB,NSNNB,NRNBMAX'/ &
              ' ',8X,'PECIN,PECR0,PECRW,PECTOE,PECNPR,PECCD,MDLEC'/ &
              ' ',8X,'PLHIN,PLHR0,PLHRW,PLHTOE,PLHNPR,PLHCD,MDLLH'/ &
@@ -137,7 +136,7 @@ CONTAINS
              ' ',8X,'PELTIM,PELPAT'/ &
              ' ',8X,'pellet_time_start,pellet_time_interval'/ &
              ' ',8X,'number_of_pellet_repeat'/ &
-             ' ',8X,'model_pnf,nnf_max,model_nnf'/ &
+             ' ',8X,'model_pnf'/ &
              ' ',8X,'model_nf_dd1,model_nf_dd2,model_nf_the3'/ &
              ' ',8X,'MDLPR,SYNCABS,SYNCSELF,MODELG,NTEQIT'/&
              ' ',8X,'MDEDGE,MDLIMP,model_prof,knam_prof,'/ &

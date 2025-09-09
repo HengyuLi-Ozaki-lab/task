@@ -565,7 +565,7 @@ CONTAINS
          
          DO NNF=1,NNFMAX
             Y(NNBMAX+NNF,NR)=(1.D0-PRV/TAUF(NNF,NR))*YV(NNBMAX+NNF,NR) &
-                 +PNF_NSNNFNR(NSP1_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
+                 +PNF_NSNNFNR(NSP_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
             AY(NNBMAX+NNF,NR)=1.D0+ADV/TAUF(NNF,NR)
 !            IF(NR.LE.2) &
 !                 WRITE(26,'(A12,I4,I3,4ES12.4)') 'YV,PNF,Y,AY:',NT,NR, &
@@ -640,7 +640,7 @@ CONTAINS
          END DO
          DO NNF=1,NNFMAX
             Y(NNBMAX+NNF,NR)=(1.D0-PRV/TAUF(NNF,NR))*YV(NNBMAX+NNF,NR) &
-                 +PNF_NSNNFNR(NSP1_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
+                 +PNF_NSNNFNR(NSP_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
             AY(NNBMAX+NNF,NR)=1.D0+ADV/TAUF(NNF,NR)
 !            IF(NR.LE.2) &
 !                 WRITE(26,'(A12,I4,I3,4ES12.4)') 'YV,PNF,Y,AY:',NT,NR, &
@@ -717,7 +717,7 @@ CONTAINS
       END DO
       DO NNF=1,NNFMAX
          Y(NNBMAX+NNF,NR)=(1.D0-PRV/TAUF(NNF,NR))*YV(NNBMAX+NNF,NR) &
-              +PNF_NSNNFNR(NSP1_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
+              +PNF_NSNNFNR(NSP_NNF(NNF),NNF,NR)*DT/(RKEV*1.D20)
          AY(NNBMAX+NNF,NR)=1.D0+ADV/TAUF(NNF,NR)
       END DO
       IF(MDLTC.NE.0) THEN

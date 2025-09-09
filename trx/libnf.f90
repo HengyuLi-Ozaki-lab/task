@@ -10,44 +10,58 @@ MODULE libnf
   USE bpsd_kinds
   USE bpsd_constants
 
-  ! model_pnf=0:     no fusion reaction
-
-  ! model_pnf=1,2:   DT -> He4, n
-  !                       D bulk, T bulk
-  ! model_pnf=3,4:   DT -> He4, n
-  !                       D beam: D bulk, T bulk
-  ! model_pnf=5,6:   DT -> He4, n
-  !                       T beam: D bulk, T bulk
-  ! model_pnf=7,8:   DT -> He4, n
-  !                       D beam , T beam: D bulk, T bulk
-
-  ! model_pnf=11,12: DT,DD: -> T n (He3 -> He4, p -> He4/2)
-  !                       D bulk, T bulk
-  ! model_pnf=13,14: DT,DD: -> T n (He3 -> He4, p -> He4/2)
-  !                       D beam: D bulk, T bulk
-  ! model_pnf=15,16: DT,DD: -> T n (He3 -> He4, p -> He4/2)
-  !                       T beam: D bulk, T bulk
-  ! model_pnf=17,18: DT,DD: -> T n (He3 -> He4, p -> He4/2)
-  !                       D beam, T beam: D bulk, T bulk
-
-  ! model_pnf=2X :   DT,DD: D T He4 + He3 H
-  ! model_pnf=3X3:   DT,DD,DHe3,TT,He3T: D T He + He3 H
-
+  ! Fusion model
+  !   model_pnf=0 : no fusion reaction
+  !   model_pnf=1 : D + T -> He4 + n              nnfmax=1  nsmax=4 DT
+  !   model_pnf=2 : D + D -> T + p                nnfmax=4  nsmax=6 DD1 DD2
+  !                 D + D -> He3 + n                                DD3
+  !                 D + T -> He4 + n                                DT
+  !   model_pnf=3 : D + D -> T + p                nnfmax=6  nsmax=6 DD1 DD2
+  !                 D + D -> He3 + n                                DD3
+  !                 D + T -> He4 + n                                DT
+  !                 D + He3 -> He4 + p                              DHe31 DHe32
+  !   model_pnf=4 : D + D -> T + p                nnfmax=13 nsmax=7 DD1 DD2
+  !                 D + D -> He3 + n                                DD3
+  !                 D + T -> He4 + n                                DT
+  !                 D + He3 -> He4 + p                              DH31 DHe32
+  !                 T + T -> He4 + 2n                               TT
+  !                 T + He3 -> He4 + p + n                          THe31 THe32
+  !                 T + He3 -> He4 + D                              THe33 THe34
+  !                 T + He3 -> He5 + p                              THe35 THe36
   
+  !   model_pnf=12: D + D -> T + p   | T + He4/2  nnfmax=4  nsmax=4 DD1 DD2
+  !                 D + D -> He3 + n ! He4 + n                      DD3
+  !                 D + T -> He4 + n                                DT
+  !   model_pnf=14: D + D -> T + p   ! T +He4/2   nnfmax=13 nsmax=4 DD1 DD2
+  !                 D + D -> He3 + n ! He4 + n                      DD3
+  !                 D + T -> He4 + n                                DT
+  !                 D + He3 -> He4 + p                              DHe31 DHe32
+  !                 T + T -> He4 + 2n                               TT
+  !                 T + He3 -> He4 + p + n                          THe31 THe32
+  !                 T + He3 -> He4 + D                              THe33 THe34
+  !                 T + He3 -> He5 + p ! He4 + p                    THe35 THe36
   ! Fusion reaction id
   
-  INTEGER,PARAMETER,PUBLIC:: id_nf_DD1= 1  ! D + D -> T + p
-  INTEGER,PARAMETER,PUBLIC:: id_nf_DD2= 2  ! D + D -> He3 + n
-  INTEGER,PARAMETER,PUBLIC:: id_nf_DT=  3  ! D + T -> He4 + n
-  INTEGER,PARAMETER,PUBLIC:: id_nf_DHe3=4  ! D + He3 -> He4 + p
-  INTEGER,PARAMETER,PUBLIC:: id_nf_TT=  5  ! T + T -> He4 + 2n
-  INTEGER,PARAMETER,PUBLIC:: id_nf_THe3=6  ! T + He3 ->
-                                           !    He4 + p + n; He4 + D; He5 + p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DT=    1 ! D + T   -> <He4> +  n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DD1=   2 ! D + D   -> <T>   +  p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DD2=   3 ! D + D   ->  T    + <p> 
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DD3=   4 ! D + D   -> <He3> +  n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DHe31= 5 ! D + He3 -> <He4> +  p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_DHe32= 6 ! D + He3 ->  He4  + <p>
+  INTEGER,PARAMETER,PUBLIC:: id_nf_TT=    7 ! T + T   -> <He4> + 2n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_THe31= 8 ! T + He3 -> <He4> +  p  + n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_THe32= 9 ! T + He3 ->  He4  + <p> + n
+  INTEGER,PARAMETER,PUBLIC:: id_nf_THe33=10 ! T + He3 -> <He4> +  D
+  INTEGER,PARAMETER,PUBLIC:: id_nf_THe34=11 ! T + He3 ->  He4  + <D>
+  INTEGER,PARAMETER,PUBLIC:: id_nf_THe35=12 ! T + He3 -> <He5> +  p
+  INTEGER,PARAMETER,PUBLIC:: id_nf_THe36=13 ! T + He3 ->  He5  + <p>
 
-  Integer,DIMENSION(6),PUBLIC:: &
-       nss1_idnf,nss2_idnf,nsp1_idnf,nsp2_idnf,nsp3_idnf,nspmax_idnf
-  REAL(rkind),DIMENSION(6),PUBLIC::  &
-       eng1_idnf,eng2_idnf,eng3_idnf
+  INTEGER,DIMENSION(:),ALLOCATABLE:: id_nf_nnf
+  
+  Integer,DIMENSION(13),PUBLIC:: &
+       ns1_idnf,ns2_idnf,nsp_idnf
+  REAL(rkind),DIMENSION(13),PUBLIC::  &
+       wgt_idnf,eng_idnf,enn_idnf
 
        ! Duane coef (NEL Formulary 2019)
 
@@ -109,62 +123,227 @@ CONTAINS
     USE libspl1d
     IMPLICIT NONE
     REAL(rkind),DIMENSION(10):: dsvnf
-    INTEGER:: id_nf,ntemp,ierr
+    INTEGER:: ntemp,id,ierr
 
-    nspmax_idnf(id_nf_dd1)=2
-    nss1_idnf(id_nf_dd1)=NS_D
-    nss2_idnf(id_nf_dd1)=NS_D
-    nsp1_idnf(id_nf_dd1)=NS_T
-    IF(model_nf_dd1.EQ.1) THEN
-       nsp2_idnf(id_nf_dd1)=NS_H
+    SELECT CASE(model_pnf)
+    CASE(0)
+       nnfmax=0
+       RETURN
+    CASE(1)
+       nnfmax=1
+    CASE(2,12)
+       nnfmax=4
+    CASE(3)
+       nnfmax=6
+    CASE(4,14)
+       nnfmax=13
+    CASE DEFAULT
+       WRITE(6,*) 'XX Error libnf: undefined model_pnf: model_pnf=',model_pnf
+       STOP
+    END SELECT
+
+    IF(ALLOCATED(id_nf_nnf)) DEALLOCATE(id_nf_nnf)
+    ALLOCATE(id_nf_nnf(nnfmax))
+
+    SELECT CASE(model_pnf)
+    CASE(1)
+       id_nf_nnf(1)=id_nf_dt
+    CASE(2,12)
+       id_nf_nnf(1)=id_nf_dt
+       id_nf_nnf(2)=id_nf_dd1
+       id_nf_nnf(3)=id_nf_dd2
+       id_nf_nnf(4)=id_nf_dd3
+    CASE(3)
+       id_nf_nnf(1)=id_nf_dt
+       id_nf_nnf(2)=id_nf_dd1
+       id_nf_nnf(3)=id_nf_dd2
+       id_nf_nnf(4)=id_nf_dd3
+       id_nf_nnf(5)=id_nf_dhe31
+       id_nf_nnf(6)=id_nf_dhe32
+    CASE(4,14)
+       id_nf_nnf(1)=id_nf_dt
+       id_nf_nnf(2)=id_nf_dd1
+       id_nf_nnf(3)=id_nf_dd2
+       id_nf_nnf(4)=id_nf_dd3
+       id_nf_nnf(5)=id_nf_dhe31
+       id_nf_nnf(6)=id_nf_dhe32
+       id_nf_nnf(7)=id_nf_tt
+       id_nf_nnf(8)=id_nf_the31
+       id_nf_nnf(9)=id_nf_the32
+       id_nf_nnf(10)=id_nf_the33
+       id_nf_nnf(11)=id_nf_the34
+       id_nf_nnf(12)=id_nf_the35
+       id_nf_nnf(13)=id_nf_the36
+    CASE DEFAULT
+       WRITE(6,*) 'XX Error libnf: undefined model_pnf: model_pnf=',model_pnf
+       STOP
+    END SELECT
+
+    SELECT CASE(model_pnf)
+    CASE(1,12,13)
+       IF(NS_D*NS_T*NS_He4.EQ.0) THEN
+          IF(NS_D.EQ.0) WRITE(6,*)   'XX Error: libnf: NS_D=0'
+          IF(NS_T.EQ.0) WRITE(6,*)   'XX Error: libnf: NS_T=0'
+          IF(NS_He4.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He4=0'
+          STOP
+       END IF
+    CASE(2,3)
+       IF(NS_D*NS_T*NS_He4*NS_H*NS_He3.EQ.0) THEN
+          IF(NS_D.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_D=0'
+          IF(NS_T.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_T=0'
+          IF(NS_H.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_H=0'
+          IF(NS_He4.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He4=0'
+          IF(NS_He3.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He3=0'
+          STOP
+       END IF
+    CASE(4)
+       IF(NS_D*NS_T*NS_He4*NS_H*NS_He3*NS_He5.EQ.0) THEN
+          IF(NS_D.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_D=0'
+          IF(NS_T.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_T=0'
+          IF(NS_H.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_H=0'
+          IF(NS_He4.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He4=0'
+          IF(NS_He3.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He3=0'
+          IF(NS_He5.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He5=0'
+          STOP
+       END IF
+    CASE DEFAULT
+       WRITE(6,*) 'XX Error libnb: undefined model_pnf: model_pnf=',model_pnf
+       STOP
+    END SELECT
+
+    
+    
+    ns1_idnf(id_nf_dt)=NS_D
+    ns2_idnf(id_nf_dt)=NS_T
+    wgt_idnf(id_nf_dt)=1.0D0
+    nsp_idnf(id_nf_dt)=NS_He4
+    eng_idnf(id_nf_dt)=3.5D3*RKEV
+    enn_idnf(id_nf_dt)=14.1D3*RKEV
+
+    ns1_idnf(id_nf_dd1)=NS_D
+    ns2_idnf(id_nf_dd1)=NS_D
+    wgt_idnf(id_nf_dd1)=0.5D0
+    nsp_idnf(id_nf_dd1)=NS_T
+    eng_idnf(id_nf_dd1)=1.01D3*RKEV
+    enn_idnf(id_nf_dd1)=0.D0
+    
+    ns1_idnf(id_nf_dd2)=NS_D
+    ns2_idnf(id_nf_dd2)=NS_D
+    wgt_idnf(id_nf_dd2)=0.5D0
+    IF(model_pnf.EQ.12) THEN
+       nsp_idnf(id_nf_dd2)=NS_He4
     ELSE
-       nsp2_idnf(id_nf_dd1)=NS_He4
+       nsp_idnf(id_nf_dd2)=NS_H
     END IF
-    eng1_idnf(id_nf_dd1)=1.01D3  ! keV
-    eng2_idnf(id_nf_dd1)=3.02D3  ! keV
+    eng_idnf(id_nf_dd2)=3.02D3*RKEV
+    enn_idnf(id_nf_dd3)=0.D0
 
-    nspmax_idnf(id_nf_dd2)=2
-    nss1_idnf(id_nf_dd2)=NS_D
-    nss2_idnf(id_nf_dd2)=NS_D
-    IF(model_nf_dd2.EQ.1) THEN
-       nsp1_idnf(id_nf_dd2)=NS_He3
+    ns1_idnf(id_nf_dd3)=NS_D
+    ns2_idnf(id_nf_dd3)=NS_D
+    wgt_idnf(id_nf_dd3)=0.5D0
+    IF(model_pnf.EQ.12) THEN
+       nsp_idnf(id_nf_dd3)=NS_He3
     ELSE
-       nsp1_idnf(id_nf_dd2)=NS_He4
+       nsp_idnf(id_nf_dd3)=NS_He4
     END IF
-    nsp2_idnf(id_nf_dd2)=NS_n
-    eng1_idnf(id_nf_dd2)=0.82D3  ! keV
-    eng2_idnf(id_nf_dd2)=2.45D3  ! keV
+    eng_idnf(id_nf_dd3)=0.82D3*RKEV
+    enn_idnf(id_nf_dd3)=2.45D3*RKEV
 
-    nspmax_idnf(id_nf_dt)=2
-    nss1_idnf(id_nf_dt)=NS_D
-    nss2_idnf(id_nf_dt)=NS_T
-    nsp1_idnf(id_nf_dt)=NS_He4
-    nsp2_idnf(id_nf_dt)=NS_n
-    eng1_idnf(id_nf_dt)= 3.5D3  ! keV
-    eng2_idnf(id_nf_dt)=14.1D3  ! keV
+    IF(model_pnf.GE.3) THEN
+       ns1_idnf(id_nf_dhe31)=NS_D
+       ns2_idnf(id_nf_dhe31)=NS_He3
+       wgt_idnf(id_nf_dhe31)=1.D0
+       nsp_idnf(id_nf_dhe31)=NS_He4
+       eng_idnf(id_nf_dhe31)=3.6D3*RKEV
+       enn_idnf(id_nf_dhe31)=0.D0
+
+       ns1_idnf(id_nf_dhe32)=NS_D
+       ns2_idnf(id_nf_dhe32)=NS_He3
+       wgt_idnf(id_nf_dhe32)=1.D0
+       nsp_idnf(id_nf_dhe32)=NS_H
+       eng_idnf(id_nf_dhe32)=14.7D3*RKEV
+       enn_idnf(id_nf_dhe32)=0.D0
+
+       ns1_idnf(id_nf_tt)=NS_T
+       ns2_idnf(id_nf_tt)=NS_T
+       wgt_idnf(id_nf_tt)=1.D0
+       nsp_idnf(id_nf_tt)=NS_He4
+       eng_idnf(id_nf_tt)=1.25D3*RKEV  ! 11.3MeV*0.25/2.25
+       enn_idnf(id_nf_tt)=10.05D3*RKEV ! 11.3Mev*2.00/2.25
+
+       ns1_idnf(id_nf_the31)=NS_T
+       ns2_idnf(id_nf_the31)=NS_He3
+       wgt_idnf(id_nf_the31)=0.51D0
+       nsp_idnf(id_nf_the31)=NS_He4
+       eng_idnf(id_nf_the31)=1.34D3*RKEV ! 12.1MeV*0.25/2.25
+       enn_idnf(id_nf_the31)=5.38D3*RKEV ! 12.1Mev*1.00/2.25
+
+       ns1_idnf(id_nf_the32)=NS_T
+       ns2_idnf(id_nf_the32)=NS_He3
+       wgt_idnf(id_nf_the32)=0.51D0
+       IF(model_pnf.EQ.14) THEN
+          nsp_idnf(id_nf_the32)=NS_He4
+       ELSE
+          nsp_idnf(id_nf_the32)=NS_H
+       END IF
+       eng_idnf(id_nf_the32)=5.38D3*RKEV ! 12.1MeV*1.0/2.25
+       enn_idnf(id_nf_the32)=0.D0
+
+       ns1_idnf(id_nf_the33)=NS_T
+       ns2_idnf(id_nf_the33)=NS_He3
+       wgt_idnf(id_nf_the33)=0.43D0
+       nsp_idnf(id_nf_the33)=NS_He4
+       eng_idnf(id_nf_the33)=4.8D3*RKEV
+       enn_idnf(id_nf_the33)=0.D0
+
+       ns1_idnf(id_nf_the34)=NS_T
+       ns2_idnf(id_nf_the34)=NS_He3
+       wgt_idnf(id_nf_the34)=0.43D0
+       nsp_idnf(id_nf_the34)=NS_D
+       eng_idnf(id_nf_the34)=9.58D3*RKEV
+       enn_idnf(id_nf_the34)=0.D0
+
+       ns1_idnf(id_nf_the35)=NS_T
+       ns2_idnf(id_nf_the35)=NS_He3
+       wgt_idnf(id_nf_the35)=0.06D0
+       nsp_idnf(id_nf_the35)=NS_He5
+       eng_idnf(id_nf_the35)=1.89D3*RKEV
+       enn_idnf(id_nf_the35)=0.D0
+
+       ns1_idnf(id_nf_the36)=NS_T
+       ns2_idnf(id_nf_the36)=NS_He3
+       wgt_idnf(id_nf_the36)=0.06D0
+       nsp_idnf(id_nf_the36)=NS_H
+       eng_idnf(id_nf_the36)=9.46D3*RKEV
+       enn_idnf(id_nf_the36)=0.D0
+    END IF
 
     DO ntemp=1,10
        tempa_log(ntemp)=LOG10(tempa(ntemp))
     END DO
     
-    DO id_nf=1,6
-       SELECT CASE(id_nf)
-       CASE(id_nf_dd1,id_nf_dd2)
-          CALL SPL1D(tempa_log,svnf_dd,  dsvnf,usvnf_dd,  10,0,ierr)
-       CASE(id_nf_dt)
-          CALL SPL1D(tempa_log,svnf_dt,  dsvnf,usvnf_dt,  10,0,ierr)
-       CASE(id_nf_dhe3)
-          CALL SPL1D(tempa_log,svnf_dhe3,dsvnf,usvnf_dhe3,10,0,ierr)
-       CASE(id_nf_tt)
-          CALL SPL1D(tempa_log,svnf_tt,  dsvnf,usvnf_tt,  10,0,ierr)
-       CASE(id_nf_the3)
-          CALL SPL1D(tempa_log,svnf_the3,dsvnf,usvnf_the3,10,0,ierr)
-       END SELECT
-       IF(ierr.NE.0) THEN
-          WRITE(6,'(A,I4)') 'XX SPL1D error in set_usvnf: id_nf=',id_nf
-          STOP
-       END IF
-    END DO
+    CALL SPL1D(tempa_log,svnf_dt,  dsvnf,usvnf_dt,  10,0,ierr)
+    id=1
+    IF(ierr.EQ.0) THEN
+       CALL SPL1D(tempa_log,svnf_dd,  dsvnf,usvnf_dd,  10,0,ierr)
+       id=2
+    ENDIF
+    IF(ierr.EQ.0) THEN
+       CALL SPL1D(tempa_log,svnf_dhe3,dsvnf,usvnf_dhe3,10,0,ierr)
+       id=3
+    END IF
+    IF(ierr.EQ.0) THEN
+       CALL SPL1D(tempa_log,svnf_tt,  dsvnf,usvnf_tt,  10,0,ierr)
+       id=4
+    END IF
+    IF(ierr.EQ.0) THEN
+       CALL SPL1D(tempa_log,svnf_the3,dsvnf,usvnf_the3,10,0,ierr)
+       id=5
+    END IF
+    IF(ierr.NE.0) THEN
+       WRITE(6,'(A,I4)') 'XX SPL1D error in set_usvnf: id=',id
+       STOP
+    END IF
     RETURN
   END SUBROUTINE set_usigmav_nf
 
@@ -209,7 +388,7 @@ CONTAINS
     REAL(rkind):: sigmav_nf,temperature_log
     INTEGER:: ierr
     
-    IF(id_nf.LT.1.OR.id_nf.GT.6) THEN
+    IF(id_nf.LT.1.OR.id_nf.GT.13) THEN
        WRITE(6,'(A,I4)') 'XX sigmav_nf: input error: undefined id_nf: ',id_nf
        STOP
     END IF
@@ -228,15 +407,16 @@ CONTAINS
 
     temperature_log=LOG10(temperature)
     SELECT CASE(id_nf)
-    CASE(id_nf_dd1,id_nf_dd2)
-       CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_dd,10,ierr)
     CASE(id_nf_dt)
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_dt,10,ierr)
-    CASE(id_nf_dhe3)
+    CASE(id_nf_dd1,id_nf_dd2,id_nf_dd3)
+       CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_dd,10,ierr)
+    CASE(id_nf_dhe31,id_nf_dhe32)
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_dhe3,10,ierr)
     CASE(id_nf_tt)
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_tt,10,ierr)
-    CASE(id_nf_the3)
+    CASE(id_nf_the31,id_nf_the32,id_nf_the33, &
+         id_nf_the34,id_nf_the35,id_nf_the36)
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_the3,10,ierr)
     END SELECT
     IF(ierr.NE.0) THEN
@@ -320,7 +500,7 @@ CONTAINS
 
     id_nf_local=id_nf
     temperature_local=temperature
-    pm_local=PA(nsp1_idnf(id_nf))*AMP
+    pm_local=PA(nsp_idnf(id_nf))*AMP
 
     H0=1.D-4
     EPS=1.D-6

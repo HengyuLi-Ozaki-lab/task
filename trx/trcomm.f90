@@ -147,8 +147,6 @@ MODULE trcomm_parm
        PSCIN_MAX
 
   INTEGER:: model_pnf
-  INTEGER:: NNFMAX,model_nnf(nnfm)
-  INTEGER:: model_nf_dd1,model_nf_dd2,model_nf_the3
 
   ! === current drive parameters ===
 
@@ -365,10 +363,12 @@ MODULE trcomm
 
   ! --- nuclear fusion reaction ---
 
+  INTEGER:: NNFMAX
+  INTEGER,DIMENSION(:),ALLOCATABLE:: model_nnf
   INTEGER,DIMENSION(:),ALLOCATABLE :: &  ! nss: source, nsp: product species
-       nss1_nnf,nss2_nnf,nsp1_nnf,nsp2_nnf,nsp3_nnf,nspmax_nnf
+       ns1_nnf,ns2_nnf,nsp_nnf
   REAL(rkind),DIMENSION(:),ALLOCATABLE :: &
-       eng1_nnf,eng2_nnf,eng3_nnf
+       wgt_nnf,eng_nnf,enn_nnf
   REAL(rkind), DIMENSION(:,:,:),   ALLOCATABLE :: & ! (NS,NNF,NR)
        SNF_NSNNFNR,PNF_NSNNFNR,PNFIN_NSNNFNR,PNFCL_NSNNFNR
   REAL(rkind), DIMENSION(:,:),     ALLOCATABLE :: & ! (NS,NR)
@@ -445,7 +445,7 @@ MODULE trcomm
 ! TRGLB
   REAL(rkind)  ::  &
        WBULKT, WTAILT, WPT, AJT, AJOHT, AJNBT, AJRFT, AJBST, AJTTOR, &
-       PINT, POHT, PNBT, PNFT, PNBINT, PNFINT, POUT, PCXT, PIET, &
+       PINT, POHT, POUT, PCXT, PIET, &
        PRBT, PRCT, PRLT, PRSUMT, pntot, &
        PEXST, PRFST, SINT, SIET, SNBT, SNFT, SOUT, VLOOP, ALI, RQ1, &
        RPE, ZEFF0, QF, WPDOT, TAUE1, TAUE2, TAUE89, TAUE98, H98Y2, &
@@ -676,13 +676,11 @@ MODULE trcomm
 
 
 
-    ALLOCATE(nss1_nnf(nnfmax),nss2_nnf(nnfmax),STAT=ierr)
+    ALLOCATE(model_nnf(nnfmax),STAT=ierr)
       IF(IERR.NE.0) GOTO 900
-    ALLOCATE(nsp1_nnf(nnfmax),nsp2_nnf(nnfmax),nsp3_nnf(nnfmax),STAT=ierr)
+    ALLOCATE(ns1_nnf(nnfmax),ns2_nnf(nnfmax),nsp_nnf(nnfmax),STAT=ierr)
       IF(IERR.NE.0) GOTO 900
-    ALLOCATE(eng1_nnf(nnfmax),eng2_nnf(nnfmax),eng3_nnf(nnfmax),STAT=ierr)
-      IF(IERR.NE.0) GOTO 900
-    ALLOCATE(nspmax_nnf(nnfmax),STAT=ierr)
+    ALLOCATE(wgt_nnf(nnfmax),eng_nnf(nnfmax),enn_nnf(nnfmax),STAT=ierr)
       IF(IERR.NE.0) GOTO 900
 
     ALLOCATE(SNF_NSNNFNR(NSMAX,NNFMAX,NRMAX),STAT=IERR)
@@ -952,9 +950,9 @@ MODULE trcomm
     DEALLOCATE(SNB_NNB,PNB_NNB,PNBIN_NNB,PNBCL_NNB)
     DEALLOCATE(SNB_NR,PNB_NR,PNBIN_NR,PNBCL_NR)
 
-    DEALLOCATE(nss1_nnf,nss2_nnf,nsp1_nnf,nsp2_nnf,nsp3_nnf)
-    DEALLOCATE(nspmax_nnf)
-    DEALLOCATE(eng1_nnf,eng2_nnf,eng3_nnf)
+    DEALLOCATE(model_nnf)
+    DEALLOCATE(ns1_nnf,ns2_nnf,nsp_nnf)
+    DEALLOCATE(wgt_nnf,eng_nnf,enn_nnf)
     DEALLOCATE(SNF_NSNNFNR,PNF_NSNNFNR,PNFIN_NSNNFNR,PNFCL_NSNNFNR)
     DEALLOCATE(SNF_NNFNR,PNF_NNFNR,PNFIN_NNFNR,PNFCL_NNFNR)
     DEALLOCATE(SNF_NSNR,PNF_NSNR,PNFIN_NSNR,PNFCL_NSNR)

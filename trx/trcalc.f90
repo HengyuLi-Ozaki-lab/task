@@ -135,6 +135,7 @@
                IF(NS.LE.NSMAX) THEN
                   IF(NS.EQ.NS_e) THEN
                      SSIN(NR,NS_e)= SIE(NR) &
+                          +SNF_NSNR(NS_e,NR) &
                           +SNB_NSNR(NS_e,NR)+SEX(NR,NS_e)+SPSC_NSNR(NS_e,NR)
                   ELSE IF(NS.EQ.NS_D) THEN
                      SSIN(NR,NS_D)= PN(NS_D)*SIE(NR)/(PN(NS_D)+PN(NS_T)) &

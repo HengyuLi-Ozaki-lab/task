@@ -126,13 +126,13 @@ CONTAINS
      &          ' ',3X,'AJT   =',1PD10.3,'  AJOHT =',1PD10.3, &
      &               '  AJNBT =',1PD10.3,'  AJBST =',1PD10.3)
 
-         WRITE(16,1674) PINT,POHT,PNBT, &
+         WRITE(16,1674) PINT,POHT,PNB_TOT, &
      &                PIC_TOT+PLH_TOT+PEC_TOT, &
      &                POUT,PRLT,PCXT,PIET
- 1674    FORMAT(' ',3X,'PINT  =',1PD10.3,'  POHT  =',1PD10.3, &
-     &               '  PNBT  =',1PD10.3,'  PRFT  =',1PD10.3/ &
-     &          ' ',3X,'POUT  =',1PD10.3,'  PRLT  =',1PD10.3, &
-     &               '  PCXT  =',1PD10.3,'  PIETE =',1PD10.3)
+ 1674    FORMAT(' ',3X,'PINT   =',1PD10.3,'  POHT   =',1PD10.3, &
+     &               '  PNB_TOT=',1PD10.3,'  PRF_TOT =',1PD10.3/ &
+     &          ' ',3X,'POUT   =',1PD10.3,'  PRLT   =',1PD10.3, &
+     &               '  PCXT   =',1PD10.3,'  PIETE  =',1PD10.3)
 
       CLOSE(16)
 

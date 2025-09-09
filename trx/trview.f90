@@ -72,11 +72,6 @@ CONTAINS
       WRITE(6,602) 'NGRSTP',NGRSTP,'NGTSTP',NGTSTP,'NGPST ',NGPST, 'IZERO ',IZERO
       WRITE(6,602) 'MDLST ',MDLST, 'MDLCD ',MDLCD
       WRITE(6,630) 'model_pnf   ',model_pnf
-      WRITE(6,630) 'model_nnf   ',model_nnf
-      WRITE(6,630) 'model_nf_dd1',model_nf_dd1
-      WRITE(6,630) 'model_nf_dd2',model_nf_dd2
-      WRITE(6,640) 'model_nf_the3   ',model_nf_the3
-      WRITE(6,630) 'nnfmax      ',nnfmax
 
       IF(MDLIMP.GT.0) THEN
          WRITE(6,602) 'MDLIMP',MDLIMP

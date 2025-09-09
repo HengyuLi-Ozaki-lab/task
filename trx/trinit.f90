@@ -462,54 +462,42 @@ CONTAINS
          ELMENH(NS)=1.D0
       END DO
 
-      !  ==== FUSION REACTION PARAMETERS ====
+  !  ==== FUSION REACTION PARAMETERS ====
 
-      !  nnfmax : number of fusion product id
-
-      !  model_nf_dd1
-      !  model_nnf  : FUSION REACTION MODEL TYPE
-      !        0:OFF
-      !        1:ON He4 (DT) without particle source
-      !        2:ON He4 (DT) with particle source
-      !        3:ON He4 (DT) with NB beam component without particle source
-      !        4:ON He4 (DT) with NB beam component particle source
-      !       11:ON H   (DD) without particle source
-      !       12:ON H   (DD) with particle source
-      !       13:ON H   (DD) with NB beam component without particle source
-      !       14:ON H   (DD) with NB beam component particle source
-      !       21:ON D   (DD) without particle source
-      !       22:ON D   (DD) with particle source
-      !       23:ON D   (DD) with NB beam component without particle source
-      !       24:ON D   (DD) with NB beam component particle source
-      !       31:ON He3 (DD) without particle source
-      !       32:ON He3 (DD) with particle source
-      !       33:ON He3 (DD) with NB beam component without particle source
-      !       34:ON He3 (DD) with NB beam component particle source
-      !       41:ON H   (DHe3) without particle source
-      !       42:ON H   (DHe3) with particle source
-      !       43:ON H   (DHe3) with NB beam component without particle source
-      !       44:ON H   (DHe3) with NB beam component particle source
-      !       51:ON He4 (DHe3) without particle source
-      !       52:ON He4 (DHe3) with particle source
-      !       53:ON He4 (DHe3) with NB beam component without particle source
-      !       54:ON He4 (DHe3) with NB beam component particle source
+  !   model_pnf  : FUSION REACTION MODEL TYPE
       
-      !  model_nf_dd1 =0 : D + D -> T + (He4)/2
-      !                1 : D + D -> T + p
-      !  model_nf_dd2 =0 : D + D -> He4 + n
-      !                1 : D + D -> He3 + n
-      !  model_nf_the3=0 : T + He3 -> He4 + n
-      !                1 : T + He3 -> He5 + n
-
-      model_nf_dd1=0
-      model_nf_dd2=0
-      model_nf_the3=0
+  !   model_pnf=0 : no fusion reaction
+  !   model_pnf=1 : D + T -> He4 + n              nnfmax=1  nsmax=4 DT
+  !   model_pnf=2 : D + D -> T + p                nnfmax=4  nsmax=6 DD1 DD2
+  !                 D + D -> He3 + n                                DD3
+  !                 D + T -> He4 + n                                DT
+  !   model_pnf=3 : D + D -> T + p                nnfmax=6  nsmax=6 DD1 DD2
+  !                 D + D -> He3 + n                                DD3
+  !                 D + T -> He4 + n                                DT
+  !                 D + He3 -> He4 + p                              DHe31 DHe32
+  !   model_pnf=4 : D + D -> T + p                nnfmax=13 nsmax=7 DD1 DD2
+  !                 D + D -> He3 + n                                DD3
+  !                 D + T -> He4 + n                                DT
+  !                 D + He3 -> He4 + p                              DH31 DHe32
+  !                 T + T -> He4 + 2n                               TT
+  !                 T + He3 -> He4 + p + n                          THe31 THe32
+  !                 T + He3 -> He4 + D                              THe33 THe34
+  !                 T + He3 -> He5 + p                              THe35 THe36
+  
+  !   model_pnf=12: D + D -> T + p   | T + He4/2  nnfmax=4  nsmax=4 DD1 DD2
+  !                 D + D -> He3 + n ! He4 + n                      DD3
+  !                 D + T -> He4 + n                                DT
+  !   model_pnf=14: D + D -> T + p                nnfmax=13 nsmax=6 DD1 DD2
+  !                 D + D -> He3 + n                                DD3
+  !                 D + T -> He4 + n                                DT
+  !                 D + He3 -> He4 + p                              DHe31 DHe32
+  !                 T + T -> He4 + 2n                               TT
+  !                 T + He3 -> He4 + p + n                          THe31 THe32
+  !                 T + He3 -> He4 + D                              THe33 THe34
+  !                 T + He3 -> He5 + p ! He4 + p                    THe35 THe36
       
-      nnfmax=1
-      DO nnf=1,nnfm
-         model_nnf(nnf)  = 0
-      END DO
-
+      model_pnf=0
+      
       !     ==== RADIATION ====
 
       !     MDLPR  : MODEL OF RADIATION

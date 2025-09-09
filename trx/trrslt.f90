@@ -416,7 +416,7 @@
       WTAILT=SUM(WFT(1:NFMAX))
 
       WPT =WBULKT+WTAILT
-      PINT=POHT+PNBT+PRFST+PNFT+PEXST
+      PINT=POHT+PNB_TOT+PRF_TOT+PNF_TOT+PEXST
       POUT=PLST+PCXT+PIET+PRBT+PRCT+PRLT
       SINT=SIET+SNBT
       SOUT=SLST
@@ -470,7 +470,7 @@
 
 !     *** Fusion production rate ***
 
-      QF=5.D0*PNFT/(POHT+PNBT+PRFST+PEXST)
+      QF=5.D0*PNF_TOT/(POHT+PNB_TOT+PRF_TOT+PEXST)
 
 !     *** Distance of q=1 surface from magnetic axis ***
 
@@ -910,17 +910,17 @@
 
          WRITE(6,604) PINT,POHT,PNB_TOT,PNF_TOT, &
      &                PIC_TOT,PLH_TOT,PEC_TOT,PRF_TOT, &
-     &                PNBIN_TOT,PNF_TOT,AJ(1)*1.D-6, &
+     &                PNBIN_TOT,PNFIN_TOT,AJ(1)*1.D-6, &
      &                PNBCL_NS(1),PNBCL_NS(2),PNBCL_NS(3),PNBCL_NS(4), &
      &                PNFCL_NS(1),PNFCL_NS(2),PNFCL_NS(3),PNFCL_NS(4), &
      &                POUT,PRSUMT,PCXT,PIET, &
      &                PLT(1),PLT(2),PLT(3),PLT(4), &
                       PRBT,PRCT,PRLT
-  604    FORMAT(' ',3X,'PINT  =',1PD10.3,'  POHT  =',1PD10.3, &
-     &               '  PNBT  =',1PD10.3,'  PNFT  =',1PD10.3/ &
-     &          ' ',3X,'PRFTE =',1PD10.3,'  PRFTD =',1PD10.3, &
-     &               '  PRFTT =',1PD10.3,'  PRFTA =',1PD10.3/ &
-     &          ' ',3X,'PBIN  =',1PD10.3,'  PFIN  =',1PD10.3, &
+  604    FORMAT(' ',3X,'PINT   =',1PD10.3,'  POHT   =',1PD10.3, &
+     &               '  PNB_TOT=',1PD10.3,'  PNF_TOT=',1PD10.3/ &
+     &          ' ',3X,'PIC_TOT=',1PD10.3,'  PLH_TOT=',1PD10.3, &
+     &               '  PEC_TOT=',1PD10.3,'  PRF_TOT=',1PD10.3/ &
+     &          ' ',3X,'PNBIN =',1PD10.3,'  PNFIN =',1PD10.3, &
      &               '  AJ0   =',1PD10.3/ &
      &          ' ',3X,'PBCLE =',1PD10.3,'  PBCLD =',1PD10.3, &
      &               '  PBCLT =',1PD10.3,'  PBCLA =',1PD10.3/ &
@@ -1096,8 +1096,8 @@
 
          WRITE(6,674) PINT,POHT,PNB_TOT, &
      &                PRF_TOT,POUT,PRLT,PCXT,PIET
-  674    FORMAT(' ',3X,'PINT  =',1PD10.3,'  POHT  =',1PD10.3, &
-     &               '  PNBT  =',1PD10.3,'  PRFT  =',1PD10.3/ &
+  674    FORMAT(' ',3X,'PINT   =',1PD10.3,'  POHT   =',1PD10.3, &
+     &               '  PNB_TOT=',1PD10.3,'  PRF_TOT=',1PD10.3/ &
      &          ' ',3X,'POUT  =',1PD10.3,'  PRLT  =',1PD10.3, &
      &               '  PCXT  =',1PD10.3,'  PIETE =',1PD10.3)
 
@@ -1152,8 +1152,8 @@
          WRITE(16,1674) PINT,POHT,PNB_TOT, &
      &                PRF_TOT, &
      &                POUT,PRLT,PCXT,PIET
- 1674    FORMAT(' ',3X,'PINT  =',1PD10.3,'  POHT  =',1PD10.3, &
-     &               '  PNBT  =',1PD10.3,'  PRFT  =',1PD10.3/ &
+ 1674    FORMAT(' ',3X,'PINT   =',1PD10.3,'  POHT   =',1PD10.3, &
+     &               '  PNB_TOT=',1PD10.3,'  PRF_TOT=',1PD10.3/ &
      &          ' ',3X,'POUT  =',1PD10.3,'  PRLT  =',1PD10.3, &
      &               '  PCXT  =',1PD10.3,'  PIETE =',1PD10.3)
          CLOSE(16)
@@ -1475,23 +1475,23 @@
 
       KVT(39) = 'PINT      '
       KVT(40) = 'POHT      '
-      KVT(41) = 'PNBT      '
-      KVT(42) = 'PICT      '
-      KVT(43) = 'PLHT      '
-      KVT(44) = 'PECT      '
-      KVT(45) = 'PRFT      '
-      KVT(46) = 'PNFT      '
+      KVT(41) = 'PNB_TOT   '
+      KVT(42) = 'PIC_TOT   '
+      KVT(43) = 'PLH_TOT   '
+      KVT(44) = 'PEC_TOT   '
+      KVT(45) = 'PRF_TOT   '
+      KVT(46) = 'PNF_TOT   '
 
-      KVT(47) = 'PBINT     '
-      KVT(48) = 'PBCLT(1)  '
-      KVT(49) = 'PBCLT(2)  '
-      KVT(50) = 'PBCLT(3)  '
-      KVT(51) = 'PBCLT(4)  '
-      KVT(52) = 'PFINT     '
-      KVT(53) = 'PFCLT(1)  '
-      KVT(54) = 'PFCLT(2)  '
-      KVT(55) = 'PFCLT(3)  '
-      KVT(56) = 'PFCLT(4)  '
+      KVT(47) = 'PNBIN     '
+      KVT(48) = 'PNBCL(1)  '
+      KVT(49) = 'PNBCL(2)  '
+      KVT(50) = 'PNBCL(3)  '
+      KVT(51) = 'PNBCL(4)  '
+      KVT(52) = 'PNFIN     '
+      KVT(53) = 'PNFCL(1)  '
+      KVT(54) = 'PNFCL(2)  '
+      KVT(55) = 'PNFCL(3)  '
+      KVT(56) = 'PNFCL(4)  '
 
       KVT(57) = 'POUT      '
       KVT(58) = 'PCXT      '
@@ -1504,8 +1504,8 @@
 
       KVT(65) = 'SINT      '
       KVT(66) = 'SIET      '
-      KVT(67) = 'SNBT      '
-      KVT(68) = 'SNFT      '
+      KVT(67) = 'SNB_TOT   '
+      KVT(68) = 'SNF_TOT   '
       KVT(69) = 'SOUT      '
       KVT(70) = 'SLT(1)    '
       KVT(71) = 'SLT(2)    '
