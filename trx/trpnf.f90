@@ -30,8 +30,6 @@ CONTAINS
 
     ! --- initialize fusion cross section and reaction rate ---
     
-    CALL set_usigmav_nf
-
     DO nnf=1,nnfmax
        id_nf=id_nf_nnf(nnf)
        ns1_nnf(nnf)=ns1_idnf(id_nf)
