@@ -479,11 +479,7 @@
             P4 = 3.D0*SQRT(0.5D0*PI)*AME/ANE*(ABS(TE)*RKEV/AME)**1.5D0
             VCD3 = P4*RN(NR,NS_D  )*PZ(NS_D  )**2/AMD
             VCT3 = P4*RN(NR,NS_T  )*PZ(NS_T  )**2/AMT
-            IF(NS_He3.NE.0) THEN
-               VCA3 = P4*RN(NR,NS_He3)*PZ(NS_He4)**2/AMA
-            ELSE
-               VCA3 = 0.D0
-            END IF
+            VCA3 = P4*RN(NR,NS_He4)*PZ(NS_He4)**2/AMA
             VC3  = VCD3+VCT3+VCA3
             VCR  = VC3**(1.D0/3.D0)
             HYB  = HY(VB/VCR)
