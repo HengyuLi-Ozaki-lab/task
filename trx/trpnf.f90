@@ -40,6 +40,13 @@ CONTAINS
        enn_nnf(nnf)=enn_idnf(id_nf)
     END DO
     
+    WRITE(6,*) 'nnf: id_nf,ns1,ns2,nsp,wgt,eng,enn'
+    DO nnf=1,nnfmax
+       WRITE(6,'(5I4,3ES12.4)') &
+            nnf,id_nf_nnf(nnf),ns1_nnf(nnf),ns2_nnf(nnf),nsp_nnf(nnf), &
+            wgt_nnf(nnf),eng_nnf(nnf),enn_nnf(nnf)
+    END DO
+
   END SUBROUTINE tr_prep_pnf
 
   ! *** calculate fusion power ***
@@ -77,10 +84,10 @@ CONTAINS
           SNF_NSNNFNR(ns1,nnf,nr)=SNF_NSNNFNR(ns1,nnf,nr)-SNF
           SNF_NSNNFNR(ns2,nnf,nr)=SNF_NSNNFNR(ns2,nnf,nr)-SNF
           SNF_NSNNFNR(nsp,nnf,nr)=SNF_NSNNFNR(nsp,nnf,nr)+SNF
-          PNF_NSNNFNR(nsp,nnf,nr)=PNF_NSNNFNR(nsp,nnf,nr)+eng*SNF
+          PNF_NSNNFNR(nsp,nnf,nr)=PNF_NSNNFNR(nsp,nnf,nr)+eng*SNF*1.D20
           IF(enn.GT.0.D0) THEN
              SNFNN_NNFNR(nnf,nr)=SNFNN_NNFNR(nnf,nr)+SNF
-             PNFNN_NNFNR(nnf,nr)=PNFNN_NNFNR(nnf,nr)+enn*SNF
+             PNFNN_NNFNR(nnf,nr)=PNFNN_NNFNR(nnf,nr)+enn*SNF*1.D20
           END IF
        END DO
     END DO

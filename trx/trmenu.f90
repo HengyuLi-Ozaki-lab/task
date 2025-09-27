@@ -90,6 +90,19 @@ CONTAINS
        INIT=2
        NTMOLD=NTMAX
 
+      DO NR=1,NRMAX
+         WRITE(6,'(I4,6ES12.4)') &
+              NR, &
+              SNF_NSNNFNR(2,1,NR),SNF_NSNNFNR(3,1,NR),SNF_NSNNFNR(4,1,NR), &
+              PNF_NSNNFNR(2,1,NR),PNF_NSNNFNR(3,1,NR),PNF_NSNNFNR(4,1,NR)
+      END DO
+      DO NR=1,NRMAX
+         WRITE(6,'(I4,6ES12.4)') &
+              NR, &
+              SNF_NSNR(2,NR),SNF_NSNR(3,NR),SNF_NSNR(4,NR), &
+              PNF_NSNR(2,NR),PNF_NSNR(3,NR),PNF_NSNR(4,NR)
+      END DO
+      
     ELSE IF(KID.EQ.'C'.AND.INIT.EQ.2) THEN
        NT=0
        IF(id_loop.EQ.0) THEN
