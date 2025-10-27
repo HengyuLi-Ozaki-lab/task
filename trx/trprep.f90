@@ -28,6 +28,10 @@ CONTAINS
 
     CALL tr_prep_ns
               
+    ! --- Intialize nf ---
+
+    CALL set_usigmav_nf
+              
     ! --- allocate trcomm variables ---
     
     NFMAX=NNBMAX+NNFMAX

@@ -344,6 +344,7 @@ CONTAINS
        WRITE(6,'(A,I4)') 'XX SPL1D error in set_usvnf: id=',id
        STOP
     END IF
+
     RETURN
   END SUBROUTINE set_usigmav_nf
 

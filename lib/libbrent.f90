@@ -14,7 +14,14 @@ CONTAINS
       USE task_kinds,ONLY: dp
       implicit none
       real(dp), intent(in):: ax,bx,tol
-      real(dp), external  :: f
+    INTERFACE
+       FUNCTION F(X)
+         USE task_kinds,ONLY: dp
+         REAL(dp):: F
+         REAL(dp),INTENT(IN):: X
+       END FUNCTION F
+    END INTERFACE
+!      REAL(dp),external  :: f
       REAL(dp):: FBRENT
 
 !      a zero of the function  f(x)  is computed in the interval ax,bx .

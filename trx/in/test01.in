@@ -16,9 +16,7 @@ c
    PTS=0.1D0,0.1D0,0.1D0,0.1D0
    PROFN2=0.15D0
    
-   nnfmax=1
-   model_nnf(1)=4
-
+   model_pnf=1
    
    MDLEDGE=1
    CSPRS=0.1
@@ -71,7 +69,7 @@ c
    PNBIN(1)=10.0
    PNBIN(2)=10.0
 r
-   NTMAX=1000
+   NTMAX=1
    PECIN(1)=5.0
    PNBIN(1)=35.0
    PNBIN(2)=35.0

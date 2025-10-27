@@ -12,10 +12,11 @@
 ###       cd /opt/local/lib
 ###       sudo git clone -b release https://gitlab.com/petsc/petsc.git petsc
 ###       sudo chown petsc $USER
+###       cd petsc
 ###       copy $TASKDIR/mtxp/macports.py .
-###       ./macports.py
 ###       export PETSC_DIR=/opt/local/petsc
 ###       export PETSC_ARCH=macports
+###       ./macports.py
 
 
 EXEC=testbnd testbndc testpcg testdmumps testzmumps
