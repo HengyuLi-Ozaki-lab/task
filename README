@@ -84,6 +84,16 @@ Install:
           make
           ./tot [for example]
 
+       [Attention] pl must be compiled before the compile of eq.
+                   If you hav any problem, try
+		     cd eq
+		     make clean
+		     cd ../pl
+		     make clean
+		     make
+		     cd ../eq
+		     make
+
 Update:
     If you change a source file in the present module, 
         "make" again.

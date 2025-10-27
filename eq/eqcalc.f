@@ -167,19 +167,6 @@ C   ************************************************
 C   **          Boundary Definition               **
 C   ************************************************
 C
-C   ************************************************
-C   **         Boundary shape function            **
-C   ************************************************
-C
-      FUNCTION EQFBND(X)
-C      
-      INCLUDE '../eq/eqcomc.inc'
-      REAL(rkind):: EQFBND
-C
-      EQFBND=ZBRF*COS(X+RDLT*SIN(X))-RKAP*SIN(X)
-      RETURN
-      END
-C
       SUBROUTINE EQDEFB
 C
       USE libbrent

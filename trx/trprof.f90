@@ -58,6 +58,7 @@ CONTAINS
       INTEGER:: nrmax_prof,ierr,i
       REAL(rkind):: R1,RN1
       TYPE(pl_prf_type),DIMENSION(nsmax):: plf
+      REAL(rkind):: rn_pl(nsmax),rt_pl(nsmax)
 
       ! *** number of radial mesh ***
       
@@ -167,7 +168,7 @@ CONTAINS
          END DO
 
         case(41,42)
-           call pl_read_prof_total(rhol,nsmax,rn_pl,rt_pl)
+           call pl_read_prof_total(rm(nr),nsmax,rn_pl,rt_pl)
            do ns=1,nsmax
               plf(ns)%rn  =rn_pl(ns)
               plf(ns)%rtpr=rt_pl(ns)
