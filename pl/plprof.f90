@@ -11,7 +11,6 @@
   MODULE plprof
     USE bpsd_kinds
     USE plcomm_type
-
     PRIVATE
     PUBLIC pl_mag_old
     PUBLIC pl_mag

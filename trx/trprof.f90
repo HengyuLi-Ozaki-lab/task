@@ -42,7 +42,12 @@ CONTAINS
 
   SUBROUTINE tr_prof
 
-      USE trcomm
+    USE trcomm
+    USE plcomm_type
+    USE plload,ONLY: pl_read_trdata,pl_read_xprf
+    USE plprof_travis
+    USE plprof_total
+    USE plcoll
       USE libfio
       USE libspl1d
       IMPLICIT NONE
@@ -52,6 +57,7 @@ CONTAINS
            rs_prof(:),rn_prof(:),rdn_prof(:),uprof(:,:)
       INTEGER:: nrmax_prof,ierr,i
       REAL(rkind):: R1,RN1
+      TYPE(pl_prf_type),DIMENSION(nsmax):: plf
 
       ! *** number of radial mesh ***
       
@@ -160,7 +166,18 @@ CONTAINS
             END DO
          END DO
 
-      CASE default
+        case(41,42)
+           call pl_read_prof_total(rhol,nsmax,rn_pl,rt_pl)
+           do ns=1,nsmax
+              plf(ns)%rn  =rn_pl(ns)
+              plf(ns)%rtpr=rt_pl(ns)
+              plf(ns)%rtpp=rt_pl(ns)
+              plf(ns)%ru  =0.d0
+              plf(ns)%rupl=0.d0
+           end do
+           call pl_set_rnuc(plf)
+
+        CASE default
             ! --- set default profiles ---
 
             DO nr=1,nrmax

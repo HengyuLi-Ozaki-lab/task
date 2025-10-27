@@ -38,7 +38,8 @@ MODULE trparm
        MDLER,MDLNCL,NSLMAX, &
        MDLELM,ELMWID,ELMDUR,ELMNRD,ELMTRD,ELMENH, &
        MDLTC,MDLPCK,model_profn_time,model_proft_time, &
-       KNAMEQ,KNAMEQ2,KNAMTR,KFNLOG,KFNTXT,KFNCVS
+       KNAMEQ,KNAMEQ2,KNAMTR,KFNLOG,KFNTXT,KFNCVS, &
+       knam_profg_total,knam_profm_total
   PRIVATE
   PUBLIC tr_parm
   PUBLIC tr_nlin
@@ -147,7 +148,8 @@ CONTAINS
              ' ',8X,'KNAMEQ,KNAMEQ2,KNAMTR,KFNLOG,KFNTXT,KFNCVS,'/ &
              ' ',8X,'MDLPSC,NPSCMAX,PSCIN,PSCR0,PSCRW,NSPSC,PSCIN_MAX,'/ &
              ' ',8X,'knam_profn_time,knam_proft_time'/ &
-             ' ',8X,'model_profn_time,model_proft_time')
+             ' ',8X,'model_profn_time,model_proft_time'/ &
+             ' ',8X,'knam_profg_total,knam_profm_total')
     END SUBROUTINE trplst
 
 !     ***** CHECK INPUT PARAMETERS *****

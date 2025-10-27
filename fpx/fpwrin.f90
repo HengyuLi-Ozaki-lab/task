@@ -180,7 +180,7 @@
       IERR=idata(1)
       IF(IERR.NE.0) THEN
          IF(nrank.EQ.0) WRITE(6,*) 'XX FPWRIN: FROPEN: IERR=',IERR
-         RETURN
+         STOP
       ENDIF
 
       IF(nrank.EQ.0) THEN

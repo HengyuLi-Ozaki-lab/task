@@ -76,19 +76,19 @@ MODULE wrcomm
   REAL(rkind),ALLOCATABLE:: &
        rs_nstp_nray(:,:),rl_nstp_nray(:,:)
   REAL(rkind),ALLOCATABLE:: &
-       pos_nrs(:),pwr_nrs(:,:),pwr_nrs_nray(:,:,:)
+       pos_nrs(:),pwr_nrs_nsa(:,:),pwr_nrs_nsa_nray(:,:,:)
   REAL(rkind),ALLOCATABLE:: &
-       pos_nrl(:),pwr_nrl(:,:),pwr_nrl_nray(:,:,:)
+       pos_nrl(:),pwr_nrl_nsa(:,:),pwr_nrl_nsa_nray(:,:,:)
   REAL(rkind),ALLOCATABLE:: &
        pwr_nsa_nray(:,:),pwr_nsa(:),pwr_nray(:)
   REAL(rkind),ALLOCATABLE:: &
-       pos_pwrmax_rs_nray(:,:),pwrmax_rs_nray(:,:)
+       pos_pwrmax_rs_nsa_nray(:,:),pwrmax_rs_nsa_nray(:,:)
   REAL(rkind),ALLOCATABLE:: &
-       pos_pwrmax_rs(:),pwrmax_rs(:)
+       pos_pwrmax_rs_nsa(:),pwrmax_rs_nsa(:)
   REAL(rkind),ALLOCATABLE:: &
-       pos_pwrmax_rl_nray(:,:),pwrmax_rl_nray(:,:)
+       pos_pwrmax_rl_nsa_nray(:,:),pwrmax_rl_nsa_nray(:,:)
   REAL(rkind),ALLOCATABLE:: &
-       pos_pwrmax_rl(:),pwrmax_rl(:)
+       pos_pwrmax_rl_nsa(:),pwrmax_rl_nsa(:)
   reaL(rkind):: pwr_tot
   INTEGER:: INITIAL_DRV
 
@@ -149,16 +149,16 @@ CONTAINS
     ALLOCATE(RAMPB(0:NSTPMAX))
 
     ALLOCATE(rs_nstp_nray(nstpmax,nraymax),rl_nstp_nray(nstpmax,nraymax))
-    ALLOCATE(pos_nrs(nrsmax),pwr_nrs(nsamax_wr,nrsmax))
-    ALLOCATE(pwr_nrs_nray(nsamax_wr,nrsmax,nraymax))
-    ALLOCATE(pos_nrl(nrlmax),pwr_nrl(nsamax_wr,nrlmax))
-    ALLOCATE(pwr_nrl_nray(nsamax_wr,nrlmax,nraymax))
+    ALLOCATE(pos_nrs(nrsmax),pos_nrl(nrlmax))
+    ALLOCATE(pwr_nrs_nsa(nrsmax,nsamax_wr),pwr_nrl_nsa(nrlmax,nsamax_wr))
+    ALLOCATE(pwr_nrs_nsa_nray(nrsmax,nsamax_wr,nraymax))
+    ALLOCATE(pwr_nrl_nsa_nray(nrlmax,nsamax_wr,nraymax))
     ALLOCATE(pwr_nsa_nray(nsamax_wr,nraymax))
     ALLOCATE(pwr_nray(nraymax),pwr_nsa(nsamax_wr))
-    ALLOCATE(pos_pwrmax_rs_nray(nsamax_wr,nraymax))
-    ALLOCATE(pwrmax_rs_nray(nsamax_wr,nraymax))
-    ALLOCATE(pos_pwrmax_rl_nray(nsamax_wr,nraymax))
-    ALLOCATE(pwrmax_rl_nray(nsamax_wr,nraymax))
+    ALLOCATE(pos_pwrmax_rs_nsa_nray(nsamax_wr,nraymax))
+    ALLOCATE(pwrmax_rs_nsa_nray(nsamax_wr,nraymax))
+    ALLOCATE(pos_pwrmax_rl_nsa_nray(nsamax_wr,nraymax))
+    ALLOCATE(pwrmax_rl_nsa_nray(nsamax_wr,nraymax))
 
   END SUBROUTINE wr_allocate
 
@@ -176,15 +176,13 @@ CONTAINS
     DEALLOCATE(RK2B,RP2B,RAMPB)
 
     DEALLOCATE(rs_nstp_nray,rl_nstp_nray)
-    DEALLOCATE(pos_nrs,pwr_nrs)
-    DEALLOCATE(pwr_nrs_nray)
-    DEALLOCATE(pos_nrl,pwr_nrl)
-    DEALLOCATE(pwr_nrl_nray)
-    DEALLOCATE(pwr_nsa_nray,pwr_nray,pwr_nsa)
-    DEALLOCATE(pos_pwrmax_rs_nray)
-    DEALLOCATE(pwrmax_rs_nray)
-    DEALLOCATE(pos_pwrmax_rl_nray)
-    DEALLOCATE(pwrmax_rl_nray)
+    DEALLOCATE(pos_nrs,pwr_nrs_nsa,pwr_nrs_nsa_nray)
+    DEALLOCATE(pos_nrl,pwr_nrl_nsa,pwr_nrl_nsa_nray)
+    DEALLOCATE(pwr_nsa_nray,pwr_nsa,pwr_nray)
+    DEALLOCATE(pos_pwrmax_rs_nsa_nray)
+    DEALLOCATE(pwrmax_rs_nsa_nray)
+    DEALLOCATE(pos_pwrmax_rl_nsa_nray)
+    DEALLOCATE(pwrmax_rl_nsa_nray)
 
   END SUBROUTINE wr_deallocate
 END MODULE wrcomm
