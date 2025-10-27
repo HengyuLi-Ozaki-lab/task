@@ -860,7 +860,7 @@
       USE trparm
       IMPLICIT NONE
       CHARACTER(LEN=1),INTENT(IN):: KID
-      INTEGER:: I, IERR, IST, NDD, NDM, NDY, NTH1, NTM1, NTS1
+      INTEGER:: I, IERR, IST, NDD, NDM, NDY, NTH1, NTM1, NTS1, NF
       REAL   :: GTCPU2
       CHARACTER(LEN=3) :: K1, K2, K3, K4, K5, K6
       CHARACTER(LEN=40):: KCOM
@@ -885,9 +885,16 @@
          WRITE(6,602) WST(1),TS0(1),TSAV(1),ANSAV(1), &
      &                WST(2),TS0(2),TSAV(2),ANSAV(2), &
      &                WST(3),TS0(3),TSAV(3),ANSAV(3), &
-     &                WST(4),TS0(4),TSAV(4),ANSAV(4), &
-     &                WFT(1),TF0(1),TFAV(1),ANFAV(1), &
-     &                WFT(2),TF0(2),TFAV(2),ANFAV(2)
+     &                WST(4),TS0(4),TSAV(4),ANSAV(4)
+         IF(NNBMAX+NNFMAX.GE.1) THEN
+            DO NF=1,NNBMAX
+               WRITE(6,681) NF,WFT(NF),TF0(NF),TFAV(NF),ANFAV(NF)
+            END DO
+            DO NF=NNBMAX+1,NNBMAX+NNFMAX
+               WRITE(6,682) NF,WFT(NF),TF0(NF),TFAV(NF),ANFAV(NF)
+            END DO
+         END IF
+            
   602    FORMAT(' ',3X,'WE    =',1PD10.3,'  TE0   =',1PD10.3, &
      &               '  TEAVE =',1PD10.3,'  NEAVE =',1PD10.3/ &
      &          ' ',3X,'WD    =',1PD10.3,'  TD0   =',1PD10.3, &
@@ -895,10 +902,12 @@
      &          ' ',3X,'WT    =',1PD10.3,'  TT0   =',1PD10.3, &
      &               '  TTAVE =',1PD10.3,'  NTAVE =',1PD10.3/ &
      &          ' ',3X,'WA    =',1PD10.3,'  TA0   =',1PD10.3, &
-     &               '  TAAVE =',1PD10.3,'  NAAVE =',1PD10.3/ &
-     &          ' ',3X,'WB    =',1PD10.3,'  TB0   =',1PD10.3, &
-     &               '  TBAVE =',1PD10.3,'  NBAVE =',1PD10.3/ &
-     &          ' ',3X,'WF    =',1PD10.3,'  TF0   =',1PD10.3, &
+     &               '  TAAVE =',1PD10.3,'  NAAVE =',1PD10.3)
+  681    FORMAT(' ',I2,1X, &
+                       'WB    =',1PD10.3,'  TB0   =',1PD10.3, &
+     &               '  TBAVE =',1PD10.3,'  NBAVE =',1PD10.3)
+  682    FORMAT(' ',I2,1X, &
+                       'WF    =',1PD10.3,'  TF0   =',1PD10.3, &
      &               '  TFAVE =',1PD10.3,'  NFAVE =',1PD10.3)
 
          WRITE(6,603) AJT,VLOOP,ALI,VSEC, &
