@@ -505,7 +505,7 @@ contains
              IC = NQMAX + (NC1 - 1) - (NQ - 1) + NC1Hvs2
              IB = IC + NQMAX
              IA = IB + NQMAX
-             do NR = 1, NRMAX-1
+             do concurrent (NR = 1:NRMAX-1)
                 J = NR * NQMAX + NQ
                 BA(IC,J) = BA(IC,J) + CLC(NR,NC,NQ) * coef * NC1Hvs
                 BA(IB,J) = BA(IB,J) + BLC(NR,NC,NQ) * coef * NC1Hvs
@@ -602,7 +602,7 @@ contains
              IA = NQMAX - (NC1 - 1) + (NQ - 1) + KL - NC1Hvs2
              IB = IA + NQMAX
              IC = IB + NQMAX
-             do NR = 1, NRMAX-1
+             do concurrent (NR = 1:NRMAX-1)
                 JA =(NR + 1) * NQMAX + NC1
                 JB = NR      * NQMAX + NC1
                 ! NC1Hvs2 in JC: avoid overflow of JC in BL when NR=NRMAX-1 and NC1 = 0
@@ -702,7 +702,7 @@ contains
        NC1 = NLC(NC,NQ)
        NC1Hvs = ( NQMAX - 1 + NC1 ) / NQMAX ! NC1Hvs = 0 when NC1 = 0 ; otherwise NC1Hvs = 1
        NC2 = NC1 + 1 - NC1Hvs
-       do NR = 1, NRMAX - 1
+       do concurrent (NR = 1:NRMAX - 1)
           BX(NQMAX * NR + NQ) &
                & = BX(NQMAX * NR + NQ) +(CLC(NR,NC,NQ) * X   (NR-1,NC2) * COEF1 &
                &                       + BLC(NR,NC,NQ) * X   (NR  ,NC2) * COEF1 &
@@ -782,7 +782,7 @@ contains
           NC1 = NLC(NC,NQ)
           NC1Hvs = ( NQMAX - 1 + NC1 ) / NQMAX ! NC1Hvs = 0 when NC1 = 0 ; otherwise NC1Hvs = 1
           NC2 = NC1 + 1 - NC1Hvs
-          do NR = 1, NRMAX-1
+          do concurrent (NR = 1:NRMAX-1)
              BX(NQMAX * NR + NQ) = BX(NQMAX * NR + NQ) &
                   &              +(  CLC(NR,NC,NQ) * X(NR-1,NC2) &
                   &                + BLC(NR,NC,NQ) * X(NR  ,NC2) &

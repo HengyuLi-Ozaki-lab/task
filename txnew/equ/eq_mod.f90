@@ -35,8 +35,8 @@ module equ_params
   integer(4) :: nv,nsu
   real(8), dimension(:), allocatable :: pds,fds,vlv,qqv,prv
   real(8), dimension(:), allocatable :: hiv,siv,siw,sdw,ckv,ssv,aav,rrv, &
-       &                      rbv,arv,bbv,biv,r2b2v,shv,grbm2v, &
-       &                      rov,aiv,brv,epsv,elipv,trigv,ftv,rtv,rpv
+       &                      rbv,arv,bbv,biv,r2b2v,shv,shvv,grbm2v, &
+       &                      rov,aiv,brv,epsv,elipv,trigv,ftv,rtv,rpv,lpv
   real(8), dimension(:), allocatable :: gttiv
 
   integer(4) ::nsr,nsz

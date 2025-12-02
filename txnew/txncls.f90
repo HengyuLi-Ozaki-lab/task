@@ -1,10 +1,9 @@
-!*************************** Sauter model ******************************
-
+!*************************** Sauter models *****************************
 module sauter_mod
+  use tx_commons, only : aee
   implicit none
-  real(8), parameter :: AEE  = 1.602176487D-19 ! elementary charge
   private
-  public :: sauter
+  public :: sauter, redl_sauter
 
 contains
 
@@ -12,42 +11,45 @@ contains
 !
 !       Sauter model
 !
+!   [1] O. Sauter et al., PoP 6, 2834 (1999).
+!   [2] O. Sauter et al., PoP 9, 5140 (2002).
+!
 !***********************************************************************
   
-  subroutine sauter(NE,TE,DTE,DPE_IN,NI,TI,DTI,DPI_IN, &  ! input
-       &            Q,DPSI,IPSI,EPS,RR,ZI,Zeff,FT, &      ! input
-       &            rlnLei_IN,rlnLii_IN,NUE_IN,NUI_IN, &  ! optional input
-       &            BJBS,ETA,ETAS)                        ! output
+  subroutine sauter(ispc,den,tem,dtem,dpres,zz &
+                   ,qval,dpsi,Ipsi,EPS,RR,Zeff,ftrap &
+                   ,rlnLei_IN,rlnLii_IN,NUE_IN,NUI_IN &
+                   ,BJBS,ETA,ETAS)
 
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-!     Programmed by HONDA Mitsuru (2007/05/24, 2010/04/07 modified)
+!     Programmed by HONDA Mitsuru (2007/05/24; 2010/04/07, 2024/07/26 modified)
 !     
 !     Note that all the parameters are on the GRID point.
 !     "rho" denotes the radial coordinate and whether or not it is dimensionless
-!        does not matter. It only requires that derivatives are consistent to DPSI.
+!        does not matter. It only requires that derivatives are consistent to dpsi.
 !
 !     *** INPUT VARIABLES ***
-!     NE    : electron density [10^20/m^3]
-!     TE    : electron temperature [keV]
-!     DTE   : partial derivative of electron temperature to rho [keV/rho]
-!     DPE   : partial derivative of electron pressure to rho [10^20 kev/m^3/rho]
-!     NI    : ion density [10^20/m^3]
-!     TI    : ion temperature [keV]
-!     DTI   : partial derivative of ion temperature to rho [keV/rho]
-!     DPI   : partial derivative of ion pressure to rho [10^20 kev/m^3/rho]
-!     Q     : safety factor
-!     DPSI  : partial derivative of poloidal flux to rho [Wb/rho]
-!     IPSI  : magnetic flux function, i.e. the product of major radius
+!     den   : electron density for all species [10^20/m^3]
+!     tem   : electron temperature for all species [keV]
+!     dtem  : partial derivative of temperature to rho for all species [keV/rho]
+!     dpres : partial derivative of pressure to rho for all species [10^20 kev/m^3/rho]
+!     zz    : charge number for all species
+! 
+!     qval  : safety factor
+!     dpsi  : partial derivative of poloidal flux to rho [Wb/rho]
+!     Ipsi  : magnetic flux function, i.e. the product of major radius
 !             and toroidal magnetic field (RR*BT) [mT]
 !     EPS   : local inverse aspect ratio
 !     RR    : major radius [m]
-!     ZI    : charge number of bulk ion
 !     Zeff  : effective charge number
-!     FT    : trapped particle fraction
+!     ftrap : trapped particle fraction
+!
+!     -- not recommended ---
 !     rlnLei: Coulomb logarithm for electron collisions,   optional
 !     rlnLii: Coulomb logarithm for ion collisions,        optional
 !     NUE   : Normalized collisionality for electrons,     optional
 !     NUI   : Normalized collisionality for ions,          optional
+!     ----------------------
 !
 !     *** OUTPUT VARIABLES ***
 !     BJBS  : bootstrap parallel current <J . B> [AT/m^2]
@@ -56,84 +58,254 @@ contains
 !
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-    real(8), intent(in) :: NE,TE,DTE,DPE_IN,NI,TI,DTI,DPI_IN, &
-         &                 Q,DPSI,IPSI,EPS,RR,ZI,Zeff,FT
-    real(8), intent(in), optional :: rlnLei_IN,rlnLii_IN,NUE_IN,NUI_IN
+    integer(4), intent(in) :: ispc
+    real(8), dimension(:), intent(in) :: den, tem, dtem, dpres, zz
+    real(8), intent(in) :: qval, dpsi, Ipsi, EPS, RR, Zeff, ftrap
+    real(8), intent(in), optional :: rlnLei_IN, rlnLii_IN, NUE_IN, NUI_IN
     real(8), intent(out) :: BJBS, ETA
     real(8), intent(out), optional :: ETAS
+    ! local
+    real(8), dimension(size(tem)) :: tem_ev, pres, dpresz
+    real(8) :: EPSS,LnLame,NUE,LnLamii,NUI,RPE,alpha0,alpha,L31,L32,L34,RNZ,SGMSPTZ
+    real(8) :: F31Teff,F32EETeff,F32EITeff,F34Teff,F33Teff,coef
 
-    real(8) :: EPSS,LnLame,NUE,LnLamii,NUI,RPE,ALFA0,ALFA,L31,L32,L34,RNZ,SGMSPTZ,QABS,&
-         &     PE,PI,DPE,DPI,TEeV,TIeV
-    real(8) :: F31TEFF,F32EETEFF,F32EITEFF,F34TEFF,F33TEFF
-
-    TEeV = TE * 1.D3
-    TIeV = TI * 1.D3
+    tem_eV(:) = tem(:) * 1.d3
 
     ! On magnetic axis, the neoclassical resistivity reduces to the classical resistivity
     ! and the bootstrap current vanishes.
-    if(EPS == 0.d0) then
-       RNZ = 0.58d0+0.74d0/(0.76d0+Zeff)
-       LnLame=31.3d0-log(sqrt(NE*1.D20)/ABS(TEeV))
-       if(present(rlnLei_IN)) LnLame = rlnLei_IN
+    IF(EPS == 0.d0) THEN
+       RNZ = 0.58d0+0.74d0/(0.76d0+Zeff) ! (18a) [1]
+       LnLame=31.3d0-log(sqrt(den(1)*1.d20)/abs(tem_eV(1))) ! (18d) [1]
+       IF(present(rlnLei_IN)) LnLame = rlnLei_IN
 
        BJBS = 0.d0
-       ETA = 1.d0 / (1.9012D4*TEeV**1.5d0/(Zeff*RNZ*LnLame))
-       if(present(ETAS)) ETAS = ETA
+       ETA = 1.d0 / (1.9012d4*tem_eV(1)**1.5d0/(Zeff*RNZ*LnLame)) ! (18a) [1]
+       IF(present(ETAS)) ETAS = ETA
        return
-    end if
+    END IF
 
-    EPSS = EPS*sqrt(EPS)
-    QABS = abs(Q)
+    EPSS = sqrt(EPS)**3
 
-    PE  = NE * TEeV * 1.D20 * AEE
-    PI  = NI * TIeV * 1.D20 * AEE
-    DPE = DPE_IN    * 1.D20 * AEE * 1.D3
-    DPI = DPI_IN    * 1.D20 * AEE * 1.D3
+    ! pressure
+    pres(:)  = den(:) * 1.d20 * tem_eV(:) * aee ! [J/m^3]
+    ! pressure gradient
+    dpresz(:) = dpres(:) * 1.d20 * aee * 1.d3
 
 !     LnLam : coulomb logarithm
 !     NU    : collisional frequency [/s]
 
-    LnLame=31.3d0-log(sqrt(NE*1.D20)/ABS(TEeV))
-    if(present(rlnLei_IN)) LnLame = rlnLei_IN
-    NUE=6.921D-18*QABS*RR*NE*1.D20*Zeff*LnLame/(ABS(TEeV)**2*EPSS)
-    if(present(NUE_IN))   NUE    = NUE_IN
+    LnLame=31.3d0-log(sqrt(den(1)*1.d20)/abs(tem_eV(1))) ! (18d) [1]
+    IF(present(rlnLei_IN)) LnLame = rlnLei_IN
+    NUE = 6.921d-18*abs(qval)*RR*den(1)*1.d20*Zeff*LnLame/(abs(tem_eV(1))**2*EPSS) ! (18b) [1]
+    IF(present(NUE_IN))   NUE = NUE_IN
 
-    LnLamii=30.d0-log(ZI**3*sqrt(NI*1.D20)/(ABS(TIeV)**1.5d0))
-    if(present(rlnLii_IN)) LnLamii = rlnLii_IN
-    NUI = 4.90D-18*QABS*RR*NI*1.D20*ZI**4*LnLamii/(ABS(TIeV)**2*EPSS)
-    if(present(NUI_IN))   NUI     = NUI_IN
+    LnLamii=30.d0-log(zz(2)**3*sqrt(den(2)*1.d20)/(abs(tem_eV(2))**1.5d0)) ! (18c) [1]
+    IF(present(rlnLii_IN)) LnLamii = rlnLii_IN
+    NUI = 4.90d-18*abs(qval)*RR*den(2)*1.d20*zz(2)**4*LnLamii/(abs(tem_eV(2))**2*EPSS) ! (18e) [1]
+    IF(present(NUI_IN))   NUI = NUI_IN
 
 !     RPE   : ratio of electron pressure to total pressure 
 
-    RPE = PE/(PE+PI)
+    RPE = pres(1)/sum(pres(1:ispc))
 
-    F31TEFF   = FT/(1.d0+(1.d0-0.1d0*FT)*sqrt(NUE)+0.5d0*(1.d0-FT)*NUE/Zeff)
-    F32EETEFF = FT/(1.d0+0.26d0*(1.d0-FT)*sqrt(NUE)+0.18d0*(1.d0-0.37d0*FT)*NUE/sqrt(Zeff))
-    F32EITEFF = FT/(1.d0+(1.d0+0.6d0*FT)*sqrt(NUE)+0.85d0*(1.d0-0.37d0*FT)*NUE*(1.d0+Zeff))
-    F34TEFF   = FT/(1.d0+(1.d0-0.1d0*FT)*sqrt(NUE)+0.5d0*(1.d0-0.5d0*FT)*NUE/Zeff)
+!! Eq.(14b) [1]
+    F31Teff   = ftrap/(1.d0+(1.d0-0.1d0*ftrap) *sqrt(NUE)+0.50d0*(1.d0-       ftrap)*NUE/Zeff)
+!! Eq.(15d) [1]
+    F32EETeff = ftrap/(1.d0+0.26d0*(1.d0-ftrap)*sqrt(NUE)+0.18d0*(1.d0-0.37d0*ftrap)*NUE/sqrt(Zeff))
+!! Eq.(15e) [1]
+    F32EITeff = ftrap/(1.d0+(1.d0+0.6d0*ftrap) *sqrt(NUE)+0.85d0*(1.d0-0.37d0*ftrap)*NUE*(1.d0+Zeff))
+!! Eq.(16b) [1]
+    F34Teff   = ftrap/(1.d0+(1.d0-0.1d0*ftrap) *sqrt(NUE)+0.50d0*(1.d0-0.50d0*ftrap)*NUE/Zeff)
 
-    ALFA0 = -1.17d0*(1.d0-FT)/(1.d0-0.22d0*FT-0.19d0*FT**2)
-    ALFA  = ((ALFA0+0.25d0*(1.d0-FT**2)*sqrt(NUI)) &
-         &     /(1.d0+0.5d0*sqrt(NUI))+0.315d0*NUI**2*FT**6)/(1.d0+0.15d0*NUI**2*FT**6)
+!! Eq.(17a) [1]
+    alpha0 = -1.17d0*(1.d0-ftrap)/(1.d0-ftrap*(0.22d0+0.19d0*ftrap))
+!! First equation [2]
+    coef  = (NUI*ftrap**3)**2
+    alpha  = ((alpha0+0.25d0*(1.d0-ftrap**2)*sqrt(NUI))/(1.d0+0.5d0*sqrt(NUI))+0.315d0*coef) &
+            /(1.d0+0.15d0*coef)
 
-    L31 = F31(F31TEFF,Zeff)
-    L32 = F32EE(F32EETEFF,Zeff)+F32EI(F32EITEFF,Zeff)
-    L34 = F31(F34TEFF,Zeff)
+    L31 = F31(F31Teff,Zeff)
+    L32 = F32EE(F32EETeff,Zeff)+F32EI(F32EITeff,Zeff)
+    L34 = F31(F34Teff,Zeff)
 
-!     *** Bootstrap Current, <B J_BS> ***
+!     *** Bootstrap Current, JBS ***
 
-    BJBS = -IPSI*PE/DPSI &
-         & *( L31*(DPE+DPI)/PE+L32*DTE/TE+L34*ALFA*(1.d0-RPE)/RPE*DTI/TI)
+!! Second equation [2]
+    BJBS = -Ipsi*pres(1)/dpsi &
+           *(  L31                      *sum(dpresz(1:ispc))/pres(1) &
+             + L32                      *dtem(1)/tem(1) &
+             + L34 *alpha*(1.d0-RPE)/RPE*dtem(2)/tem(2))
 
 !     *** Spitzer and Neoclassical Resistivity, ETAS, ETA ***
 
-    F33TEFF = FT/(1.d0+(0.55d0-0.1d0*FT)*sqrt(NUE)+0.45d0*(1.d0-FT)*NUE/Zeff**1.5d0)
-    RNZ     = 0.58d0+0.74d0/(0.76d0+Zeff)
-    SGMSPTZ = 1.9012D4*TEeV**1.5d0/(Zeff*RNZ*LnLame)
-    ETA  = 1.d0 / (SGMSPTZ * F33(F33TEFF,Zeff))
+!! Eq.(13b) [1]
+    F33Teff = ftrap/(1.d0+(0.55d0-0.1d0*ftrap)*sqrt(NUE)+0.45d0*(1.d0-ftrap)*NUE/Zeff**1.5d0)
+    RNZ     = 0.58d0+0.74d0/(0.76d0+Zeff) ! (18d) [1]
+    SGMSPTZ = 1.9012d4*tem_eV(1)**1.5d0/(Zeff*RNZ*LnLame) ! (18a) [1]
+    ETA     = 1.d0 / (SGMSPTZ * F33(F33Teff,Zeff))
     if(present(etas)) ETAS = 1.d0 / SGMSPTZ
 
   end subroutine sauter
+
+!***********************************************************************
+!
+!       Redl's modifiled Sauter model 
+!
+!   [3] A. Redl et al., PoP 28, 022502 (2021)
+!
+!***********************************************************************
+  
+  subroutine redl_sauter(ispc,den,tem,dtem,dpres,zz &
+                        ,qval,dpsi,Ipsi,EPS,RR,Zeff,ftrap &
+                        ,BJBS,ETA,ETAS)
+
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+!     Programmed by N. Aiba and M. Honda (2024/07/25)
+!     
+!     Note that all the parameters are on the GRID point.
+!     "rho" denotes the radial coordinate and whether or not it is dimensionless
+!        does not matter. It only requires that derivatives are consistent to dpsi.
+!
+!     *** INPUT VARIABLES ***
+!     den   : electron density for all species [10^20/m^3]
+!     tem   : electron temperature for all species [keV]
+!     dtem  : partial derivative of temperature to rho for all species [keV/rho]
+!     dpres : partial derivative of pressure to rho for all species [10^20 kev/m^3/rho]
+!     zz    : charge number for all species
+! 
+!     qval  : safety factor
+!     dpsi  : partial derivative of poloidal flux to rho [Wb/rho]
+!     Ipsi  : magnetic flux function, i.e. the product of major radius
+!             and toroidal magnetic field (RR*BT) [mT]
+!     EPS   : local inverse aspect ratio
+!     RR    : major radius [m]
+!     Zeff  : effective charge number
+!     ftrap : trapped particle fraction
+!
+!     *** OUTPUT VARIABLES ***
+!     BJBS  : bootstrap parallel current <J . B> [AT/m^2]
+!     ETA   : neoclassical resistivity [Ohm m]
+!     ETAS  : classical resistivity [Ohm m],               optional
+!
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    integer(4), intent(in) :: ispc
+    real(8), dimension(:), intent(in) :: den, tem, dtem, dpres, zz
+    real(8), intent(in) :: qval, dpsi, Ipsi, EPS, RR, Zeff, ftrap
+    real(8), intent(out) :: BJBS, ETA
+    real(8), intent(out), optional :: ETAS
+    ! local
+    real(8), dimension(size(tem)) :: tem_ev, pres, dden
+    real(8) :: EPSS,LnLame,NUE,LnLamii,NUI
+    real(8) :: alpha0,alpha,L31,L32,L34,RNZ,SGMSPTZ
+    real(8) :: F31Teff,F32EETeff,F32EITeff,F33Teff,X,coef,denom
+
+    tem_eV(:) = tem(:) * 1.d3
+
+    ! On magnetic axis, the neoclassical resistivity reduces to the classical resistivity
+    ! and the bootstrap current vanishes.
+    if(EPS == 0.d0) then
+       RNZ = 0.58d0+0.74d0/(0.76d0+Zeff) ! (18a) [1]
+       LnLame = 31.3d0-log(sqrt(den(1)*1.d20)/abs(tem_eV(1))) ! (18d) [1]
+
+       BJBS = 0.d0
+       ETA = 1.d0 / (1.9012d4*tem_eV(1)**1.5d0/(Zeff*RNZ*LnLame)) ! (18a) [1]
+       return
+    end if
+
+    EPSS = sqrt(EPS)**3
+
+    ! pressure
+    pres(:)  = den(:) * 1.d20 * tem_eV(:) * aee ! [J/m^3]
+    ! density gradient
+    dden(1:ispc) = ( dpres(1:ispc) - den(1:ispc) * dtem(1:ispc) ) / tem(1:ispc)
+
+!-----
+!     LnLam : coulomb logarithm
+!     NU    : collisional frequency [/s]
+!
+! Looking at the 2nd sentence of the 1st paragraph of section III.D,
+! it states, 'the definitions of the key parameters ... [Eqs.(12) and (18a)-(18e) in original Sauter
+! paper] must be used in order to calculate correctly and accurately the bootstrap current density
+! with this set of analytical formulae.'
+
+    LnLame = 31.3d0-log(sqrt(den(1)*1.d20)/abs(tem_eV(1))) ! (18d) [1]
+    NUE = 6.921d-18*abs(qval)*RR*den(1)*1.d20*Zeff*LnLame/(tem_eV(1)**2*EPSS) ! (18b) [1]
+
+! Here, zz(2) should be kept unchanged even if a plasma contains many ion species.
+! The literature [2] states 'Also in these formulas Z usually refers to the effective charge Z_eff,
+! except for the ion terms Eqs. (18c) and (18e), where it should be replaced by the main ion charge Z_i.'
+    LnLamii = 30.d0-log(zz(2)**3*sqrt(den(2)*1.d20)/(abs(tem_eV(2))**1.5d0)) ! (18c) [1]
+    NUI = 4.90d-18*abs(qval)*RR*den(2)*1.d20*zz(2)**4*LnLamii/(tem_eV(2)**2*EPSS) ! (18e) [1]
+!-----
+
+!! Eq.(11) [3]
+    F31Teff   = ftrap/(1.d0+(0.67d0*(1.d0-0.7d0*ftrap)*sqrt(NUE)/(0.56d0+0.44d0*Zeff)) &
+                     + (0.52d0+0.086d0*sqrt(NUE))*(1.d0+0.87d0*ftrap)*NUE/(1.d0+1.13d0*sqrt(Zeff-1.d0)))
+!! Eq.(14) [3]
+    F32EETeff = ftrap/(1.d0+(0.23d0*(1.d0-0.96d0*ftrap)*sqrt(NUE)/sqrt(Zeff)) &
+         + (0.13d0*(1.d0-0.38d0*ftrap)*NUE/Zeff**2) &
+         * (sqrt(1.d0+2.d0*sqrt(Zeff-1.d0))+ftrap**2*sqrt((0.075d0+0.25d0*(Zeff-1.d0)**2)*NUE)))
+!! Eq.(16) [3]
+    F32EITeff = ftrap/(1.d0+(0.87d0*(1.d0+0.39d0*ftrap)*sqrt(NUE)/(1.d0+2.95d0*(Zeff-1.d0)**2)) &
+                     + 1.53d0*(1.d0-0.37d0*ftrap)*NUE*(2.d0+0.375d0*(Zeff-1.d0)))
+!! Eq.(20) [3]
+    alpha0 = -(0.62d0+0.055d0*(Zeff-1.d0))/(0.53d0+0.17d0*(Zeff-1.d0)) &
+           * (1.d0-ftrap)/(1.d0-ftrap*((0.31d0-0.065d0*(Zeff-1.d0))-0.25d0*ftrap))
+!! Eq.(21) [3]
+    coef  = (NUI*ftrap**3)**2
+    alpha  = ((alpha0+0.7d0*Zeff*sqrt(ftrap)*sqrt(NUI))/(1.d0+0.18d0*sqrt(NUI))-2.d-3*coef) &
+           /(1.d0+4.d-3*coef)
+
+!! Eq.(10) [3]
+    denom  = Zeff**1.2d0-0.71d0
+    X = F31Teff
+    L31 =  (1.d0+0.15d0/denom)*X &
+         + (- 0.22d0 + 0.01d0*X + 0.06d0*X**2)*X**2/denom
+!! Eqs.(12), (13) and (15) [3]
+    !    L32 = F32EE(F32EETeff,Zeff)+F32EI(F32EITeff,Zeff)
+    X = F32EETeff
+    L32 = (0.1d0+0.6d0*Zeff)*X*(1.d0-X**3)/(Zeff*(0.77d0+0.63d0*(1.d0+(Zeff-1.d0)**1.1d0))) &
+         + 0.7d0*X**2*(1.d0-X**2-1.2d0*X*(1.d0-X))/(1.d0+0.2d0*Zeff) + 1.3d0*X**4/(1.d0+0.5d0*Zeff)
+    X = F32EITeff
+    L32 = L32 &
+         -(0.4d0+1.93d0*Zeff)*X*(1.d0-X**3)/(Zeff*(0.8d0+0.6d0*Zeff)) &
+         + 5.5d0*X**2*(1.d0-X**2-0.8d0*X*(1.d0-X))/(1.5d0+2.d0*Zeff) - 1.3d0*X**4/(1.d0+0.5d0*Zeff)
+!! Eq. (19) [3]
+    L34 = L31
+
+!     *** Bootstrap Current, JBS ***
+
+! Looking at the sentence just before equation (3) on page 3 of [3],
+! it states, 'the occurring density gradients of ions and electrons are set equal.'
+! However, the resultant JBS would be pretty different from that by other models 
+! if JBS were implemented such as the density gradients of ions and electrons are set equal.
+! Hence, we should regard p*d(ln(n))/dpsi as
+!   p*d(ln(n))/dpsi = sum_s(p_s*d(ln(n_s))/dpsi)
+
+! In Eq.(7), it is stated that p sums over ion species and impurity species, 
+! but in Eq.(8), contrary to the sentence written just before Eq.(7), it sums only over the ion species.
+
+!!  Eq.(2) [3]
+    BJBS = -Ipsi/dpsi &
+         *(   L31           *sum(pres(1:ispc)*dden(1:ispc)/den(1:ispc)) &
+           + (L31+L32)      *    pres(1)     *dtem(1)     /tem(1) &
+           + (L31+L34*alpha)*    pres(2)     *dtem(2)     /tem(2) )
+
+!     *** Spitzer and Neoclassical Resistivity, ETAS, ETA ***
+
+!! Eq.(18) [3]
+    F33Teff = ftrap/(  1.d0+0.25d0*(1.d0-0.7d0*ftrap)*sqrt(NUE)*(1.d0+0.45d0*sqrt(Zeff-1.d0)) &
+                  + 0.61d0*(1.d0-0.41d0*ftrap)*NUE/sqrt(Zeff))
+    RNZ     = 0.58d0+0.74d0/(0.76d0+Zeff) ! (18a) [1]
+    SGMSPTZ = 1.9012d4*tem_eV(1)**1.5d0/(Zeff*RNZ*LnLame) ! (18a) [1]
+!! Eq.(17) [3]
+    X = F33Teff
+    ETA  = 1.d0 / (SGMSPTZ * (1.d0-X*((1.d0+0.21/Zeff)+X/Zeff*(0.54d0-X*0.33d0))))
+
+    if(present(etas)) ETAS = 1.d0 / SGMSPTZ
+
+  end subroutine redl_sauter
 
 !     *********************
 !     *  Fitting Function *
@@ -143,37 +315,41 @@ contains
     
     real(8), intent(in) :: X,Z
 
+!! Eq.(13a) [1]
     F33 = 1.d0+(-(1.d0+0.36d0/Z)+(0.59d0-0.23d0*X)*X/Z)*X
 
-  END function F33
+  end function F33
 
   pure real(8) function F31(X,Z)
 
     real(8), intent(in) :: X,Z
 
+!! Eq.(14a) [1]
     F31 = ((1.d0+1.4d0/(Z+1.d0))+(-1.9d0+(0.3d0+0.2d0*X)*X)*X/(Z+1.d0))*X
 
-  END function F31
+  end function F31
 
   pure real(8) function F32EE(X,Z)
 
     real(8), intent(in) :: X,Z
 
+!! Eq.(15b) [1]
     F32EE = ((0.05d0+0.62d0*Z)/(Z*(1.d0+0.44d0*Z))*(1.d0-X**3) &
-         &       +( 1.d0/(1.d0+0.22d0*Z)*(1.d0-1.2d0*X+0.2d0*X**2) &
-         &         +1.2d0/(1.d0+0.5d0*Z)*X**2)*X)*X
+                 +( 1.d0/(1.d0+0.22d0*Z)*(1.d0-1.2d0*X+0.2d0*X**2) &
+                   +1.2d0/(1.d0+0.5d0*Z)*X**2)*X)*X
 
-  END function F32EE
+  end function F32EE
 
   pure real(8) function F32EI(X,Z)
 
     real(8), intent(in) :: X,Z
 
+!! Eq.(15c) [1]
     F32EI =(-(0.56d0+1.93d0*Z)/(Z*(1.d0+0.44d0*Z))*(1.d0-X**3) &
-         &       +( 4.95d0/(1.d0+2.48d0*Z)*(1.d0-0.55d0*X-0.45d0*X**2) &
-         &         -1.2d0/(1.d0+0.5d0*Z)*X**2)*X)*X
+                 +( 4.95d0/(1.d0+2.48d0*Z)*(1.d0-0.55d0*X-0.45d0*X**2) &
+                   -1.2d0/(1.d0+0.5d0*Z)*X**2)*X)*X
 
-  END function F32EI
+  end function F32EI
 
 end module sauter_mod
 

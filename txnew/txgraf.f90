@@ -2,7 +2,7 @@ module tx_graphic
   implicit none
   private
   integer(4), parameter :: NGRM=20, NGTM=5000, NGVM=5000, &
-       &                   NGYRM=352, NGYTM=77, NGYVM=70, &
+       &                   NGYRM=353, NGYTM=77, NGYVM=70, &
        &                   NGPRM=31, NGPTM=9, NGPVM=18
   type graphic_data
      real(4), dimension(:)    , allocatable :: gnrm
@@ -17,13 +17,12 @@ module tx_graphic
   real(4), dimension(0:NGRM) :: GT
   real(4), dimension(0:NGTM) :: GTX
   real(4), dimension(0:NGVM) :: GVX
-  real(4), dimension(1:NGYRM) :: gDIV
   real(4), dimension(0:NGTM,1:NGYTM) :: GTY
   real(4), dimension(0:NGVM,1:NGYVM) :: GVY
   public :: TXGOUT, TX_GRAPH_SAVE, TXSTGR, TXSTGT, TXSTGV, TXSTGQ, allocate_txgraf, &
        &    deallocate_txgraf, &
        &    MODEG, MODEGL, NGR, NGT, NGVV, NGYRM, NGYTM, NGYVM, NGRM, NGRSTP, NGTSTP, NGVSTP, &
-       &    GY, GQY, GYT, GT, GTX, GVX, GTY, GVY, gDIV
+       &    GX, GY, GQY, GYT, GT, GTX, GVX, GTY, GVY
 
 #ifndef nonGSAF
   interface TXWPS
@@ -1102,8 +1101,6 @@ contains
        GYL%v(NR,NG,159) = real(D03(NR)) ; GYL%gnrm(159) = gkilo
        GYL%v(NR,NG,160) = real(D0z(NR)) ; GYL%gnrm(160) = gkilo
 
-       ! 160: spare for future additions
-
        ! *** Pinch velocities *******************************************
 
        GYL%v(NR,NG,161) = real(VWpch(NR))
@@ -1267,7 +1264,6 @@ contains
 
        ! 330-337: spare for future additions
 
-
        ! *** Particle fluxes ******************************************** 
 
        if(NR == 0) then
@@ -1300,6 +1296,10 @@ contains
        GYL%v(NR,NG,351) = real(SiVa6A(NR))
        GYL%v(NR,NG,352) = real(SiVsefA(NR))
 
+       ! *** Miscellaneous **********************************************
+
+       GYL%v(NR,NG,353) = real(dPhidV(NR))
+       
     end do
 
   end subroutine TXSTGR
@@ -2268,7 +2268,7 @@ contains
        call APPROPGY(MODEG, GY%v(:,:,k), GYL, NMAX, STR, GY%gnrm(k))
        call TXGRFRXS( 1, GX, GYL, NRMAX, NGR, STR, MODE, IND)
 
-       k = 283 ; STR = '@$#S$#e$-s$=$#G$#$-s$=.grad V@'
+       k = 301 ; STR = '@$#S$#e$-s$=$#G$#$-s$=.grad V@'
        call TXGRFRXS( 2, GX, GY%v(0,0,k), NRMAX, NGR, STR, MODE, IND)
 
        k = 140 ; STR = '@$#S$#e$-s$=$#G$#$-s$=.grad V w/ beam@'
@@ -5880,7 +5880,8 @@ contains
 !!$          NGV=NGV+3200
 !!$       end if
 !!$       call GVALUE(GSXMIN, GXSTEP*5, 0.0, 0.0, NGV)
-       NGV=NGULEN(GXSTEP*2)
+!       NGV=NGULEN(GXSTEP*2)
+       NGV=NGULEN(GXSTEP)
        call GVALUE(GSXMIN, GXSTEP*2, 0.0, 0.0, NGV)
 !!$    else
 !!$       NGV=NGULEN(GXSTEP*2)
@@ -5899,13 +5900,15 @@ contains
        call SETLNW(-0.017)
        if (GSYMIN < 0.0 .and. GSYMAX > 0.0) &
             &     call GSCALE(0.0, 0.0, 0.0, GSYMAX-GSYMIN,  2.0, 0)
-       call GVALUE(0.0,0.0,GYORG,GYSTEP*2,NGULEN(GYSTEP*2))
+!       call GVALUE(0.0,0.0,GYORG,GYSTEP*2,NGULEN(GYSTEP*2))
+       call GVALUE(0.0,0.0,GYORG,GYSTEP*2,NGULEN(GYSTEP))
     else
        call GScall(0.0, 0.0, GYORG, 4, gSLEN, IND)
        call SETLNW(-0.017)
        if (GSYMIN < 0.0 .and. GSYMAX > 0.0) &
             &     call GScall(0.0, 0.0, 0.0, 3,  2.0, 0)
-       call GVALUL(0.0,0.0,GYORG,1,NGULEN(GYSTEP*2))
+!       call GVALUL(0.0,0.0,GYORG,1,NGULEN(GYSTEP*2))
+       call GVALUL(0.0,0.0,GYORG,1,NGULEN(GYSTEP))
     end if
 
     ! MODE = 0: Change Line Color (Last Color Fixed)

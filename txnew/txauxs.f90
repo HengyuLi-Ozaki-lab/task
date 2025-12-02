@@ -285,9 +285,10 @@ contains
     !            of the perpendicular NBI to the momentum input.
 
     use tx_commons
-    use tx_interface,      only : inexpolate, fgaussian, coulog
+    use tx_interface,      only : inexpolate, fgaussian
     use tx_core_module,    only : intg_vol
     use mod_cross_section, only : SiVcxb, SiVizb
+    use mod_coulomb,       only : coulog
 
     integer(4) :: NR, i, ideriv = 1, nrbound!, izmodel = 1
     real(8) :: SL, SLT1, SLT2, PNBP0, PNBT10, PNBT20, PNBex0, SNBPDi_INTG, &
@@ -590,7 +591,7 @@ contains
 
     !   Ratio of CX deposition rate to IZ deposition rate
 
-    RatCX(:) = 0.d0
+    RatCX(:) = 0.d0 ! Ionization only
 
     zEbkeV  = Eb / amb
     zEbeV   = zEbkeV * 1.d3
@@ -617,14 +618,18 @@ contains
 !!$       RatCX(0:NRMAX) = Scxb / (Scxb + Sion)
 !!$    END IF
     if( PNBH /= 0.d0 ) then
-       do nr = 0, nrmax
-          TieV        = Var(NR,2)%T * rKilo
-          rateizb     = SiVizB(TieV, zEbeV)
-          ratecxb(NR) = SiVcxB(TieV, zEbeV)
-!          RatCX(NR)   = 0.d0 ! Ionization only
-!          RatCX(NR)   = 1.d0 ! Charge Exchange only
-          RatCX(NR)   = ratecxb(NR) / (ratecxb(NR) + rateizb)
-       end do
+       if( MDBMCX == 1 ) then
+          ! Calculate the ratio of CX deposition rate to IZ deposition rate
+          do nr = 0, nrmax
+             TieV        = Var(NR,2)%T * rKilo
+             rateizb     = SiVizB(TieV, zEbeV)
+             ratecxb(NR) = SiVcxB(TieV, zEbeV)
+             RatCX(NR)   = ratecxb(NR) / (ratecxb(NR) + rateizb)
+          end do
+       else if( MDBMCX > 1 .or. MDBMCX < 0 ) then
+          ! Charge Exchange only
+          RatCX(:) = 1.d0
+       end if
     end if
 
     !   Alpha heating

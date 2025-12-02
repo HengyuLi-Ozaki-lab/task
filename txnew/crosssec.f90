@@ -122,7 +122,7 @@ contains
 
   subroutine deallocate_spline_table_carbon_rate_coef_adas
 
-    deallocate(ztemp,zdens,urca6,urcs5,urcf5)
+    if(allocated(ztemp)) deallocate(ztemp,zdens,urca6,urcs5,urcf5)
 
   end subroutine deallocate_spline_table_carbon_rate_coef_adas
 
