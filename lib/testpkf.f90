@@ -5,6 +5,7 @@ PROGRAM testpkf
   USE task_constants
   USE libpdkf
   USE libpdkf_eul
+  USE libpdkf_eul_org
   USE libpgkf
   USE libgrf
   IMPLICIT NONE
@@ -38,8 +39,8 @@ PROGRAM testpkf
      cf2=pdkf_ft(xi,eta,rnu,np_tau)
      cf3=pdkf_eul(xi,eta,rnu,np_tau)
      cf4=pdkf_eul_org(xi,eta,rnu,np_tau)
-     WRITE(6,'(A,4ES12.4)') 'Re: ',REAL(cf1),REAL(cf2),REAL(cf3),REAL(cf４)
-     WRITE(6,'(A,4ES12.4)') 'Im: ',AIMAG(cf1),AIMAg(cf2),AIMAG(cf3),AIMAG(cf４)
+     WRITE(6,'(A,4ES12.4)') 'Re: ',REAL(cf1),REAL(cf2),REAL(cf3),REAL(cf4)
+     WRITE(6,'(A,4ES12.4)') 'Im: ',AIMAG(cf1),AIMAg(cf2),AIMAG(cf3),AIMAG(cf4)
      GOTO 10
   CASE(1)
      CALL plot_pdkf

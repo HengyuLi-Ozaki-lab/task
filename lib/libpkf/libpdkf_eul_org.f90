@@ -1,6 +1,6 @@
-! wieul.f90
+! libpdkf_eul_org
 
-MODULE wieul
+MODULE libpdkf_eul_org
 
   USE task_kinds
   USE task_constants
@@ -8,7 +8,7 @@ MODULE wieul
   REAL(rkind):: G1,G2,G3,G4,G5
 
   PRIVATE
-  PUBLIC wi_eul
+  PUBLIC pdkf_eul_org
 
 CONTAINS
 
@@ -19,7 +19,7 @@ CONTAINS
     IMPLICIT NONE
     REAL(rkind),INTENT(IN):: xi,eta,rnu
     COMPLEX(rkind):: pdkf_eul_org
-    INTEGER(rkind),INTENT(IN):: np_tau
+    INTEGER,INTENT(IN):: np_tau
     INTEGER:: L,n_1
     REAL(rkind):: X,ALFA,BETA0,RKY
     COMPLEX(rkind):: CS
@@ -48,17 +48,17 @@ CONTAINS
 
       IMPLICIT NONE
       REAL(rkind),PARAMETER:: HP=0.5D0*PI
-      INTEGER(ikind),PARAMETER:: LMAX=1000
+      INTEGER(ikind),PARAMETER:: LMAX=200
       REAL(rkind),INTENT(IN):: X,ALFA,BETA0,RKY
       INTEGER(ikind),INTENT(IN):: n1_,M
       INTEGER(ikind),INTENT(INOUT):: L
       COMPLEX(rkind),INTENT(OUT):: CS
       REAL(rkind),DIMENSION(LMAX)::  A,B
-  REAL(rkind)::    Bwidth = 30.D0  ! wirange of reduction near omegape = omega
-  REAL(rkind)::    eps_kf = 1.D-10 ! convergence threshold of kernel function
-  INTEGER(ikind):: modela = 0      ! modela =0: acceleration included
-  REAL(rkind)::    xmin   = -20.D0   ! minimum value of x
-  REAL(rkind)::    xmax   = 100.D0 ! maximum value of x
+      REAL(rkind)::    Bwidth = 30.D0  ! range of reduction near omegape=omega
+      REAL(rkind)::    eps_kf = 1.D-10 ! convergence threshold of kernel fn
+      INTEGER(ikind):: modela = 0      ! modela =0: acceleration included
+      REAL(rkind)::    xmin   = -20.D0 ! minimum value of x
+      REAL(rkind)::    xmax   = 100.D0 ! maximum value of x
       INTEGER(ikind):: ILST,K
       REAL(rkind):: H0,SR1,SI1,SR,SI,ESR,ESI,SR2,SI2,PARITY,SKR,SKI,BETA
 
@@ -348,4 +348,4 @@ CONTAINS
   602 FORMAT(1H ,1PD13.5,2I8,1PD24.15,1PD14.5)
   605 FORMAT(1H ,13X,16X,1PD24.15,1PD14.5)
     END SUBROUTINE DEFTC2
-  END MODULE wieul
+  END MODULE libpdkf_eul_org

@@ -43,7 +43,7 @@ SRCSGRF   =  libgrf/grftype.f90 libgrf/grfutils.f90 libgrf/grdutils.f90 \
 
 SRCSPKF   =  libpkf/libpdkf_eul.f90 libpkf/libpdkf.f90 \
              libpkf/libpdkf2.f90 libpkf/libpgkf.f90 \
-             libpkf/wieul.f90
+             libpkf/libpdkf_eul_org.f90
 
 SRCSFIXED =  $(LAPACK)
 
