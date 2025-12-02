@@ -17,7 +17,8 @@ flag_GSAF = 1
 #PREPRO = -fpp
 PREPRO = -cpp
 #PREPRO += -Ddebug # debug option
-PREPRO += -D_LAPACK=0 # 0: self-compiled, 1: LAPACK95, 2: LAPACK77
+#PREPRO += -D_LAPACK=0 # 0: self-compiled, 1: LAPACK95, 2: LAPACK77
+PREPRO += -D_LAPACK=1 # 0: self-compiled, 1: LAPACK95, 2: LAPACK77
 
 ifeq ($(flag_GSAF),0)
  PREPRO += -DnonGSAF
