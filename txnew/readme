@@ -4,10 +4,16 @@ https://qiita.com/kohga/items/dccf135b0af395f69144
 reduce_D02 in txcalv deteriorates the convergence if it is activated.
 
 
-=== Update via git ===
+=== Check changes in a local repository ===
 
 Confirm which files have been modified and should be uploaded.
 $ git status
+
+=== Changes in the remote repository are reflected in the local repository. ===
+
+$ git pull
+
+=== Update via git ===
 
 Specify the file which will be uploaded.
 $ git add hoge
@@ -34,3 +40,40 @@ $ git ls-files
 === Remove files ===
 
 $ git rm hoge
+
+
+------------------------------------------------------------------------
+
+TX calculation would be broken up if you use "eqdsk.dat".
+It will not happen when you use "eqdata_circular".
+
+The namelist given as
+ &tx
+  ieqread=2
+  zeffin=2
+
+  isupg8=0
+  igbdf=0
+ /
+could let computation work even if
+ &txequ
+  eqfile='eqdsk.dat'
+ /
+The numerical oscillations appear near the boundary.
+
+The namelist given as
+ &tx
+  ieqread=2
+  zeffin=2
+
+  isupg8=1
+  supgstab=0.5
+ /
+could also let computation work regardless of the value of igbdf.
+
+cf.
+txnew_20200115 --> OK (not including impurities)
+txnew_20200602 --> OK (not including impurities) --> isupg2=0
+txnew_20200622 --> NG (not including impurities) --> isupg2=1
+txnew_20200629 --> Not working ...
+txnew_20200721 --> NG (including impurities)

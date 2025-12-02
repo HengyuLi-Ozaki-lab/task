@@ -110,8 +110,10 @@
   
 program TASK_TX
   
-  use tx_commons, only : SLID
+  use tx_commons,           only : SLID
+  use tx_menu,              only : TXMENU
   use tx_parameter_control, only : TXPARF, TXPARM_CHECK
+  use tx_init,              only : TXINIT
   implicit none
   character(len=80) :: KPNAME
 
@@ -122,8 +124,8 @@ program TASK_TX
 
   !     ***** Version ID *****
   !     SLID is used to identify data file.
-  SLID = 'tx550.0'
-  write(6,*) '######## TASK/TX V5.50.00 22/06/07 ########'
+  SLID = 'tx552.2'
+  write(6,*) '######## TASK/TX V5.52.20 24/07/26 ########'
 
   call TXINIT
   KPNAME='txparm'

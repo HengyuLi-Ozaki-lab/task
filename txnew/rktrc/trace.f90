@@ -1,5 +1,5 @@
 module mod_trace
-  use tx_commons, only : pi, irktrc
+  use tx_commons, only : pi, irktrc, ipbtdir
   use equ_params, only : rmaxis => raxis, zmaxis => zaxis, btv, vlv, nv, ckv, sdw !(toms760), nw => nsr, nh => nsz, rg, zg, psi
   implicit none
   private
@@ -21,9 +21,9 @@ contains
     use subs
     use mod_num_recipe
     use equ_params, only : tol, miller, ivdm, isrzdm, arv, vlv, sdw, ckv, ssv, aav, rrv &
-         &                 , bbv, biv, shv, grbm2v, brv, aiv, rbv, r2b2v, rtv, rpv, epsv &
-         &                 , elipv, trigv, ftv, gttiv, dsr, dsz, csu, rsu, zsu, nsu, sigcu &
-         &                 , raxis, zaxis, siw, nmax
+         &                 , bbv, biv, shv, shvv, grbm2v, brv, aiv, rbv, r2b2v, rtv, rpv, epsv &
+         &                 , elipv, trigv, ftv, gttiv, lpv, dsr, dsz, csu, rsu, zsu, nsu &
+         &                 , sigcu, raxis, zaxis, siw, nmax
     use libspl1d, only : spl1d, spl1dd, spl1ddd, spl1df
     real(8), intent(in) :: rinit, zinit
     integer, intent(in) :: nn
@@ -61,22 +61,24 @@ contains
 
     if( nn == 1 ) then
        ! At the magnetic axis
-       arv(1)   = 0.d0
+       lpv(1)   = 0.d0 ! perimeter of a flux surface
 
+       arv(1)   = 0.d0
        vlv(1)   = 0.d0
        ! Interpolate sdw(1) by using dpsi/d(sqrt(V))=0 at V=0
        sdw(1)   = ( vlv(3) * sdw(2) - vlv(2) * sdw(3) ) / ( vlv(3) - vlv(2) )
+       ssv(1)   = 0.d0
        ckv(1)   = 0.d0
        r2b2v(1) = 0.d0
-       ssv(1)   = 0.d0
        aav(1)   = 1.d0 / raxis**2
        rrv(1)   = raxis**2
        bbv(1)   = (rbv(1) / raxis)**2
        biv(1)   = 1.d0 / bbv(1)
+       shvv(1)  = 0.d0
        shv(1)   = 0.d0
        grbm2v(1)= 0.d0
        aiv(1)   = 1.d0 / raxis
-       brv(1)   = rbv(1) / raxis
+       brv(1)   = ipbtdir * rbv(1) / raxis
        
        rtv(1)   = raxis
        rpv(1)   = 0.d0
@@ -115,6 +117,7 @@ contains
        ind = -1
     end if
     call eqmags(rinit,zinit,nmax,xa,ya,nround,ind)
+    lpv(nn) = xa(nround) ! perimeter of the flux surface at nn
     if( ind /= 0 ) then
        write(6,'(X,A,I2)') 'eqmags error: ierr= ', ind
        stop
@@ -129,19 +132,19 @@ contains
     srdz  = 0.d0
     srzdz = 0.d0
 
-    arv(nn) = 0.d0
-    vlv(nn) = 0.d0
-    sdw(nn) = 0.d0
-    ckv(nn) = 0.d0
-    ssv(nn) = 0.d0
-    aav(nn) = 0.d0
-    rrv(nn) = 0.d0
-    bbv(nn) = 0.d0
-    biv(nn) = 0.d0
-    shv(nn) = 0.d0
+    arv(nn)  = 0.d0
+    vlv(nn)  = 0.d0
+    sdw(nn)  = 0.d0
+    ckv(nn)  = 0.d0
+    ssv(nn)  = 0.d0
+    aav(nn)  = 0.d0
+    rrv(nn)  = 0.d0
+    bbv(nn)  = 0.d0
+    biv(nn)  = 0.d0
+    shv(nn)  = 0.d0
     grbm2v(nn) = 0.d0
-    brv(nn) = 0.d0
-    aiv(nn) = 0.d0
+    brv(nn)  = 0.d0
+    aiv(nn)  = 0.d0
     bmax(nn) = 0.d0
 
     bpmin = abs(btv/rmaxis)
@@ -183,8 +186,8 @@ contains
 
     do n = 2, nround
        r     = ya(1,n) ! current R
-       z     = ya(2,n) ! current Z
-       h     = xa(n) - xa(n-1) ! arc length
+!       z     = ya(2,n) ! current Z
+!       h     = xa(n) - xa(n-1) ! arc length
        dz    = ya(2,n) - ya(2,n-1)
 
        bp0 = bp1
@@ -216,7 +219,7 @@ contains
           nbpmin = n
        endif
 !--- calc metric
-       vl1 = ya(1,n) * ya(1,n)
+       vl1 = ya(1,n) * ya(1,n) ! vl1 = r1**2
        z1  = ya(2,n)
        r1  = ya(1,n)
        z1  = ya(2,n)
@@ -239,7 +242,7 @@ contains
        dl   = sqrt(dr10 * dr10 + dz10 * dz10)
        arv(nn) = arv(nn) + dz10 * (r0 +r1 ) * 0.5d0
        vlv(nn) = vlv(nn) + dz10 * (vl0+vl1) * 0.5d0
-       sdw(nn) = sdw(nn) + dl * (ds0 + ds1) * 0.5d0
+       sdw(nn) = sdw(nn) + dl * (ds0 + ds1) * 0.5d0 ! dV/dpsi
        ckv(nn) = ckv(nn) + dl * (ck0 + ck1) * 0.5d0
        ssv(nn) = ssv(nn) + dl * (ss0 + ss1) * 0.5d0
        aav(nn) = aav(nn) + dl * (aa0 + aa1) * 0.5d0
@@ -286,15 +289,17 @@ contains
     enddo
 !--- 
     vlv(nn)    =        pi * vlv(nn)
-    sdw(nn)    = 1.d0 / (2.d0 * pi * sdw(nn))
-    ckv(nn)    = 2.d0 * pi * ckv(nn) / sdw(nn)
+    ssv(nn)    = 2.d0 * pi * ssv(nn) * 2.d0 * pi * sdw(nn)    ! <|nabla V|^2>
+    ckv(nn)    = 2.d0 * pi * ckv(nn) * 2.d0 * pi * sdw(nn)    ! <|nabla V|^2/R^2>
+!---
+    sdw(nn)    = 1.d0 / (2.d0 * pi * sdw(nn))     ! dpsi/dV
     r2b2v(nn)  = 2.d0 * pi * ssv(nn) * sdw(nn)
-    ssv(nn)    = 2.d0 * pi * ssv(nn) / sdw(nn)
     aav(nn)    = 2.d0 * pi * aav(nn) * sdw(nn)
     rrv(nn)    = 2.d0 * pi * rrv(nn) * sdw(nn)
     bbv(nn)    = 2.d0 * pi * bbv(nn) * sdw(nn)
     biv(nn)    = 2.d0 * pi * biv(nn) * sdw(nn)
-    shv(nn)    = 2.d0 * pi * shv(nn) * sdw(nn)
+    shvv(nn)   = 2.d0 * pi * shv(nn)              ! <|nabla V|>
+    shv(nn)    = 2.d0 * pi * shv(nn) * sdw(nn)    ! <|nabla psi|>
     grbm2v(nn) = 2.d0 * pi * grbm2v(nn) * sdw(nn)
     aiv(nn)    = 2.d0 * pi * aiv(nn) * sdw(nn)
     brv(nn)    = 2.d0 * pi * brv(nn) * sdw(nn)
@@ -346,8 +351,6 @@ contains
     enddo
     gttiv(nn) = (2.d0 * pi * sdw(nn)) * gttiv(nn) * (4.d0 * pi**2 * sdw(nn) / aav(nn))**2
 
-    nsu     = nsu - 1
-
     v%Zgeo = srzdz / srdz
 
     deallocate(bmax,fint,flam,nsul,dll,zbl,zbpl,rrl,zzl,dsrl,dszl)
@@ -362,9 +365,9 @@ contains
     zzmin = ya(2,1) ; zzmax = ya(2,1)
     do n = 2, nround
        ! call psigd(ya(1,n),ya(2,n),zdpsidr,zdpsidz)
-       r     = ya(1,n) ! current R
-       z     = ya(2,n) ! current Z
-       h     = xa(n) - xa(n-1) ! arc length
+       !r     = ya(1,n) ! current R
+       !z     = ya(2,n) ! current Z
+       !h     = xa(n) - xa(n-1) ! arc length
 
        ! linearly interpolate Rmax and Rmin for calculating geometrical center of the surface of interest
        if( (ya(2,n) - v%Zgeo)*(ya(2,n-1) - v%Zgeo) < 0 ) then

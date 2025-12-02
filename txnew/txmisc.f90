@@ -1,4 +1,8 @@
 !!! Miscellaneous libraries related to the physics or physical model
+module tx_misc
+  implicit none
+
+contains
 
 !***************************************************************
 !
@@ -12,32 +16,32 @@
 !
 !***************************************************************
 
-real(8) function coll_freq(NR,i,j,eps)
-  use tx_commons, only : pi, aee, eps0, amp, rkev, achg, amas, rr, q, Var, Zeff
-  use tx_interface, only : coulog
-  implicit none
-  integer(4), intent(in) :: NR, i, j
-  real(8), intent(in), optional :: eps
-  real(8) :: const, sqeps3, vtm
+  real(8) function coll_freq(NR,i,j,eps)
+    use tx_commons, only : pi, aee, eps0, amp, rkev, achg, amas, rr, q, Var, Zeff
+    use mod_coulomb, only : coulog
+    implicit none
+    integer(4), intent(in) :: NR, i, j
+    real(8), intent(in), optional :: eps
+    real(8) :: const, sqeps3, vtm
 
-  const = AEE**4 * 1.d20 / (eps0**2 * 6.d0 * pi * sqrt(2.d0 * pi * amp * rKeV) * rKeV)
+    const = AEE**4 * 1.d20 / (eps0**2 * 6.d0 * pi * sqrt(2.d0 * pi * amp * rKeV) * rKeV)
 
-  coll_freq = Var(NR,j)%n * (achg(i)*achg(j))**2 / ( sqrt(amas(i) * Var(NR,i)%T) * Var(NR,i)%T )  &
-       &    * coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T,amas(i),achg(i),amas(j),achg(j)) &
-       &    * const
+    coll_freq = Var(NR,j)%n * (achg(i)*achg(j))**2 / ( sqrt(amas(i) * Var(NR,i)%T) * Var(NR,i)%T )  &
+         &    * coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T,amas(i),achg(i),amas(j),achg(j)) &
+         &    * const
 
-  ! Effective collision frequency
-  if(present(eps)) then
-     sqeps3 = sqrt(eps) * eps
-     if( sqeps3 == 0.d0 ) then
-        coll_freq = 0.d0 ! Note that it must be huge in nature.
-     else
-        vtm = sqrt(2.d0 * Var(NR,i)%T * rKeV / (amas(i) * amp))
-        coll_freq = coll_freq * (rr * q(NR) / (sqeps3 * vtm))
-     end if
-  end if
-    
-end function coll_freq
+    ! Effective collision frequency
+    if(present(eps)) then
+       sqeps3 = sqrt(eps) * eps
+       if( sqeps3 == 0.d0 ) then
+          coll_freq = 0.d0 ! Note that it must be huge in nature.
+       else
+          vtm = sqrt(2.d0 * Var(NR,i)%T * rKeV / (amas(i) * amp))
+          coll_freq = coll_freq * (rr * q(NR) / (sqeps3 * vtm))
+       end if
+    end if
+
+  end function coll_freq
 
 !***************************************************************
 !
@@ -46,14 +50,14 @@ end function coll_freq
 !
 !***************************************************************
 
-pure real(8) function CORR(X)
-  ! X is the effective charge number
-  real(8), intent(in) :: X
+  pure real(8) function CORR(X)
+    ! X is the effective charge number
+    real(8), intent(in) :: X
 
-  CORR = (1.D0 + (1.198D0 + 0.222D0 * X) * X) * X &
-  &    / (1.D0 + (2.966D0 + 0.753D0 * X) * X)
+    CORR = (1.D0 + (1.198D0 + 0.222D0 * X) * X) * X &
+         &    / (1.D0 + (2.966D0 + 0.753D0 * X) * X)
 
-end function CORR
+  end function CORR
 
 !***************************************************************
 !
@@ -62,10 +66,12 @@ end function CORR
 !
 !***************************************************************
 
-elemental real(8) function ftfunc(x)
-  ! x is the inverse aspect ratio ; x is either scaler or array.
-  real(8), intent(in) :: x
+  elemental real(8) function ftfunc(x)
+    ! x is the inverse aspect ratio ; x is either scaler or array.
+    real(8), intent(in) :: x
 
-  ftfunc = (1.46d0 - 0.46d0 * x) * sqrt(x)
+    ftfunc = (1.46d0 - 0.46d0 * x) * sqrt(x)
 
-end function ftfunc
+  end function ftfunc
+
+end module tx_misc

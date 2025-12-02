@@ -216,21 +216,22 @@ subroutine TXSAVE
        & PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza, &
        & PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0,PROFD,PROFD1,PROFD2,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB, &
        & Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC,FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1, &
-       & FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV,FSCX,FSLC,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSD01,FSD02,FSD03, &
-       & FSRP,FSNF,FSADV,FSADVB,FSUG,FSHL,MDLC,rLn,rLT,Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBH,PNBHP,&
+       & FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV,FSCX,FSLC,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSNCOL, &
+       & FSD01,FSD02,FSD03,FSD0z,FSG0iz,FSRP,FSNF, &
+       & FSADV,FSADVB,FSUG,FSHL,MDLC,rLn,rLT,Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBH,PNBHP,&
        & PNBHT1,PNBHT2,rNRFe,RRFew,RRFe0,PRFHe,rNRFi,RRFiw,RRFi0,PRFHi,PNBCD, &
-       & PN0s,V0,rGamm0,rGASPF,PNsDIV,PTsDIV, &
+       & PN0s,V0,rGamm0_in,rGASPF,PN0zs,V0z,rGamm0zz_in,rGamm0iz_in,rGASPFz,PNsSUP,PTsSUP, &
        & DT,EPS,ADV,tiny_cap,CMESH0,WMESH0,CMESH,WMESH, &
        & ICMAX,NRMAX,NTMAX,NTSTEP,T_TX,TMAX,NT,NTCUM,NQMAX,IERR,X, &
        & NLCMAX,NCM,NTCOIL,DltRPn,m_pol,n_tor, &
        & MODEAV,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab, &
-       & IGBDF,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM, &
-       & MDLNBD,PNBMPD,PNBPTC,thrp,kappa,CPsi,VPoynt,PoyntI
+       & IGBDF,ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor, &
+       & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,thrp,kappa,CPsi,VPoynt,PoyntI,imodel_neo
   use tx_graphic, only : NGYTM,NGYVM,MODEG,MODEGL,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP,GTY,GVY,GQY,GTX,GVX
   use tx_interface, only : TOUPPER
 
   implicit none
-  integer(4) :: IST, NQ, NR, NC, I, IGYT, IGYV
+  integer(4) :: IST, NQ, NR, NC, I, IGYT, IGYV, io
   character(len=100) :: TXFNAM, RCSId
   character(len=1) :: STR
   logical :: LEX
@@ -254,7 +255,7 @@ subroutine TXSAVE
         read(*,'(A1)') STR
         call TOUPPER(STR)
         if (STR == 'Y') then
-           open(21,file=TXFNAM,iostat=IST,status='old',form='unformatted')
+           open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='unformatted')
            if (IST == 0) then
               write(6,*) '# OLD FILE ( ', TXFNAM(1:len_trim(TXFNAM)), &
                    &     ' ) IS ASSIGNED FOR OUTPUT.'
@@ -264,7 +265,7 @@ subroutine TXSAVE
            end if
         end if
      else
-        open(21,file=TXFNAM,iostat=IST,status='new',form='unformatted')
+        open(newunit=io,file=TXFNAM,iostat=IST,status='new',form='unformatted')
         if (IST == 0) then
            write(6,*) '# NEW FILE ( ', TXFNAM(1:len_trim(TXFNAM)), &
                 &     ' ) IS CREATED FOR OUTPUT.'
@@ -276,49 +277,51 @@ subroutine TXSAVE
   end do
 
   ! *** Variables defined in tx_commons but not included in the following ***
+  !     Typically, they are used only in the initialization phase.
   !
   !   VWpch0, Tqt0, Tqp0, NEMAX, NRA, NRC, DelRho, DelN,
   !   EpsH, Q0, QA, NCph, NCth, DMAG0, RMAGMN, RMAGMX,
-  !   MDITSN, MDITST, MDINTN, MDINTT, MDINTC
+  !   ieqread, midbg, MDITSN, MDITST, MDINTN, MDINTT, MDINTC
   !
   ! *************************************************************************
 
-  write(21) SLID
-  write(21) RCSId
+  write(io) SLID
+  write(io) RCSId
 
-  write(21) RA,rhob,rhoaccum,RR,BB,rbvt,ravl,rbvl
-  write(21) amas,achg,amb,achgb,rIPs,rIPe
-  write(21) PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza,PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0
-  write(21) PROFD,PROFD1,PROFD2,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB
-  write(21) Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC
-  write(21) FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1,FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV
-  write(21) FSCX,FSLC,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSD01,FSD02,FSD03,FSRP,FSNF,FSADV,FSADVB,FSUG,FSHL
-  write(21) rLn,rLT
-  write(21) Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBH,PNBHP,PNBHT1,PNBHT2
-  write(21) rNRFe,RRFew,RRFe0,PRFHe,rNRFi,RRFiw,RRFi0,PRFHi,PNBCD,PNBMPD,PNBPTC
-  write(21) PN0s,V0,rGamm0,rGASPF,PNsDIV,PTsDIV
-  write(21) DltRPn,kappa
-  write(21) DT,EPS,ADV,tiny_cap,CMESH0,WMESH0,CMESH,WMESH
-  write(21) ICMAX,NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
-  write(21) MODEG,MODEAV,MODEGL,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab,IGBDF
-  write(21) MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM
-  write(21) MDLNBD,MDLC,NTCOIL,m_pol,n_tor
+  write(io) RA,rhob,rhoaccum,RR,BB,rbvt,ravl,rbvl
+  write(io) amas,achg,amb,achgb,rIPs,rIPe
+  write(io) PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza,PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0
+  write(io) PROFD,PROFD1,PROFD2,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB
+  write(io) Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC
+  write(io) FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1,FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV
+  write(io) FSCX,FSLC,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSNCOL,FSD01,FSD02,FSD03,FSD0z,FSG0iz,FSRP,FSNF
+  write(io) FSADV,FSADVB,FSUG,FSHL
+  write(io) rLn,rLT
+  write(io) Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBH,PNBHP,PNBHT1,PNBHT2
+  write(io) rNRFe,RRFew,RRFe0,PRFHe,rNRFi,RRFiw,RRFi0,PRFHi,PNBCD,PNBMPD,PNBPTC
+  write(io) PN0s,V0,rGamm0_in,rGASPF,PN0zs,V0z,rGamm0zz_in,rGamm0iz_in,rGASPFz,PNsSUP,PTsSUP
+  write(io) DltRPn,kappa
+  write(io) DT,EPS,ADV,tiny_cap,CMESH0,WMESH0,CMESH,WMESH
+  write(io) ICMAX,NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
+  write(io) MODEG,MODEAV,MODEGL,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab,IGBDF
+  write(io) ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor
+  write(io) MDLETB,MDLNBD,MDBMCX,imodel_neo,MDLC,NTCOIL,m_pol,n_tor
 
-  write(21) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
-  write(21) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
+  write(io) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
+  write(io) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
 
-  write(21) NGT
-  write(21) (GTX(I), I=0, NGT)
-  write(21) (GVX(I), I=0, NGVV)
-  write(21) ((GTY(I,IGYT), I=0, NGT),  IGYT =1, NGYTM)
-  write(21) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
-  write(21) (NLCMAX(NQ), NQ=1,NQMAX)
-  write(21) (((GQY(NR,NC,NQ), NR=0, NRMAX), NC=1, NCM), NQ=1, NQMAX)
-  write(21) (PoyntI(I), I=1, 2)
-  write(21) (CPsi(I), I=0, 3)
-  write(21) (VPoynt(I), I=0, 3)
-  write(21) (thrp(I), I=1, 2*NRMAX)
-  close(21)
+  write(io) NGT
+  write(io) (GTX(I), I=0, NGT)
+  write(io) (GVX(I), I=0, NGVV)
+  write(io) ((GTY(I,IGYT), I=0, NGT),  IGYT =1, NGYTM)
+  write(io) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
+  write(io) (NLCMAX(NQ), NQ=1,NQMAX)
+  write(io) (((GQY(NR,NC,NQ), NR=0, NRMAX), NC=1, NCM), NQ=1, NQMAX)
+  write(io) (PoyntI(I), I=1, 2)
+  write(io) (CPsi(I), I=0, 3)
+  write(io) (VPoynt(I), I=0, 3)
+  write(io) (thrp(I), I=1, 2*NRMAX)
+  close(io)
   write(6,*) '# DATA WAS SUCCESSFULLY SAVED IN THE FILE.'
 
 end SUBROUTINE TXSAVE
@@ -336,18 +339,20 @@ subroutine TXLOAD(IST)
        & PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza, &
        & PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0,PROFD,PROFD1,PROFD2,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB, &
        & Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC,FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1, &
-       & FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV,FSCX,FSLC,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSD01,FSD02,FSD03, &
-       & FSRP,FSNF,FSADV,FSADVB,FSUG,FSHL,MDLC,rLn,rLT,Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBH,PNBHP, &
+       & FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV,FSCX,FSLC,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSNCOL, &
+       & FSD01,FSD02,FSD03,FSD0z,FSG0iz,FSRP,FSNF, &
+       & FSADV,FSADVB,FSUG,FSHL,MDLC,rLn,rLT,Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBH,PNBHP, &
        & PNBHT1,PNBHT2,rNRFe,RRFew,RRFe0,PRFHe,rNRFi,RRFiw,RRFi0,PRFHi,PNBCD, &
-       & PN0s,V0,rGamm0,rGASPF,PNsDIV,PTsDIV, &
+       & PN0s,V0,rGamm0_in,rGASPF,PN0zs,V0z,rGamm0zz_in,rGamm0iz_in,rGASPFz,PNsSUP,PTsSUP, &
        & DT,EPS,ADV,tiny_cap,CMESH0,WMESH0,CMESH,WMESH, &
        & ICMAX,NRMAX,NTMAX,NTSTEP,T_TX,TMAX,NT,NTCUM,NQMAX,IERR,X, &
        & NLCMAX,NCM,NTCOIL,DltRPn,m_pol,n_tor, &
        & MODEAV,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab, &
-       & IGBDF,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM, &
-       & MDLNBD,PNBMPD,PNBPTC,rIP,thrp,kappa,CPsi,VPoynt,PoyntI, &
+       & IGBDF,ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor, &
+       & MDLETB,MDLNBD,MDBMCX,imodel_neo,PNBMPD,PNBPTC,rIP,thrp,kappa,CPsi,VPoynt,PoyntI, &
        & ErV,PTsV_FIX,PNsV_FIX,ErV_FIX, &
        & rMU0,rMUb1,rMUb2,NEMAX,ICONT,TAUE2,LQb1,Var,irestart, NSM
+  use tx_init, only : TXCALM
   use tx_graphic, only : allocate_txgraf,deallocate_txgraf, &
        &                 MODEG,MODEGL,NGYTM,NGYVM,NGR,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP, &
        &                 GTY,GVY,GQY,GTX,GVX
@@ -359,7 +364,7 @@ subroutine TXLOAD(IST)
   use mod_cross_section, only : spline_table_carbon_rate_coef_adas, spline_table_beam_rate_coef
   implicit none
   integer(4), intent(out) :: IST
-  integer(4) :: NQ, NR, NC, I, IGYT, IGYV
+  integer(4) :: NQ, NR, NC, I, IGYT, IGYV, io
   character(len=100) ::  TXFNAM, RCSId
   character(len=8) :: LOADSLID
   logical :: LEX
@@ -375,7 +380,7 @@ subroutine TXLOAD(IST)
      end if
      inquire(file=TXFNAM,exist=LEX)
      if (LEX) then
-        open(21,file=TXFNAM,iostat=IST,status='old',form='unformatted')
+        open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='unformatted')
         if (IST == 0) then
            write(6,*) '# OLD FILE ( ', TXFNAM(1:len_trim(TXFNAM)),  &
                 &     ' ) IS ASSIGNED FOR INPUT.'
@@ -388,33 +393,34 @@ subroutine TXLOAD(IST)
      end if
   end do
 
-  read(21,iostat=IST) LOADSLID
+  read(io,iostat=IST) LOADSLID
   if (IST > 0) then
      write(6,*) 'XX read ERROR in TXLOAD !'
-     close(21)
+     close(io)
      return
   end if
-  read(21) RCSId
+  read(io) RCSId
 
-  read(21) RA,rhob,rhoaccum,RR,BB,rbvt,ravl,rbvl
-  read(21) amas,achg,amb,achgb,rIPs,rIPe
-  read(21) PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza,PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0
-  read(21) PROFD,PROFD1,PROFD2,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB
-  read(21) Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC
-  read(21) FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1,FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV
-  read(21) FSCX,FSLC,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSD01,FSD02,FSD03,FSRP,FSNF,FSADV,FSADVB,FSUG,FSHL
-  read(21) rLn,rLT
-  read(21) Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBH,PNBHP,PNBHT1,PNBHT2
-  read(21) rNRFe,RRFew,RRFe0,PRFHe,rNRFi,RRFiw,RRFi0,PRFHi,PNBCD,PNBMPD,PNBPTC
-  read(21) PN0s,V0,rGamm0,rGASPF,PNsDIV,PTsDIV
-  read(21) DltRPn,kappa
-  read(21) DT,EPS,ADV,tiny_cap,CMESH0,WMESH0,CMESH,WMESH
-  read(21) ICMAX,NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
-  read(21) MODEG,MODEAV,MODEGL,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab,IGBDF
-  read(21) MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM
-  read(21) MDLNBD,MDLC,NTCOIL,m_pol,n_tor
+  read(io) RA,rhob,rhoaccum,RR,BB,rbvt,ravl,rbvl
+  read(io) amas,achg,amb,achgb,rIPs,rIPe
+  read(io) PN0,PNa,PTe0,PTea,PTi0,PTia,PTz0,PTza,PROFJ,PROFN1,PROFN2,PROFT1,PROFT2,Uiph0
+  read(io) PROFD,PROFD1,PROFD2,PROFDB,PROFM,PROFM1,PROFMB,PROFC,PROFC1,PROFCB
+  read(io) Dfs0,VWpch0,rMus0,WPM0,Chis0,ChiNC
+  read(io) FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1,FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV
+  read(io) FSCX,FSLC,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSNCOL,FSD01,FSD02,FSD03,FSD0z,FSG0iz,FSRP,FSNF
+  read(io) FSADV,FSADVB,FSUG,FSHL
+  read(io) rLn,rLT
+  read(io) Ebmax,esps,RNBP,RNBP0,RNBT1,RNBT2,RNBT10,RNBT20,PNBH,PNBHP,PNBHT1,PNBHT2
+  read(io) rNRFe,RRFew,RRFe0,PRFHe,rNRFi,RRFiw,RRFi0,PRFHi,PNBCD,PNBMPD,PNBPTC
+  read(io) PN0s,V0,rGamm0_in,rGASPF,PN0zs,V0z,rGamm0zz_in,rGamm0iz_in,rGASPFz,PNsSUP,PTsSUP
+  read(io) DltRPn,kappa
+  read(io) DT,EPS,ADV,tiny_cap,CMESH0,WMESH0,CMESH,WMESH
+  read(io) ICMAX,NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
+  read(io) MODEG,MODEAV,MODEGL,IDIAG,MDLPCK,MODECV,oldmix,iSUPG3,iSUPG6,iSUPG8,SUPGstab,IGBDF
+  read(io) ISMTHD,iprestab,MDFIXT,MDBEAM,MDOSQZ,MDOSQZN,MDLETA,MDLNEO,MDANOM,iPoyntpol,iPoynttor
+  read(io) MDLETB,MDLNBD,MDBMCX,imodel_neo,MDLC,NTCOIL,m_pol,n_tor
 
-  read(21) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
+  read(io) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
 
   call allocate_txcomm(ierr)
   call allocate_txgraf(ierr)
@@ -424,20 +430,20 @@ subroutine TXLOAD(IST)
      write(6,*) "XX Allocation error : TXLOAD"
   end if
 
-  read(21) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
+  read(io) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
 
-  read(21) NGT
-  read(21) (GTX(I), I=0, NGT)
-  read(21) (GVX(I), I=0, NGVV)
-  read(21) ((GTY(I,IGYT), I=0, NGT), IGYT =1, NGYTM)
-  read(21) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
-  read(21) (NLCMAX(NQ), NQ=1,NQMAX)
-  read(21) (((GQY(NR,NC,NQ), NR=0, NRMAX), NC=1, NCM), NQ=1, NQMAX)
-  read(21) (PoyntI(I), I=1, 2)
-  read(21) (CPsi(I), I=0, 3)
-  read(21) (VPoynt(I), I=0, 3)
-  read(21) (thrp(I), I=1, 2*NRMAX)
-  close(21)
+  read(io) NGT
+  read(io) (GTX(I), I=0, NGT)
+  read(io) (GVX(I), I=0, NGVV)
+  read(io) ((GTY(I,IGYT), I=0, NGT), IGYT =1, NGYTM)
+  read(io) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
+  read(io) (NLCMAX(NQ), NQ=1,NQMAX)
+  read(io) (((GQY(NR,NC,NQ), NR=0, NRMAX), NC=1, NCM), NQ=1, NQMAX)
+  read(io) (PoyntI(I), I=1, 2)
+  read(io) (CPsi(I), I=0, 3)
+  read(io) (VPoynt(I), I=0, 3)
+  read(io) (thrp(I), I=1, 2*NRMAX)
+  close(io)
   write(6,'(2A)') '# DATA WAS SUCCESSFULLY LOADED FROM THE FILE. ID = ',LOADSLID
 
   rb = rhob * ra
@@ -504,15 +510,15 @@ subroutine TXGSAV
        & SLID,RA,rhob,RR,BB,rbvt,ravl,rbvl,amas,achg,amb,achgb,PTe0,PTea,PTi0,PTia,PTz0,PTza, &
        & Dfs0,rMus0,WPM0,Chis0,FSDFIX,FSANOM,FSCBKP,FSCBSH, &
        & FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV,PROFD,PROFC, &
-       & FSCX,FSLC,FSRP,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION, &
-       & FSD01,FSD02,FSD03,Ebmax,esps,PNBH,PNBHP,PNBHT1,PNBHT2,PRFHe,PRFHi,PNBCD,PNBMPD,PNBPTC, &
-       & V0,rGamm0,rGASPF,PNsDIV,PTsDIV, &
+       & FSCX,FSLC,FSRP,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSNCOL, &
+       & FSD01,FSD02,FSD03,FSD0z,FSG0iz,Ebmax,esps,PNBH,PNBHP,PNBHT1,PNBHT2,PRFHe,PRFHi,PNBCD,PNBMPD,PNBPTC, &
+       & V0,rGamm0,rGASPF,V0z,rGamm0zz,rGamm0iz,rGASPFz,PNsSUP,PTsSUP, &
        & DT,NRMAX,NTMAX,NTSTEP,rG1,T_TX,TMAX,NT,NTCUM,NQMAX,IERR,X, &
        & NLCMAX,NCM,DltRPn,thrp,kappa,CPsi,VPoynt,PoyntI
   use tx_graphic, only : MODEG,MODEGL,NGYRM,NGYTM,NGYVM,NGR,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP, &
        &                 GTY,GVY,GQY,GY,GYT,GTX,GVX,GT
   implicit none
-  integer(4) :: IST, NQ, NR, NC, IGR, I, IGYR, IGYT, IGYV
+  integer(4) :: IST, NQ, NR, NC, IGR, I, IGYR, IGYT, IGYV, io
   character(len=100) :: TXFNAM, RCSId
   character(len=1) :: STR
   logical :: LEX
@@ -536,7 +542,7 @@ subroutine TXGSAV
         read(*,'(A1)') STR
         if (STR /= 'Y' .and. STR /= 'y') then
         else
-           open(21,file=TXFNAM,iostat=IST,status='old',form='unformatted')
+           open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='unformatted')
            if (IST == 0) then
               write(6,*) '# OLD FILE ( ', TXFNAM(1:len_trim(TXFNAM)), &
                    &     ' ) IS ASSIGNED FOR OUTPUT.'
@@ -546,7 +552,7 @@ subroutine TXGSAV
            end if
         end if
      else
-        open(21,file=TXFNAM,iostat=IST,status='new',form='unformatted')
+        open(newunit=io,file=TXFNAM,iostat=IST,status='new',form='unformatted')
         if (IST == 0) then
            write(6,*) '# NEW FILE ( ', TXFNAM(1:len_trim(TXFNAM)), &
                 &     ' ) IS CREATED FOR OUTPUT.'
@@ -557,42 +563,43 @@ subroutine TXGSAV
      end if
   end do
 
-    write(21) SLID
-!!$    write(21) RCSId
+    write(io) SLID
+!!$    write(io) RCSId
 
-  write(21) RA,rhob,RR,BB,rbvt,ravl,rbvl
-  write(21) amas,achg,amb,achgb
-  write(21) PTe0,PTea,PTi0,PTia,PTz0,PTza
-  write(21) Dfs0,rMus0,WPM0,Chis0
-  write(21) FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1,FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV
-  write(21) PROFD,PROFC
-  write(21) FSCX,FSLC,FSRP,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSD01,FSD02,FSD03
-  write(21) Ebmax,esps,PNBH,PNBHP,PNBHT1,PNBHT2
-  write(21) PRFHe,PRFHi,PNBCD,PNBMPD,PNBPTC
-  write(21) V0,rGamm0,rGASPF,PNsDIV,PTsDIV
-  write(21) DltRPn,kappa
-  write(21) DT
-  write(21) NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
-  write(21) MODEG,MODEGL
+  write(io) RA,rhob,RR,BB,rbvt,ravl,rbvl
+  write(io) amas,achg,amb,achgb
+  write(io) PTe0,PTea,PTi0,PTia,PTz0,PTza
+  write(io) Dfs0,rMus0,WPM0,Chis0
+  write(io) FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1,FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV
+  write(io) PROFD,PROFC
+  write(io) FSCX,FSLC,FSRP,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSNCOL,FSD01,FSD02,FSD03,FSD0z,FSG0iz
+  write(io) Ebmax,esps,PNBH,PNBHP,PNBHT1,PNBHT2
+  write(io) PRFHe,PRFHi,PNBCD,PNBMPD,PNBPTC
+  write(io) V0,rGamm0,rGASPF,V0z,rGamm0zz,rGamm0iz,rGASPFz,PNsSUP,PTsSUP
+  write(io) DltRPn,kappa
+  write(io) DT
+  write(io) NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
+  write(io) MODEG,MODEGL
 
-  write(21) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
-  write(21) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
+  write(io) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
+  write(io) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
 
-  write(21) NGR,NGT,NGVV
-  write(21) (GT(IGR), IGR=0, NGR)
-  write(21)(((GY%v(I,IGR,IGYR), I=0,NRMAX), IGR=0,NGR), IGYR=1,NGYRM)
-  write(21) (GTX(I), I=0, NGT)
-  write(21) (GVX(I), I=0, NGVV)
-  write(21) ((GTY(I,IGYT), I=0, NGT), IGYT =1, NGYTM)
-  write(21) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
-  write(21) (NLCMAX(NQ), NQ=1,NQMAX)
-  write(21) (((GQY(NR,NC,NQ), NR=0, NRMAX), NC=1, NCM), NQ=1, NQMAX)
-  write(21) (((GYT%v(NR,I,IGYR), NR=0,NRMAX), I=0,NGT), IGYR=1,NGYRM)
-  write(21) (PoyntI(I), I=1, 2)
-  write(21) (CPsi(I), I=0, 3)
-  write(21) (VPoynt(I), I=0, 3)
-  write(21) (thrp(I), I=1, 2*NRMAX)
-  close(21)
+  write(io) NGR,NGT,NGVV
+  write(io) (GT(IGR), IGR=0, NGR)
+  write(io)(((GY%v(I,IGR,IGYR), I=0,NRMAX), IGR=0,NGR), IGYR=1,NGYRM)
+  write(io) (GY%gnrm(IGYR), IGYR=1,NGYRM)
+  write(io) (GTX(I), I=0, NGT)
+  write(io) (GVX(I), I=0, NGVV)
+  write(io) ((GTY(I,IGYT), I=0, NGT), IGYT =1, NGYTM)
+  write(io) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
+  write(io) (NLCMAX(NQ), NQ=1,NQMAX)
+  write(io) (((GQY(NR,NC,NQ), NR=0, NRMAX), NC=1, NCM), NQ=1, NQMAX)
+  write(io) (((GYT%v(NR,I,IGYR), NR=0,NRMAX), I=0,NGT), IGYR=1,NGYRM)
+  write(io) (PoyntI(I), I=1, 2)
+  write(io) (CPsi(I), I=0, 3)
+  write(io) (VPoynt(I), I=0, 3)
+  write(io) (thrp(I), I=1, 2*NRMAX)
+  close(io)
   write(6,*) '# DATA WAS SUCCESSFULLY SAVED IN THE FILE.'
 
 end subroutine TXGSAV
@@ -610,11 +617,12 @@ subroutine TXGLOD(IST)
        & RA,RB,rhob,RR,BB,rbvt,ravl,rbvl,amas,achg,amb,achgb,PTe0,PTea,PTi0,PTia,PTz0,PTza, &
        & Dfs0,rMus0,WPM0,Chis0,FSDFIX,FSANOM,FSCBKP,FSCBSH, &
        & FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV,PROFD,PROFC, &
-       & FSCX,FSLC,FSRP,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION, &
-       & FSD01,FSD02,FSD03,Ebmax,esps,PNBH,PNBHP,PNBHT1,PNBHT2,PRFHe,PRFHi,PNBCD,PNBMPD,PNBPTC, &
-       & V0,rGamm0,rGASPF,PNsDIV,PTsDIV, &
+       & FSCX,FSLC,FSRP,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSNCOL, &
+       & FSD01,FSD02,FSD03,FSD0z,FSG0iz,Ebmax,esps,PNBH,PNBHP,PNBHT1,PNBHT2,PRFHe,PRFHi,PNBCD,PNBMPD,PNBPTC, &
+       & V0,rGamm0,rGASPF,V0z,rGamm0zz,rGamm0iz,rGASPFz,PNsSUP,PTsSUP, &
        & DT,NRMAX,NTMAX,NTSTEP,rG1,T_TX,TMAX,NT,NTCUM,NQMAX,IERR,X, &
        & NLCMAX,NCM,DltRPn,thrp,kappa,CPsi,VPoynt,PoyntI!,rho
+  use tx_init, only : TXCALM
   use tx_graphic, only : allocate_txgraf,deallocate_txgraf, &
        &                 MODEG,MODEGL,NGYRM,NGYTM,NGYVM,NGR,NGT,NGVV,NGRSTP,NGTSTP,NGVSTP, &
        &                 GTY,GVY,GQY,GY,GYT,GTX,GVX,GT
@@ -622,7 +630,7 @@ subroutine TXGLOD(IST)
 
   implicit none
   integer(4), intent(out) :: IST
-  integer(4) :: NQ, NR, NC, IGR, I, IGYR, IGYT, IGYV
+  integer(4) :: NQ, NR, NC, IGR, I, IGYR, IGYT, IGYV, io
   character(len=100) :: TXFNAM
 !!  character(len=100) :: RCSId
   character(len=8) :: LOADSLID
@@ -639,7 +647,7 @@ subroutine TXGLOD(IST)
      end if
      inquire(file=TXFNAM,exist=LEX)
      if (LEX) then
-        open(21,file=TXFNAM,iostat=IST,status='old',form='unformatted')
+        open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='unformatted')
         if (IST == 0) then
            write(6,*) '# OLD FILE ( ', TXFNAM(1:len_trim(TXFNAM)),&
                 &     ' ) IS ASSIGNED FOR INPUT.'
@@ -652,31 +660,31 @@ subroutine TXGLOD(IST)
      end if
   end do
 
-  read(21,iostat=IST) LOADSLID
+  read(io,iostat=IST) LOADSLID
   if (IST > 0) then
      write(6,*) 'XX read ERROR in TXGLOD !'
-     close(21)
+     close(io)
      return
   end if
 !!$    !  if(LOADSLID(1:5) == 'tx459') then
-!!$    read(21) RCSId
+!!$    read(io) RCSId
 
-  read(21) RA,rhob,RR,BB,rbvt,ravl,rbvl
-  read(21) amas,achg,amb,achgb
-  read(21) PTe0,PTea,PTi0,PTia,PTz0,PTza
-  read(21) Dfs0,rMus0,WPM0,Chis0
-  read(21) FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1,FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV
-  read(21) PROFD,PROFC
-  read(21) FSCX,FSLC,FSRP,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSD01,FSD02,FSD03
-  read(21) Ebmax,esps,PNBH,PNBHP,PNBHT1,PNBHT2
-  read(21) PRFHe,PRFHi,PNBCD,PNBMPD,PNBPTC
-  read(21) V0,rGamm0,rGASPF,PNsDIV,PTsDIV
-  read(21) DltRPn,kappa
-  read(21) DT
-  read(21) NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
-  read(21) MODEG,MODEGL
+  read(io) RA,rhob,RR,BB,rbvt,ravl,rbvl
+  read(io) amas,achg,amb,achgb
+  read(io) PTe0,PTea,PTi0,PTia,PTz0,PTza
+  read(io) Dfs0,rMus0,WPM0,Chis0
+  read(io) FSDFIX,FSANOM,FSCBKP,FSCBSH,rG1,FSBOHM,FSPCL,FSVAHL,FSMPCH,FSPARV
+  read(io) PROFD,PROFC
+  read(io) FSCX,FSLC,FSRP,FSNC,FSNCB,FSLP,FSLTs,FSLPB,FSION,FSNCOL,FSD01,FSD02,FSD03,FSD0z,FSG0iz
+  read(io) Ebmax,esps,PNBH,PNBHP,PNBHT1,PNBHT2
+  read(io) PRFHe,PRFHi,PNBCD,PNBMPD,PNBPTC
+  read(io) V0,rGamm0,rGASPF,V0z,rGamm0zz,rGamm0iz,rGASPFz,PNsSUP,PTsSUP
+  read(io) DltRPn,kappa
+  read(io) DT
+  read(io) NRMAX,NTMAX,NTSTEP,NGRSTP,NGTSTP,NGVSTP
+  read(io) MODEG,MODEGL
 
-  read(21) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
+  read(io) T_TX,TMAX,NT,NTCUM,NQMAX,IERR
 
   call allocate_txcomm(ierr)
   call allocate_txgraf(ierr)
@@ -686,25 +694,28 @@ subroutine TXGLOD(IST)
      write(6,*) "XX Allocation error : TXGLOD"
   end if
 
-  read(21) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
+  read(io) ((X(NR,NQ), NR=0, NRMAX), NQ=1, NQMAX)
 
-  read(21) NGR,NGT,NGVV
-  read(21) (GT(IGR), IGR=0, NGR)
-  read(21) (((GY%v(I,IGR,IGYR), I=0, NRMAX), IGR=0, NGR), IGYR=1, NGYRM)
-  read(21) (GTX(I), I=0, NGT)
-  read(21) (GVX(I), I=0, NGVV)
-  read(21) ((GTY(I,IGYT), I=0, NGT), IGYT =1, NGYTM)
-  read(21) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
-  read(21) (NLCMAX(NQ), NQ=1,NQMAX)
-  read(21) (((GQY(NR,NC,NQ), NR=0, NRMAX), NC=1, NCM), NQ=1, NQMAX)
-  read(21) (((GYT%v(NR,I,IGYR), NR=0,NRMAX), I=0,NGT), IGYR=1,NGYRM)
-  read(21) (PoyntI(I), I=1, 2)
-  read(21) (CPsi(I), I=0, 3)
-  read(21) (VPoynt(I), I=0, 3)
-  read(21) (thrp(I), I=1, 2*NRMAX)
+  read(io) NGR,NGT,NGVV
+  read(io) (GT(IGR), IGR=0, NGR)
+  read(io) (((GY%v(I,IGR,IGYR), I=0, NRMAX), IGR=0, NGR), IGYR=1, NGYRM)
+  read(io) (GY%gnrm(IGYR), IGYR=1,NGYRM)
+  read(io) (GTX(I), I=0, NGT)
+  read(io) (GVX(I), I=0, NGVV)
+  read(io) ((GTY(I,IGYT), I=0, NGT), IGYT =1, NGYTM)
+  read(io) ((GVY(I,IGYV), I=0, NGVV), IGYV =1, NGYVM)
+  read(io) (NLCMAX(NQ), NQ=1,NQMAX)
+  read(io) (((GQY(NR,NC,NQ), NR=0, NRMAX), NC=1, NCM), NQ=1, NQMAX)
+  read(io) (((GYT%v(NR,I,IGYR), NR=0,NRMAX), I=0,NGT), IGYR=1,NGYRM)
+  read(io) (PoyntI(I), I=1, 2)
+  read(io) (CPsi(I), I=0, 3)
+  read(io) (VPoynt(I), I=0, 3)
+  read(io) (thrp(I), I=1, 2*NRMAX)
   !  end if
-  close(21)
+  close(io)
   write(6,'(2A)') '# DATA WAS SUCCESSFULLY LOADED FROM THE FILE. ID = ',LOADSLID
+
+  GYT%gnrm(:) = GY%gnrm(:)
 
   rb = rhob * ra
 
@@ -733,7 +744,7 @@ subroutine ascii_input
   use tx_commons, only : infiles, nmax_file, n_infiles, iflag_file, datatype
   use tx_interface, only : KSPLIT_TX
   implicit none
-  integer(4) :: IST, i, j, k, nrho, i_start, jshift
+  integer(4) :: IST, i, j, k, nrho, i_start, jshift, io
   character(len=100) :: TXFNAM
   character(len=180) :: kline, kline1, kline2
   character(len=20)  :: kmesh, kdata
@@ -825,7 +836,7 @@ subroutine ascii_input
   ! *** Pre-defined input (OFMC: OrbitEffectDist.dat) ***************
   if(iflag_file == 1) then
      ! Read data
-     open(21,file=TXFNAM,iostat=IST,status='old',form='formatted')
+     open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='formatted')
      if (IST == 0) then
         write(6,*) '# ASCII FILE ( ', TXFNAM(1:len_trim(TXFNAM)),  &
              &     ' ) IS ASSIGNED FOR INPUT.'
@@ -853,7 +864,7 @@ subroutine ascii_input
      nrho = 0  ! number of times that "RHO" appears in kline, i.e. separator
      k    = 0  ! data is taken during k/=0
      do 
-        read(21,'(A)',iostat=IST) kline
+        read(io,'(A)',iostat=IST) kline
         if(ist > 0) then
            stop 'Read file error'
         else if(ist < 0) then
@@ -993,7 +1004,7 @@ subroutine ascii_input
         infiles(:)%nol = nol
      end if
 
-     close(21)
+     close(io)
 
 !!$     write(6,*) "===== data ====="
 !!$     do i = 1, nol
@@ -1012,7 +1023,7 @@ subroutine ascii_input
   ! *** Pre-defined input (OFMC: Torque.txt) ************************
   else if(iflag_file == 2) then
      ! Read data
-     open(21,file=TXFNAM,iostat=IST,status='old',form='formatted',position='rewind')
+     open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='formatted',position='rewind')
      if (IST == 0) then
         write(6,*) '# ASCII FILE ( ', TXFNAM(1:len_trim(TXFNAM)),  &
              &     ' ) IS ASSIGNED FOR INPUT.'
@@ -1027,7 +1038,7 @@ subroutine ascii_input
 
      k  = 0  ! data is taken during k/=0
      do 
-        read(21,'(A)',iostat=IST) kline
+        read(io,'(A)',iostat=IST) kline
         if(ist > 0) then
            stop 'Read file error'
         else if(ist < 0) then
@@ -1097,14 +1108,14 @@ subroutine ascii_input
 !!$     end do
 !!$     write(6,*) infiles(1)%totS
 
-     close(21)
+     close(io)
 
   ! *** Arbitrary input *********************************************
   else if(iflag_file == 3) then
 
      ! Read data
      do i = 1, n_infiles
-        open(21,file=TXFNAM,iostat=IST,status='old',form='formatted')
+        open(newunit=io,file=TXFNAM,iostat=IST,status='old',form='formatted')
         if (IST == 0) then
            write(6,*) '# ASCII FILE ( ', TXFNAM(1:len_trim(TXFNAM)),  &
                 &     ' ) IS ASSIGNED FOR INPUT.'
@@ -1168,7 +1179,7 @@ subroutine ascii_input
         ! Read data from the file
         nol = 0 ! number of lines
         do 
-           read(21,'(A)',iostat=IST) kline
+           read(io,'(A)',iostat=IST) kline
            if(ist < 0) exit ! detect the end of the file
            nol = nol + 1
 
@@ -1199,7 +1210,7 @@ subroutine ascii_input
            infiles(i)%nol = nol
         end if
 
-        close(21)
+        close(io)
 
      end do
 
@@ -1236,8 +1247,6 @@ end function detect_datatype
 !
 !   Control routine for writing ASCII data file
 !
-!      Just choose "for_ntmain" or "for_ofmc" routine
-!
 !***************************************************************
 
 subroutine outfile
@@ -1247,7 +1256,7 @@ subroutine outfile
   do
      write(6,'(1X,A,1X,I1)') '## outfile: input ?'
      write(6,'(1X,A)') '##          1: profiles, 2: 0d quantities, 3: 0d variables, ' &
-          & // '4: for OFMC, 5: for TOPICS/NTMAIN, 9: exit'
+          & // '4: for OFMC, 5: for TOPICS/NTMAIN, 6: for CHARROT, 9: exit'
      read(*,'(I1)',iostat=ist) n
      if (ist > 0) then
         cycle
@@ -1266,6 +1275,8 @@ subroutine outfile
         call for_ofmc
      case(5)
         call for_ntmain
+     case(6)
+        call for_charrot
      case default
         exit
      end select
@@ -1281,10 +1292,11 @@ end subroutine outfile
 
 subroutine write_profs
   use tx_commons, only : NRMAX
-  use tx_graphic, only : GT, GY, NGR, NGYRM
+  use tx_graphic, only : GT, GX, GY, NGR, NGYRM
   use libfio, only : FWopen
   implicit none
   integer(4) :: NG, NR, NGYR, IERR
+  character(len=80) :: fmt = ''
 
   call FWopen(21,'tx_profs.dat',1,1,'TX',IERR)
   if(IERR /= 0) then
@@ -1292,9 +1304,11 @@ subroutine write_profs
      return
   end if
 
+  write(fmt, *) '(',NGYRM+2,'ES15.7)'
+
   do NG = 0, NGR
-     do NR = 1, NRMAX
-        write(21,'(256ES15.7)')  GT(NG), (GY%v(NR,NG,NGYR), NGYR=1,NGYRM)
+     do NR = 0, NRMAX
+        write(21,fmt)  GT(NG), GX(NR), (GY%v(NR,NG,NGYR), NGYR=1,NGYRM)
      end do
      write(21,*) 
   end do
@@ -1314,6 +1328,7 @@ subroutine write_quantities
   use libfio, only : FWopen
   implicit none
   integer(4) :: NG, NGYT, IERR
+  character(len=80) :: fmt = ''
 
   call FWopen(21,'tx_quantities.dat',1,1,'TX',IERR)
   if(IERR /= 0) then
@@ -1321,8 +1336,10 @@ subroutine write_quantities
      return
   end if
 
+  write(fmt, *) '(',NGYTM+1,'ES15.7)'
+
   do NG = 0, NGT
-     write(21,'(256ES15.7)')  GTX(NG), (GTY(NG,NGYT), NGYT=1,NGYTM)
+     write(21,fmt)  GTX(NG), (GTY(NG,NGYT), NGYT=1,NGYTM)
   end do
 
   close(21)
@@ -1340,6 +1357,7 @@ subroutine write_vars
   use libfio, only : FWopen
   implicit none
   integer(4) :: NG, NGYV, IERR
+  character(len=80) :: fmt = ''
 
   call FWopen(21,'tx_vars.dat',1,1,'TX',IERR)
   if(IERR /= 0) then
@@ -1347,8 +1365,10 @@ subroutine write_vars
      return
   end if
 
+  write(fmt, *) '(',NGYVM+1,'ES15.7)'
+
   do NG = 0, NGVV
-     write(21,'(256ES15.7)')  GVX(NG), (GVY(NG,NGYV), NGYV=1,NGYVM)
+     write(21,fmt)  GVX(NG), (GVY(NG,NGYV), NGYV=1,NGYVM)
   end do
 
   close(21)
@@ -1487,6 +1507,47 @@ subroutine for_ofmc
   close(21)
 
 end subroutine for_ofmc
+
+!***************************************************************
+!
+!   Write ASCII data file for CHARROT
+!
+!     Output profile file for CHARROT code. 
+!     The file format is consistent with output from JT-60U analysis tools.
+!
+!***************************************************************
+
+subroutine for_charrot
+  use tx_commons, only : NRA
+  use tx_graphic, only : GX, GY, NGR
+  use libfio, only : FWopen
+  implicit none
+  integer(4) :: NR, IERR
+  character(len=80) :: fmt = ''
+
+  call FWopen(21,'tx_charrot.dat',1,1,'TX',IERR)
+  if(IERR /= 0) then
+     write(6,*) 'XX for_charrot: FWopen: IERR=', IERR
+     return
+  end if
+
+  write(21,'(A)') 'RO/A,Ti[keV],Vt[km/s],Te[keV],ne[1e+19m^-3],Zeff,BEpara[TV/m]'
+
+  write(fmt, *) "(ES12.6,6(', ',ES13.6))"
+
+  do NR = 0, NRA
+     write(21,fmt)  GX(NR) &
+          & , GY%v(NR,NGR, 66)        & ! Ti [keV]
+          & , GY%v(NR,NGR, 89)*1.e-3  & ! Vt_Z [km/s]
+          & , GY%v(NR,NGR, 53)        & ! Te [keV]
+          & , GY%v(NR,NGR, 52)*1.e-19 & ! ne [10^{19}m^{-3}]
+          & , GY%v(NR,NGR,202)        & ! Zeff
+          & , GY%v(NR,NGR, 96)          ! BEpara [TV/m]
+  end do
+
+  close(21)
+
+end subroutine for_charrot
 
 !***************************************************************
 !

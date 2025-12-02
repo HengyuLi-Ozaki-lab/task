@@ -97,7 +97,7 @@ module tx_commons
   real(8) :: FSCBAL, FSCBKP, FSCBEL, FSCBSH, FSBOHM, FSVAHL
   real(8) :: PROFD, PROFD1, PROFD2, PROFDB, PROFM, PROFM1, PROFMB, PROFC, PROFC1, PROFCB
   real(8) :: FSCX, FSLC, FSLP, FSLPB, FSION, FSNCOL, FSD01, FSD02, FSD03, FSD0z, rG1, FSRP, FSNF
-  real(8) :: FSADV, FSADVB, FSUG
+  real(8) :: FSADV, FSADVB, FSUG, FSG0iz
   real(8), dimension(NSM) :: FSMPCH, FSTPTM, FSPARV, FSLTs
   real(8), dimension(1:2) :: FSNC, FSNCB
   real(8), dimension(1:3) :: FSDFIX, FSANOM, RhoETB, FSPCL
@@ -105,18 +105,19 @@ module tx_commons
 
   ! SOL parameters
   real(8) :: rLn, rLT  ! Scale lengths in SOL
-  real(8), dimension(NSM) :: PNsDIV, PTsDIV
+  real(8), dimension(NSM) :: PNsSUP, PTsSUP
 
   ! Heat sources
   real(8) :: Ebmax, RNBP, RNBP0, RNBT1, RNBT2, RNBT10, RNBT20, &
        &     PNBH, PNBHP, PNBHT1, PNBHT2, PNBHex, PNBCD, PNBMPD, PNBPTC, &
        &     rNRFe, RRFew, RRFe0, PRFHe, rNRFi, RRFiw, RRFi0, PRFHi, Tqt0, Tqp0
   real(8), dimension(1:3) :: esps
-  integer(4) :: MDLNBD
+  integer(4) :: MDLNBD, MDBMCX
 
   ! Neutral parameters
+  real(8) :: rGamm0_in, rGamm0zz_in, rGamm0iz_in
   real(8) :: PN0s, V0, rGamm0, rGASPF
-  real(8) :: PN0zs, V0z, rGamm0z, rGASPFz
+  real(8) :: PN0zs, V0z, rGamm0zz, rGamm0iz, rGASPFz
 
   ! Ripple parameters
   real(8) :: DltRPn, kappa
@@ -268,7 +269,7 @@ module tx_commons
 
   ! Equilibrium metrics 
   real(8), dimension(:), allocatable :: &
-       & aat, rrt, ckt, suft, sst, vro, vlt, rhov, art, epst, ait, elip, trig, rtt, rpt, drhodr
+       & aat, rrt, ckt, suft, sst, vro, vlt, rhov, art, epst, ait, elip, trig, rtt, rpt, lpt, drhodr
   real(8), dimension(:), allocatable :: fipol, Bpsq, qhatsq, Fqhatsq, BEpara, bri
   real(8), dimension(:), allocatable :: sdt, hdt
   real(8), dimension(:), allocatable :: bit, bbrt
@@ -445,8 +446,8 @@ contains
        if (ier == 0) then ; ierl(:) = 0 ; else ; exit ; end if
 
        ! Equilibrium quantities
-       allocate(aat, rrt, ckt, suft, sst, vro, vlt, rhov, &
-            &   art, epst, ait, elip, trig, rtt, rpt, drhodr,   source=array_init_NR, stat=ierl(1))
+       allocate(aat, rrt, ckt, suft, sst, vro, vlt, rhov, art, &
+            &   epst, ait, elip, trig, rtt, rpt, lpt, drhodr,   source=array_init_NR, stat=ierl(1))
        allocate(fipol, Bpsq, qhatsq, Fqhatsq, BEpara, bri,      source=array_init_NR, stat=ierl(2))
        allocate(sdt, hdt, bit, bbrt, gtti,                      source=array_init_NR, stat=ierl(3))
        ier = sum(ierl) ; iflag = 6
@@ -570,7 +571,7 @@ contains
     deallocate(xmu, xmuf, lab, laf, lfb, lff, BnablaPi, gflux, cL31, mxneo, fmneo, gamneo)
     deallocate(BVsdiag, BusparNCL, UsthNCL, QsthNCL)
 
-    deallocate(aat, rrt, ckt, suft, sst, vro, vlt, rhov, art, epst, ait, elip, trig, rtt, rpt, drhodr)
+    deallocate(aat, rrt, ckt, suft, sst, vro, vlt, rhov, art, epst, ait, elip, trig, rtt, rpt, lpt, drhodr)
     deallocate(fipol, Bpsq, qhatsq, Fqhatsq, BEpara, bri)
     deallocate(sdt, hdt, bit, bbrt, gtti)
 

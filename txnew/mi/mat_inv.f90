@@ -13,7 +13,7 @@ contains
        &                         ChiNCpl,ChiNCtl, &
        &                         ddPhidpsi_in,MDLNEOL)
     use tx_commons
-    use tx_interface, only : coll_freq, ftfunc, corr
+    use tx_misc, only : coll_freq, ftfunc, corr
     integer(4), intent(in) :: NR, MDLNEOL
     real(8), intent(in)  :: ddPhidpsi_in
     real(8), intent(out) :: ETAout, BJBSout, ChiNCpl(:), ChiNCtl(:)
@@ -334,8 +334,12 @@ contains
     end do
 
     !-- Neoclassical particle flux: gflux = <Gamma . nabla psi>
-    fac2 = fac / fipol(NR)
-    fac3 = fac2 * BEpara(NR)
+    if( NR /= 0 ) then
+       fac = fipol(NR) / (bbt(NR) * (suft(NR) * sdt(NR)))
+    else
+       fac = 0.d0
+    end if
+    fac2 = fac * BEpara(NR)
     dPhidpsi = dPhidV(NR) / sdt(NR)
     do i1 = 1, NSM
        gflxbp   = 0.d0
@@ -349,10 +353,10 @@ contains
           gflxps   = gflxps   + DpPS(i1,i2) * dPsdpsi(NR,i2) / Var(NR,i2)%p &
                &              + DTPS(i1,i2) * dTsdpsi(NR,i2) / Var(NR,i2)%T &
                &              + DpPS(i1,i2) * achg(i2) / (Var(NR,i2)%T * rKilo) * dPhidpsi
-!!$          gflxware = gflxware + fac3 * (achg(i2) * Var(NR,i2)%n) / (achg(i1) * Var(NR,i1)%n) &
+!!$          gflxware = gflxware + fac2 * (achg(i2) * Var(NR,i2)%n) / (achg(i1) * Var(NR,i1)%n) &
 !!$               &                     * (  bmat(i1     ,i1     ) * ( cmat(i2     ,i1     )) &
 !!$               &                        + bmat(i1     ,i1+NSMB) * ( cmat(i2     ,i1+NSMB)))
-          gflxware = gflxware + fac3 * (amas(i1) * achg(i2) * ztau(i2,i2)) &
+          gflxware = gflxware + fac2 * (amas(i1) * achg(i2) * ztau(i2,i2)) &
                &                     / (amas(i2) * achg(i1) * ztau(i1,i1)) &
                &                     * (  bmat(i1     ,i1     ) *  cmat(i1     ,i2     ) &
                &                        + bmat(i1     ,i1+NSMB) *  cmat(i1+NSMB,i2     ))
@@ -1503,32 +1507,32 @@ contains
        enddo
     enddo
 !-----
-!!$    bmat=amat
-!!$    do i1=1,isp
-!!$       bmat(i1    ,i1    )=bmat(i1    ,i1    )-xmu(i1,1,1)
-!!$       bmat(i1    ,i1+isp)=bmat(i1    ,i1+isp)-xmu(i1,1,2)
-!!$       bmat(i1+isp,i1    )=bmat(i1+isp,i1    )-xmu(i1,2,1)
-!!$       bmat(i1+isp,i1+isp)=bmat(i1+isp,i1+isp)-xmu(i1,2,2)
-!!$    enddo
-!!$!=======================================================================
-!!$!<cmat>
-!!$    call matslv(isp2,isp2,bmat,cmat,err,ill)
-!-----
-    cmat = amat
+    bmat=amat
     do i1=1,isp
-       cmat(i1    ,i1    )=amat(i1    ,i1    )-xmu(i1,1,1)
-       cmat(i1    ,i1+isp)=amat(i1    ,i1+isp)-xmu(i1,1,2)
-       cmat(i1+isp,i1    )=amat(i1+isp,i1    )-xmu(i1,2,1)
-       cmat(i1+isp,i1+isp)=amat(i1+isp,i1+isp)-xmu(i1,2,2)
+       bmat(i1    ,i1    )=bmat(i1    ,i1    )-xmu(i1,1,1)
+       bmat(i1    ,i1+isp)=bmat(i1    ,i1+isp)-xmu(i1,1,2)
+       bmat(i1+isp,i1    )=bmat(i1+isp,i1    )-xmu(i1,2,1)
+       bmat(i1+isp,i1+isp)=bmat(i1+isp,i1+isp)-xmu(i1,2,2)
     enddo
 !=======================================================================
-!<cmat> : (L - M)^{-1}
-    call invmrd(cmat,isp2,isp2,ill) ! Third arg. denotes the size of cmat.
-!    --- Replace invmrd by the following lines when using LAPACK ---
-!    allocate(ipiv(isp2))
-!    call getrf( cmat, ipiv, ill )
-!    call getri( cmat, ipiv, ill )
-!    deallocate(ipiv)
+!<cmat>
+    call matslv(isp2,isp2,bmat,cmat,err,ill)
+!!$!-----
+!!$    cmat = amat
+!!$    do i1=1,isp
+!!$       cmat(i1    ,i1    )=amat(i1    ,i1    )-xmu(i1,1,1)
+!!$       cmat(i1    ,i1+isp)=amat(i1    ,i1+isp)-xmu(i1,1,2)
+!!$       cmat(i1+isp,i1    )=amat(i1+isp,i1    )-xmu(i1,2,1)
+!!$       cmat(i1+isp,i1+isp)=amat(i1+isp,i1+isp)-xmu(i1,2,2)
+!!$    enddo
+!!$!=======================================================================
+!!$!<cmat> : (L - M)^{-1}
+!!$    call invmrd(cmat,isp2,isp2,ill) ! Third arg. denotes the size of cmat.
+!!$!    --- Replace invmrd by the following lines when using LAPACK ---
+!!$!    allocate(ipiv(isp2))
+!!$!    call getrf( cmat, ipiv, ill )
+!!$!    call getri( cmat, ipiv, ill )
+!!$!    deallocate(ipiv)
 !=======================================================================
 !<bmat>
     bmat=0.d0
@@ -2014,32 +2018,32 @@ contains
        enddo
     enddo
 !-----
-!!$    bmat=amat
-!!$    do i1=1,isp
-!!$       bmat(i1    ,i1    )=bmat(i1    ,i1    )-xmu(i1,1,1)
-!!$       bmat(i1    ,i1+isp)=bmat(i1    ,i1+isp)-xmu(i1,1,2)
-!!$       bmat(i1+isp,i1    )=bmat(i1+isp,i1    )-xmu(i1,2,1)
-!!$       bmat(i1+isp,i1+isp)=bmat(i1+isp,i1+isp)-xmu(i1,2,2)
-!!$    enddo
-!!$!=======================================================================
-!!$!<cmat> : (L - M)^{-1}
-!!$    call matslv(isp2,isp2,bmat,cmat,err,ill)
-!-----
-    cmat = amat
+    bmat=amat
     do i1=1,isp
-       cmat(i1    ,i1    )=amat(i1    ,i1    )-xmu(i1,1,1)
-       cmat(i1    ,i1+isp)=amat(i1    ,i1+isp)-xmu(i1,1,2)
-       cmat(i1+isp,i1    )=amat(i1+isp,i1    )-xmu(i1,2,1)
-       cmat(i1+isp,i1+isp)=amat(i1+isp,i1+isp)-xmu(i1,2,2)
+       bmat(i1    ,i1    )=bmat(i1    ,i1    )-xmu(i1,1,1)
+       bmat(i1    ,i1+isp)=bmat(i1    ,i1+isp)-xmu(i1,1,2)
+       bmat(i1+isp,i1    )=bmat(i1+isp,i1    )-xmu(i1,2,1)
+       bmat(i1+isp,i1+isp)=bmat(i1+isp,i1+isp)-xmu(i1,2,2)
     enddo
 !=======================================================================
 !<cmat> : (L - M)^{-1}
-    call invmrd(cmat,isp2,isp2,ill)
-!    --- Replace invmrd by the following lines when using LAPACK ---
-!    allocate(ipiv(isp2))
-!    call getrf( cmat, ipiv, ill )
-!    call getri( cmat, ipiv, ill )
-!    deallocate(ipiv)
+    call matslv(isp2,isp2,bmat,cmat,err,ill)
+!!$!-----
+!!$    cmat = amat
+!!$    do i1=1,isp
+!!$       cmat(i1    ,i1    )=amat(i1    ,i1    )-xmu(i1,1,1)
+!!$       cmat(i1    ,i1+isp)=amat(i1    ,i1+isp)-xmu(i1,1,2)
+!!$       cmat(i1+isp,i1    )=amat(i1+isp,i1    )-xmu(i1,2,1)
+!!$       cmat(i1+isp,i1+isp)=amat(i1+isp,i1+isp)-xmu(i1,2,2)
+!!$    enddo
+!!$!=======================================================================
+!!$!<cmat> : (L - M)^{-1}
+!!$    call invmrd(cmat,isp2,isp2,ill)
+!!$!    --- Replace invmrd by the following lines when using LAPACK ---
+!!$!    allocate(ipiv(isp2))
+!!$!    call getrf( cmat, ipiv, ill )
+!!$!    call getri( cmat, ipiv, ill )
+!!$!    deallocate(ipiv)
 !=======================================================================
 !<bmat> : viscosity matrix, M
     bmat=0.d0

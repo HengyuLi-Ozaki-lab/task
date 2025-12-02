@@ -153,7 +153,7 @@ contains
 
     ! Poloidal current function: RB_t
     !    fipol(NRMAX) = rbvt is a boundary condition.
-    dPsitVdVvac = rbvt / fourPisq * aat(NRMAX)
+    dPsitVdVvac = (ipbtdir * rbvt) / fourPisq * aat(NRMAX)
 
     fipol(:) = fourPisq / aat(:) * dfdx(vv,PsitV,NRMAX,0,dbnd=dPsitVdVvac)
     BphV (:) = fipol(:) / rr ! NOT FSA quantity
@@ -316,20 +316,23 @@ contains
   subroutine TXCALC(IC)
 
     use tx_commons
-    use tx_interface, only : dfdx, txmmm95, &
-         &                   moving_average, coulog, CORR, coll_freq
+    use tx_interface, only : dfdx, txmmm95!, moving_average
+    use tx_misc, only : CORR, coll_freq
     use tx_core_module, only : sub_intg_vol
     use tx_nclass_mod
-    use sauter_mod
+    use sauter_mod, only : redl_sauter
     use aux_system
     use matrix_inversion, only : tx_matrix_inversion
     use tx_ripple
     use cdbm_mod
     use mod_eqneo, only : wrap_eqneo
     use mod_cross_section, only : RateCoef_C_RC_A6, RateCoef_C_IZ_S5, Fraction_C0toC5
-    use libitp, only: aitken2p
-!    use tx_ntv, only : NTVcalc, rNuNTV, UastNC
+    use mod_coulomb, only : coulog
+    use mod_savgol
+    use libitp, only : aitken2p
+    use tx_sol, only : tx_sol_coefficients
 
+!    use tx_ntv, only : NTVcalc, rNuNTV, UastNC
     integer(4), intent(in) :: IC
     integer(4), save :: NRB = 1
     integer(4) :: NR, NR1, IER, i, MDANOMabs, model_cdbm, izvpch, MDLNEOL
@@ -337,12 +340,13 @@ contains
     real(8) :: Sigma0, Vte, Vti, Vtz, Vtb, Wte, Wti, Wtz, EpsL, &
          &     rNuAsI_inv, BBL, Va, Wpe2, PN0tot, &
          &     PROFML, PROFCL, Dturb, DeL, &
-         &     Cs, Lc, RhoIT, ExpArg, AiP, DISTAN, UbparaL, &
-         &     rNuOLL, SiLCL, SiLCBL, SiLCphL, RL, DBW, PTiVA, &
-         &     Chicl, factor_bohm, rNustar, &
+         &     RhoIT, ExpArg, AiP, DISTAN, UbparaL, &
+         &     rNuOLL, SiLCL, SiLCBL, SiLCphL, RL, DBW, &
+         &     factor_bohm, rNustar, &
          &     RLOSS, sqz, rNuDL, Ln, LT, etai_chk, kthrhos, &
          &     RhoSOL, V0ave, Viave, DturbA, rLmean, Sitot, &
          &     rGCIM, rGIM, rHIM, OMEGAPR !09/06/17~ miki_m
+!!$    real(8) ::Cs, Lc, PTiVA, Chicl, 
     real(8), dimension(0:NRMAX) :: gr2phi
     real(8), dimension(1:NHFMmx) :: EpsLM 
 !    real(8) :: rLmeanL, QL, rNuAsE_inv 
@@ -416,11 +420,11 @@ contains
 !    Wbane = (Q(0) * sqrt(RR * amas(1) * Var(0,1)%T * rKeV * amqp) / BphV(0))**(2.d0/3.d0)
 !    Wbani = (Q(0) * sqrt(RR * amas(2) * Var(0,2)%T * rKeV * amqp) / (achg(2) * BphV(0)))**(2.d0/3.d0)
 
-    ! Banana width at separatrix
-!    PTiVA = Var(NRA,2)%T
-    PTiVA = 0.5d0 * Var(0,2)%T
-    DBW = 3.d0 * sqrt(PTiVA * rKeV * (amas(2)*amp)) * Q(NRA) / (achg(2) * AEE * BphV(NRA)) &
-         & / sqrt(ra / RR)
+!!$    ! Banana width at separatrix
+!!$!    PTiVA = Var(NRA,2)%T
+!!$    PTiVA = 0.5d0 * Var(0,2)%T
+!!$    DBW = 3.d0 * sqrt(PTiVA * rKeV * (amas(2)*amp)) * Q(NRA) / (achg(2) * AEE * BphV(NRA)) &
+!!$         & / sqrt(ra / RR)
 
     !     *** Calculate derivatives in advance ***
     !     !!! Caution !!!
@@ -430,7 +434,7 @@ contains
     !          parameters (ex. radial electric field, poloidal magnetic field) should be
     !          directly calculated.
 
-    allocate(dErdr, dErdrS, dpdr, mold=array_init_NR)
+    allocate(dErdr, dpdr, mold=array_init_NR)
     dErdr(:) = dfdx(rpt,ErVlc,NRMAX,0)
     dpdr (:) = dfdx(rpt,pres ,NRMAX,0)
 !    dpdr (:) = vro(:) / ravl * dfdx(vv ,pres ,NRMAX,0)
@@ -444,18 +448,28 @@ contains
     end do
     
     dQdrho(:) = vro(:) * dfdx(vv,Q,NRMAX,0)
-    ! (1/ne)dne/drho_v
-    dlnNedrhov(0) = 0.d0
-    do NR = 1, NRMAX
-       dlnNedrhov(NR) = 2.d0 * vlt(NR) / ( rhov(NR) * Var(NR,1)%n ) * dNsdV(NR,1)
-    end do
 
-!!D02    write(6,'(F8.5,I4,2F11.6)') T_TX,NRB,Rho(NRB),PT02V(NR)
+    block
+      integer :: nl = 5, nr = 5, m = 4, ld = 0, iflag
 
-    !  Smoothing Er gradient for numerical stability
-    do NR = 0, NRMAX
-       dErdrS(NR) = moving_average(NR,dErdr,NRMAX,NRA)
-    end do
+      ! (1/ne)dne/drho_v
+      dlnNedrhov(0) = 0.d0
+      do NR = 1, NRMAX
+         dlnNedrhov(NR) = 2.d0 * vlt(NR) / ( rhov(NR) * Var(NR,1)%n ) * dNsdV(NR,1)
+      end do
+      ! smoothing 1/Lne
+      call savgol_filter(nl,nr,ld,m,NRMAX+1,dlnNedrhov,iflag)
+      if( iflag /= 0 ) stop('savgol_filter error for dlnNedrhov in txcalc.')
+      
+      !  Smoothing Er gradient for numerical stability
+      allocate(dErdrS, source=dErdr)
+      
+!!$      do NR = 0, NRMAX
+!!$         dErdrS(NR) = moving_average(NR,dErdr,NRMAX,NRA)
+!!$      end do
+      call savgol_filter(nl,nr,ld,m,NRA+1,dErdrS(0:NRA),iflag)
+      if( iflag /= 0 ) stop('savgol_filter error for dErdrS in txcalc.')
+    end block
 
     ! *** Temperatures for neutrals ***
 
@@ -538,10 +552,16 @@ contains
             &     / ( PsiV(NR) - PsiV(NR-1) )
        
        if(MDOSQZ > 10) then
-          do NR = 0, NRMAX
-             tmp(NR) = moving_average(NR,ddPhidpsi,NRMAX)
-          end do
-          ddPhidpsi(:) = tmp(:)
+          block
+            integer :: nl = 5, nr = 5, m = 4, ld = 0, iflag
+
+!!$            do NR = 0, NRMAX
+!!$               tmp(NR) = moving_average(NR,ddPhidpsi,NRMAX)
+!!$            end do
+!!$            ddPhidpsi(:) = tmp(:)
+            call savgol_filter(nl,nr,ld,m,NRMAX+1,ddPhidpsi,iflag)
+            if( iflag /= 0 ) stop('savgol_filter error for ddPhidpsi in txcalc.')
+          end block
        end if
        ! For NCLASS
        gr2phi(:) = sdt(:)*sdt(:) * ddPhidpsi(:) * MDOSQZN
@@ -993,6 +1013,7 @@ contains
 
        if (RHO(NR) < RhoSOL) then
           DeL = diff_prof(RHO(NR),FSDFIX(2),PROFML,PROFM1,PROFMB,0.d0) + FSANOM(2) * Dturb
+!          DeL = diff_prof(RHO(NR),FSDFIX(2),PROFML,PROFM1,PROFMB,0.d0,pedfact=-0.85d0,muped=0.95d0,sgped=0.05d0) + FSANOM(2) * Dturb ! pedestal for PoP2023
 !pedestal          if(rho(nr) > 0.9d0) DeL = DeL * exp(-120.d0*(rho(nr)-0.9d0)**2)
        else
           if(FSPCL(2) == 0.d0) then
@@ -1018,8 +1039,8 @@ contains
        !   [T. Tala et al., 2012, Proc of 24th IAEA FEC (San Diego) ITR/P1-1]
 
        if(NR /= 0) then
-!          zvpch = - rMus(NR,2) / rr * (1.1d0 * rr * moving_average(NR,dlnNedrhov,NRMAX) + 1.d0) ! smoothing 1/Lne
-          zvpch = rMus(NR,2) / rr * (1.1d0 * rr * moving_average(NR,dlnNedrhov,NRMAX) + 1.d0) ! smoothing 1/Lne
+!!$          zvpch = rMus(NR,2) / rr * (1.1d0 * rr * moving_average(NR,dlnNedrhov,NRMAX) + 1.d0)
+          zvpch = rMus(NR,2) / rr * (1.1d0 * rr * dlnNedrhov(NR) + 1.d0)
 !          ! +++ reducing Vpch near the separatrix +++
 !          zvpch = 0.5d0 * ( tanh(-30.d0*(rho(NR) - 0.98d0)) + 1.d0 ) * zvpch
 !          zvpch = (1.d0 - 0.8d0 * exp(- 0.5d0 * ((rho(NR) - 1.d0) / 0.05d0)**2)) * zvpch
@@ -1045,6 +1066,7 @@ contains
 
        if (RHO(NR) < RhoSOL) then
           DeL = diff_prof(RHO(NR),FSDFIX(3),PROFCL,PROFC1,PROFCB,0.d0) + FSANOM(3) * Dturb
+!          DeL = diff_prof(RHO(NR),FSDFIX(3),PROFCL,PROFC1,PROFCB,0.d0,pedfact=-0.85d0,muped=0.95d0,sgped=0.05d0) + FSANOM(3) * Dturb ! pedestal for PoP2023
 !pedestal          if(rho(nr) > 0.9d0) DeL = DeL * exp(-120.d0*(rho(nr)-0.9d0)**2)
        else
           if(FSPCL(3) == 0.d0) then
@@ -1085,45 +1107,45 @@ contains
           FQLcoef2(0) = 0.d0
        end if
 
-       !     *** Loss to divertor ***
-
-!       IF (rpt(NR) + DBW > ra) THEN
-       if (rho(NR) > 1.d0) then
-!          Cs = sqrt(2.d0 * Var(NR,1)%T * rKilo / amas(2) / amqp)
-          Cs = sqrt((achg(2) * Var(NR,1)%T + 3.d0 * Var(NR,2)%T) * rKilo / (amas(2) * amqp))
-          Lc = 2.d0 * PI * Q(NR) * RR ! Connection length to the divertor
-          RL = (rpt(NR) - ra) / DBW! / 2.d0
-          rNuL  (NR) = FSLP  * Cs / Lc &
-               &             * RL*RL / (1.d0 + RL*RL)
-          ! Classical heat conduction [s**4/(kg**2.5*m**6)]
-          ! (C S Pitcher and P C Stangeby, PPCF 39 (1997) 779)
-          Chicl = (4.d0*PI*EPS0)**2 &
-               & /(  sqrt(amas(1)*amp)*AEE**4*Zeff(NR) &
-               &   * coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T,amas(1),achg(1),amas(2),achg(2)))
-
-          ! When calculating rNuLTs(1), we fix Var(:,1)%n and Var(:,1)%T constant during iteration
-          !   to obain good convergence.
-          rNuLTs(NR,1) = FSLTs(1) * Chicl * (PTsV_FIX(NR,1)*rKeV)**2.5d0 &
-               &                  /(Lc**2 * PNsV_FIX(NR,1)*1.d20) &
-               &                  * RL*RL / (1.d0 + RL*RL)
-          do i = 2, NSM
-             rNuLTs(NR,i) = FSLTs(i) * Cs / Lc &
-                  &                  * RL*RL / (1.d0 + RL*RL)
-          end do
-!!$          IF(abs(FSRP) > 0.d0) THEN
-             UbparaL = BUbparV(NR) / BBL
-!             IF(NR == NRMAX) Ubpara(NR) = AITKEN2P(rpt(NRMAX), &
-!                  & Ubpara(NRMAX-1),Ubpara(NRMAX-2),Ubpara(NRMAX-3),&
-!                  & rpt(NRMAX-1),rpt(NRMAX-2),rpt(NRMAX-3))
-             UbparaL = max(UbparaL, FSLP*Cs)
-             rNuLB(NR) = FSLPB * UbparaL / Lc &
-                  &          * RL*RL / (1.d0 + RL*RL)
-!!$          END IF
-       else
-          rNuL(NR)   = 0.d0
-          rNuLTs(NR,:) = 0.d0
-          rNuLB(NR)  = 0.d0
-       end if
+!!$       !     *** Loss to divertor plasma region ***
+!!$
+!!$!       IF (rpt(NR) + DBW > ra) THEN
+!!$       if (rho(NR) > 1.d0) then
+!!$!          Cs = sqrt(2.d0 * Var(NR,1)%T * rKilo / amas(2) / amqp)
+!!$          Cs = sqrt((achg(2) * Var(NR,1)%T + 3.d0 * Var(NR,2)%T) * rKilo / (amas(2) * amqp))
+!!$          Lc = 2.d0 * PI * Q(NR) * RR ! Connection length to the divertor
+!!$          RL = (rpt(NR) - ra) / DBW! / 2.d0
+!!$          rNuL  (NR) = FSLP  * Cs / Lc &
+!!$               &             * RL*RL / (1.d0 + RL*RL)
+!!$          ! Classical heat conduction [s**4/(kg**2.5*m**6)]
+!!$          ! (C S Pitcher and P C Stangeby, PPCF 39 (1997) 779)
+!!$          Chicl = (4.d0*PI*EPS0)**2 &
+!!$               & /(  sqrt(amas(1)*amp)*AEE**4*Zeff(NR) &
+!!$               &   * coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T,amas(1),achg(1),amas(2),achg(2)))
+!!$
+!!$          ! When calculating rNuLTs(1), we fix Var(:,1)%n and Var(:,1)%T constant during iteration
+!!$          !   to obain good convergence.
+!!$          rNuLTs(NR,1) = FSLTs(1) * Chicl * (PTsV_FIX(NR,1)*rKeV)**2.5d0 &
+!!$               &                  /(Lc**2 * PNsV_FIX(NR,1)*1.d20) &
+!!$               &                  * RL*RL / (1.d0 + RL*RL)
+!!$          do i = 2, NSM
+!!$             rNuLTs(NR,i) = FSLTs(i) * Cs / Lc &
+!!$                  &                  * RL*RL / (1.d0 + RL*RL)
+!!$          end do
+!!$!          IF(abs(FSRP) > 0.d0) THEN
+!!$             UbparaL = BUbparV(NR) / BBL
+!!$!             IF(NR == NRMAX) Ubpara(NR) = AITKEN2P(rpt(NRMAX), &
+!!$!                  & Ubpara(NRMAX-1),Ubpara(NRMAX-2),Ubpara(NRMAX-3),&
+!!$!                  & rpt(NRMAX-1),rpt(NRMAX-2),rpt(NRMAX-3))
+!!$             UbparaL = max(UbparaL, FSLP*Cs)
+!!$             rNuLB(NR) = FSLPB * UbparaL / Lc &
+!!$                  &          * RL*RL / (1.d0 + RL*RL)
+!!$!          END IF
+!!$       else
+!!$          rNuL(NR)   = 0.d0
+!!$          rNuLTs(NR,:) = 0.d0
+!!$          rNuLB(NR)  = 0.d0
+!!$       end if
 
        !     *** Current density profiles ***
 
@@ -1188,6 +1210,10 @@ contains
 !!$    ! For Neumann condition, finite viscosity is required at the magnetic axis.
 !!$    Dfs(0,:)  = Dfs(1,:)
 !!$    rMus(0,:) = rMus(1,:)
+
+    !     *** Calculate coefficients in the SOL ***
+
+    call tx_sol_coefficients
 
     !     *** Linear growth rate for toroidal gamma_etai branch of the ITG mode ***
     !        (F.Crisanti et al, NF 41 (2001) 883)
@@ -1289,20 +1315,14 @@ contains
 
     if( MDLNEO > 10 ) then
        !     *** Bootstrap current and resistivity by Sauter model ***
-       !     (O. Sauter, et al.,  Phys. Plasmas 6 (1999) 2834, ibid. 9 (2002) 5140)
        NR = 0
        ETAvar(NR,3) = ETAS(NR) * (CORR(Zeff(NR)) / CORR(1.d0))
        BJBSvar(NR,3) = 0.d0
 
        do NR = 1, NRMAX
-          call sauter(Var(NR,1)%n,Var(NR,1)%T,dTsdV(NR,1),dPsdV(NR,1), &
-               &      Var(NR,2)%n,Var(NR,2)%T,dTsdV(NR,2),dPsdV(NR,2), &
-               &      Q(NR),sdt(NR),fipol(NR),epst(NR),RR,achg(2),Zeff(NR),ft(NR), &
-               &      rlnLei_IN=coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T, &
-               &                       amas(1),achg(1),amas(2),achg(2)), &
-               &      rlnLii_IN=coulog(Zeff(NR),Var(NR,1)%n,Var(NR,1)%T,Var(NR,2)%T, &
-               &                       amas(2),achg(2),amas(2),achg(2)), &
-               &      BJBS=BJBSvar(NR,3),ETA=ETAvar(NR,3))
+          call redl_sauter(NSM, Var(NR,:)%n,Var(NR,:)%T,dTsdV(NR,:),dPsdV(NR,:),achg, &
+                          Q(NR),sdt(NR),fipol(NR),epst(NR),RR,Zeff(NR),ft(NR), &
+                          BJBS=BJBSvar(NR,3),ETA=ETAvar(NR,3))
        end do
     end if
 
@@ -1423,10 +1443,16 @@ contains
              end if
           end do
 
-          do NR = 0, NRMAX
-             tmp(NR) = moving_average(NR,rNuOL,NRMAX)
-          end do
-          rNuOL(:) = tmp(:)
+          block
+            integer :: nl = 5, nr = 5, m = 4, ld = 0, iflag
+
+!!$            do NR = 0, NRMAX
+!!$               tmp(NR) = moving_average(NR,rNuOL,NRMAX)
+!!$            end do
+!!$            rNuOL(:) = tmp(:)
+            call savgol_filter(nl,nr,ld,m,NRMAX+1,rNuOL,iflag)
+            if( iflag /= 0 ) stop('savgol_filter error for rNuOL in txcalc.')
+          end block
 
        else if(MDLC == 2) then
           !     S. -I. Itoh and K. Itoh, Nucl. Fusion 29 (1989) 1031
@@ -1513,7 +1539,7 @@ contains
 !***************************************************************
 
     real(8) function rNuTeq(NR,i,j)
-      use tx_interface, only : coulog
+      use mod_coulomb, only : coulog
       integer(4), intent(in) :: NR, i, j
       real(8) :: tau_ij, vcoulog
 
@@ -1544,22 +1570,27 @@ contains
 !             profd  : shape factor
 !             rho    : normalized radius
 !             npower : power of rho
-!             base   : pedestal
+!             base   : offset
 !             fgfact : switch for superimpose of Gaussian profile
-!          <optional> (valid when fgfact /= 0)
+!          <optional>
+!             (valid when fgfact /= 0)
 !             mu     : average
 !             sigma  : standard deviation
+!             (valid when pedfact /= 0)
+!             pedfact: switch for superimpose of Gaussian profile for pedestal
+!             muped  : average
+!             sgped  : standard deviation
 !
 !     diff_prof = factor         at rho=0
 !                 factor * profd at rho=1
 !
 !***************************************************************
 
-    real(8) function diff_prof(rho,factor,profd,power,base,fgfact,mu,sigma)
+    real(8) function diff_prof(rho,factor,profd,power,base,fgfact,mu,sigma,pedfact,muped,sgped)
       use tx_interface, only : fgaussian
       real(8), intent(in) :: rho, factor, profd, power, base, fgfact
-      real(8), intent(in), optional :: mu, sigma
-      real(8) :: fmod, fmodmax
+      real(8), intent(in), optional :: mu, sigma, pedfact, muped, sgped
+      real(8) :: fmod, fmodmax, pedmod
 
       ! Gaussian profile modified by parabolic profile
       if(fgfact /= 0.d0) then
@@ -1570,8 +1601,15 @@ contains
          fmod = base
       end if
 
-      ! Sum  jof usual and modified Gaussian profiles
-      diff_prof = factor * (1.d0 + (profd - 1.d0) * rho**power) + fmod
+      ! Reduce diffusivities to produce pedestals
+      if(present(pedfact)) then
+         pedmod = pedfact * fgaussian(rho,muped,sgped,1)
+      else
+         pedmod = 0.d0
+      end if
+
+      ! Sum of usual and modified Gaussian profiles
+      diff_prof = factor * (1.d0 + (profd - 1.d0) * rho**power) + fmod + pedmod
 
     end function diff_prof
 

@@ -20,8 +20,17 @@ module eqread_mod
   integer(4) :: ilimt
   real(8), dimension(:),    allocatable :: rlimt,zlimt
   ! ---------------------------------------------------
+
+  ! ----- Namelist parameter -----
+  !  nvdsep: The index of the actual LCFS minus nvdsep is used as the index of the LCFS.
+  !    When reading an equilibrium data with X point, the equilibrium quantities change rapidly
+  !    in the vicinity of the separatrix.
+  !    These quantities near the separatrix are not suitable for extrapolation to the LCFS
+  !    and should be excluded.
+  integer(4) :: nvdsep = 0
+  ! ------------------------------
   
-  namelist /txequ/ eqfile
+  namelist /txequ/ eqfile, nvdsep
 
 contains
 
@@ -72,18 +81,20 @@ contains
   subroutine intequ
     use mod_spln
     use tx_interface, only : dfdx
-    use tx_commons, only : ieqread, irktrc, nrmax, nra, Pi, Pisq, rMU0, rr, ra, bb, rbvt, Rax, Zax, &
-         & surflcfs, rho, rhov, epst, aat, rrt, ckt, suft, sst, vro, vlt, art, ait, bit, bbrt, &
-         & elip, trig, rtt, rpt, drhodr, PsitV, PsiV, hdt, fipol, sdt, bbt, rIPs, ft, gtti, array_init_NR
-    use equ_params, only : hiv, aav, rrv, ckv, shv, ssv, vlv, arv, aiv, biv, brv, epsv, elipv, &
-         & trigv, qqv, siv, nv, rmaj, rpla, raxis, zaxis, pds, fds, sdw, ftv, gttiv, rbv, rtv, rpv, vmiller
+    use tx_commons, only : ieqread, ipbtdir, irktrc, nrmax, nra, Pi, Pisq, rMU0, rr, ra, bb, rbvt &
+         , Rax, Zax, surflcfs, rho, rhov, epst, aat, rrt, ckt, suft, sst, vro, vlt, art, ait, bit &
+         , bbrt, elip, trig, rtt, rpt, lpt, drhodr, PsitV, PsiV, hdt, fipol, sdt, bbt, rIPs, ft &
+         , gtti, array_init_NR
+    use equ_params, only : hiv, aav, rrv, ckv, shv, shvv, ssv, vlv, arv, aiv, biv, brv, epsv &
+         , elipv, trigv, qqv, siv, nv, rmaj, rpla, raxis, zaxis, pds, fds, sdw, ftv &
+         , gttiv, rbv, rtv, rpv, vmiller, btv, lpv
     !    use tx_core_module, only : intg_area
     use libspl1d, only : spl1d, spl1di, spl1di0
-    integer(4) :: n, nr, ierr, nrmaxx, nrax, nrs
+    integer(4) :: n, nr, ierr, nrmaxx, nrax, nrs, nvmax
     real(8), parameter :: fourPisq = 4.d0 * Pi * Pi
     real(8) :: rhonrs, zscale
-    real(8), allocatable :: U(:,:), U0(:), deriv(:), rho_v(:), hdv(:), zzv(:), &
-         &                  pdst(:), fdst(:), qqt(:), zz(:), zzfunc(:), zzfunc2(:)
+    real(8), allocatable :: U(:,:), U0(:), deriv(:), rho_v(:), hdv(:), zzv(:) &
+                          , pdst(:), fdst(:), qqt(:), zz(:), zzfunc(:), zzfunc2(:), dVdpsi(:)
 
     nrmaxx = nrmax + 1
     nrax   = nra   + 1
@@ -100,6 +111,15 @@ contains
 
     call eqdsk
 
+    ! After calling eqdsk, the number of equilibrium grid points, nv, is determined.
+
+    nvmax  = nv - nvdsep
+
+    if( nvdsep /= 0 ) then
+       write(6,'(X,A,I3)') 'nvdsep = ', nvdsep
+       write(6,'(X,A,F7.3/)') 'Deemed LCFS is set at normalized psi of', 1.d0-siv(nvmax)/siv(1)
+    end if
+
     allocate(hdv, mold=vlv)
 
     ! hdv: dpsit/dV = q * dpsi/dV = qqv * sdw
@@ -110,7 +130,7 @@ contains
     !  (old) qqv and sdw from MEUDAS/SELENE often diverge near the magnetic axis
     !        and anomaly behavior of qqv stems from that of sdw.
     !        Therefore, hdv = qqv * sdw may not have odd behavior near the magnetic axis.
-    hdv(1:nv) = abs(rbv(1:nv)) * aav(1:nv) / fourPisq
+    hdv(1:nvmax) = ipbtdir * rbv(1:nvmax) * aav(1:nvmax) / fourPisq
 
     ! hiv: toroidal magnetic flux on the equilibrium mesh
     !      hiv is calculated by integration with spline.
@@ -120,48 +140,60 @@ contains
     allocate(U(4,size(hdv)))
     allocate(U0,deriv,mold=vlv)
 
-    call SPL1D  (vlv,hdv,deriv,U,nv,0,ierr)
-    call SPL1DI0(vlv,U,U0,nv,ierr)
-    do n = 1, nv
-       call SPL1DI(vlv(n),hiv(n),vlv,U,U0,nv,ierr)
+    call SPL1D  (vlv,hdv,deriv,U,nvmax,0,ierr)
+    call SPL1DI0(vlv,U,U0,nvmax,ierr)
+    do n = 1, nvmax
+       call SPL1DI(vlv(n),hiv(n),vlv,U,U0,nvmax,ierr)
     end do
 
     deallocate(U,U0,deriv)
 
-    ! ---
+    ! ******************************************************************
+    !    Mapping & extrapolate
+    ! ******************************************************************
+
+    ! The basic assumptions of the extrapolation outside the plasma are that
+    !   * the last closed flux surface (LCFS) is extended outward,
+    !     while maintaining the shape of the outermost magnetic surface.
+    !   * the circumference (lpt) increases linearly w.r.t. rho, because a perimeter is 
+    !     proportional to a radius.
+    ! As a result,
+    !   * ellipticity (elip) and triangularity (trig) remain the same as those of the LCFS.
 
     allocate(rho_v,zzv,mold=hiv)
     allocate(zz,       mold=rho)
-    rho_v(1:nv) = sqrt( hiv(1:nv) / hiv(nv) ) ! equ. grid
+    rho_v(1:nvmax) = sqrt( hiv(1:nvmax) / hiv(nvmax) ) ! equ. grid
+
+!!$    ! lpt: perimeter of a flux surface
+!!$    !      assumed to be linearly extrapolated outside the plasma
+!!$    call spln( lpt, rho, nrmaxx, lpv, rho_v, nvmax, 151 )
 
     ! fipol: poloidal current function, assumed to be constant outside the plasma initially
-    call spln( fipol, rho,   nrax,   rbv,   rho_v,    nv,   1 )
+    call spln( fipol, rho,  nrax,   ipbtdir*rbv,   rho_v,  nvmax,   1 )
     fipol(nrax:nrmax) = fipol(nra)
 
     ! epst: inverse aspect ratio, proportional to rho: epst = (Rmax-Rmin)/(Rmax+Rmin)
-    call spln( epst,  rho,   nrmaxx, epsv,  rho_v,    nv, 151 )
-    ! suft: (interim definition) <|nabla psi|>, 
-    !      proportional to rho near the axis
-    !      proportional to rho^{-1} outside the plasma surface
-    call spln( suft(0:nra), rho(0:nra), nrax, shv, rho_v, nv, 1 ) ! shv = <|nabla psi|>
+    call spln( epst,  rho,  nrmaxx, epsv,  rho_v,  nvmax, 151 )
+    ! suft: <|nabla V|> = 2 pi int{R}d_lp
+    call spln( suft,  rho,  nrmaxx, shvv,  rho_v,  nvmax, 151 )
 
-!    call spln( vlt,   rho,  nrmaxx,  vlv,   rho_v, nv, 122 )
-!    call spln( aat,   rho,  nrmaxx,  aav,   rho_v, nv, 121 )
+!    call spln( vlt,   rho,  nrmaxx,  vlv,   rho_v, nvmax, 122 )
+!    call spln( aat,   rho,  nrmaxx,  aav,   rho_v, nvmax, 121 )
     ! vlt: volume, proportional to rho**2
     zzv(:)    = rho_v(:)**2
     zz(:)     = rho(:)**2
-    call spln( vlt,   zz,   nrmaxx,  vlv,   zzv,   nv, 151 )
+    call spln( vlt,   zz,   nrmaxx,  vlv,   zzv,   nvmax, 151 )
     ! aat: <R^-2>, proportional to (sqrt(1-epst**2))^{-1}
-    zzv(1:nv) = 1.d0 / sqrt( 1.d0 - epsv(1:nv)**2 )
-    zz(:)     = 1.d0 / sqrt( 1.d0 - epst(:)**2    )
-    call spln( aat,   zz,   nrmaxx,  aav,   zzv , nv, 151 )
+    zzv(1:nvmax) = 1.d0 / sqrt( 1.d0 - epsv(1:nvmax)**2 )
+    zz(:)        = 1.d0 / sqrt( 1.d0 - epst(:)**2       )
+    call spln( aat,   zz,   nrmaxx,  aav,   zzv , nvmax, 151 )
 
     ! hdt: dpsit/dV
     !      Sign convention follows that for hdv.
-    hdt(:) = abs(fipol(:)) * aat(:) / fourPisq
+    hdt(:) = fipol(:) * aat(:) / fourPisq
 
     allocate(U(4,0:size(array_init_NR)-1))
-    allocate(U0,deriv,qqt,zzfunc,zzfunc2,source=array_init_NR)
+    allocate(U0,deriv,qqt,zzfunc,zzfunc2,dVdpsi,source=array_init_NR)
 
     ! PsitV: toroidal magnetic flux, computed by volume integration of hdt=I<R^{-2}>/4Pi^2
     !
@@ -169,7 +201,7 @@ contains
     !        because fipol is always calculated by differentiating PsitV in txcalv.
     !
     !  NOTE: PsitV computed in this way is almost identical to that computed by
-    !          call spln( PsitV, vlt, nrmaxx, hiv, vlv, nv, 151 )
+    !          call spln( PsitV, vlt, nrmaxx, hiv, vlv, nvmax, 151 )
     !        in rho <= 1 within the difference of 1e-6.
     !        However, this simple extrapolation does not take into account the conditition
     !        that fipol is constant in rho > 1, which yields difference between them in rho > 1.
@@ -182,78 +214,101 @@ contains
     ! === Volume integration of I<R^{-2}>/q to obtain psi ===
 
     ! qqt: safety factor from equilibrium data (will not be transferred to TX as it is)
-    call spln( qqt(0:nra),PsitV(0:nra), nrax, qqv,   hiv, nv, 1 )
+    call spln( qqt(0:nra),PsitV(0:nra), nrax, qqv,   hiv, nvmax, 1 )
+
+    ! ---
+
     ! sdt: dpsi/dV = (dpsit/dV) / q
     sdt(0:nra) = hdt(0:nra) / qqt(0:nra)
 
     ! ckt: <|nabla V|^2/R^2> = <B_p^2>(dV/dpsi)^2
-    !
-    !      ckt in rho > 1 would scale as rho^2 because |nabla V|^2 is proportional to r^4
-    !      and R^2 is proportional to r^2. Therefore, ckt is extrapolated linearly in the
-    !      V coordinate.
+    !      ckt is proportional to epst**2/sqrt(1-epst**2)
     !      Also, ckt(NRMAX) is related to sdt via plasma current.
-    call spln( ckt,   vlt,   nrmaxx, ckv,   vlv, nv, 151 )
+    zzv(1:nvmax) = epsv(1:nvmax)**2 / sqrt( 1.d0 - epsv(1:nvmax)**2 )
+    zz(:)        = epst(:)**2       / sqrt( 1.d0 - epst(:)**2       )
+    call spln( ckt,   zz,   nrmaxx, ckv,   zzv, nvmax, 151 )
 
     ! In the SOL region, the current is assumed to be nil temporarily.
     ! <j.grad zeta> = (1/mu0) d/dV[<|grad V|^2/R^2> dpsi/dV] = 0
     !              ==>  <|grad V|^2/R^2> dpsi/dV = const. where rho>1.
     !            Ip = 1/(2 pi mu0) [<|grad V|^2/R^2> dpsi/dV]_{rho(nrmax)}
     !              ==> [<|grad V|^2/R^2> dpsi/dV]_{rho(nrmax)} = 2 pi mu0 Ip
+    !              ==> [<|grad V|^2/R^2>]_{rho(nrmax)} = 2 pi mu0 Ip (dV/dpsi)
     zzfunc(0:nra) = ckt(0:nra) * sdt(0:nra)
     zzfunc(nrax)  = 2.d0 * Pi * rMU0 * rIPs * 1.d6
     zz    (0:nra) = rho(0:nra)
     zz    (nrax)  = rho(nrmax)
     call spln( zzfunc2, rho, nrmaxx, zzfunc(0:nrax), zz(0:nrax), nrax+1, 151 )
     sdt(nrax:nrmax) = zzfunc2(nrax:nrmax) / ckt(nrax:nrmax)
-    
+
+!!$    ! dVdpsi: dV/dpsi = q / (dPsit/dV)
+!!$    dVdpsi(0:nra) = qqt(0:nra) / hdt(0:nra)
+!!$    ! Also, dV/dpsi = 2 pi int{1/Bp}d_lp,
+!!$    !   where Bp prop to r and int d_lp prop to r, resulting in dV/dpsi prop to r^2.
+!!$    call spln( dVdpsi, vlt, nrmaxx, dVdpsi(0:nra), vlt(0:nra), nrax, 151)
+!!$
+!!$    ! In the SOL region, the current is assumed to be nil temporarily.
+!!$    ! <j.grad zeta> = (1/mu0) d/dV[<|grad V|^2/R^2> dpsi/dV] = 0
+!!$    !              ==>  <|grad V|^2/R^2> dpsi/dV = const. where rho>1.
+!!$    !            Ip = 1/(2 pi mu0) [<|grad V|^2/R^2> dpsi/dV]_{rho(nrmax)}
+!!$    !              ==> [<|grad V|^2/R^2> dpsi/dV]_{rho(nrmax)} = 2 pi mu0 Ip
+!!$    !              ==> [<|grad V|^2/R^2>]_{rho(nrmax)} = 2 pi mu0 Ip (dV/dpsi)
+!!$    ! ckt: <|nabla V|^2/R^2> = <B_p^2>(dV/dpsi)^2
+!!$    call spln( ckt(0:nra),   vlt(0:nra),   nrax, ckv,   vlv, nvmax, 0 )
+!!$    ! ckt at rho=1 (nra) is overwritten by 2 Pi rMU0 Ip dVdpsi(nra).
+!!$    ckt(nra:nrmax) = 2.d0 * Pi * rMU0 * rIPs * 1.d6 * dVdpsi(nra:nrmax)
+!!$
+!!$    ! sdt: dpsi/dV = 1.d0 / (dV/dpsi)
+!!$    sdt(:) = 1.d0 / dVdpsi(:)
+
+    ! ---
+
     call SPL1D  (vlt,sdt,deriv,U,nrmaxx,0,ierr)
     call SPL1DI0(vlt,U,U0,nrmaxx,ierr)
     do nr = 0, nrmax
        call SPL1DI(vlt(nr),PsiV(nr),vlt,U,U0,nrmaxx,ierr)
     end do
 
-    ! suft: <|nabla V|> = <|nabla psi|> / sdt
-    !       <|nabla V|> is proportional to epst
-
-    suft(0:nra) = suft(0:nra) / sdt(0:nra)
-    call spln( suft, epst, nrmaxx, suft(0:nra), epst(0:nra), nrax, 151 )
-
 !!$    do nr=0,nrmax
 !!$       write(201,'(F8.5,8ES15.7)') rho(nr),PsitV(nr)/PsitV(nra),vlt(nr)/vlt(nra),epst(nr),suft(nr),sdt(nr),ckt(nr),ckt(nr)*sdt(nr)**2
 !!$    end do
 
-    deallocate(U,U0,deriv,hdv,qqt,zzfunc,zzfunc2)
+    deallocate(U,U0,deriv,hdv,qqt,zzfunc,zzfunc2,dVdpsi)
 
-    ! ******************************************************************
-    !    Mapping & extrapolate
-    ! ******************************************************************
+    ! Interpolate & extrapolate as we take PsitV as radial coordinate
+    !   These values increase almost linearly with respect to PsitV.
+    !                               (quadratically with respect to rho.)
 
     allocate(pdst,fdst,mold=PsitV)
-    allocate(zzfunc(1:nv))
+    allocate(zzfunc(1:nvmax))
 
-    call spln( rrt,  PsitV, nrmaxx, rrv,   hiv, nv, 151 )
-    call spln( sst,  PsitV, nrmaxx, ssv,   hiv, nv, 151 ) ! ssv = <|nabla V|^2>
-    call spln( art,  PsitV, nrmaxx, arv,   hiv, nv, 152 )
-    call spln( ait,  PsitV, nrmaxx, aiv,   hiv, nv, 151 )
-    call spln( bit,  PsitV, nrmaxx, biv,   hiv, nv, 151 )
-    call spln( bbrt, PsitV, nrmaxx, brv,   hiv, nv, 151 )
-    call spln( elip, PsitV, nrmaxx, elipv, hiv, nv, 151 )
-    call spln( trig, PsitV, nrmaxx, trigv, hiv, nv, 151 )
-    call spln( rtt,  PsitV, nrmaxx, rtv,   hiv, nv, 151 )
+    rbvt = btv
+
+    call spln( rrt,  PsitV, nrmaxx, rrv,   hiv, nvmax, 151 )
+    call spln( sst,  PsitV, nrmaxx, ssv,   hiv, nvmax, 151 )
+    call spln( art,  PsitV, nrmaxx, arv,   hiv, nvmax, 152 )
+    call spln( ait,  PsitV, nrmaxx, aiv,   hiv, nvmax, 151 )
+    call spln( bit,  PsitV, nrmaxx, biv,   hiv, nvmax, 151 )
+    call spln( bbrt, PsitV, nrmaxx, brv,   hiv, nvmax, 151 )
+    call spln( elip, PsitV, nrmaxx, elipv, hiv, nvmax,   0 )
+    call spln( trig, PsitV, nrmaxx, trigv, hiv, nvmax,   0 )
+!!$    call spln( elip, PsitV, nrmaxx, elipv, hiv, nvmax, 151 )
+!!$    call spln( trig, PsitV, nrmaxx, trigv, hiv, nvmax, 151 )
+    call spln( rtt,  PsitV, nrmaxx, rtv,   hiv, nvmax, 151 )
     ! rpt^2 almost linearly scales with V or PsitV.
-    zzfunc(1:nv) = rpv(1:nv)**2
-    call spln( rpt,  PsitV, nrmaxx, zzfunc,hiv, nv, 151 )
+    zzfunc(1:nvmax) = rpv(1:nvmax)**2
+    call spln( rpt,  PsitV, nrmaxx, zzfunc,hiv, nvmax, 151 )
     rpt(:) = sqrt(rpt(:))
-    ! rpt is multiplied by a tiny scaling factor, zscale, such that rpt(nra) is identical to rpla (=rpv(nv)).
+    ! rpt is multiplied by a tiny scaling factor, zscale, such that rpt(nra) is identical to rpla (=rpv(nvmax)).
     zscale = rpla / rpt(nra)
     rpt(:) = rpt(:) * zscale
-    call spln( pdst, PsitV, nrmaxx, pds,   hiv, nv,   0 ) ! Not extrapolated
-    call spln( fdst, PsitV, nrmaxx, fds,   hiv, nv,   0 ) ! Not extrapolated
+    call spln( pdst, PsitV, nrmaxx, pds,   hiv, nvmax,   0 ) ! Not extrapolated
+    call spln( fdst, PsitV, nrmaxx, fds,   hiv, nvmax,   0 ) ! Not extrapolated
 
     ! ft: Trapped particle fraction (ft^4 almost linearly scales with V or PsitV.)
 
-    zzfunc(1:nv) = ftv(1:nv)**4
-    call spln( ft,   PsitV, nrmaxx, zzfunc,hiv, nv, 151 )
+    zzfunc(1:nvmax) = ftv(1:nvmax)**4
+    call spln( ft,   PsitV, nrmaxx, zzfunc,hiv, nvmax, 151 )
     ft(:) = sqrt(sqrt(ft(:)))
     where( ft > 1.d0 ) ft = 1.d0
 
@@ -298,7 +353,7 @@ contains
 
     rr   = rmaj
     ra   = rpla
-    bb   = rbvt / rr
+    bb   = ipbtdir * rbvt / rr
     Rax  = raxis
     Zax  = zaxis
     surflcfs = sum_dl * 2.d0 * Pi * rr
@@ -311,21 +366,21 @@ contains
     
     if( irktrc /= 0 ) then
        ! rminor^2 almost linearly scales with V or PsitV.
-       zzfunc(1:nv) = vmiller(1:nv)%rminor**2
+       zzfunc(1:nvmax) = vmiller(1:nvmax)%rminor**2
        allocate(zzfunc2, source=array_init_NR)
-       call spln( zzfunc2, PsitV, nrmaxx, zzfunc, hiv, nv, 151 )
+       call spln( zzfunc2, PsitV, nrmaxx, zzfunc, hiv, nvmax, 151 )
        zzfunc2(:) = sqrt(zzfunc2(:))
        drhodr(:) = dfdx(rho,zzfunc2,NRMAX,0)
        deallocate(zzfunc2)
     end if
 
     ! -- gtti
-!!$    zzfunc(1:nv) = 1.d0 / gttiv(1:nv)
-!!$    call spln( gtti,  PsitV, nrmaxx, zzfunc,  hiv, nv, 150 )
+!!$    zzfunc(1:nvmax) = 1.d0 / gttiv(1:nvmax)
+!!$    call spln( gtti,  PsitV, nrmaxx, zzfunc,  hiv, nvmax, 150 )
 !!$    ! drho/dpsi = dV/dpsi * drho/dV = 1 / (sdt * vro)
 !!$    gtti(0:nrmax) = 1.d0 / gtti(0:nrmax)
-    zzfunc(2:nv) = 1.d0 / gttiv(2:nv)
-    call spln( gtti,  PsitV, nrmaxx, zzfunc(2:nv),  hiv(2:nv), nv-1, 130 )
+    zzfunc(2:nvmax) = 1.d0 / gttiv(2:nvmax)
+    call spln( gtti,  PsitV, nrmaxx, zzfunc(2:nvmax),  hiv(2:nvmax), nvmax-1, 130 )
     gtti(0:nrmax) = 1.d0 / gtti(0:nrmax)
 !!$    do nr=1,nrmax
 !!$       write(6,*) rho(nr),gtti(nr),1.d0/r(nr)**2
@@ -418,8 +473,8 @@ contains
   subroutine alloc_equ(mode)
     use equ_params, only : irdm, izdm, ivdm, izdm2, isrzdm &
          &               , rg, zg, vlv, qqv, hiv, siv, siw, sdw, ckv, ssv, aav &
-         &               , rrv, rbv, arv, bbv, biv, r2b2v, shv, grbm2v, rov, aiv, brv &
-         &               , epsv, elipv, trigv, ftv, rtv, rpv, csu, rsu, zsu &
+         &               , rrv, rbv, arv, bbv, biv, r2b2v, shv, shvv, grbm2v, rov, aiv, brv &
+         &               , epsv, elipv, trigv, ftv, rtv, rpv, lpv, csu, rsu, zsu &
          &               , upsi, nsr, nsz, vmiller &
          &               , psi, rbp, pds, fds, prv, gttiv, dsr, dsz, cvac, nsfix, psign
 
@@ -435,9 +490,9 @@ contains
        allocate(pds,fds,qqv,prv,mold=vlv)
        allocate(csu(isrzdm),stat=ierr)
        allocate(rsu,zsu,mold=csu)
-       allocate(hiv,siv,siw,sdw,ckv,ssv,aav,rrv, &
-            &   rbv,arv,bbv,biv,r2b2v,shv,grbm2v,rov, &
-            &   aiv,brv,epsv,elipv,trigv,ftv,rtv,rpv,mold=vlv)
+       allocate(hiv,siv,siw,sdw,ckv,ssv,aav,rrv  &
+               ,rbv,arv,bbv,biv,r2b2v,shv,shvv,grbm2v,rov  &
+               ,aiv,brv,epsv,elipv,trigv,ftv,rtv,rpv,lpv,mold=vlv)
        allocate(gttiv,mold=vlv)
        allocate(vmiller(ivdm),stat=ierr)
 
@@ -457,9 +512,9 @@ contains
           deallocate(rg,zg,psi,rbp)
           deallocate(vlv,pds,fds,qqv,prv)
           deallocate(csu,rsu,zsu)
-          deallocate(hiv,siv,siw,sdw,ckv,ssv,aav,rrv, &
-               &     rbv,arv,bbv,biv,r2b2v,shv,grbm2v,rov, &
-               &     aiv,brv,epsv,elipv,trigv,ftv,rtv,rpv)
+          deallocate(hiv,siv,siw,sdw,ckv,ssv,aav,rrv  &
+                    ,rbv,arv,bbv,biv,r2b2v,shv,shvv,grbm2v,rov  &
+                    ,aiv,brv,epsv,elipv,trigv,ftv,rtv,rpv,lpv)
           deallocate(gttiv)
           deallocate(vmiller)
        end if
@@ -773,7 +828,7 @@ contains
 !=======================================================================
 !     line integrals
 !=======================================================================
-    use tx_commons, only : zpi => PI
+    use tx_commons, only : zpi => PI, ipbtdir
     use equ_params
     ! intf: num. of division in the direction of lambda for trapped particle fraction
     integer(4), parameter :: intf = 100
@@ -828,6 +883,7 @@ contains
        irst=ir
 !-----------------------------------------------------------------------
 !..initialize line integrals
+       lpv(n)=0.d0
        arv(n)=0.d0
        vlv(n)=0.d0
        sdw(n)=0.d0
@@ -972,6 +1028,7 @@ contains
        sh1=r1
        ai1=ds1/r1
        dl=sqrt((r1-r0)*(r1-r0)+(z1-z0)*(z1-z0))
+       lpv(n)=lpv(n)+dl ! perimeter of the flux surface at n
        arv(n)=arv(n)+(r0+r1)*(z0-z1)*0.5d0
        vlv(n)=vlv(n)+(vl0+vl1)*(z0-z1)*0.5d0
        sdw(n)=sdw(n)+dl*(ds0+ds1)*0.5d0
@@ -1025,6 +1082,7 @@ contains
        if( i /= ist ) go to 20
 !=======================================================================
 100    if( iudsym == 1 ) then
+          lpv(n)=2.d0*lpv(n)
           vlv(n)=2.d0*vlv(n)
           arv(n)=2.d0*arv(n)
           sdw(n)=2.d0*sdw(n)
@@ -1053,14 +1111,16 @@ contains
        endif
 !-----
        vlv(n)=zpi*vlv(n)
+       ssv(n)=2.d0*zpi*ssv(n)*2.d0*zpi*sdv(n)
+       ckv(n)=2.d0*zpi*ckv(n)*2.d0*zpi*sdv(n)
+!-----
        sdv(n)=1.d0/(2.d0*zpi*sdw(n))
-       ckv(n)=2.d0*zpi*ckv(n)/sdv(n)
        r2b2v(n)=2.d0*zpi*ssv(n)*sdv(n)
-       ssv(n)=2.d0*zpi*ssv(n)/sdv(n)
        aav(n)=2.d0*zpi*aav(n)*sdv(n)
        rrv(n)=2.d0*zpi*rrv(n)*sdv(n)
        bbv(n)=2.d0*zpi*bbv(n)*sdv(n)
        biv(n)=2.d0*zpi*biv(n)*sdv(n)
+       shvv(n)=2.d0*zpi*shv(n)
        shv(n)=2.d0*zpi*shv(n)*sdv(n)
        grbm2v(n)=2.d0*zpi*grbm2v(n)*sdv(n)
        aiv(n)=2.d0*zpi*aiv(n)*sdv(n)
@@ -1119,6 +1179,7 @@ contains
 
     end do
 !..evaluate on the axis
+    lpv(1)=0.d0
     siw(1)=saxis
     arv(1)=0.d0
     vlv(1)=0.d0
@@ -1135,10 +1196,11 @@ contains
     rrv(1)=raxis*raxis
     bbv(1)=(rbv(1)/raxis)**2
     biv(1)=1.d0/bbv(1)
+    shvv(1)=0.d0
     shv(1)=0.d0
     grbm2v(1)=0.d0
     aiv(1)=1.d0/raxis
-    brv(1)=rbv(1)/raxis
+    brv(1)=ipbtdir*rbv(1)/raxis
     gttiv(1)=gttiv(2)
     nsu = nsu - 1
 
@@ -1267,7 +1329,7 @@ contains
     integer(4), intent(inout) :: ioeqrd, igeqdsk
     integer(4) :: i, ist, idum, nw, nh, nbbbs, limitr, kvtor, nmass
     real(8) :: rdim, zdim, rcentr, rleft, zmid, rmaxis, zmaxis, simag, sibry, bcentr, &
-         &     current, xdum, rvtor
+               current, xdum, rvtor
     real(8), dimension(:), allocatable :: fpol, pres, ffprim, pprime, psirz, qpsi
     real(8), dimension(:), allocatable :: rbbbs, zbbbs, rlim, zlim
     real(8), dimension(:), allocatable :: pressw, pwprim, dmion, rhovn
@@ -1303,15 +1365,18 @@ contains
     !---- additional data
     allocate(pressw, pwprim, dmion, rhovn, mold=fpol)
     read(ioeqrd,2024,iostat=ist)  kvtor,rvtor,nmass
-    if ( kvtor > 0 ) then
-       read(ioeqrd,2020,iostat=ist) (pressw(i),i=1,nw)
-       read(ioeqrd,2020,iostat=ist) (pwprim(i),i=1,nw)
-    endif
-    if ( nmass > 0 ) then
-       read(ioeqrd,2020,iostat=ist) (dmion(i),i=1,nw)
-    endif
-    if( ist < 0 ) stop 'G-EQDSK file read error! Processing end ...'
-    read(ioeqrd,2020,iostat=ist) (rhovn(i),i=1,nw)
+    if( ist == 0 ) then
+       if ( kvtor > 0 ) then
+          read(ioeqrd,2020,iostat=ist) (pressw(i),i=1,nw)
+          read(ioeqrd,2020,iostat=ist) (pwprim(i),i=1,nw)
+       endif
+       if ( nmass > 0 ) then
+          read(ioeqrd,2020,iostat=ist) (dmion(i),i=1,nw)
+       endif
+       read(ioeqrd,2020,iostat=ist) (rhovn(i),i=1,nw)
+    else if( ist < 0 ) then
+       stop 'G-EQDSK file read error! Processing end ...'
+    end if
 
     nsr = nw
     nsz = nh
@@ -1339,7 +1404,7 @@ contains
 
     nv  = nw
 
-    rbv(1:nv) = fpol(1:nv)
+    rbv(1:nv) = fpol(1:nv) ! fpol could be negative when ipbtdir = -1
     pds(1:nv) = pprime(1:nv) * rMU0
     fds(1:nv) = ffprim(1:nv)
     ! vlv will be computed in eqlin.
@@ -1453,42 +1518,62 @@ contains
   !
   !   Detect file format
   !
+  !     input:  filename
+  !     output: iascii = 0 : binary file
+  !                    = 1 : ascii file
+  !
   !***********************************************************
 
-  subroutine detect_format(fName,iascii)
-    character(*), intent(in) :: fName
-   integer, intent(out) :: iascii
-    integer :: fId, stat
-!!$    character :: c
-!!$    logical :: formatted
+!!$  subroutine detect_format(fName,iascii)
+!!$    character(*), intent(in) :: fName
+!!$    integer, intent(out) :: iascii
+!!$    integer :: fId, stat
 !!$
-!!$    stat = 0
-!!$    formatted = .true. !assume formatted
-!!$    open(newunit=fId,file=fName,status='old',form='unformatted',recl=1)
-!!$    ! I assume that it fails only on the end of file
-!!$    do while((stat==0).and.formatted)
-!!$       read(fId, iostat=stat)c
-!!$       formatted = formatted.and.( iachar(c)<=127 )
-!!$    end do
-!!$    if(formatted)then
-!!$       iascii = 1
-!!$       write(6,*) trim(fName), ' is a formatted file'
-!!$    else
-!!$       iascii = 0
-!!$       write(6,*) trim(fName), ' is an unformatted file'
-!!$    end if
-!!$    close(fId)
+!!$    character(len=100) :: command, tmpfile, content
+!!$
+!!$    tmpfile = trim(fName)//'.tmp'
+!!$    command = 'file '//trim(fName)//' > '//trim(tmpfile)
+!!$    call execute_command_line(trim(command))
+!!$    open(newunit=fId,file=tmpfile,iostat=stat,form='formatted')
+!!$    if(stat /= 0) stop 'file open error.'
+!!$    read(fId,'(A)') content
+!!$    iascii = index(content,'ASCII')
+!!$    close(fId,status='delete')
+!!$
+!!$  end subroutine detect_format
 
-    character(len=100) :: command, tmpfile, content
+  subroutine detect_format(filename, isascii)
+    character(len=*), intent(in) :: filename
+    integer, intent(out) :: isascii
 
-    tmpfile = trim(fName)//'.tmp'
-    command = 'file '//trim(fName)//' > '//trim(tmpfile)
-    call execute_command_line(trim(command))
-    open(newunit=fId,file=tmpfile,iostat=stat,form='formatted')
-    if(stat /= 0) stop 'file open error.'
-    read(fId,'(A)') content
-    iascii = index(content,'ASCII')
-    close(fId,status='delete')
+    character(len=1) :: buffer
+    integer :: unit, status, iachar_value
+
+    ! Open the file in binary mode.
+    open(newunit=unit, file=filename, status="old", access="stream", form="unformatted", action="read", iostat=status)
+
+    ! In case of a successful file open,
+    if (status == 0) then
+       ! read the first byte.
+       read(unit) buffer
+    
+       ! Determine whether the file is a text file or a binary file by examining its contents.
+       iachar_value = iachar(buffer)
+       if (iachar_value < 32 .or. iachar_value > 126) then
+          ! Determine it as a binary file if it contains control characters or extended ASCII characters.
+          isascii = 0
+       else
+          ! Otherwise, consider it a text file.
+          isascii = 1
+       end if
+    
+       ! Close the file.
+       close(unit)
+    
+    else
+       ! If the file open fails, consider it as an error, and treat it as a binary file.
+       isascii = 0
+    end if
 
   end subroutine detect_format
 

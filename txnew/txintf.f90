@@ -1,18 +1,6 @@
 module tx_interface
 
   !****************!
-  !   txmenu.f90   !
-  !****************!
-
-  interface
-     subroutine TXKLIN(LINE,KID,MODE)
-       integer(4), intent(out) :: MODE
-       character(len=80), intent(out) :: LINE
-       character(len=1), intent(out) :: KID
-     end subroutine TXKLIN
-  end interface
-
-  !****************!
   !   txmmm.f90    !
   !****************!
 
@@ -154,57 +142,6 @@ module tx_interface
        real(8), dimension(:), intent(in) :: xarray, varray ! 0:NRMAX
        real(8), intent(out) :: val
      end subroutine replace_interpolate_value
-  end interface
-
-  !*****************!
-  !   txmisc.f90    !
-  !*****************!
-
-  interface
-     real(8) function coll_freq(NR,i,j,eps)
-       integer(4), intent(in) :: NR, i, j
-       real(8), intent(in), optional :: eps
-     end function coll_freq
-  end interface
-
-  interface
-     pure real(8) function CORR(X)
-       real(8), intent(in) :: X
-     end function CORR
-  end interface
-
-  interface
-     elemental real(8) function ftfunc(x)
-       real(8), intent(in) ::x 
-     end function ftfunc
-  end interface
-
-  !**********************!
-  !   coulomb_log.f90    !
-  !**********************!
-
-  interface
-     function coulog( zeff, ne, te, ti, A1, Z1, A2, Z2, tb ) result( lambda )
-       real(8), intent(in) :: zeff, ne, te, ti, A1, Z1, A2, Z2
-       real(8), intent(in), optional :: tb
-       real(8) :: lambda
-     end function coulog
-  end interface
-
-  interface
-     pure function coulog_gen( ne, te, CDi, A1, Z1, t1, A2, Z2, t2 ) result( lambda )
-       real(8), intent(in) :: ne, te, CDi, A1, Z1, t1, A2, Z2, t2
-       real(8) :: lambda
-     end function coulog_gen
-  end interface
-
-  interface
-     pure function coulog_NRL(imodel, Ne, Te, Ni, Ti, PA, PZ) result(f)
-       integer(4), intent(in) :: imodel
-       real(8), intent(in) :: Ne, Te
-       real(8), intent(in), optional :: Ni, Ti, PA, PZ
-       real(8) :: f
-     end function coulog_NRL
   end interface
 
   !****************!

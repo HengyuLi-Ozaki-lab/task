@@ -109,56 +109,56 @@ contains
 
     select case(id)
     case(-1)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = hv(ne) * c13 * a(ne-1)
           x(ne,2) = hv(ne) * c16 * a(ne)
           x(ne,3) = hv(ne) * c16 * a(ne-1)
           x(ne,4) = hv(ne) * c13 * a(ne)
        end do
     case(-2)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = ( 3.d0 * a(ne-1) +        a(ne)) * hv(ne) * c112 * b(ne-1)
           x(ne,2) = (        a(ne-1) +        a(ne)) * hv(ne) * c112 * b(ne)
           x(ne,3) = (        a(ne-1) +        a(ne)) * hv(ne) * c112 * b(ne-1)
           x(ne,4) = (        a(ne-1) + 3.d0 * a(ne)) * hv(ne) * c112 * b(ne)
        end do
     case(-3)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (-4.d0 * a(ne-1) +        a(ne)) * c16 * b(ne-1)
           x(ne,2) = (        a(ne-1) + 2.d0 * a(ne)) * c16 * b(ne)
           x(ne,3) = (-2.d0 * a(ne-1) -        a(ne)) * c16 * b(ne-1)
           x(ne,4) = (-       a(ne-1) + 4.d0 * a(ne)) * c16 * b(ne)
        end do
     case(-4)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = -0.5d0 * a(ne-1)
           x(ne,2) =  0.5d0 * a(ne)
           x(ne,3) = x(ne,1)
           x(ne,4) = x(ne,2)
        end do
     case(-5)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (-2.d0 * a(ne-1) -        a(ne)) * c16 * b(ne-1)
           x(ne,2) = ( 2.d0 * a(ne-1) +        a(ne)) * c16 * b(ne)
           x(ne,3) = (-       a(ne-1) - 2.d0 * a(ne)) * c16 * b(ne-1)
           x(ne,4) = (        a(ne-1) + 2.d0 * a(ne)) * c16 * b(ne)
        end do
     case(-8)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) =-0.5d0 * a(ne-1)
           x(ne,2) =-0.5d0 * a(ne)
           x(ne,3) = 0.5d0 * a(ne-1)
           x(ne,4) = 0.5d0 * a(ne)
        end do
     case(-9)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (-2.d0 * a(ne-1) -        a(ne)) * c16 * b(ne-1)
           x(ne,2) = (-       a(ne-1) - 2.d0 * a(ne)) * c16 * b(ne)
           x(ne,3) = ( 2.d0 * a(ne-1) +        a(ne)) * c16 * b(ne-1)
           x(ne,4) = (        a(ne-1) + 2.d0 * a(ne)) * c16 * b(ne)
        end do
     case(-20)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (12.d0*a(ne-1)*b(ne-1) + 3.d0*a(ne)*b(ne-1) &
                &    + 3.d0*a(ne-1)*b(ne)   + 2.d0*a(ne)*b(ne)) * hv(ne) * c160 * c(ne-1)
           x(ne,2) = ( 3.d0*a(ne-1)*b(ne-1) + 2.d0*a(ne)*b(ne-1) &
@@ -169,7 +169,7 @@ contains
                &    + 3.d0*a(ne-1)*b(ne)   +12.d0*a(ne)*b(ne)) * hv(ne) * c160 * c(ne)
        end do
     case(-22)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           x(ne,1) = (-3.d0*a1*b1 -      a1*b2 -      a2*b1 -      a2*b2) * c112 * c(ne-1)
@@ -178,7 +178,7 @@ contains
           x(ne,4) = (      a1*b1 +      a1*b2 +      a2*b1 + 3.d0*a2*b2) * c112 * c(ne)
        end do
     case(-23)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne)
           c1 = c(ne-1) ; c2 = c(ne)
           x(ne,1) =-( 3.d0*a1*b1 + a1*b2 + a2*b1 +      a2*b2) * c112 * c1
@@ -187,7 +187,7 @@ contains
           x(ne,4) = (      a1*b1 + a1*b2 + a2*b1 + 3.d0*a2*b2) * c112 * c2
        end do
     case(-122)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           c1 = c(ne-1) ; c2 = c(ne)
@@ -202,98 +202,98 @@ contains
        end do
     case(0)
        !  for SUPG
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = hv(ne) * cp
           x(ne,2) = x(ne,1)
           x(ne,3) = x(ne,1)
           x(ne,4) = x(ne,1)
        end do
     case(1)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = hv(ne) * c13
           x(ne,2) = hv(ne) * c16
           x(ne,3) = x(ne,2)
           x(ne,4) = x(ne,1)
        end do
     case(2)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = ( 3.d0 * a(ne-1) +        a(ne)) * hv(ne) * c112
           x(ne,2) = (        a(ne-1) +        a(ne)) * hv(ne) * c112
           x(ne,3) = x(ne,2)
           x(ne,4) = (        a(ne-1) + 3.d0 * a(ne)) * hv(ne) * c112
        end do
     case(3)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (-4.d0 * a(ne-1) +        a(ne)) * c16
           x(ne,2) = (        a(ne-1) + 2.d0 * a(ne)) * c16
           x(ne,3) = (-2.d0 * a(ne-1) -        a(ne)) * c16
           x(ne,4) = (-       a(ne-1) + 4.d0 * a(ne)) * c16
        end do
     case(4)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = -0.5d0
           x(ne,2) =  0.5d0
           x(ne,3) = x(ne,1)
           x(ne,4) = x(ne,2)
        end do
     case(5)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (-2.d0 * a(ne-1) -        a(ne)) * c16
           x(ne,2) = ( 2.d0 * a(ne-1) +        a(ne)) * c16
           x(ne,3) = (-       a(ne-1) - 2.d0 * a(ne)) * c16
           x(ne,4) = (        a(ne-1) + 2.d0 * a(ne)) * c16
        end do
     case(6)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (- a(ne-1) + a(ne)) * c13
           x(ne,2) = (- a(ne-1) + a(ne)) * c16
           x(ne,3) = x(ne,2)
           x(ne,4) = x(ne,1)
        end do
     case(8)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) =-0.5d0
           x(ne,2) = x(ne,1)
           x(ne,3) = 0.5d0
           x(ne,4) = x(ne,3)
        end do
     case(9)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (-2.d0 * a(ne-1) -        a(ne)) * c16
           x(ne,2) = (-       a(ne-1) - 2.d0 * a(ne)) * c16
           x(ne,3) =-x(ne,1)
           x(ne,4) =-x(ne,2)
        end do
     case(10)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = a(ne-1) / hv(ne)
           x(ne,2) =-a(ne)   / hv(ne)
           x(ne,3) =-x(ne,1)
           x(ne,4) =-x(ne,2)
        end do
     case(11)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = 1.d0 / hv(ne)
           x(ne,2) =-x(ne,1)
           x(ne,3) = x(ne,2)
           x(ne,4) = x(ne,1)
        end do
     case(12)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = 0.5d0 * ( a(ne-1) + a(ne) ) / hv(ne)
           x(ne,2) =-x(ne,1)
           x(ne,3) = x(ne,2)
           x(ne,4) = x(ne,1)
        end do
     case(13)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = 0.5d0 * ( a(ne-1) - a(ne) ) / hv(ne)
           x(ne,2) = x(ne,1)
           x(ne,3) =-x(ne,1)
           x(ne,4) = x(ne,3)
        end do
     case(20)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (12.d0*a(ne-1)*b(ne-1) + 3.d0*a(ne)*b(ne-1) &
                &    + 3.d0*a(ne-1)*b(ne)   + 2.d0*a(ne)*b(ne)) * hv(ne) * c160
           x(ne,2) = ( 3.d0*a(ne-1)*b(ne-1) + 2.d0*a(ne)*b(ne-1) &
@@ -303,7 +303,7 @@ contains
                &    + 3.d0*a(ne-1)*b(ne)   +12.d0*a(ne)*b(ne)) * hv(ne) * c160
        end do
     case(21)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (-3.d0*a(ne-1)*b(ne-1) + 3.d0*a(ne-1)*b(ne) &
                &     -     a(ne)  *b(ne-1) +      a(ne)  *b(ne)) * c112
           x(ne,2) = (-     a(ne-1)*b(ne-1) +      a(ne-1)*b(ne) &
@@ -314,7 +314,7 @@ contains
                &     -3.d0*a(ne)  *b(ne-1) + 3.d0*a(ne)  *b(ne)) * c112
        end do
     case(22)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           x(ne,1) = (-3.d0*a1*b1 -      a1*b2 -      a2*b1 -      a2*b2) * c112
@@ -323,7 +323,7 @@ contains
           x(ne,4) = (      a1*b1 +      a1*b2 +      a2*b1 + 3.d0*a2*b2) * c112
        end do
     case(23)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           x(ne,1) =-( 3.d0*a1*b1 +      a1*b2 +      a2*b1 +      a2*b2) * c112
@@ -332,7 +332,7 @@ contains
           x(ne,4) =-x(ne,2)
        end do
     case(24)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           x(ne,1) = (-3.d0*a1*b1 + 3.d0*a1*b2 -      a2*b1 +      a2*b2) * c112 &
@@ -349,7 +349,7 @@ contains
                &  + (      a1*b1 +      a1*b2 +      a2*b1 + 3.d0*a2*b2) * c112
        end do
     case(25)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne) ; hvlinv = 1.d0 / hv(ne)
           x(ne,1) = (2.d0*a1+     a2)*(b1-b2) * hvlinv * c16
@@ -358,7 +358,7 @@ contains
           x(ne,4) =-(     a1+2.d0*a2)*(b1-b2) * hvlinv * c16
        end do
     case(26)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = ( 2.d0*a(ne-1)*b(ne-1) - 2.d0*a(ne-1)*b(ne) &
                &     +     a(ne)  *b(ne-1) -      a(ne)  *b(ne)) / hv(ne) * c16
           x(ne,2) = (      a(ne-1)*b(ne-1) -      a(ne-1)*b(ne) &
@@ -367,7 +367,7 @@ contains
           x(ne,4) =-x(ne,2)
        end do
     case(27)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = ( 2.d0*a(ne-1)*b(ne-1) +      a(ne-1)*b(ne) &
                &     +     a(ne)  *b(ne-1) + 2.d0*a(ne)  *b(ne)) / hv(ne) * c16
           x(ne,2) =-x(ne,1)
@@ -375,7 +375,7 @@ contains
           x(ne,4) = x(ne,1)
        end do
     case(30)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           coef1 =      b1*(2.d0*c1+     c2)+     b2*(     c1+     c2)
           coef2 =      b1*(     c1+     c2)+     b2*(     c1+2.d0*c2)
@@ -387,7 +387,7 @@ contains
           x(ne,4) = (a1*coef2+a2*coef4)*hv(ne)*c160
        end do
     case(31)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           x(ne,1) = (12.d0*a1*b1+3.d0*a1*b2+3.d0*a2*b1+ 2.d0*a2*b2)*(c2-c1)*c160
           x(ne,2) = ( 3.d0*a1*b1+2.d0*a1*b2+2.d0*a2*b1+ 3.d0*a2*b2)*(c2-c1)*c160
@@ -395,7 +395,7 @@ contains
           x(ne,4) = ( 2.d0*a1*b1+3.d0*a1*b2+3.d0*a2*b1+12.d0*a2*b2)*(c2-c1)*c160
        end do
     case(32)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           coef1 = 3.d0*b1*(4.d0*c1+c2)+b2*(3.d0*c1+2.d0*c2)
           coef2 = 3.d0*b1*c1+2.d0*b2*c1+2.d0*b1*c2+3.d0*b2*c2
@@ -406,7 +406,7 @@ contains
           x(ne,4) =-x(ne,3)
        end do
     case(33)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           coef1 =      b1*(3.d0*c1+2.d0*c2)+     b2*(2.d0*c1+3.d0*c2)
           coef2 = 3.d0*b1*(4.d0*c1+     c2)+     b2*(3.d0*c1+2.d0*c2)
@@ -417,7 +417,7 @@ contains
           x(ne,4) = (a1*coef1+a2*coef3)*c160
        end do
     case(34)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           coef1 = 3.d0*b1*(4.d0*c1+c2)+b2*(3.d0*c1+2.d0*c2)
           coef2 = 3.d0*b1*c1+2.d0*b2*c1+2.d0*b1*c2+3.d0*b2*c2
@@ -432,7 +432,7 @@ contains
                &   +(a1*coef2+a2*coef3)*c160
        end do
     case(36)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           hvlinv = 1.d0 / hv(ne)
           x(ne,1) = (3.d0*a1*b1+a1*b2+a2*b1+     a2*b2)*(c1-c2)*hvlinv*c112
@@ -441,7 +441,7 @@ contains
           x(ne,4) = (     a1*b1+a1*b2+a2*b1+3.d0*a2*b2)*(c2-c1)*hvlinv*c112 
        end do
     case(37)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           hvlinv = 1.d0 / hv(ne)
           x(ne,1) = (a2*(b1+b2)*c1+a1*(3.d0*b1+b2)*c1+a1*(b1+b2)*c2+a2*(b1+3.d0*b2)*c2)*hvlinv*c112
@@ -450,7 +450,7 @@ contains
           x(ne,4) = x(ne,1)
        end do
     case(38)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           hvlinv = 1.d0 / hv(ne)
           x(ne,1) =( (a2*(b1+b2)*c1+a1*(3.d0*b1+b2)*c1+a1*(b1+b2)*c2+a2*(b1+3.d0*b2)*c2) &
@@ -464,14 +464,14 @@ contains
        end do
     ! --- SUPG ---
     case(-101) ! (-1)+(-8)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = hv(ne) * c13 * a(ne-1) - 0.5d0 * a(ne-1) * hv(ne) * cp
           x(ne,2) = hv(ne) * c16 * a(ne)   - 0.5d0 * a(ne)   * hv(ne) * cp
           x(ne,3) = hv(ne) * c16 * a(ne-1) + 0.5d0 * a(ne-1) * hv(ne) * cp
           x(ne,4) = hv(ne) * c13 * a(ne)   + 0.5d0 * a(ne)   * hv(ne) * cp
        end do
     case(-102) ! (-2)+(-9)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           x(ne,1) = ( 3.d0 * a1 +        a2) * c112 * b1 * hv(ne) &
@@ -484,7 +484,7 @@ contains
                &  + (        a1 + 2.d0 * a2) * c16  * b2 * hv(ne) * cp
        end do
     case(-120) ! (-20)+(-23)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne)
           c1 = c(ne-1) ; c2 = c(ne)
           x(ne,1) = (12.d0*a1*b1 + 3.d0*a2*b1 + 3.d0*a1*b2 + 2.d0*a2*b2) * c160 * c1 * hv(ne) &
@@ -497,14 +497,14 @@ contains
                &  + (      a1*b1 +      a2*b1 +      a1*b2 + 3.d0*a2*b2) * c112 * c2 * hv(ne) * cp
        end do
     case(101) ! (1)+(8)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = hv(ne) * c13 - 0.5d0 * hv(ne) * cp
           x(ne,2) = hv(ne) * c16 - 0.5d0 * hv(ne) * cp
           x(ne,3) = hv(ne) * c16 + 0.5d0 * hv(ne) * cp
           x(ne,4) = hv(ne) * c13 + 0.5d0 * hv(ne) * cp
        end do
     case(102) ! (2)+(9)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = ( 3.d0 * a(ne-1) +        a(ne)) * c112 * hv(ne) &
                &  + (-2.d0 * a(ne-1) -        a(ne)) * c16  * hv(ne) * cp
           x(ne,2) = (        a(ne-1) +        a(ne)) * c112 * hv(ne) &
@@ -515,28 +515,28 @@ contains
                &  + (        a(ne-1) + 2.d0 * a(ne)) * c16  * hv(ne) * cp
        end do
     case(103) ! (3)+(10)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (-4.d0 * a(ne-1) +        a(ne)) * c16 + a(ne-1) * cp
           x(ne,2) = (        a(ne-1) + 2.d0 * a(ne)) * c16 - a(ne)   * cp 
           x(ne,3) = (-2.d0 * a(ne-1) -        a(ne)) * c16 - a(ne-1) * cp
           x(ne,4) = (-       a(ne-1) + 4.d0 * a(ne)) * c16 + a(ne)   * cp
        end do
     case(105) ! (5)+(12)*(0)
-      do ne = 1, nemax
+      do concurrent (ne = 1:nemax)
           x(ne,1) = (-2.d0 * a(ne-1) -        a(ne)) * c16 + 0.5d0 * ( a(ne-1) + a(ne) ) * cp
           x(ne,2) = ( 2.d0 * a(ne-1) +        a(ne)) * c16 - 0.5d0 * ( a(ne-1) + a(ne) ) * cp
           x(ne,3) = (-       a(ne-1) - 2.d0 * a(ne)) * c16 - 0.5d0 * ( a(ne-1) + a(ne) ) * cp
           x(ne,4) = (        a(ne-1) + 2.d0 * a(ne)) * c16 + 0.5d0 * ( a(ne-1) + a(ne) ) * cp
        end do
     case(106) ! (6)+(13)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           x(ne,1) = (- a(ne-1) + a(ne)) * c13 + 0.5d0 * ( a(ne-1) - a(ne) ) * cp
           x(ne,2) = (- a(ne-1) + a(ne)) * c16 + 0.5d0 * ( a(ne-1) - a(ne) ) * cp
           x(ne,3) = (- a(ne-1) + a(ne)) * c16 - 0.5d0 * ( a(ne-1) - a(ne) ) * cp
           x(ne,4) = (- a(ne-1) + a(ne)) * c13 - 0.5d0 * ( a(ne-1) - a(ne) ) * cp
        end do
     case(120) ! (20)+(23)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           x(ne,1) = (12.d0*a1*b1 + 3.d0*a2*b1 + 3.d0*a1*b2 + 2.d0*a2*b2) * c160 * hv(ne) &
@@ -549,7 +549,7 @@ contains
                &  + (      a1*b1 +      a1*b2 +      a2*b1 + 3.d0*a2*b2) * c112 * hv(ne) * cp
        end do
     case(121) ! (21)+(26)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           x(ne,1) = (-3.d0*a1*b1 + 3.d0*a1*b2 -     a2  *b1 +      a2  *b2) * c112 &
@@ -562,7 +562,7 @@ contains
                &  - (      a1*b1 -      a1*b2 +2.d0*a2  *b1 - 2.d0*a2  *b2) * c16 * cp
        end do
     case(122) ! (22)+(27)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne)
           b1 = b(ne-1) ; b2 = b(ne)
           x(ne,1) = (-3.d0*a1*b1 - a1*b2 - a2*b1 -      a2*b2) * c112 &
@@ -575,7 +575,7 @@ contains
                &  + ( 2.d0*a1*b1 + a1*b2 + a2*b1 + 2.d0*a2*b2) * c16 * cp
        end do
     case(130) ! (30)+(33)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           coef1 =      b1*(2.d0*c1+     c2)+     b2*(     c1+     c2)
           coef2 =      b1*(     c1+     c2)+     b2*(     c1+2.d0*c2)
@@ -594,7 +594,7 @@ contains
                &  + (a1 * coef5 + a2 * coef7) * hv(ne) * c160 * cp
        end do
     case(131) ! (31)+(36)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           x(ne,1) = (12.d0*a1*b1+3.d0*a1*b2+3.d0*a2*b1+ 2.d0*a2*b2)*(c2-c1) * c160 &
                &  - ( 3.d0*a1*b1+     a1*b2+     a2*b1+      a2*b2)*(c2-c1) * c112 * cp
@@ -606,7 +606,7 @@ contains
                &  + (      a1*b1+     a1*b2+     a2*b1+ 3.d0*a2*b2)*(c2-c1) * c112 * cp
        end do
     case(132) ! (32)+(37)*(0)
-       do ne = 1, nemax
+       do concurrent (ne = 1:nemax)
           a1 = a(ne-1) ; a2 = a(ne) ; b1 = b(ne-1) ; b2 = b(ne) ; c1 = c(ne-1) ; c2 = c(ne)
           coef1 = 3.d0*b1*(4.d0*c1+c2)+b2*(3.d0*c1+2.d0*c2)
           coef2 = 3.d0*b1*c1+2.d0*b2*c1+2.d0*b1*c2+3.d0*b2*c2
