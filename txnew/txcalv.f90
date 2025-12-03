@@ -459,7 +459,7 @@ contains
       end do
       ! smoothing 1/Lne
       call savgol_filter(nl,nr,ld,m,NRMAX+1,dlnNedrhov,iflag)
-      if( iflag /= 0 ) stop('savgol_filter error for dlnNedrhov in txcalc.')
+      if( iflag /= 0 ) stop 'savgol_filter error for dlnNedrhov in txcalc.'
       
       !  Smoothing Er gradient for numerical stability
       allocate(dErdrS, source=dErdr)
@@ -468,7 +468,7 @@ contains
 !!$         dErdrS(NR) = moving_average(NR,dErdr,NRMAX,NRA)
 !!$      end do
       call savgol_filter(nl,nr,ld,m,NRA+1,dErdrS(0:NRA),iflag)
-      if( iflag /= 0 ) stop('savgol_filter error for dErdrS in txcalc.')
+      if( iflag /= 0 ) stop 'savgol_filter error for dErdrS in txcalc.'
     end block
 
     ! *** Temperatures for neutrals ***
@@ -560,7 +560,7 @@ contains
 !!$            end do
 !!$            ddPhidpsi(:) = tmp(:)
             call savgol_filter(nl,nr,ld,m,NRMAX+1,ddPhidpsi,iflag)
-            if( iflag /= 0 ) stop('savgol_filter error for ddPhidpsi in txcalc.')
+            if( iflag /= 0 ) stop 'savgol_filter error for ddPhidpsi in txcalc.'
           end block
        end if
        ! For NCLASS
@@ -1451,7 +1451,7 @@ contains
 !!$            end do
 !!$            rNuOL(:) = tmp(:)
             call savgol_filter(nl,nr,ld,m,NRMAX+1,rNuOL,iflag)
-            if( iflag /= 0 ) stop('savgol_filter error for rNuOL in txcalc.')
+            if( iflag /= 0 ) stop 'savgol_filter error for rNuOL in txcalc.'
           end block
 
        else if(MDLC == 2) then
