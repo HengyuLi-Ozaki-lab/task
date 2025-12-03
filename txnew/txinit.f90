@@ -1245,11 +1245,11 @@ contains
 !!$               X(NR,LQz5) = moving_average(NR,ProfRS(:,3),NRMAX) * X(NR,LQz1)
 !!$            end do
             call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,1),iflag)
-            if( iflag /= 0 ) stop('savgol_filter error in txprof.')
+            if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
             call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,2),iflag)
-            if( iflag /= 0 ) stop('savgol_filter error in txprof.')
+            if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
             call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,3),iflag)
-            if( iflag /= 0 ) stop('savgol_filter error in txprof.')
+            if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
             do NR = NR_smt, NRMAX
                X(NR,LQe5) = ProfRS(NR,1) * X(NR,LQe1)
                X(NR,LQi5) = ProfRS(NR,2) * X(NR,LQi1)
@@ -1262,11 +1262,11 @@ contains
 !!$               X(NR,LQz5) = moving_average(NR,ProfRS(:,3),NRMAX)
 !!$            end do
             call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,1),iflag)
-            if( iflag /= 0 ) stop('savgol_filter error in txprof.')
+            if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
             call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,2),iflag)
-            if( iflag /= 0 ) stop('savgol_filter error in txprof.')
+            if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
             call savgol_filter(nl,nr,ld,m,imax,ProfRS(NR_smt:NRMAX,3),iflag)
-            if( iflag /= 0 ) stop('savgol_filter error in txprof.')
+            if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
             do NR = NR_smt, NRMAX
                X(NR,LQe5) = ProfRS(NR,1)
                X(NR,LQi5) = ProfRS(NR,2)
@@ -1351,7 +1351,7 @@ contains
 !!$            X(NR,LQz1) = facz * X(NR,LQe1) ! Nz
 !!$         end do
          call savgol_filter(nl,nr,ld,m,imax,ProfR(NR_smt:NRMAX),iflag)
-         if( iflag /= 0 ) stop('savgol_filter error in txprof.')
+         if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
          do NR = NR_smt, NRMAX
             X(NR,LQe1) = ProfR(NR)
             X(NR,LQi1) = faci * X(NR,LQe1) ! Ni
@@ -1521,7 +1521,7 @@ contains
 !!$                     AJPHL(NR) = moving_average(NR,ProfR,NRMAX)
 !!$                  end do
                   call savgol_filter(nl,nr,ld,m,imax,AJPHL(NR_smt:NRMAX),iflag)
-                  if( iflag /= 0 ) stop('savgol_filter error in txprof.')
+                  if( iflag /= 0 ) stop 'savgol_filter error in txprof.'
 !!$                  deallocate(ProfR)
                 end block
              end if
