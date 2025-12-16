@@ -111,15 +111,16 @@ CONTAINS
     
     CALL dp_prep_ns(ierr)
 
-    nrrmax_wr=21
-    drr_wr=(rmax_wr-rmin_wr)/nrrmax_wr
-    DO nrr=1,nrrmax_wr
-       rr_wr=rmin_wr+drr_wr*(nrr-1)
-       CALL pl_mag(rr_wr,0.D0,0.D0,mag_wr)
-       WRITE(6,'(A,I4,6ES12.4)') 'nrr=', &
-            nrr,rr_wr,mag_wr%babs,rr_wr*mag_wr%babs, &
-            mag_wr%bnx,mag_wr%bny,mag_wr%bnz
-    END DO
+!    nrrmax_wr=21
+!    drr_wr=(rmax_wr-rmin_wr)/nrrmax_wr
+!    DO nrr=1,nrrmax_wr
+!       rr_wr=rmin_wr+drr_wr*(nrr-1)
+!       CALL pl_mag(rr_wr,0.D0,0.D0,mag_wr)
+!       WRITE(6,'(A,I4,6ES12.4)') 'nrr=', &
+!            nrr,rr_wr,mag_wr%babs,rr_wr*mag_wr%babs, &
+!            mag_wr%bnx,mag_wr%bny,mag_wr%bnz
+!    END DO
+    
     RETURN
   END SUBROUTINE wr_prep
 END MODULE wrprep
