@@ -13,6 +13,7 @@
       USE plgout,ONLY: pl_gout
       USE plload,ONLY: pl_load
       USE plvmec,ONLY: pl_vmec
+      USE plgfile,ONLY: pl_read_gfile_csv
       USE libkio
 
       IMPLICIT NONE
@@ -23,7 +24,7 @@
     1 CONTINUE
          IERR=0
          WRITE(6,601)
-  601    FORMAT('## PL MENU: P,V/PARM  G/graph  L/LOAD  Q/QUIT')
+  601    FORMAT('## PL MENU: P,V/PARM  G/graph  L/LOAD  E:eqread Q/QUIT')
 
          CALL TASK_KLIN(LINE,KID,MODE,pl_parm)
       IF(MODE.NE.1) GOTO 1

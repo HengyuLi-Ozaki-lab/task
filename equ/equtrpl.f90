@@ -1,4 +1,5 @@
-c
+! equtrpl.f90
+!
       module trpl_mod
       use bpsd
       type(bpsd_species_type),private,save :: species
@@ -6,22 +7,22 @@ c
       logical, private, save :: trpl_init_flag = .TRUE.
       public
       contains
-c
-c=======================================================================
+!
+!=======================================================================
       subroutine trpl_init
-c=======================================================================
+!=======================================================================
       use trn_mod
       implicit none
 ! local variables
       integer    ns,nr,ierr
-c=======================================================================
+!=======================================================================
       if(trpl_init_flag) then
          species%nsmax=0
          plasmaf%nsmax=0
          plasmaf%nrmax=0
          trpl_init_flag=.FALSE.
       endif
-c
+!
       if(species%nsmax.ne.mion+1) then
          if(ALLOCATED(species%data)) then
             deallocate(species%data)
@@ -29,15 +30,15 @@ c
          species%nsmax=mion+1
          allocate(species%data(species%nsmax))
       endif
-c
+!
       do ns=1,species%nsmax
          species%data(ns)%pa=fmass(ns-1)
          species%data(ns)%pz=fchrg(ns-1)
       enddo
       call bpsd_put_species(species,ierr)
-c
-      if((plasmaf%nsmax.ne.mion+1).or.
-     &   (plasmaf%nrmax.ne.nro)) then
+!
+      if((plasmaf%nsmax.ne.mion+1).or. &
+         (plasmaf%nrmax.ne.nro)) then
          if(ALLOCATED(plasmaf%rho)) then
             deallocate(plasmaf%rho)
          endif
@@ -53,7 +54,7 @@ c
          allocate(plasmaf%data(plasmaf%nrmax,plasmaf%nsmax))
          allocate(plasmaf%qinv(plasmaf%nrmax))
       endif
-c
+!
       plasmaf%time=0.d0
       do nr=1,plasmaf%nrmax
          plasmaf%rho(nr)=ro(nr)
@@ -69,17 +70,17 @@ c
       call bpsd_put_plasmaf(plasmaf,ierr)
       return
       end subroutine trpl_init
-c
-c=======================================================================
+!
+!=======================================================================
       subroutine trpl_put(ierr)
-c=======================================================================
+!=======================================================================
       use trn_mod
       implicit none
       integer    ierr
 ! local variables
       integer    ns,nr
-c=======================================================================
-c
+!=======================================================================
+!
       plasmaf%time=0.d0
       do nr=1,plasmaf%nrmax
          do ns=1,plasmaf%nsmax
@@ -94,19 +95,19 @@ c
       call bpsd_put_plasmaf(plasmaf,ierr)
       return
       end subroutine trpl_put
-c
-c=======================================================================
+!
+!=======================================================================
       subroutine trpl_get(ierr)
-c=======================================================================
+!=======================================================================
       use trn_mod
       implicit none
       integer    ierr
 ! local variables
       integer    ns,nr
-c=======================================================================
-c
+!=======================================================================
+!
       call bpsd_get_plasmaf(plasmaf,ierr)
-c
+!
       do nr=1,plasmaf%nrmax
          do ns=1,plasmaf%nsmax
             den(nr,ns-1)=plasmaf%data(nr,ns)%density
@@ -117,5 +118,5 @@ c
       enddo
       return
       end subroutine trpl_get
-c
+!
       end module trpl_mod
