@@ -296,6 +296,8 @@
        do n=1,ns
         rs(n)=0.5*(rsu(n)+rsu(n+1))
         zs(n)=0.5*(zsu(n)+zsu(n+1))
+        IF((rsu(n)-rsu(n+1))**2+(zsu(n)-zsu(n+1))**2.LT.0.D0) &
+             write(6,*) '@@@ point 1'
         cs(n)=dsqrt((rsu(n)-rsu(n+1))**2+(zsu(n)-zsu(n+1))**2)
        enddo
 !-----
@@ -307,6 +309,8 @@
        smax=0.d0
        ds(1)=0.d0
        do n=2,nsu
+        IF((rsu(n)-rsu(n+1))**2+(zsu(n)-zsu(n+1))**2.LT.0.D0) &
+             write(6,*) '@@@ point 2'
         ds(n)=dsqrt((rsu(n)-rsu(n-1))**2+(zsu(n)-zsu(n-1))**2)
         smax=smax+ds(n)
        enddo
@@ -615,9 +619,13 @@
 !-----------------------------------------------------------------------
       cpl=0.d0
       do n=2,nsu
+        IF((rsu(n)-rsu(n+1))**2+(zsu(n)-zsu(n+1))**2.LT.0.D0) &
+             write(6,*) '@@@ point 3'
        cpl = cpl + 0.5d0*(csu(n) + csu(n-1)) &
              *dsqrt((rsu(n)-rsu(n-1))**2+(zsu(n)-zsu(n-1))**2)
       enddo
+        IF((rsu(n)-rsu(n+1))**2+(zsu(n)-zsu(n+1))**2.LT.0.D0) &
+             write(6,*) '@@@ point 4'
       cpl = cpl + 0.5d0*(csu(1) + csu(nsu)) &
              *dsqrt((rsu(1)-rsu(nsu))**2+(zsu(1)-zsu(nsu))**2)
       x=tcu/cpl
@@ -845,6 +853,8 @@
       xl=dlog(1.d0/xx)
       xk=a0+xx*(a1+xx*a2)+(b0+xx*(b1+xx*b2))*xl
       xe=c0+xx*(c1+xx*c2)+    xx*(d1+xx*d2) *xl
+        IF(x.LT.0.D0) &
+             write(6,*) '@@@ point 5'
       flux0=((1.d0-x/2.d0)*xk-xe)/(pi*dsqrt(x))
       return
       end function flux0
@@ -904,8 +914,12 @@
        i=1.d0-dtab*dlog(1.d0-xx)
        if(i.lt.ntab)then
         d=(xx-xtab(i))/(xtab(i+1)-xtab(i))
+        IF(x.LT.0.D0) &
+             write(6,*) '@@@ point 6'
         flux=flux-c0(m)*dsqrt(x)*(ftab(i)+d*(ftab(i+1)-ftab(i)))
        else
+        IF(x.LT.0.D0) &
+             write(6,*) '@@@ point 7'
         flux=flux-c0(m)*dsqrt(x)*flux0(xx)
        endif
       enddo
@@ -936,6 +950,8 @@
        i=1.d0-dtab*dlog(1.d0-xx)
        i=min0(i,ntab-1)
        d=(xx-xtab(i))/(xtab(i+1)-xtab(i))
+        IF(x.LT.0.D0) &
+             write(6,*) '@@@ point 8'
        flx(mm)=flx(mm)-c0(nn)*dsqrt(x)*(ftab(i)+d*(ftab(i+1)-ftab(i)))
       enddo
       enddo
@@ -1005,6 +1021,8 @@
       csrz(nsz2)=0.d0
       lo=nsz2
       l=lo/2
+        IF(2.d0+csrz(lo).LT.0.D0) &
+             write(6,*) '@@@ point 9'
       csrz(l)=dsqrt(2.d0+csrz(lo))
       lo=l
       csrz(nszm-l)=-csrz(l)
@@ -1020,6 +1038,8 @@
         l=l+2*lo
        else
         l=lo/2
+        IF(2.d0+csrz(lo).LT.0.D0) &
+             write(6,*) '@@@ point 10'
         csrz(l)=dsqrt(2.d0+csrz(lo))
         lo=l
         csrz(nszm-l)=-csrz(l)

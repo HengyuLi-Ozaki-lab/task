@@ -256,8 +256,8 @@
 !     &                  ngcoil,rgcoil,zgcoil,
 !     &                  ngbound,rgboud,zgboud)
 !
-      USE aaa_mod,ONLY: icvdm
-      USE vac_mod,ONLY: rcoil,zcoil,ccoil,ncoil
+     USE aaa_mod,ONLY: icvdm
+      USE vac_mod,ONLY: rcoil,zcoil,ccoil,ncoil,msfx,rvac,zvac
       USE libgrf,ONLY: grfut1,grfut2,grfut3,grfut4, &
                        grf2dax,grf2dbx,grf2dcx
       implicit none
@@ -351,6 +351,15 @@
                       gsymin,gsymax,gystep,gyorg, &
                       gszmin,gszmax,gzstep,gzorg, &
                       gx,gy,gz,nxm,nxmax,nymax,str,0,0)
+         CALL GDEFIN(gp(1),gp(2),gp(3),gp(4),gsxmin,gsxmax,gsymin,gsymax)
+         CALL SETMKS(0,0.1)
+         CALL SETRGB(0.0,1.0,0.0)
+         CALL MOVE2D(GUCLIP(rvac(1)),GUCLIP(zvac(1)))
+         DO i=2,ABS(MSFX)
+            CALL DRAW2D(GUCLIP(rvac(i)),GUCLIP(zvac(i)))
+         END DO
+         CALL DRAW2D(GUCLIP(rvac(1)),GUCLIP(zvac(1)))
+            
 !
       elseif(ntype.eq.3) then
          gp3d(1)=10.0*1.5

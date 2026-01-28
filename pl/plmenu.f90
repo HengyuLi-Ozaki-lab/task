@@ -13,7 +13,6 @@
       USE plgout,ONLY: pl_gout
       USE plload,ONLY: pl_load
       USE plvmec,ONLY: pl_vmec
-      USE plgfile,ONLY: pl_read_gfile_csv
       USE libkio
 
       IMPLICIT NONE
