@@ -13,10 +13,14 @@ CONTAINS
 
     USE wrcomm_parm
     IMPLICIT NONE
-    INTEGER:: i,nsa
+    INTEGER:: i,nsa,nray
 
     WRITE(6,603) 'NRAYMAX     ',NRAYMAX, &
-                 'NSTPMAX     ',NSTPMAX
+         'NSTPMAX     ',NSTPMAX
+    DO NRAY=1,NRAYMAX
+       WRITE(6,'(I4,6ES12.4,I2)') NRAY,RFIN(NRAY),RPIN(NRAY),ZPIN(NRAY), &
+            PHIIN(NRAY),ANGPIN(NRAY),ANGTIN(NRAY),MODEWIN(NRAY)
+    END DO
     WRITE(6,603) 'NRSMAX      ',NRSMAX, &
                  'NRLMAX      ',NRLMAX
     WRITE(6,602) 'SMAX  ',SMAX  ,'DELS  ',DELS  , &

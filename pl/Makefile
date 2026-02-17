@@ -10,8 +10,8 @@ include ../mtxp/make.mtxp
 #LIB_MTX=$(LIBXMTX_KSP)
 #LIBX_MTX=$(LIBX_MTX_KSP)
 
-FFLAGS=$(OFLAGS)
-#FFLAGS=$(DFLAGS)
+#FFLAGS=$(OFLAGS)
+FFLAGS=$(DFLAGS)
 
 OBJDIR=./obj
 
@@ -28,7 +28,7 @@ SRCS_NOEQ = plvmec.f90 plcomm.f90 plinit.f90 plparm.f90 \
             plprof_TOTAL.f90 plprof_travis.f90 plload.f90 plprep.f90
 
 SRCS_EQ=plprof2d.f90 \
-     plprof.f90 plprofw.f90  \
+     plprof.f90 plprofw.f90 \
      plgout.f90 plmenu.f90
 
 

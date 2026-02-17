@@ -1,13 +1,15 @@
+! equinp.f90
+
       module eqinp_mod
       use eqinit_mod
       public
       contains
-c
-c=======================================================================
+!
+!=======================================================================
       subroutine eqinp
-c=======================================================================
-c     read namelist &equ
-c=======================================================================
+!=======================================================================
+!     read namelist &equ
+!=======================================================================
       use aaa_mod
       use par_mod
       use geo_mod
@@ -20,22 +22,22 @@ c=======================================================================
       character aname*10
       integer   kstepk, istop, ist, ierr, n, nn, il
       data kstepk / 0 /
-c=======================================================================
-c:restart
+!=======================================================================
+!:restart
       if(iread.gt.0)then
       call eqrest
       else
-c=======================================================================
-c:initial
+!=======================================================================
+!:initial
       call eqinit
-c-----
+!-----
       if(kstepk.eq.0)then
       rewind ft05
       kstepk=1
       endif
-c-----
+!-----
       istop=0
-c      read(ft05,equ,end=888,err=999)
+!      read(ft05,equ,end=888,err=999)
       call eqnlin(ft05,ist,ierr)
          write(6,*) 'eqnlin done',ierr
       if(ierr.eq.9) goto 888
@@ -46,36 +48,36 @@ c      read(ft05,equ,end=888,err=999)
  888  if(istop.eq.0)then
       write(ft06,*)'>>&equ : end<< :IOSTAT=', ist
       rewind ft05
-C      write(ft06,equ)
+!      write(ft06,equ)
       call eqnlin(-ft06,ist,ierr)
       stop
       endif
  999  if(istop.eq.0)then
       write(ft06,*)'>>&equ : err<< :IOSTAT=', ist
       rewind ft05
-C      write(ft06,equ)
+!      write(ft06,equ)
       call eqnlin(-ft06,ist,ierr)
       stop
       endif
-c=======================================================================
-c     input data check
-c=======================================================================
+!=======================================================================
+!     input data check
+!=======================================================================
       call eqchek(ierr)
       if(ierr.ne.0) stop
       endif
-c=======================================================================
-c     print out
-c=======================================================================
+!=======================================================================
+!     print out
+!=======================================================================
       call eqview
-c-----
+!-----
       return
       end subroutine eqinp
-c
-c=======================================================================
+!
+!=======================================================================
       subroutine eqrest
-c=======================================================================
-c     restart namelist &equrst
-c=======================================================================
+!=======================================================================
+!     restart namelist &equrst
+!=======================================================================
       use aaa_mod
       use par_mod
       use geo_mod
@@ -86,14 +88,14 @@ c=======================================================================
       implicit none
 ! local variables
       integer   i, k, n, nc, nfix, nnc, istop
-c=======================================================================
-c=====NAMELIST FOR RESTART
-      namelist/equrst/title,
-     >rvac,zvac,msfx,
-     >ivac,cvac,ncoil,ivtab,ivgrp,isep,dsep,
-     >ieqmax,eeqmax,iodmax,eodmax,iadmax,eadmax,bavmax,bavmin,nsumax,
-     >ieqout
-c=======================================================================
+!=======================================================================
+!=====NAMELIST FOR RESTART
+      namelist/equrst/title, &
+      rvac,zvac,msfx, &
+      ivac,cvac,ncoil,ivtab,ivgrp,isep,dsep, &
+      ieqmax,eeqmax,iodmax,eodmax,iadmax,eadmax,bavmax,bavmin,nsumax, &
+      ieqout
+!=======================================================================
       istop=0
       read(ft05,equrst,end=888,err=999)
       istop=1
@@ -106,16 +108,16 @@ c=======================================================================
       write(6,*)'-----  ERROR AT EQINP : &EQURST ------'
       rewind ft05
       endif
-c-----
+!-----
       if(nr.gt.irdm)nr=irdm
       if(nz.gt.izdm)nz=izdm
       if(nv.gt.ivdm)nv=ivdm
-c-----
+!-----
       if(nr*nz*nv.eq.0)then
          write(6,*) '========== DATA ERROR : NR*NZ*NV=0 ====='
          stop
       endif
       return
       end subroutine eqrest
-c
+!
       end module eqinp_mod

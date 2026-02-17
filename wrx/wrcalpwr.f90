@@ -16,7 +16,7 @@ CONTAINS
     USE plprof,ONLY: pl_mag_old,pl_rzsu
     USE libgrf
     IMPLICIT NONE
-    INTEGER:: nrs,nray,nstp,nrs1,nrs2,ndrs,locmax
+    INTEGER:: nrs,nray,nstp,nrs1,nrs2,locmax
     INTEGER:: nrl1,nrl2,ndrl,nsu,nrl,nsa
     INTEGER:: nstpmax_all
     REAL(rkind):: drs,xl,yl,zl,rs1,rs2,sdrs,delpwr,pwrmax,dpwr,ddpwr
@@ -26,6 +26,7 @@ CONTAINS
     REAL(rkind):: DOMG,DXP,DYP,DZP,DKXP,DKYP,DKZP,DS
     REAL(rkind):: dx
     REAL(rkind):: xtemp(0:nstpmax),ytemp(0:nstpmax,nsamax_wr,nraymax)
+    REAL(rkind),ALLOCATABLE:: ytemp1(:,:),ytemp2(:,:)
 
 !   ----- evaluate plasma major radius range -----
 
@@ -54,9 +55,9 @@ CONTAINS
 
     !     ----- Setup for RADIAL DEPOSITION PROFILE (Major radius) -----
 
-    drl=(rlmax-rlmin)/(nrlmax-1)
+    drl=(rlmax-rlmin)/nrlmax
     DO nrl=1,nrlmax
-       pos_nrl(nrl)=rlmin+(nrl-1)*drl
+       pos_nrl(nrl)=rlmin+(dble(nrl)-0.5D0)*drl
     ENDDO
     DO nray=1,nraymax
        DO nsa=1,nsamax_wr
@@ -81,56 +82,58 @@ CONTAINS
           xl=rays(1,nstp,nray)
           yl=rays(2,nstp,nray)
           zl=rays(3,nstp,nray)
-          CALL pl_mag_old(xl,yl,zl,rs1)
+          CALL pl_mag_old(xl,yl,zl,rs1)  ! nstp:   rs1
           xl=rays(1,nstp+1,nray)
           yl=rays(2,nstp+1,nray)
           zl=rays(3,nstp+1,nray)
-          CALL pl_mag_old(xl,yl,zl,rs2)
-          IF(rs1.LE.1.D0.OR.rs1.LE.1.D0) THEN
-             nrs1=INT(rs1/drs)+1
-             nrs2=INT(rs2/drs)+1
+          CALL pl_mag_old(xl,yl,zl,rs2)  ! nstp+1: rs2
+
+          IF(rs1.LE.1.D0.OR.rs2.LE.1.D0) THEN
+             nrs1=INT(rs1/drs)+1   ! (nrs1-1)*drs < rs1 < nrs1*drs
+             nrs2=INT(rs2/drs)+1   ! (nrs2-1)*drs < rs2 < nrs2*drs
              IF(nrs1.GT.nrsmax) THEN
                 nrs1=nrsmax
-                IF(nrs2.GT.nrsmax) EXIT
+                IF(nrs2.GT.nrsmax) EXIT ! both points out of rs < 1.0
              ENDIF
              IF(nrs2.GT.nrsmax) nrs2=nrsmax
-                   
-             ndrs=ABS(nrs2-nrs1)
-             IF(ndrs.EQ.0) THEN
+             
+             IF(nrs1.EQ.nrs2) THEN ! nrs1=nrs2
+                                   !    (nrs1-1)*drs < rs1,rs2 < nrs1*drs
                 DO nsa=1,nsamax_wr
+                   delpwr=pwr_nsa_nstp_nray(nsa,nstp+1,nray)
                    pwr_nrs_nsa_nray(nrs1,nsa,nray) &
                         =pwr_nrs_nsa_nray(nrs1,nsa,nray) &
-                        +pwr_nsa_nstp_nray(nsa,nstp+1,nray)
+                        +delpwr
                 END DO
-             ELSE IF(nrs1.lt.nrs2) THEN
-                sdrs=(rs2-rs1)/drs
+             ELSE IF(nrs2.LT.nrs1) THEN  ! rs2 < rs1 ; nrs2 < nrs1
+                                         ! rs2 < nrs2*drs < (nrs1-1)*drs < rs1
                 DO nsa=1,nsamax_wr
-                   delpwr=pwr_nsa_nstp_nray(nsa,nstp+1,nray)/sdrs
+                   delpwr=pwr_nsa_nstp_nray(nsa,nstp+1,nray)/(rs1-rs2)
                    pwr_nrs_nsa_nray(nrs1,nsa,nray) &
                         =pwr_nrs_nsa_nray(nrs1,nsa,nray) &
-                        +(DBLE(nrs1)-rs1/drs)*delpwr
+                        +(rs1-DBLE(nrs1-1)*drs)*delpwr
+                   DO nrs=nrs1-1,nrs2+1,-1
+                      pwr_nrs_nsa_nray(nrs,nsa,nray) &
+                           =pwr_nrs_nsa_nray(nrs,nsa,nray)+drs*delpwr
+                   ENDDO
+                   pwr_nrs_nsa_nray(nrs2,nsa,nray) &
+                        =pwr_nrs_nsa_nray(nrs2,nsa,nray) &
+                        +(DBLE(nrs2)*drs-rs2)*delpwr
+                END DO
+             ELSE IF(nrs1.lt.nrs2) THEN  ! rs1 < rs2 ; nrs1 < nrs2
+                                         ! rs1 < nrs1*drs < (nrs2-1)*drs < rs2
+                DO nsa=1,nsamax_wr
+                   delpwr=pwr_nsa_nstp_nray(nsa,nstp+1,nray)/(rs2-rs1)
+                   pwr_nrs_nsa_nray(nrs1,nsa,nray) &
+                        =pwr_nrs_nsa_nray(nrs1,nsa,nray) &
+                        +(DBLE(nrs1)*drs-rs1)*delpwr
                    DO nrs=nrs1+1,nrs2-1
                       pwr_nrs_nsa_nray(nrs,nsa,nray) &
-                           =pwr_nrs_nsa_nray(nrs,nsa,nray)+delpwr
+                           =pwr_nrs_nsa_nray(nrs,nsa,nray)+drs*delpwr
                    ENDDO
                    pwr_nrs_nsa_nray(nrs2,nsa,nray) &
                         =pwr_nrs_nsa_nray(nrs2,nsa,nray) &
-                        +(rs2/drs-DBLE(nrs2-1))*delpwr
-                END DO
-             ELSE
-                sdrs=(rs1-rs2)/drs
-                DO nsa=1,nsamax_wr
-                   delpwr=pwr_nsa_nstp_nray(nsa,nstp+1,nray)/sdrs
-                   pwr_nrs_nsa_nray(nrs2,nsa,nray) &
-                        =pwr_nrs_nsa_nray(nrs2,nsa,nray) &
-                        +(DBLE(nrs2)-rs2/drs)*delpwr
-                   DO nrs=nrs2+1,nrs1-1
-                      pwr_nrs_nsa_nray(nrs,nsa,nray) &
-                           =pwr_nrs_nsa_nray(nrs,nsa,nray)+delpwr
-                   ENDDO
-                   pwr_nrs_nsa_nray(nrs1,nsa,nray) &
-                        =pwr_nrs_nsa_nray(nrs1,nsa,nray) &
-                        +(rs1/drs-DBLE(nrs1-1))*delpwr
+                        +(rs2-DBLE(nrs2-1)*drs)*delpwr
                 END DO
              END IF
           ENDIF
@@ -227,28 +230,40 @@ CONTAINS
        END DO
     END DO
 
-    CALL pages
-
-    dx=1.D0/(nstpmax+1)
     nstpmax_all=MAXVAL(nstpmax_nray(1:nraymax))+1
+    dx=1.D0/(nstpmax_all)
     DO nstp=0,nstpmax_all
        xtemp(nstp+1)=nstp*dx
     END DO
     DO nray=1,nraymax
        DO nsa=1,nsamax_wr
-          DO nstp=0,nstpmax_all
+          DO nstp=0,nstpmax_nray(nray)
              ytemp(nstp+1,nsa,nray)=pwr_nsa_nstp_nray(nsa,nstp,nray)
           END DO
+          DO nstp=nstpmax_nray(nray)+1,nstpmax_all
+             ytemp(nstp+1,nsa,nray)=0.D0
+          END DO
+          
        END DO
     END DO
-    DO nstp=0,nstpmax_all,nstpmax_all/20
-       WRITE(6,'(I8,3ES12.4)') &
-            nstp,xtemp(nstp+1),ytemp(nstp+1,1,1),ytemp(nstp+1,1,2)
+    ALLOCATE(ytemp1(0:nstpmax_all,nraymax),ytemp2(0:nstpmax_all,nraymax))
+    DO nray=1,nraymax
+       DO nstp=1,nstpmax_all
+          ytemp1(nstp,nray)=ytemp(nstp,1,nray)
+          IF(nsamax_wr.GE.2) THEN
+             ytemp2(nstp,nray)=ytemp(nstp,2,nray)
+          ELSE
+             ytemp2(nstp,nray)=0.D0
+          END IF
+       END DO
     END DO
-    CALL grd1d(1,xtemp,ytemp(:,1,1),nstpmax_nray(1),nstpmax_nray(1),1, &
-         '@pwr-nstp vs. nstp@',0)
-    CALL grd1d(2,xtemp,ytemp(:,1,2),nstpmax_nray(2),nstpmax_nray(2),1, &
-         '@pwr-nstp vs. nstp@',0)
+
+    CALL pages
+
+    CALL grd1d(1,xtemp,ytemp1,nstpmax_all,nstpmax_all,nraymax, &
+         '@pwr-nstp vs. nstp: nsa=1@',0)
+    CALL grd1d(2,xtemp,ytemp2,nstpmax_all,nstpmax_all,nraymax, &
+         '@pwr-nstp vs. nstp: nsa=2@',0)
     CALL grd1d(3,pos_nrs,pwr_nrs_nsa_nray, &
          nrsmax,nrsmax,nsamax_wr*nraymax, &
          '@pwr-nrs vs. pos-nrs@',0)
@@ -256,6 +271,7 @@ CONTAINS
          nrlmax,nrlmax,nsamax_wr*nraymax, &
          '@pwr-nrl vs. pos-nrl@',0)
     CALL pagee
+    DEALLOCATE(ytemp1,ytemp2)
 
     ! --- power divided by division area ---
 
@@ -327,7 +343,6 @@ CONTAINS
           ENDIF
        END DO
     ENDDO
-   
 !    CALL PAGES
 !    CALL grd1d(1,pos_nrs,pwr_nrs_nray,nrsmax,nrsmax,nraymax, &
 !         '@pwr-nrs vs. pos-nrs@')

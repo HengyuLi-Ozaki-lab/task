@@ -1,16 +1,17 @@
-c
+! equset.f90
+
       module eqset_mod
       use tpxssl_mod
       use eqsub_mod
       use eqfct_mod
       public
       contains
-c=======================================================================
+!=======================================================================
       subroutine eqset
-c=======================================================================
-c     set up free bondary equilibriium
-c             for fiven functional forms of dp/ds and TdT/ds
-c=======================================================================
+!=======================================================================
+!     set up free bondary equilibriium
+!             for fiven functional forms of dp/ds and TdT/ds
+!=======================================================================
       use aaa_mod
       use geo_mod
       use par_mod
@@ -22,8 +23,8 @@ c=======================================================================
 ! local variables
       real*8   bav0
       integer keqmax,i
-c=======================================================================
-c<<restart>>
+!=======================================================================
+!<<restart>>
       if(iread.gt.0)then
       do i=1,nsr*nsz
       rbp(i)=psi(i)
@@ -36,7 +37,7 @@ c<<restart>>
       enddo
       call eqrcu
       bav=bav0
-c--confirm equilibrium accuracy for metrics
+!--confirm equilibrium accuracy for metrics
       write(6,*)
       write(6,*)'== check of equilibrium accuracy through ode =='
       call eqeqv
@@ -46,11 +47,11 @@ c--confirm equilibrium accuracy for metrics
       ieqmax=keqmax
       return
       endif
-c=======================================================================
+!=======================================================================
       call cpusec(cputim)
-c-----------------------------------------------------------------------
-c     load Solovev equilibrium as initial guess
-c-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
+!     load Solovev equilibrium as initial guess
+!-----------------------------------------------------------------------
       call eqvac
       call eqsol
       call eqrbp
@@ -58,7 +59,7 @@ c-----------------------------------------------------------------------
       call eqequ
       call eqeqv
       call eqout
-c--confirm equilibrium accuracy for metrics
+!--confirm equilibrium accuracy for metrics
       write(6,*)
       write(6,*)'== check of equilibrium accuracy through ode =='
       keqmax=ieqmax
@@ -66,8 +67,8 @@ c--confirm equilibrium accuracy for metrics
       call eqfct
       ieqmax=keqmax
       call cpusec(cpuequ)
-c=======================================================================
+!=======================================================================
       return
       end subroutine eqset
-c
+!
       end module eqset_mod

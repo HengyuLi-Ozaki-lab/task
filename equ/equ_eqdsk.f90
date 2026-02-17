@@ -1,4 +1,4 @@
-! equ-eqdsk.f90
+! equ_eqdsk.f90
 
 MODULE equ_eqdsk
   PRIVATE
