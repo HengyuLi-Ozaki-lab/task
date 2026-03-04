@@ -253,7 +253,7 @@ C
       NSUMAX = 65
 C
       NRVMAX = 50
-      NTVMAX = 200
+      NTVMAX = 400
 C
 C     *** CONTROL PARAMETERS ***
 C

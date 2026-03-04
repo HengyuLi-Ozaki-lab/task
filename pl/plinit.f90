@@ -334,6 +334,7 @@
 !             11: Straight helical geometry
 !             12: 2D plane profile (B read from file)
 !             13: 2D plane profile (simple parabolic cylinder)
+!             25: RZphi Read EQDSK output geometry
 
 !        model_prof: Control plasma profile
 !                   0: Calculated from PN,PNS,PTPR,PTPP,PTS,PU,PUS; PN=0 in SOL

@@ -103,6 +103,7 @@ C
       XA(N)=X
       YA(1,N)=Y(1)
       YA(2,N)=Y(2)
+      WRITE(6,'(A,I6,3ES12.4)') '@@@ n,X,Y=',n,X,Y(1),Y(2)
 C
       IMODE=0
       DO I=2,NMAX
@@ -124,14 +125,14 @@ C
          YA(1,N)=Y(1)
          YA(2,N)=Y(2)
       ENDDO
+      WRITE(6,'(A,I6,3ES12.4)') '@@@ n,X,Y=',n,X,Y(1),Y(2)
 C
       IF(ISTEP.LE.4) THEN
          H=FACT*H
          ISTEP=ISTEP+1
          GOTO 100
       ENDIF
-      WRITE(6,*) 'XX EQMAGS: NOT ENOUGH N'
-      pause
+      WRITE(6,*) 'XX EQMAGS: NOT ENOUGH N: N,NMAX=',N,NMAX
       IERR=1
       RETURN
 C
@@ -150,6 +151,7 @@ C
       RETURN
 C
  2000 CONTINUE
+      WRITE(6,'(A,I6,3ES12.4)') '@@@ n,X,Y=',n,X,Y(1),Y(2)
       DEL=(ZINIT-Y(2))/(YOUT(2)-Y(2))
       X=X+H*DEL
       Y(1)=Y(1)+(YOUT(1)-Y(1))*DEL
