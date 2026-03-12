@@ -159,7 +159,6 @@ C
          DR=(RB-RA+REDGE-RAXIS)/(NRMAX-1)
          NRPMAX=NINT((REDGE-RAXIS)/DR)+1
       ENDIF
-      write(6,*) 'nrmax,nrpmax,nsumax=',nrmax,nrpmax,nsumax
       DR=(REDGE-RAXIS)/(NRPMAX-1)
       DTH=2.d0*PI/NTHMAX
 C
@@ -192,8 +191,6 @@ C
 !         WRITE(6,'(A,I5,1P5E12.4)') 'NR:',NR,
 !     &        PSIP(NR),PPS(NR),TTS(NR),RINIT,ZINIT
 C
-         WRITE(6,'(A,I6,5ES12.4)') 
-     &   '@@@ point 1:',NR,RINIT,ZINIT,PSIP(NR),PPS(NR),TTS(NR)
          CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
 C
          SUMS=0.D0
@@ -472,7 +469,6 @@ C
       RINIT=REDGE
       ZINIT=ZAXIS
       TTSA=TTFUNC(0.D0)
-         WRITE(6,*) '@@@ point 2'
       CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
 C
       SUMS=0.D0
@@ -650,7 +646,6 @@ C
 C         WRITE(6,'(A,I5,1P3E12.4)') 'NR:',NR,
 C     &        PSIP(NR),PPS(NR),TTS(NR)
 C
-            WRITE(6,*) '@@@ point 3'
             CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
             IF(IERR.NE.0) GOTO 1000
 C
@@ -1193,7 +1188,6 @@ C
 C     ----- CALCULATE PSIP, PSIT, PPS, TTS, RPS and ZPS -----
 C     -----              on magnetic surfaces           -----
 C
-         WRITE(6,*) '@@@ point 4'
       CALL EQMAGS(RINIT,ZINIT,NMAX,XA,YA,NA,IERR)
 C
       FACTOR=2.D0*PI/XA(NA)
