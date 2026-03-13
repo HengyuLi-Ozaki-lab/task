@@ -9,7 +9,8 @@
     SUBROUTINE pl_menu
 
       USE plcomm
-      USE plparm,ONLY: pl_parm,pl_view
+      USE plparm,ONLY: pl_parm
+      USE plview,ONLY: pl_view
       USE plgout,ONLY: pl_gout
       USE plload,ONLY: pl_load
       USE plvmec,ONLY: pl_vmec

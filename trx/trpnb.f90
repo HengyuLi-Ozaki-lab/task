@@ -11,33 +11,32 @@
       INTEGER:: NNB,NR,NS
 
       DO NNB=1,NNBMAX
-         SELECT CASE(model_nnb(NNB))
-         CASE(0)
+         IF(PNBIN(NNB).GT.0.D0) THEN
+            SELECT CASE(model_nnb(NNB))
+            CASE(0)
+               TAUB(NNB,1:NRMAX)=1.D0
+               PNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
+               SNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
+            CASE(1)
+               CALL TRNBIA(NNB)
+               SNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
+            CASE(2)
+               CALL TRNBIA(NNB)
+            CASE(3)
+               CALL TRNBIB(NNB)
+               SNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
+            CASE(4)
+               CALL TRNBIB(NNB)
+            END SELECT
+            CALL TRPBCL(NNB)
+         ELSE
             TAUB(NNB,1:NRMAX)=1.D0
             PNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
             SNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
-         CASE(1)
-            CALL TRNBIA(NNB)
-            SNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
-         CASE(2)
-            CALL TRNBIA(NNB)
-         CASE(3)
-            CALL TRNBIB(NNB)
-            SNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
-         CASE(4)
-            CALL TRNBIB(NNB)
-         END SELECT
-         CALL TRPBCL(NNB)
+            PNBCL_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
+            AJNB_NSNNBNR(1:NSMAX,NNB,1:NRMAX)=0.D0
+         END IF
       END DO
-
-!      WRITE(6,'(A,2I6)') 'nnb,mdlnb=',1,MDLNB(1),2,MDLNB(2)
-!      DO NR=1,NRMAX
-!         WRITE(6,'(A,I6,4ES12.4)') 'NB:',NR, &
-!              SNB_NNB(1,NR),PNB_NNB(1,NR),SNB_NNB(2,NR),PNB_NNB(2,NR)
-!         WRITE(6,'(A,I6,4ES12.4)') 'PB:',NR, &
-!              PBIN(NR),PBCL(NR,1),PBIN(NR),PBCL(NR,1)
-!      END DO
-
       DO NR=1,NRMAX
          DO NS=1,NSMAX
             SNB_NSNR(NS,NR)=SUM(SNB_NSNNBNR(NS,1:NNBMAX,NR))
@@ -46,7 +45,6 @@
          END DO
          AJNB(NR)=SUM(AJNB_NSNR(1:NSMAX,NR))
       END DO
-
       RETURN
       END SUBROUTINE TRPWNB
 

@@ -23,7 +23,7 @@ ${OBJDIR}/%.o:%.f
 ${OBJDIR}/%.o:%.f90
 	$(FCFREE) $(FFLAGS) -c $< -o $@ $(MODDIR) $(MODINCLUDE)
 
-SRCS_NOEQ = plvmec.f90 plcomm.f90 plinit.f90 plparm.f90 \
+SRCS_NOEQ = plvmec.f90 plcomm.f90 plinit.f90 plparm.f90 plview.f90 \
             platmd.f90 plcoll.f90 \
             plprof_TOTAL.f90 plprof_travis.f90 plload.f90 plprep.f90
 
@@ -72,6 +72,7 @@ $(OBJDIR)/plvmec.o: plvmec.f90 ../../bpsd/bpsd_kinds.f90 ../../bpsd/bpsd_constan
 $(OBJDIR)/plcomm.o: plcomm.f90 ../../bpsd/bpsd_kinds.f90 ../../bpsd/bpsd_constants.f90
 $(OBJDIR)/plinit.o: plinit.f90 plcomm.f90
 $(OBJDIR)/plparm.o: plparm.f90 plcomm.f90
+$(OBJDIR)/plview.o: plview.f90 plcomm.f90
 $(OBJDIR)/plprep.o: plprep.f90 plcomm.f90
 $(OBJDIR)/platmd.o: platmd.f90 plcomm.f90
 $(OBJDIR)/plcoll.o: plcoll.f90 plcomm.f90 platmd.f90
