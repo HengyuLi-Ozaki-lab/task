@@ -927,7 +927,7 @@ MODULE trcomm
     return
 
  900 continue
-    write(6,*) "XX  TRCOMM ALLOCATION ERROR IERR=",ierr
+    write(6,*) 'XX  TRCOMM ALLOCATION ERROR IERR=',ierr
     call DEALLOCATE_ERR_TRCOMM
     return
 
