@@ -642,7 +642,7 @@ CONTAINS
       !  NPELMAX       : number of pellet source   (MAX=npelm)
       !  MDLPEL(npelm) : PELLET INJECTION MODEL TYPE
       !              0:OFF  1:GAUSSIAN  2:NAKAMURA  3:HO
-      !  PELTOT(npelm) : TOTAL NUMBER OF PARTICLES IN PELLET
+      !  PELIN(npelm)  : TOTAL NUMBER OF PARTICLES IN PELLET
       !  PELR0(npelm)  : RADIAL POSITION OF PELLET DEPOSITION (M)
       !  PELRW(npelm)  : RADIAL WIDTH OF PELLET DEPOSITION (M)
       !  PELRAD(npelm) : RADIUS OF PELLET (M)

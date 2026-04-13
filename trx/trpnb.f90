@@ -475,9 +475,9 @@
             TAUS=0.D0
          ELSE
             P4 = 3.D0*SQRT(0.5D0*PI)*AME/ANE*(ABS(TE)*RKEV/AME)**1.5D0
-            VCD3 = P4*RN(NR,NS_D  )*PZ(NS_D  )**2/AMD
-            VCT3 = P4*RN(NR,NS_T  )*PZ(NS_T  )**2/AMT
-            VCA3 = P4*RN(NR,NS_He4)*PZ(NS_He4)**2/AMA
+            IF(NS_D.NE.0) VCD3 = P4*RN(NR,NS_D  )*PZ(NS_D  )**2/AMD
+            IF(NS_T.NE.0) VCT3 = P4*RN(NR,NS_T  )*PZ(NS_T  )**2/AMT
+            IF(NS_He4.NE.0) VCA3 = P4*RN(NR,NS_He4)*PZ(NS_He4)**2/AMA
             VC3  = VCD3+VCT3+VCA3
             VCR  = VC3**(1.D0/3.D0)
             HYB  = HY(VB/VCR)
@@ -494,13 +494,12 @@
             RTF(NR,NNB)= 0.D0
          ENDIF
          PNBIN_NNBNR(NNB,NR)        = WB*RKEV*1.D20/TAUB(NNB,NR)
-         IF(NS_e  .LE.NSMAX) &
-              PNBCL_NSNNBNR(NS_e,  NNB,NR) =   (1.D0-HYB)*PNBIN_NNBNR(NNB,NR)
-         IF(NS_D  .LE.NSMAX) &
+         PNBCL_NSNNBNR(NS_e,  NNB,NR) =   (1.D0-HYB)*PNBIN_NNBNR(NNB,NR)
+         IF(NS_D  .GT.0.AND.NS_D  .LE.NSMAX) &
               PNBCL_NSNNBNR(NS_D,  NNB,NR) = VCD3/VC3*HYB*PNBIN_NNBNR(NNB,NR)
-         IF(NS_T  .LE.NSMAX) &
+         IF(NS_T  .GT.0.AND.NS_T  .LE.NSMAX) &
               PNBCL_NSNNBNR(NS_T,  NNB,NR) = VCT3/VC3*HYB*PNBIN_NNBNR(NNB,NR)
-         IF(NS_He4.LE.NSMAX) &
+         IF(NS_He4.GT.0.AND.NS_He4.LE.NSMAX) &
               PNBCL_NSNNBNR(NS_He4,NNB,NR) = VCA3/VC3*HYB*PNBIN_NNBNR(NNB,NR)
       END DO
 
@@ -527,11 +526,17 @@
             AJNB(NR)=0.D0
          ELSE
             TAUS=TAUS0*VE**3/ANE
-            ZEFFM = (PZ(NS_D  )  *PZ(NS_D  )  *RN(NR,NS_D  )/PA(NS_D  ) &
-                    +PZ(NS_T  )  *PZ(NS_T  )  *RN(NR,NS_T  )/PA(NS_T  ) &
-                    +PZ(NS_He4)  *PZ(NS_He4)  *RN(NR,NS_He4)/PA(NS_He4) &
-                    +PZC(NR)   *PZC(NR)   *ANC(NR)/12.D0 &
-                    +PZFE(NR)  *PZFE(NR)  *ANFE(NR)/52.D0)/ANE
+            ZEFFM = 0.D0
+            IF(NS_D.NE.0) &
+                 ZEFFM=ZEFFM+PZ(NS_D  )  *PZ(NS_D  )  *RN(NR,NS_D  )/PA(NS_D  )
+            IF(NS_T.NE.0) &
+                 ZEFFM=ZEFFM+PZ(NS_T  )  *PZ(NS_T  )  *RN(NR,NS_T  )/PA(NS_T  )
+            IF(NS_He4.NE.0) &
+                 ZEFFM=ZEFFM+PZ(NS_He4)  *PZ(NS_He4)  *RN(NR,NS_He4)/PA(NS_He4)
+            ZEFFM=ZEFFM &
+                 +PZC(NR)   *PZC(NR)   *ANC(NR)/12.D0 &
+                 +PZFE(NR)  *PZFE(NR)  *ANFE(NR)/52.D0
+            ZEFFM=ZEFFM/ANE
             EC  = 14.8D0*TE*PMB*ZEFFM**(2.D0/3.D0)
             VCR = VB*SQRT(ABS(EC)/PNBENG(NNB))
             P2  = (1.55D0+0.85D0/ZEFF(NR))*SQRT(EPS) &

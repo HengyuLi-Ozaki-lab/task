@@ -22,7 +22,7 @@ SRCSFREE  =  task_kinds.f90 task_constants.f90 \
              libderiv.f90 libpol.f90 \
              libbnd.f90 libbrent.f90 libde.f90 libdsp.f90 \
              libell.f90 libfem.f90 libfft.f90 \
-             libinv.f90 libpcgpme.f90 \
+             libinv.f90 libbnd.f90 libpcgpme.f90 \
              libqsort.f90 librk.f90 librkf.f90 \
              libspf.f90 libspf2.f90 libsympl.f90 \
              netlib-bes.f90 libbes.f90 \
