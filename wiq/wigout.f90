@@ -228,6 +228,7 @@ CONTAINS
     END DO
     CALL GRD1D(0,xid,xrgrid,nxmax,nxmax,1,'@xgrid vs nx@')
     DEALLOCATE(xid)
+    IF(ALLOCATED(xrgrid)) DEALLOCATE(xrgrid)
     CALL PAGEE
     RETURN
   END SUBROUTINE wi_mesh
