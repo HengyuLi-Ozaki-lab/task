@@ -703,6 +703,10 @@
       END DO
 
       CLOSE(22)
+      IF(ALLOCATED(TIME_EG)) DEALLOCATE(TIME_EG)
+      IF(ALLOCATED(data_row)) DEALLOCATE(data_row)
+      IF(ALLOCATED(ValName)) DEALLOCATE(ValName)
+      IF(ALLOCATED(DATA_ALL)) DEALLOCATE(DATA_ALL)
       END SUBROUTINE READ_EGFILE_1D
 !------------------------------------
       SUBROUTINE EXTRACT_ne_te_POSITION_FROM_TSWPE(ValName,ValNo,INT_OUT)
@@ -1105,6 +1109,26 @@
       END DO
 
       END SUBROUTINE MAKE_QLM_QLG_FROM_kspdiag
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+      SUBROUTINE DEALLOCATE_FPREADEG
+
+      IMPLICIT NONE
+
+      IF(ALLOCATED(TMS_ValName)) DEALLOCATE(TMS_ValName)
+      IF(ALLOCATED(CX_ValName)) DEALLOCATE(CX_ValName)
+      IF(ALLOCATED(TMS_DATA_ALL)) DEALLOCATE(TMS_DATA_ALL)
+      IF(ALLOCATED(CX_DATA_ALL)) DEALLOCATE(CX_DATA_ALL)
+      IF(ALLOCATED(TMS_TIME)) DEALLOCATE(TMS_TIME)
+      IF(ALLOCATED(CX_TIME)) DEALLOCATE(CX_TIME)
+      IF(ALLOCATED(TMS_te_poly_coef)) DEALLOCATE(TMS_te_poly_coef)
+      IF(ALLOCATED(CX_ti_poly_coef)) DEALLOCATE(CX_ti_poly_coef)
+      IF(ALLOCATED(TMS_ne_poly_coef)) DEALLOCATE(TMS_ne_poly_coef)
+      IF(ALLOCATED(TMS_tedge)) DEALLOCATE(TMS_tedge)
+      IF(ALLOCATED(TMS_nedge)) DEALLOCATE(TMS_nedge)
+      IF(ALLOCATED(CX_ti_edge)) DEALLOCATE(CX_ti_edge)
+
+      END SUBROUTINE DEALLOCATE_FPREADEG
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     END MODULE fpreadeg
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

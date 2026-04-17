@@ -642,7 +642,13 @@ contains
         end do
       end do
     end do
-    
+
+    IF(ALLOCATED(U_Dpp)) DEALLOCATE(U_Dpp)
+    IF(ALLOCATED(U_Dpt)) DEALLOCATE(U_Dpt)
+    IF(ALLOCATED(U_Fpp)) DEALLOCATE(U_Fpp)
+    IF(ALLOCATED(U_Dtp)) DEALLOCATE(U_Dtp)
+    IF(ALLOCATED(U_Dtt)) DEALLOCATE(U_Dtt)
+    IF(ALLOCATED(U_Fth)) DEALLOCATE(U_Fth)
 
   end subroutine bounce_average
 
@@ -1663,6 +1669,17 @@ contains
       end do
 
     end do
+
+    IF(ALLOCATED(Xtmp)) DEALLOCATE(Xtmp)
+    IF(ALLOCATED(Dxyl_tmp)) DEALLOCATE(Dxyl_tmp)
+    IF(ALLOCATED(U_Dxy_tmp)) DEALLOCATE(U_Dxy_tmp)
+    IF(ALLOCATED(FX)) DEALLOCATE(FX)
+    IF(ALLOCATED(FY)) DEALLOCATE(FY)
+    IF(ALLOCATED(FZ)) DEALLOCATE(FZ)
+    IF(ALLOCATED(FXY)) DEALLOCATE(FXY)
+    IF(ALLOCATED(FZX)) DEALLOCATE(FZX)
+    IF(ALLOCATED(FYZ)) DEALLOCATE(FYZ)
+    IF(ALLOCATED(FXYZ)) DEALLOCATE(FXYZ)
 
   end subroutine make_U_Dxy
 

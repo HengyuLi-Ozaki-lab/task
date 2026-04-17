@@ -452,6 +452,12 @@
 
        END SUBROUTINE NBI_SOURCE_FIT3D
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+       SUBROUTINE clean_fp_read_fit
+       IMPLICIT NONE
+       IF(ASSOCIATED(rm_fit)) DEALLOCATE(rm_fit)
+       IF(ASSOCIATED(WEIGHT_R)) DEALLOCATE(WEIGHT_R)
+       END SUBROUTINE clean_fp_read_fit
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
      END MODULE FP_READ_FIT
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !       Program read_fit_file

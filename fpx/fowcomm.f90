@@ -437,6 +437,7 @@ contains
     deallocate(dBingdr)
     deallocate(dpsimgdr)
 
+    deallocate(safety_factor)
     deallocate(Babs)
     deallocate(dBdr)
     deallocate(dBdthp)

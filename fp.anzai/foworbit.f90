@@ -1046,4 +1046,14 @@ contains
 
   end subroutine load_orbit
 
+  subroutine fow_obparm_deallocate
+    implicit none
+    IF(ALLOCATED(Ups)) DEALLOCATE(Ups)
+    IF(ALLOCATED(UF)) DEALLOCATE(UF)
+    IF(ALLOCATED(UB)) DEALLOCATE(UB)
+    IF(ALLOCATED(UR)) DEALLOCATE(UR)
+    IF(ALLOCATED(dBdrt)) DEALLOCATE(dBdrt)
+    IF(ALLOCATED(dradpsi)) DEALLOCATE(dradpsi)
+  end subroutine fow_obparm_deallocate
+
 end module foworbit

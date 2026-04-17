@@ -24,9 +24,11 @@ CONTAINS
     ALLOCATE(f_all(nthmax,npmax,nrmax,nsamax))
 
     CALL fp_gather_f(mode,f,f_all)
-    
+
     IF(nrank.EQ.0) CALL fp_gracx(mode,f_all,string)
-    
+
+    IF(ALLOCATED(f_all)) DEALLOCATE(f_all)
+
     RETURN
   END SUBROUTINE fp_grac
   
@@ -78,6 +80,9 @@ CONTAINS
           END DO
        END DO
     END IF
+    IF(ALLOCATED(f_temp)) DEALLOCATE(f_temp)
+    IF(ALLOCATED(dsend)) DEALLOCATE(dsend)
+    IF(ALLOCATED(drecv)) DEALLOCATE(drecv)
     CALL mtx_reset_communicator
     RETURN
   END SUBROUTINE fp_gather_f
@@ -225,7 +230,9 @@ CONTAINS
 
     IF(nrmax.GT.1) GOTO 1
 !
-9000 RETURN
+9000 CONTINUE
+    IF(ALLOCATED(gf)) DEALLOCATE(gf)
+    RETURN
   END SUBROUTINE fp_gracx
 
   SUBROUTINE fp_gracxx(mode,nsa,gf,string)

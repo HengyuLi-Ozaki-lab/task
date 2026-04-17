@@ -63,6 +63,8 @@ contains
 
     end do
 
+    IF(ALLOCATED(sppb_nb)) DEALLOCATE(sppb_nb)
+
   end subroutine fow_calculate_source
 
   subroutine beam_source(s_beam, beam)

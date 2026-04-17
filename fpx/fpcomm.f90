@@ -618,6 +618,8 @@ module fpcomm
           implicit none
 
           deallocate(MTXLEN,MTXPOS,SAVLEN)
+          IF(ALLOCATED(SAVPOS)) deallocate(SAVPOS)
+          IF(ALLOCATED(Rank_Partition_Data)) deallocate(Rank_Partition_Data)
 
           deallocate(F)
           deallocate(F1)
@@ -679,6 +681,7 @@ module fpcomm
           deallocate(THETA,DKBSR)
           deallocate(WEIGHP,WEIGHT)
           deallocate(WEIGHR)
+          IF(MODELD.ne.0) deallocate(WEIGHR_G)
 
           deallocate(RNFD,RTFD,PTFD,VTFD)
           deallocate(RN_MGI, RN_MGI_G)
@@ -748,6 +751,7 @@ module fpcomm
           END IF
           deallocate(RNSL,RJSL,RWSL,RWS123L,RFPL,RJSRL)
           deallocate(RSPBL,RSPFL,RSPSL,RSPLL,RPCSL,RPESL,RSPSL_CX)
+          deallocate(RPWSL)
           deallocate(RLHSL,RFWSL,RECSL,RWRSL,RWMSL,RPCS2L,RPCS2L_DEL)
           deallocate(RDIDT, RDIDTL)
           deallocate(RPSSL, RPLSL)
@@ -768,7 +772,8 @@ module fpcomm
           deallocate(RPDR,RNDR,RPDRS,RNDRS)
           deallocate(RPDRL,RNDRL,RT_BULK,RTL_BULK)
           deallocate(RP_BULK)
-          
+          deallocate(RPL_BULK)
+
           deallocate(RPWLH_L,RPWFW_L,RPWEC_L,RPWWR_L,RPWWM_L)
           deallocate(RIPP)
 
@@ -787,6 +792,51 @@ module fpcomm
              deallocate(RATE_NF,RATE_NF_D1,RATE_NF_D2,RATE_NF_BB)
           END IF
           deallocate(DEPS_SS)
+          IF(ALLOCATED(conduct_sp)) deallocate(conduct_sp)
+          IF(ASSOCIATED(read_tms_double)) THEN
+             deallocate(read_tms_double)
+             NULLIFY(read_tms_double)
+          END IF
+          IF(ASSOCIATED(read_tms_int)) THEN
+             deallocate(read_tms_int)
+             NULLIFY(read_tms_int)
+          END IF
+          IF(ASSOCIATED(read_cx_double)) THEN
+             deallocate(read_cx_double)
+             NULLIFY(read_cx_double)
+          END IF
+          IF(ASSOCIATED(time_grid_fit_H)) THEN
+             deallocate(time_grid_fit_H)
+             NULLIFY(time_grid_fit_H)
+          END IF
+          IF(ASSOCIATED(time_grid_fit_D)) THEN
+             deallocate(time_grid_fit_D)
+             NULLIFY(time_grid_fit_D)
+          END IF
+          IF(ASSOCIATED(I_FIT_H)) THEN
+             deallocate(I_FIT_H)
+             NULLIFY(I_FIT_H)
+          END IF
+          IF(ASSOCIATED(I_FIT_D)) THEN
+             deallocate(I_FIT_D)
+             NULLIFY(I_FIT_D)
+          END IF
+          IF(ASSOCIATED(D_FIT_H)) THEN
+             deallocate(D_FIT_H)
+             NULLIFY(D_FIT_H)
+          END IF
+          IF(ASSOCIATED(D_FIT_D)) THEN
+             deallocate(D_FIT_D)
+             NULLIFY(D_FIT_D)
+          END IF
+          IF(ASSOCIATED(number_of_lines_fit_H)) THEN
+             deallocate(number_of_lines_fit_H)
+             NULLIFY(number_of_lines_fit_H)
+          END IF
+          IF(ASSOCIATED(number_of_lines_fit_D)) THEN
+             deallocate(number_of_lines_fit_D)
+             NULLIFY(number_of_lines_fit_D)
+          END IF
           return
 
         end subroutine fp_deallocate

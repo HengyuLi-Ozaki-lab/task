@@ -297,6 +297,19 @@ subroutine fow_save_orbit_mpi(ierr)
     close(60+np)
   end do
 
+  IF(ALLOCATED(nstpm_m)) DEALLOCATE(nstpm_m)
+  IF(ALLOCATED(nstpm_t)) DEALLOCATE(nstpm_t)
+  IF(ALLOCATED(nstpm_p)) DEALLOCATE(nstpm_p)
+  IF(ALLOCATED(nstpm_r)) DEALLOCATE(nstpm_r)
+  IF(ALLOCATED(sum_m)) DEALLOCATE(sum_m)
+  IF(ALLOCATED(sum_t)) DEALLOCATE(sum_t)
+  IF(ALLOCATED(sum_p)) DEALLOCATE(sum_p)
+  IF(ALLOCATED(sum_r)) DEALLOCATE(sum_r)
+  IF(ALLOCATED(nstpm_ml)) DEALLOCATE(nstpm_ml)
+  IF(ALLOCATED(nstpm_tl)) DEALLOCATE(nstpm_tl)
+  IF(ALLOCATED(nstpm_pl)) DEALLOCATE(nstpm_pl)
+  IF(ALLOCATED(nstpm_rl)) DEALLOCATE(nstpm_rl)
+
 end subroutine fow_save_orbit_mpi
 
 subroutine fow_load_orbit_mpi(ierr)

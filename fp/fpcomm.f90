@@ -676,6 +676,8 @@ module fpcomm
           implicit none
 
           deallocate(MTXLEN,MTXPOS,SAVLEN)
+          IF(ALLOCATED(SAVPOS)) deallocate(SAVPOS)
+          IF(ALLOCATED(Rank_Partition_Data)) deallocate(Rank_Partition_Data)
 
           deallocate(F)
           deallocate(F1)
@@ -740,7 +742,7 @@ module fpcomm
           deallocate(WEIGHP,WEIGHT)
           deallocate(WEIGHR)
           IF(MODELD.ne.0)THEN
-             deallocate(WEIGHR)
+             deallocate(WEIGHR_G)
           END IF
 
           deallocate(RNFD,RTFD,PTFD,VTFD)
@@ -777,7 +779,7 @@ module fpcomm
           deallocate(SIGMA_SPP,SIGMA_SPM)
           deallocate(RJ_bs, RJ_bsm)
           IF(MODEL_DISRUPT.ne.0)THEN
-             deallocate(ER_drei, ER_crit,RP_crit)
+             deallocate(ER_drei, ER_crit,RP_crit,lnl_gl)
              deallocate(previous_rate, previous_rate_p)
              deallocate(previous_rate_G, previous_rate_p_G)
              deallocate(RT_quench, RT_quench_f, conduct_sp)
@@ -812,6 +814,8 @@ module fpcomm
           END IF
           deallocate(RNSL,RJSL,RWSL,RWS123L,RFPL,RJSRL,RJESL)
           deallocate(RSPBL,RSPFL,RSPSL,RSPLL,RPCSL,RPESL,RSPSL_CX)
+          deallocate(RSP_ICL)
+          deallocate(RPWSL)
           deallocate(RLHSL,RFWSL,RECSL,RWRSL,RWMSL,RPCS2L,RPCS2L_DEL)
           deallocate(RDIDT, RDIDTL)
           deallocate(RPSSL, RPLSL)
@@ -824,6 +828,7 @@ module fpcomm
           deallocate(RWS,RWS123)
           deallocate(RSPB,RSPF)
           deallocate(RSPL,RSPS,RSPS_CX)
+          deallocate(RSP_IC)
           deallocate(RPCS,RPES)
           deallocate(RPWS,RLHS)
           deallocate(RFWS,RECS,RWRS,RWMS,RPCS2,RPCS2_DEL)
@@ -833,7 +838,8 @@ module fpcomm
           deallocate(RPDR,RNDR,RPDRS,RNDRS)
           deallocate(RPDRL,RNDRL,RT_BULK,RTL_BULK)
           deallocate(RP_BULK)
-          
+          deallocate(RPL_BULK)
+
           deallocate(RPWLH_L,RPWFW_L,RPWEC_L,RPWWR_L,RPWWM_L)
           deallocate(RIPP)
           deallocate(PIP_E)
@@ -849,12 +855,24 @@ module fpcomm
           deallocate(NP_thermal)
 
           IF(ABS(MODELS).eq.2.OR.MODELS.eq.3.or.ABS(MODELS).eq.4)THEN
-             IF(ABS(MODELS).eq.2) deallocate(SIGMAV_NF)
+             IF(ABS(MODELS).eq.2) deallocate(SIGMAV_NF,SIGMAV_NF_BT)
              IF(MODELS.eq.3) deallocate(SIGMAV_LG,PL_NF)
-             IF(ABS(MODELS).eq.4) deallocate(SIGMAV_NF_BT)
              deallocate(RATE_NF,RATE_NF_D1,RATE_NF_D2,RATE_NF_BT,RATE_NF_TT)
           END IF
           deallocate(DEPS_SS)
+          deallocate(tau_se, tau_n)
+          IF(ALLOCATED(conduct_sp)) deallocate(conduct_sp)
+          IF(ALLOCATED(read_tms_double)) deallocate(read_tms_double)
+          IF(ALLOCATED(read_tms_int)) deallocate(read_tms_int)
+          IF(ALLOCATED(read_cx_double)) deallocate(read_cx_double)
+          IF(ALLOCATED(time_grid_fit_H)) deallocate(time_grid_fit_H)
+          IF(ALLOCATED(time_grid_fit_D)) deallocate(time_grid_fit_D)
+          IF(ALLOCATED(I_FIT_H)) deallocate(I_FIT_H)
+          IF(ALLOCATED(I_FIT_D)) deallocate(I_FIT_D)
+          IF(ALLOCATED(D_FIT_H)) deallocate(D_FIT_H)
+          IF(ALLOCATED(D_FIT_D)) deallocate(D_FIT_D)
+          IF(ALLOCATED(number_of_lines_fit_H)) deallocate(number_of_lines_fit_H)
+          IF(ALLOCATED(number_of_lines_fit_D)) deallocate(number_of_lines_fit_D)
           return
 
         end subroutine fp_deallocate
