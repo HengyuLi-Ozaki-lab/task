@@ -1,6 +1,8 @@
 import json
 import subprocess
 import sys
+import tempfile
+import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).parent.parent / "extract_tr_metrics.py"
@@ -15,36 +17,41 @@ def run_extract(dump_path: Path) -> dict:
     return json.loads(result.stdout)
 
 
-def test_extracts_scalars():
-    data = run_extract(FIXTURE)
-    assert data["NT"] == 100
-    assert data["NRMAX"] == 2
-    assert data["NSMAX"] == 2
-    assert data["scalars"]["T"] == 2.0
-    assert data["scalars"]["WPT"] == 41.13
-    assert data["scalars"]["Q0"] == 0.579
-    assert "BETA0" in data["scalars"]
-    assert "ALI" in data["scalars"]
+class ExtractTrMetricsTest(unittest.TestCase):
+
+    def test_extracts_scalars(self):
+        data = run_extract(FIXTURE)
+        self.assertEqual(data["NT"], 100)
+        self.assertEqual(data["NRMAX"], 2)
+        self.assertEqual(data["NSMAX"], 2)
+        self.assertEqual(data["scalars"]["T"], 2.0)
+        self.assertEqual(data["scalars"]["WPT"], 41.13)
+        self.assertEqual(data["scalars"]["Q0"], 0.579)
+        self.assertIn("BETA0", data["scalars"])
+        self.assertIn("ALI", data["scalars"])
+
+    def test_extracts_profile_rows(self):
+        data = run_extract(FIXTURE)
+        prof = data["profile"]
+        self.assertEqual(len(prof), 2)
+        row = prof[0]
+        self.assertEqual(row["NR"], 1)
+        self.assertEqual(len(row["RN"]), 2)
+        self.assertEqual(len(row["RT"]), 2)
+        self.assertEqual(row["RN"][0], 0.7)
+        self.assertEqual(row["AJ"], 15.451)
+        self.assertEqual(row["QP"], 0.579)
+
+    def test_rejects_incomplete_dump(self):
+        with tempfile.TemporaryDirectory() as td:
+            incomplete = Path(td) / "bad.dat"
+            incomplete.write_text("# TASK/TR regression dump (format v1)\nNT=1\n")
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), str(incomplete)],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
 
 
-def test_extracts_profile_rows():
-    data = run_extract(FIXTURE)
-    prof = data["profile"]
-    assert len(prof) == 2
-    row = prof[0]
-    assert row["NR"] == 1
-    assert len(row["RN"]) == 2
-    assert len(row["RT"]) == 2
-    assert row["RN"][0] == 0.7
-    assert row["AJ"] == 15.451
-    assert row["QP"] == 0.579
-
-
-def test_rejects_incomplete_dump(tmp_path):
-    incomplete = tmp_path / "bad.dat"
-    incomplete.write_text("# TASK/TR regression dump (format v1)\nNT=1\n")
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT), str(incomplete)],
-        capture_output=True, text=True,
-    )
-    assert result.returncode != 0
+if __name__ == "__main__":
+    unittest.main()
