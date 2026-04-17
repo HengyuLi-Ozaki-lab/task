@@ -723,6 +723,9 @@ end subroutine set_node_arc
     END SELECT
 !    WRITE(6,*) 'nelm_max,nelm=',nelm_max,nelm
 
+    IF(ALLOCATED(nposl_nlayer)) DEALLOCATE(nposl_nlayer)
+    IF(ALLOCATED(pos_nposl)) DEALLOCATE(pos_nposl)
+    IF(ALLOCATED(pos_npos)) DEALLOCATE(pos_npos)
     RETURN
   END SUBROUTINE set_node_layer
 
@@ -873,6 +876,7 @@ subroutine set_node_circle
      if (NTH1.lt.NTHMAX(NR+1)) goto 1
   END DO
 
+  IF(ASSOCIATED(NTHMAX)) DEALLOCATE(NTHMAX)
   return
 end subroutine set_node_circle
 

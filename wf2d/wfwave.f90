@@ -1214,6 +1214,10 @@ SUBROUTINE PWRABS
   END DO
 
   deallocate(PABS)
+  IF(ALLOCATED(nelm_len_nrank)) DEALLOCATE(nelm_len_nrank)
+  IF(ALLOCATED(nelm_pos_nrank)) DEALLOCATE(nelm_pos_nrank)
+  IF(ALLOCATED(rdata)) DEALLOCATE(rdata)
+  IF(ALLOCATED(rdata_tot)) DEALLOCATE(rdata_tot)
 
   RETURN
 END SUBROUTINE PWRABS
