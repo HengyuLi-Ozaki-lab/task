@@ -39,6 +39,7 @@ CONTAINS
     ELSE
        WRITE(6,*) 'XX OBCALC: unknown mdlobq =', mdlobq
        ierr=1
+       IF(ALLOCATED(y)) DEALLOCATE(y)
        RETURN
     ENDIF
 
@@ -55,6 +56,7 @@ CONTAINS
 
     CALL ob_convert(nobt,ierr)
 
+    IF(ALLOCATED(y)) DEALLOCATE(y)
     RETURN
   END SUBROUTINE ob_exec
 

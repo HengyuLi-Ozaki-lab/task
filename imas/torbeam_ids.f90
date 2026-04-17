@@ -566,6 +566,7 @@ subroutine torbeam(equilibrium_ids,core_profiles_ids,ec_launchers_ids,waves_ids,
   deallocate(npointsout)
   deallocate(extrascal)
   deallocate(extradata)
+  IF(ALLOCATED(output_message)) DEALLOCATE(output_message)
 
 end subroutine torbeam
 

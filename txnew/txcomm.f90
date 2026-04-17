@@ -540,6 +540,7 @@ contains
     if( .not. allocated(array_init_NR) ) return
 
     deallocate(array_init_NR)
+    if(allocated(array_init_NRNS)) deallocate(array_init_NRNS)
     deallocate(vv,      rho)
     deallocate(hv)
 

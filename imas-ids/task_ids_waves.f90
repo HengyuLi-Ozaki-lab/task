@@ -181,6 +181,53 @@ CONTAINS
 225 format(3(1x,1pe13.5))
 999 format(1p,3e13.5,i5,e13.5)
 
+    ! --- cleanup: deallocate waves_ids deep structures in reverse order ---
+    DO nbeam=1,nbeam_max
+       IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%profiles_1d)) THEN
+          IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %current_parallel_density)) &
+               DEALLOCATE(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %current_parallel_density)
+          IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %electrons%power_density_thermal)) &
+               DEALLOCATE(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %electrons%power_density_thermal)
+          IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %power_density)) &
+               DEALLOCATE(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %power_density)
+          IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %grid%rho_tor_norm)) &
+               DEALLOCATE(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %grid%rho_tor_norm)
+          IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %grid%rho_tor)) &
+               DEALLOCATE(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %grid%rho_tor)
+          IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %grid%psi)) &
+               DEALLOCATE(waves_ids%coherent_wave(nbeam)%profiles_1d(1) &
+               %grid%psi)
+          DEALLOCATE(waves_ids%coherent_wave(nbeam)%profiles_1d)
+       END IF
+       IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%global_quantities)) THEN
+          IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%global_quantities(1) &
+               %n_tor)) &
+               DEALLOCATE(waves_ids%coherent_wave(nbeam)%global_quantities(1) &
+               %n_tor)
+          DEALLOCATE(waves_ids%coherent_wave(nbeam)%global_quantities)
+       END IF
+       IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%wave_solver_type%name)) &
+            DEALLOCATE(waves_ids%coherent_wave(nbeam)%wave_solver_type%name)
+       IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%identifier%antenna_name)) &
+            DEALLOCATE(waves_ids%coherent_wave(nbeam)%identifier%antenna_name)
+       IF(ALLOCATED(waves_ids%coherent_wave(nbeam)%identifier%type%name)) &
+            DEALLOCATE(waves_ids%coherent_wave(nbeam)%identifier%type%name)
+    END DO
+    IF(ALLOCATED(waves_ids%coherent_wave)) DEALLOCATE(waves_ids%coherent_wave)
+    IF(ALLOCATED(waves_ids%code%name)) DEALLOCATE(waves_ids%code%name)
+    IF(ALLOCATED(waves_ids%time)) DEALLOCATE(waves_ids%time)
+
     RETURN
   END SUBROUTINE put_ids_waves
 END MODULE ids_waves

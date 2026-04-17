@@ -1529,6 +1529,7 @@ contains
     deallocate(dErdr,dpdr,dErdrS,ErVlc)
     deallocate(dQdrho,dlnNedrhov)
     deallocate(dTsdV,dTsdrho,dPsdV,dNsdrho)
+    if(allocated(dNsdV)) deallocate(dNsdV)
 
   contains
 
