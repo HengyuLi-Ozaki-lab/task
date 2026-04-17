@@ -174,6 +174,11 @@ CONTAINS
          SUMPBM=SUMPBM+PBM(NR)
       ENDDO
 
+      IF(ALLOCATED(rs_prof))  DEALLOCATE(rs_prof)
+      IF(ALLOCATED(rn_prof))  DEALLOCATE(rn_prof)
+      IF(ALLOCATED(rdn_prof)) DEALLOCATE(rdn_prof)
+      IF(ALLOCATED(uprof))    DEALLOCATE(uprof)
+
       SELECT CASE(model_nfixed)
       CASE(1)
          CALL tr_prep_nfixed

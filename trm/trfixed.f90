@@ -169,6 +169,7 @@ CONTAINS
          +0.5D0*coef(8)*(1.D0-erf((rho-coef(9))/SQRT(2.D0*coef(10))))
     rn_local=rn_local*1.D-20
     IF(rn_local.LE.0.D0) rn_local=1.D-8
+    IF(ALLOCATED(coef)) DEALLOCATE(coef)
     RETURN
   END SUBROUTINE tr_prof_nfixed
 
@@ -229,6 +230,7 @@ CONTAINS
          +0.5D0*coef(8)*(1.D0-erf((rho-coef(9))/SQRT(2.D0*coef(10))))
     rt_local=rt_local*1.D-3
     IF(rt_local.LE.0.D0) rt_local=3.D-5
+    IF(ALLOCATED(coef)) DEALLOCATE(coef)
     RETURN
   END SUBROUTINE tr_prof_tfixed
 
