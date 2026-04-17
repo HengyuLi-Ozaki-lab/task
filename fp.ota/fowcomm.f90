@@ -276,6 +276,7 @@ contains
     deallocate(Fppfow)
     deallocate(Fthfow)
     deallocate(Frrfow)
+    IF(ALLOCATED(safety_factor)) DEALLOCATE(safety_factor)
 
   end subroutine fow_deallocate
 

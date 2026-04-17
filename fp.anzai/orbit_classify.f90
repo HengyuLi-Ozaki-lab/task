@@ -152,6 +152,9 @@ contains
     beta_pinch = MIN( p_ret, vc ) / vc
     theta_pncp = ACOS(xi_pncp)
 
+    IF(ALLOCATED(dFdpsi)) DEALLOCATE(dFdpsi)
+    IF(ALLOCATED(dBdpsi)) DEALLOCATE(dBdpsi)
+
   end subroutine get_pinch_point
   
   subroutine D_orbit(beta_D) 

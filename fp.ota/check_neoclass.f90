@@ -377,6 +377,8 @@ contains
       end do
     end do
 
+    IF(ALLOCATED(U)) DEALLOCATE(U)
+    IF(ALLOCATED(Drwl)) DEALLOCATE(Drwl)
 
   end subroutine
 

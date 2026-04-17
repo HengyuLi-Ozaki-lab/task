@@ -385,6 +385,7 @@ CONTAINS
     END IF
 
     CALL fem_setup_nelm_node
+    IF(ALLOCATED(ncount_max_nxzone_nyzone)) DEALLOCATE(ncount_max_nxzone_nyzone)
     RETURN
   END SUBROUTINE fem_mesh
 

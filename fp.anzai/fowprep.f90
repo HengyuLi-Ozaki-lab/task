@@ -1568,6 +1568,30 @@ contains
       call first_order_derivative(dBdthp(nr,:),Babs(nr,:),theta_p)
     end do
 
+    IF(ALLOCATED(ppsi)) DEALLOCATE(ppsi)
+    IF(ALLOCATED(qpsi)) DEALLOCATE(qpsi)
+    IF(ALLOCATED(vpsi)) DEALLOCATE(vpsi)
+    IF(ALLOCATED(rlen)) DEALLOCATE(rlen)
+    IF(ALLOCATED(ritpsi)) DEALLOCATE(ritpsi)
+    IF(ALLOCATED(rhotg)) DEALLOCATE(rhotg)
+    IF(ALLOCATED(rhot)) DEALLOCATE(rhot)
+    IF(ALLOCATED(Br)) DEALLOCATE(Br)
+    IF(ALLOCATED(Bz)) DEALLOCATE(Bz)
+    IF(ALLOCATED(Bp)) DEALLOCATE(Bp)
+    IF(ALLOCATED(Bt)) DEALLOCATE(Bt)
+    IF(ALLOCATED(temp)) DEALLOCATE(temp)
+    IF(ALLOCATED(thpa)) DEALLOCATE(thpa)
+    IF(ALLOCATED(Cps)) DEALLOCATE(Cps)
+    IF(ALLOCATED(CF)) DEALLOCATE(CF)
+    IF(ALLOCATED(Cq)) DEALLOCATE(Cq)
+    IF(ALLOCATED(CB)) DEALLOCATE(CB)
+    IF(ALLOCATED(dpsim)) DEALLOCATE(dpsim)
+    IF(ALLOCATED(dFpsi)) DEALLOCATE(dFpsi)
+    IF(ALLOCATED(dqdpsi)) DEALLOCATE(dqdpsi)
+    IF(ALLOCATED(dBdrho)) DEALLOCATE(dBdrho)
+    IF(ALLOCATED(dBdth)) DEALLOCATE(dBdth)
+    IF(ALLOCATED(dBdrt)) DEALLOCATE(dBdrt)
+
   end subroutine fow_eqload
 
   subroutine bisection_method(routine, convergence_flag, f, g, x, x1, x2, psim_in, nsa_in)

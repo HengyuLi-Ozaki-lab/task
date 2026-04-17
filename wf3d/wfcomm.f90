@@ -613,6 +613,7 @@ contains
 
     IF(.NOT.ALLOCATED(CESD)) RETURN
     deallocate(CESD,CEF,CEP,CBF,CBP,EMAX,CRFL)
+    IF(ALLOCATED(ANGLE)) DEALLOCATE(ANGLE)
 
     return
   end subroutine wffld_deallocate

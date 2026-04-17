@@ -172,6 +172,11 @@ CONTAINS
 
 !    CALL OBGPRM
     CALL PAGEE
+    IF(ALLOCATED(xg)) DEALLOCATE(xg)
+    IF(ALLOCATED(yg)) DEALLOCATE(yg)
+    IF(ALLOCATED(f)) DEALLOCATE(f)
+    IF(ALLOCATED(rsu)) DEALLOCATE(rsu)
+    IF(ALLOCATED(zsu)) DEALLOCATE(zsu)
     RETURN
   END SUBROUTINE ob_grf1
 
@@ -344,6 +349,7 @@ CONTAINS
        
     END DO
 
+    IF(ALLOCATED(fy)) DEALLOCATE(fy)
     RETURN
   END SUBROUTINE ob_grf2
 
@@ -491,7 +497,15 @@ CONTAINS
       CALL grd2d(4,chi_l,psip_l,f2c,nchi_max,nchi_max,npsip_max, &
                  '@db_dpsip(chi,psip)@',0,XMAX=chi_l(nchi_max))
       CALL pagee
-      
+
+      IF(ALLOCATED(psip_l)) DEALLOCATE(psip_l)
+      IF(ALLOCATED(chi_l)) DEALLOCATE(chi_l)
+      IF(ALLOCATED(gx)) DEALLOCATE(gx)
+      IF(ALLOCATED(f1)) DEALLOCATE(f1)
+      IF(ALLOCATED(f2a)) DEALLOCATE(f2a)
+      IF(ALLOCATED(f2b)) DEALLOCATE(f2b)
+      IF(ALLOCATED(f2c)) DEALLOCATE(f2c)
+
     END SUBROUTINE ob_gsube
 
   END MODULE OBGOUT

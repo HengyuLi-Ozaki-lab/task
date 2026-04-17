@@ -265,6 +265,9 @@ CONTAINS
        end do
     end do
 
+    IF(ALLOCATED(cvec_r)) DEALLOCATE(cvec_r)
+    IF(ALLOCATED(cvec_l)) DEALLOCATE(cvec_l)
+    IF(ALLOCATED(cvec_s)) DEALLOCATE(cvec_s)
   return
 end subroutine wq_solv2
 END MODULE wqsolv2

@@ -1807,4 +1807,16 @@ MODULE fpdisrupt
       END SUBROUTINE MGI_DENSITY
 !**********************************************
 
+      SUBROUTINE DEALLOCATE_FPDISRUPT
+
+      IMPLICIT NONE
+
+      IF(ASSOCIATED(rt_init)) THEN
+         DEALLOCATE(rt_init)
+         NULLIFY(rt_init)
+      END IF
+
+      END SUBROUTINE DEALLOCATE_FPDISRUPT
+!**********************************************
+
       END MODULE fpdisrupt

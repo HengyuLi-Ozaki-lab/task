@@ -124,8 +124,9 @@ CONTAINS
 !    END DO
 !    END DO
 !    END DO
+    IF(ALLOCATED(nelm_ncount_nxzone_nyzone)) DEALLOCATE(nelm_ncount_nxzone_nyzone)
     RETURN
-       
+
   END SUBROUTINE fem_setup_zone
 
   SUBROUTINE xyrange_nelm(nelm,xmin,xmax,ymin,ymax)

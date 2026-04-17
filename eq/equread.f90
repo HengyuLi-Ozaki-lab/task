@@ -157,6 +157,8 @@ contains
     CALL equ_set_var1(nsr,nsz,nv,nsu,ilimt,btv,saxis,ell,trg)
     CALL equ_set_psi(psi)
 
+    call alloc_equ(-2)
+
    RETURN
  END subroutine eqdsk
 

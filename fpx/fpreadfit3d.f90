@@ -453,6 +453,22 @@ MODULE fpreadfit3d
 
        END SUBROUTINE NBI_SOURCE_FIT3D
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+       SUBROUTINE DEALLOCATE_FPREADFIT3D
+
+       IMPLICIT NONE
+
+       IF(ASSOCIATED(weight_r)) THEN
+          DEALLOCATE(weight_r)
+          NULLIFY(weight_r)
+       END IF
+       IF(ASSOCIATED(rm_fit)) THEN
+          DEALLOCATE(rm_fit)
+          NULLIFY(rm_fit)
+       END IF
+
+       END SUBROUTINE DEALLOCATE_FPREADFIT3D
+
      END MODULE fpreadfit3d
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !       Program read_fit_file

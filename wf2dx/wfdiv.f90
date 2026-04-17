@@ -397,6 +397,7 @@ subroutine SETNODC
      if (NTH1.lt.NTHMAX(NR+1)) goto 1
   END DO
 
+  IF(ASSOCIATED(NTHMAX)) DEALLOCATE(NTHMAX)
   return
 end subroutine SETNODC
 

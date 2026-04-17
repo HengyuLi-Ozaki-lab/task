@@ -40,6 +40,7 @@ CONTAINS
        IF(MOD(NT,NGRSTEP).EQ.0) CALL ti_record_ngr   ! save for radial profile
     END DO
 
+    IF(ALLOCATED(v)) DEALLOCATE(v)
     RETURN
   END SUBROUTINE ti_exec
 

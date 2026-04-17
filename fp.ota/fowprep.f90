@@ -569,6 +569,30 @@ contains
       call first_order_derivative(dBdthp(nr,:),Babs(nr,:),theta_p)
     end do
 
+    IF(ALLOCATED(ppsi)) DEALLOCATE(ppsi)
+    IF(ALLOCATED(qpsi)) DEALLOCATE(qpsi)
+    IF(ALLOCATED(vpsi)) DEALLOCATE(vpsi)
+    IF(ALLOCATED(rlen)) DEALLOCATE(rlen)
+    IF(ALLOCATED(ritpsi)) DEALLOCATE(ritpsi)
+    IF(ALLOCATED(rhotg)) DEALLOCATE(rhotg)
+    IF(ALLOCATED(rhot)) DEALLOCATE(rhot)
+    IF(ALLOCATED(Br)) DEALLOCATE(Br)
+    IF(ALLOCATED(Bz)) DEALLOCATE(Bz)
+    IF(ALLOCATED(Bp)) DEALLOCATE(Bp)
+    IF(ALLOCATED(Bt)) DEALLOCATE(Bt)
+    IF(ALLOCATED(temp)) DEALLOCATE(temp)
+    IF(ALLOCATED(thpa)) DEALLOCATE(thpa)
+    IF(ALLOCATED(Cps)) DEALLOCATE(Cps)
+    IF(ALLOCATED(CF)) DEALLOCATE(CF)
+    IF(ALLOCATED(Cq)) DEALLOCATE(Cq)
+    IF(ALLOCATED(CB)) DEALLOCATE(CB)
+    IF(ALLOCATED(dpsim)) DEALLOCATE(dpsim)
+    IF(ALLOCATED(dFpsi)) DEALLOCATE(dFpsi)
+    IF(ALLOCATED(dqdpsi)) DEALLOCATE(dqdpsi)
+    IF(ALLOCATED(dBdrho)) DEALLOCATE(dBdrho)
+    IF(ALLOCATED(dBdth)) DEALLOCATE(dBdth)
+    IF(ALLOCATED(dBdrt)) DEALLOCATE(dBdrt)
+
   end subroutine fow_eqload
 
   subroutine bisection_method(routine, convergence_flag, f, g, x, x1, x2, psim_in, nsa_in)
@@ -715,12 +739,14 @@ contains
     if ( xi2 <= 0.d0 ) then
       if( ABS(psip_in-psim_in) >= ABS(psip_in-0.d0) )p_ret = pmax(nsa_in)
       if( ABS(psip_in-psim_in) < ABS(psip_in-0.d0) ) p_ret = 0.d0
+      IF(ALLOCATED(dFdpsi)) DEALLOCATE(dFdpsi)
+      IF(ALLOCATED(dBdpsi)) DEALLOCATE(dBdpsi)
       return
     end if
 
     if ( aefp(nsa_in) >= 0.d0 ) then
       xi_pncp = sqrt(xi2)
-    else 
+    else
       xi_pncp = -sqrt(xi2)
     end if
 
@@ -733,6 +759,9 @@ contains
     p_ret = amfp(nsa_in)*p_ret/(1.d0-p_ret**2/vc**2)      ! momentum of stagnation orbit
     p_ret = p_ret/ptfp0(nsa_in)                           ! normalize
     theta_pncp = acos(xi_pncp)
+
+    IF(ALLOCATED(dFdpsi)) DEALLOCATE(dFdpsi)
+    IF(ALLOCATED(dBdpsi)) DEALLOCATE(dBdpsi)
 
   end subroutine get_pinch_point
 
@@ -757,6 +786,10 @@ contains
     xil = cos(theta_in)
     if ( xil == 0.d0 ) then
       p_ret = 0.d0
+      IF(ALLOCATED(G_m)) DEALLOCATE(G_m)
+      IF(ALLOCATED(B_m)) DEALLOCATE(B_m)
+      IF(ALLOCATED(dFdpsi)) DEALLOCATE(dFdpsi)
+      IF(ALLOCATED(dBmdpsi)) DEALLOCATE(dBmdpsi)
       return
 
     else if ( xil*aefp(nsa_in) > 0.d0 ) then
@@ -788,6 +821,11 @@ contains
     p_ret = vc*sqrt(p_ret**2/(1.d0+p_ret**2))             ! LHS = velocity of stagnation orbit
     p_ret = amfp(nsa_in)*p_ret/(1.d0-p_ret**2/vc**2)      ! momentum of stagnation orbit
     p_ret = p_ret/ptfp0(nsa_in)                           ! normalize
+
+    IF(ALLOCATED(G_m)) DEALLOCATE(G_m)
+    IF(ALLOCATED(B_m)) DEALLOCATE(B_m)
+    IF(ALLOCATED(dFdpsi)) DEALLOCATE(dFdpsi)
+    IF(ALLOCATED(dBmdpsi)) DEALLOCATE(dBmdpsi)
 
   end subroutine get_p_stg
 

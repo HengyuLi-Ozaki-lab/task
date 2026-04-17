@@ -12,6 +12,7 @@ MODULE plprof_TOTAL
   PUBLIC pl_load_TOTAL
   PUBLIC pl_read_prof_TOTAL
   PUBLIC pl_read_qp_TOTAL
+  PUBLIC pl_TOTAL_deallocate
 
 CONTAINS
   
@@ -197,6 +198,11 @@ CONTAINS
     STOP
                
 800 CONTINUE
+    IF(ALLOCATED(data_profm)) DEALLOCATE(data_profm)
+    IF(ALLOCATED(data_profg)) DEALLOCATE(data_profg)
+    IF(ALLOCATED(data_rn))    DEALLOCATE(data_rn)
+    IF(ALLOCATED(data_rt))    DEALLOCATE(data_rt)
+    IF(ALLOCATED(data_qp))    DEALLOCATE(data_qp)
     RETURN
   END SUBROUTINE pl_load_TOTAL
 
@@ -254,4 +260,18 @@ CONTAINS
     RETURN
   END SUBROUTINE pl_read_qp_TOTAL
   
+  SUBROUTINE pl_TOTAL_deallocate
+
+    IMPLICIT NONE
+
+    IF(ALLOCATED(data_rm))          DEALLOCATE(data_rm)
+    IF(ALLOCATED(data_rg))          DEALLOCATE(data_rg)
+    IF(ALLOCATED(derivm))           DEALLOCATE(derivm)
+    IF(ALLOCATED(derivg))           DEALLOCATE(derivg)
+    IF(ALLOCATED(spline_rn_TOTAL))  DEALLOCATE(spline_rn_TOTAL)
+    IF(ALLOCATED(spline_rt_TOTAL))  DEALLOCATE(spline_rt_TOTAL)
+    IF(ALLOCATED(spline_qp_TOTAL))  DEALLOCATE(spline_qp_TOTAL)
+
+  END SUBROUTINE pl_TOTAL_deallocate
+
 END MODULE plprof_TOTAL

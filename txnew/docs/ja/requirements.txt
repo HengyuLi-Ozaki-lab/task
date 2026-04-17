@@ -1,0 +1,4 @@
+# Sphinx documentation dependencies
+sphinx>=4.0
+sphinx-rtd-theme>=1.0
+sphinx-autobuild  # optional: for live reload during development

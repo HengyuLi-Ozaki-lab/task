@@ -71,6 +71,8 @@ contains
     call first_order_derivative(dradpsi, rm, psim)
     call spl1D(psim,rm,dradpsi,UR,nrmax,3,ierr)
 
+    IF(ALLOCATED(dradpsi)) DEALLOCATE(dradpsi)
+
   end subroutine fow_set_obparm
 
   subroutine fow_orbit(flag, ierr)
@@ -441,6 +443,7 @@ contains
       allocate(UR(4,nrmax))
       call first_order_derivative(dradpsi, rm, psim)
       call SPL1D(psim_rg,rm,dradpsi,UR,nrmax,3,ierr)
+      IF(ALLOCATED(dradpsi)) DEALLOCATE(dradpsi)
     end if
     
     nstpmax = ob%nstp_max
@@ -1038,5 +1041,16 @@ contains
     end do
 
   end subroutine load_orbit
+
+  subroutine deallocate_foworbit
+    implicit none
+
+    IF(ALLOCATED(Ups)) DEALLOCATE(Ups)
+    IF(ALLOCATED(UF)) DEALLOCATE(UF)
+    IF(ALLOCATED(UB)) DEALLOCATE(UB)
+    IF(ALLOCATED(dBdrt)) DEALLOCATE(dBdrt)
+    IF(ALLOCATED(UR)) DEALLOCATE(UR)
+
+  end subroutine deallocate_foworbit
 
 end module foworbit

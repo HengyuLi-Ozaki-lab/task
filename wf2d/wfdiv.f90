@@ -726,6 +726,9 @@ end subroutine set_node_arc
        ynode_min=pos_npos(1)
        ynode_max=pos_npos(npos_max)
     END SELECT
+    IF(ALLOCATED(nposl_nlayer)) DEALLOCATE(nposl_nlayer)
+    IF(ALLOCATED(pos_nposl)) DEALLOCATE(pos_nposl)
+    IF(ALLOCATED(pos_npos)) DEALLOCATE(pos_npos)
     RETURN
   END SUBROUTINE set_node_layer
 
@@ -876,6 +879,7 @@ subroutine set_node_circle
      if (NTH1.lt.NTHMAX(NR+1)) goto 1
   END DO
 
+  IF(ASSOCIATED(NTHMAX)) DEALLOCATE(NTHMAX)
   return
 END SUBROUTINE set_node_circle
   

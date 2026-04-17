@@ -1623,7 +1623,10 @@
            "---------------PREP_TIME=", gut_prep, gut_nf2-gut_nf1
 
       IF(OUTPUT_TXT_DELTA_F.eq.1.and.NRANK.eq.0) CALL OUT_TXT_FNS_DEL
- 
+
+      IF(ALLOCATED(conduct_temp)) DEALLOCATE(conduct_temp)
+      IF(ALLOCATED(E1_temp)) DEALLOCATE(E1_temp)
+
       RETURN
       END subroutine fp_prep
 !-----

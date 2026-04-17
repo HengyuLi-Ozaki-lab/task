@@ -180,6 +180,7 @@ CONTAINS
        IF(nth1.LT.nthmax_nr(nr+1)) GOTO 1
     END DO
 
+    IF(ALLOCATED(nthmax_nr)) DEALLOCATE(nthmax_nr)
     RETURN
   END SUBROUTINE wf_div_circle_exec
 

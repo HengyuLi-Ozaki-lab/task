@@ -137,6 +137,8 @@ contains
     if ( xi2 <= 0.d0 ) then
       if( ABS(psip_in-psim_in) >= ABS(psip_in-0.d0) )p_ret = pmax(nsa_in)
       if( ABS(psip_in-psim_in) < ABS(psip_in-0.d0) ) p_ret = 0.d0
+      IF(ALLOCATED(dFdpsi)) DEALLOCATE(dFdpsi)
+      IF(ALLOCATED(dBdpsi)) DEALLOCATE(dBdpsi)
       return
     end if
 
@@ -151,6 +153,9 @@ contains
     p_ret = vc*sqrt(p_ret**2/(1.d0+p_ret**2))             ! LHS = velocity of stagnation orbit
     beta_pinch = MIN( p_ret, vc ) / vc
     theta_pncp = ACOS(xi_pncp)
+
+    IF(ALLOCATED(dFdpsi)) DEALLOCATE(dFdpsi)
+    IF(ALLOCATED(dBdpsi)) DEALLOCATE(dBdpsi)
 
   end subroutine get_pinch_point
   

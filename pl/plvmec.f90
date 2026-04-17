@@ -89,7 +89,7 @@ MODULE plvmec
                                              !    j=0:ns
 
   PRIVATE
-  PUBLIC pl_vmec
+  PUBLIC pl_vmec, pl_vmec_deallocate
       
 CONTAINS
 
@@ -103,9 +103,43 @@ CONTAINS
     CALL read_vmec_equil(file_name,ierr)
     IF(ierr.NE.0) RETURN
     CALL put_vmec_bpsd
+    CALL pl_vmec_deallocate
     RETURN
 
   END SUBROUTINE pl_vmec
+
+  SUBROUTINE pl_vmec_deallocate
+
+    IMPLICIT NONE
+
+    IF(ALLOCATED(rmnc))       DEALLOCATE(rmnc)
+    IF(ALLOCATED(zmns))       DEALLOCATE(zmns)
+    IF(ALLOCATED(lmnsh))      DEALLOCATE(lmnsh)
+    IF(ALLOCATED(bmnh))       DEALLOCATE(bmnh)
+    IF(ALLOCATED(gmnh))       DEALLOCATE(gmnh)
+    IF(ALLOCATED(aiotah))     DEALLOCATE(aiotah)
+    IF(ALLOCATED(presh))      DEALLOCATE(presh)
+    IF(ALLOCATED(vprimh))     DEALLOCATE(vprimh)
+    IF(ALLOCATED(Itorh))      DEALLOCATE(Itorh)
+    IF(ALLOCATED(Ipolh))      DEALLOCATE(Ipolh)
+    IF(ALLOCATED(Ipolf))      DEALLOCATE(Ipolf)
+    IF(ALLOCATED(iota_vmec))  DEALLOCATE(iota_vmec)
+    IF(ALLOCATED(S11))        DEALLOCATE(S11)
+    IF(ALLOCATED(S12))        DEALLOCATE(S12)
+    IF(ALLOCATED(Bsqav))      DEALLOCATE(Bsqav)
+    IF(ALLOCATED(vprim))      DEALLOCATE(vprim)
+    IF(ALLOCATED(grdssq_av))  DEALLOCATE(grdssq_av)
+    IF(ALLOCATED(pprim))      DEALLOCATE(pprim)
+    IF(ALLOCATED(xm))         DEALLOCATE(xm)
+    IF(ALLOCATED(xn))         DEALLOCATE(xn)
+    IF(ALLOCATED(xm2))        DEALLOCATE(xm2)
+    IF(ALLOCATED(xn2))        DEALLOCATE(xn2)
+    IF(ALLOCATED(Itorf))      DEALLOCATE(Itorf)
+    IF(ALLOCATED(s))          DEALLOCATE(s)
+    IF(ALLOCATED(metric1D%rho))  DEALLOCATE(metric1D%rho)
+    IF(ALLOCATED(metric1D%data)) DEALLOCATE(metric1D%data)
+
+  END SUBROUTINE pl_vmec_deallocate
 
   SUBROUTINE read_vmec_equil(file_name,ierr)
 

@@ -2666,6 +2666,17 @@ CONTAINS
 
     end do
 
+    IF(ALLOCATED(Xtmp)) DEALLOCATE(Xtmp)
+    IF(ALLOCATED(Dxyl_tmp)) DEALLOCATE(Dxyl_tmp)
+    IF(ALLOCATED(U_Dxy_tmp)) DEALLOCATE(U_Dxy_tmp)
+    IF(ALLOCATED(FX)) DEALLOCATE(FX)
+    IF(ALLOCATED(FY)) DEALLOCATE(FY)
+    IF(ALLOCATED(FZ)) DEALLOCATE(FZ)
+    IF(ALLOCATED(FXY)) DEALLOCATE(FXY)
+    IF(ALLOCATED(FZX)) DEALLOCATE(FZX)
+    IF(ALLOCATED(FYZ)) DEALLOCATE(FYZ)
+    IF(ALLOCATED(FXYZ)) DEALLOCATE(FXYZ)
+
   end subroutine make_U_Dxy
 
   subroutine interpolate_D_unlessZero(C_out, U, check0, cpitch_in, psip_in, thetap_in)

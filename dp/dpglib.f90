@@ -9,7 +9,7 @@ MODULE dpglib
   REAL(rkind),ALLOCATABLE:: f_c(:),urgb_cr(:,:),urgb_cg(:,:),urgb_cb(:,:)
 
   PRIVATE
-  PUBLIC set_rgbd,rgb_bard,rgbf_a,rgbf_b,rgbf_c,dpclip
+  PUBLIC set_rgbd,rgb_bard,rgbf_a,rgbf_b,rgbf_c,dpclip,dpglib_cleanup
 
 CONTAINS
 
@@ -259,5 +259,21 @@ CONTAINS
     ENDIF
     RETURN
   END FUNCTION DPCLIP
+
+  SUBROUTINE dpglib_cleanup
+    IMPLICIT NONE
+    IF(ALLOCATED(f_a)) DEALLOCATE(f_a)
+    IF(ALLOCATED(urgb_ar)) DEALLOCATE(urgb_ar)
+    IF(ALLOCATED(urgb_ag)) DEALLOCATE(urgb_ag)
+    IF(ALLOCATED(urgb_ab)) DEALLOCATE(urgb_ab)
+    IF(ALLOCATED(f_b)) DEALLOCATE(f_b)
+    IF(ALLOCATED(urgb_br)) DEALLOCATE(urgb_br)
+    IF(ALLOCATED(urgb_bg)) DEALLOCATE(urgb_bg)
+    IF(ALLOCATED(urgb_bb)) DEALLOCATE(urgb_bb)
+    IF(ALLOCATED(f_c)) DEALLOCATE(f_c)
+    IF(ALLOCATED(urgb_cr)) DEALLOCATE(urgb_cr)
+    IF(ALLOCATED(urgb_cg)) DEALLOCATE(urgb_cg)
+    IF(ALLOCATED(urgb_cb)) DEALLOCATE(urgb_cb)
+  END SUBROUTINE dpglib_cleanup
 
 END MODULE dpglib

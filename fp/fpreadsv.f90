@@ -481,6 +481,23 @@
 
        END SUBROUTINE NBI_BAFP_SV
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+       SUBROUTINE DEALLOCATE_FP_READ_FIT
+
+       IMPLICIT NONE
+
+       IF(ALLOCATED(time_grid_fit_H)) DEALLOCATE(time_grid_fit_H)
+       IF(ALLOCATED(number_of_lines_fit_H)) DEALLOCATE(number_of_lines_fit_H)
+       IF(ALLOCATED(I_FIT_H)) DEALLOCATE(I_FIT_H)
+       IF(ALLOCATED(D_FIT_H)) DEALLOCATE(D_FIT_H)
+       IF(ALLOCATED(time_grid_fit_D)) DEALLOCATE(time_grid_fit_D)
+       IF(ALLOCATED(number_of_lines_fit_D)) DEALLOCATE(number_of_lines_fit_D)
+       IF(ALLOCATED(I_FIT_D)) DEALLOCATE(I_FIT_D)
+       IF(ALLOCATED(D_FIT_D)) DEALLOCATE(D_FIT_D)
+       IF(ALLOCATED(WEIGHT_R)) DEALLOCATE(WEIGHT_R)
+       IF(ALLOCATED(rm_fit)) DEALLOCATE(rm_fit)
+
+       END SUBROUTINE DEALLOCATE_FP_READ_FIT
+
      END MODULE FP_READ_FIT
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !       Program read_fit_file
