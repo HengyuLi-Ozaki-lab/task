@@ -40,6 +40,7 @@ SRCS = wrcomm.f90 wrinit.f90 wrparm.f90 wrprep.f90 wrview.f90 \
        wrexecr.f90 wrexecb.f90 \
        wrexec.f90 \
        wrgout.f90 wrfile.f90 \
+       wrxregress.f90 \
        wrmenu.f90
 
 OBJS = $(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))
@@ -121,3 +122,5 @@ $(OBJDIR)/wrsub.o: wrsub.f90 $(WRCOMM)  ../pl/plprof.f90 \
 $(OBJDIR)/wrgout.o: wrgout.f90 $(WRCOMM) ../pl/plprof.f90 ../pl/plgout.f90 \
 wrsub.f90 
 $(OBJDIR)/wrfile.o: wrfile.f90 $(WRCOMM) wrcalpwr.f90
+$(OBJDIR)/wrxregress.o: wrxregress.f90 $(WRCOMM)
+$(OBJDIR)/wrmenu.o: wrxregress.f90
