@@ -16,11 +16,17 @@ For each ``(RR, BB)`` pair on a 3x3 grid we:
 A NaN/Inf on any point signals that TRCOMM state leaked across cycles,
 so we fail loudly. Nine successful cycles -> PASS.
 
+The ITER01 fixture sets ``MODELG=3`` and ``KNAMEQ='eqdata.ITER01'``
+(L-6 registry extension). The eqdata file is only present after
+Phase-0 has been run; we chdir into ``test_run/test_output/tr_iter01/``
+when available and otherwise skip the whole class.
+
 Skipped when ``libtrapi.so`` is not built.
 """
 from __future__ import annotations
 
 import math
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -29,6 +35,8 @@ HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
 DEFAULT_SO = REPO / "tr" / "libtrapi.so"
+ITER01_WORKDIR = REPO / "test_run" / "test_output" / "tr_iter01"
+ITER01_EQDATA = ITER01_WORKDIR / "eqdata.ITER01"
 
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
@@ -47,6 +55,11 @@ def _trlib_importable() -> bool:
     f"libtrapi.so not built at {DEFAULT_SO}; run `make -C tr libtrapi.so`",
 )
 @unittest.skipUnless(_trlib_importable(), "python/trlib not importable")
+@unittest.skipUnless(
+    ITER01_EQDATA.exists(),
+    f"eqdata.ITER01 missing at {ITER01_EQDATA}; "
+    "run `./test_run/run_tests.sh tr_iter01` first (requires eq_iter01).",
+)
 class TestSweep(unittest.TestCase):
     """3x3 RR x BB grid; smoke-only (no numerical regression)."""
 
@@ -64,20 +77,27 @@ class TestSweep(unittest.TestCase):
         from trlib import Trlib
         from trlib.tests.fixtures import tr_iter01_params
 
-        results = []
-        for rr in self.RR_VALUES:
-            for bb in self.BB_VALUES:
-                with Trlib() as tr:
-                    # Realistic base parameters from the ITER01 fixture.
-                    tr_iter01_params.apply(tr)
-                    # Override the swept axes.
-                    tr.set_param("RR", float(rr))
-                    tr.set_param("BB", float(bb))
-                    # Short run -- smoke only.
-                    tr.run(self.NTMAX)
-                    state = tr.get_state()
-                    wpt = state.scalars.get("WPT", float("nan"))
-                    results.append((rr, bb, wpt))
+        # ITER01 sets MODELG=3 + KNAMEQ=eqdata.ITER01; chdir so
+        # tr_prep can read the eq data from the Phase-0 output dir.
+        prev_cwd = Path.cwd()
+        os.chdir(ITER01_WORKDIR)
+        try:
+            results = []
+            for rr in self.RR_VALUES:
+                for bb in self.BB_VALUES:
+                    with Trlib() as tr:
+                        # Realistic base parameters from the ITER01 fixture.
+                        tr_iter01_params.apply(tr)
+                        # Override the swept axes.
+                        tr.set_param("RR", float(rr))
+                        tr.set_param("BB", float(bb))
+                        # Short run -- smoke only.
+                        tr.run(self.NTMAX)
+                        state = tr.get_state()
+                        wpt = state.scalars.get("WPT", float("nan"))
+                        results.append((rr, bb, wpt))
+        finally:
+            os.chdir(prev_cwd)
 
         # All 9 points must have completed.
         self.assertEqual(len(results), 9, f"expected 9 results, got {len(results)}")

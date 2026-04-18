@@ -101,6 +101,52 @@
 - [ ] `eqbpsd.f` — BPSD 側 interface を保持
 - [ ] `eqcalc.f`, `eqcalq.f` — 最後に置換、numeric drift なしを確認
 
+## Cross-module shim policy (F-1..F-4 期間中)
+
+eq の外側から直接 INCLUDE されている "束ね" include が存在する (`grep` による確認, develop 時点):
+
+| 消費側モジュール | ファイル | 参照 include |
+|---|---|---|
+| wmf  | `wmf/wmfem_sub.f` | `../eq/eqcomq.inc` (3 箇所) |
+| wmfn | `wmfn/wmfem_sub.f` | `../eq/eqcomq.inc` (3 箇所) |
+| wmx  | `wmx/wmeqin.f` | `../eq/eqcomq.inc` (10 箇所) |
+| fp   | `fp/fpbroadcast.f90` | `../eq/eqcomc.inc` (1 箇所) |
+
+これらの include は `USE plcomm + IMPLICIT + eqcom{0,1,3}.inc` を束ねた境界 API である。Phase F-1..F-4 では **以下の方針で進める**:
+
+- `eqcom{0..5}.inc` の中身は F-1 で MODULE に置換する
+- `eqcomc.inc` / `eqcomm.inc` / `eqcomq.inc` / `eqcomx.inc` は **shim として残す**（ファイル名と外部 API を維持しつつ、中身を `USE eqcomN_mod` に書き換える）
+- 消費側モジュール (wmf/wmfn/wmx/fp) は **F-1..F-4 期間は一切変更しない** — 再コンパイルだけで透過的に新しい MODULE 経由に切り替わる
+
+## Phase F-5: shim 削除 (最終整合化)
+
+F-1..F-4 で eq 内部の modernization が完了した後、最終的にコードベース全体を一貫した「MODULE 経由のみ」に整える。
+
+### Task F-5-1: 消費側の `USE` 書き換え
+- [ ] `wmf/wmfem_sub.f` の 3 箇所を `INCLUDE '../eq/eqcomq.inc'` → `USE eqcom0_mod; USE eqcom1_mod; USE eqcom3_mod; USE plcomm` に置換
+- [ ] `wmfn/wmfem_sub.f` 同上 (3 箇所)
+- [ ] `wmx/wmeqin.f` 同上 (10 箇所)
+- [ ] `fp/fpbroadcast.f90` の `../eq/eqcomc.inc` を同等の `USE` 群に置換
+- [ ] `IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)` の継承は個別に明示 (もしくは `IMPLICIT NONE` への全面移行を狙う)
+
+### Task F-5-2: shim ファイル削除
+- [ ] `eq/eqcomc.inc`, `eq/eqcomm.inc`, `eq/eqcomq.inc`, `eq/eqcomx.inc` を削除
+- [ ] `eq/` 内で残存している `INCLUDE 'eqcom*.inc'` 参照があれば最終掃除
+- [ ] `eq/Makefile` の `EQCOMM` 系依存行を整理
+
+### Task F-5-3: legacy mirror 配下 (`fp.ota/fp.nuga/fp.anzai/fpx`) の扱い決定
+- これらは現 Makefile では active でない可能性が高い。**放置でよいか削除するか**をコードオーナーに確認し、必要なら F-5-1 と同じ処理を適用。
+
+### Task F-5-4: 最終回帰 + lint
+- [ ] `./run_tests.sh eq_* tr_* fp_* wm*` 全 PASS (横断的回帰)
+- [ ] `grep -R "INCLUDE\s\+['\"]\\.\\./eq/eqcom" --include='*.f*'` で 0 hit を確認 (shim 消滅の確証)
+- [ ] `gfortran -fsyntax-only -std=f2008 -Wall` で全関連モジュール clean
+
+### Phase F-5 の受け入れ条件
+- eq / tr / fp / wm* 全モジュールが `libXXapi.so` + 従来バイナリの両方とも rebuild 可能
+- 回帰 1e-13 PASS
+- eqcom[cmqx].inc が物理的に存在しない
+
 ---
 
 ## Risks & Mitigations

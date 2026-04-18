@@ -1,6 +1,9 @@
 ! tr_param_registry.f90
 !
 ! Phase L-3: setter table for namelist (trparm.f90) parameters.
+! Phase L-6 follow-up: extended to cover UNREGISTERED_KEYS of the
+! tr_iter01 / tr_tst2 fixtures so Layer 1 equivalence tests can drive
+! ``libtrapi.so`` to reproduce the Phase 0 Fortran baselines at 1e-10.
 !
 ! Implements a hand-written SELECT CASE dispatch that maps a parameter
 ! name (optionally with a 1-origin subscript in square brackets, e.g.
@@ -15,10 +18,23 @@
 !   - module switches        (MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL,
 !                             MDLJBS, MDLST, MDLNF, MDLUF)
 !
-! Approximately 34 unique names covering ~50 settable variables once
-! array subscripts are counted. Additional namelist vars may be added
-! in a later PR by extending the SELECT CASE list; the parser handles
-! any "NAME" or "NAME[idx]" input unchanged.
+! L-6 additions (tr_iter01 / tr_tst2 UNREGISTERED_KEYS):
+!   - geometry selector      (MODELG)
+!   - profile shape          (PROFN1, PROFN2)
+!   - impurity / composition (MDLIMP, PNC)
+!   - graphics step counters (NGTSTP, NGRSTP)
+!   - heating / current drive
+!       NBI                  (PNBR0, PNBRW, PNBENG, PNBRTG)
+!       ICRF                 (PICCD, PICR0, PICRW, PICNPR)
+!       ECRF                 (PECCD, PECR0, PECRW, PECNPR)
+!       LH                   (PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT)
+!
+! Strings (KNAMEQ) are handled through a separate entry point:
+!   - tr_param_set_str("KNAMEQ", "eqdata.ITER01")
+!
+! Additional namelist vars may be added in a later PR by extending the
+! SELECT CASE list; the parser handles any "NAME" or "NAME[idx]" input
+! unchanged.
 !
 ! See docs/superpowers/specs/2026-04-17-tr-library-design.md §5 and
 ! docs/superpowers/plans/2026-04-18-tr-library-L3-param-registry.md.
@@ -30,10 +46,18 @@ MODULE tr_param_registry
        RIPS, RIPE, &
        DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, &
        MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, &
-       MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF
+       MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF, &
+       MODELG, MDLIMP, NGTSTP, NGRSTP, &
+       PROFN1, PROFN2, PNC, &
+       PNBR0, PNBRW, PNBENG, PNBRTG, &
+       PICCD, PICR0, PICRW, PICNPR, &
+       PECCD, PECR0, PECRW, PECNPR, &
+       PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT, &
+       KNAMEQ
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: tr_param_set
+  PUBLIC :: tr_param_set_str
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
 CONTAINS
@@ -56,6 +80,7 @@ CONTAINS
     CASE ("RDLT");  RDLT  = value
     CASE ("BB");    BB    = value
     CASE ("PHIA");  PHIA  = value
+    CASE ("MODELG");  MODELG = INT(value)
     ! --- plasma scalars --------------------------------------------
     CASE ("NSMAX"); NSMAX = INT(value)
     ! --- plasma arrays (1..NSMM, 1-origin; NSMM=100 per tr/trcom0.f90)
@@ -67,6 +92,12 @@ CONTAINS
     CASE ("PNS");   IF (idx < 1 .OR. idx > SIZE(PNS)) THEN; ierr = 1; ELSE; PNS(idx) = value; END IF
     CASE ("PT");    IF (idx < 1 .OR. idx > SIZE(PT))  THEN; ierr = 1; ELSE; PT(idx)  = value; END IF
     CASE ("PTS");   IF (idx < 1 .OR. idx > SIZE(PTS)) THEN; ierr = 1; ELSE; PTS(idx) = value; END IF
+    ! --- profile shape ---------------------------------------------
+    CASE ("PROFN1"); PROFN1 = value
+    CASE ("PROFN2"); PROFN2 = value
+    ! --- impurity / composition ------------------------------------
+    CASE ("PNC");   PNC   = value
+    CASE ("MDLIMP"); MDLIMP = INT(value)
     ! --- current ---------------------------------------------------
     CASE ("RIPS");  RIPS  = value
     CASE ("RIPE");  RIPE  = value
@@ -76,6 +107,8 @@ CONTAINS
     CASE ("NTSTEP"); NTSTEP = INT(value)
     CASE ("EPSLTR"); EPSLTR = value
     CASE ("LMAXTR"); LMAXTR = INT(value)
+    CASE ("NGTSTP"); NGTSTP = INT(value)
+    CASE ("NGRSTP"); NGRSTP = INT(value)
     ! --- transport model switches & coefficients -------------------
     CASE ("MDLKAI"); MDLKAI = INT(value)
     CASE ("MDLETA"); MDLETA = INT(value)
@@ -95,10 +128,59 @@ CONTAINS
     CASE ("MDLST");  MDLST  = INT(value)
     CASE ("MDLNF");  MDLNF  = INT(value)
     CASE ("MDLUF");  MDLUF  = INT(value)
+    ! --- heating / current-drive scalars ---------------------------
+    !     NBI
+    CASE ("PNBR0");  PNBR0  = value
+    CASE ("PNBRW");  PNBRW  = value
+    CASE ("PNBENG"); PNBENG = value
+    CASE ("PNBRTG"); PNBRTG = value
+    !     ICRF
+    CASE ("PICCD");  PICCD  = value
+    CASE ("PICR0");  PICR0  = value
+    CASE ("PICRW");  PICRW  = value
+    CASE ("PICNPR"); PICNPR = value
+    !     ECRF
+    CASE ("PECCD");  PECCD  = value
+    CASE ("PECR0");  PECR0  = value
+    CASE ("PECRW");  PECRW  = value
+    CASE ("PECNPR"); PECNPR = value
+    !     LH
+    CASE ("PLHCD");  PLHCD  = value
+    CASE ("PLHR0");  PLHR0  = value
+    CASE ("PLHRW");  PLHRW  = value
+    CASE ("PLHNPR"); PLHNPR = value
+    CASE ("PLHTOT"); PLHTOT = value
     CASE DEFAULT
        ierr = 1   ! unknown name
     END SELECT
   END FUNCTION tr_param_set
+
+  !-------------------------------------------------------------------
+  ! tr_param_set_str : string-valued parameter setter.
+  !
+  ! Separate entry from tr_param_set because the Fortran namelist /TR/
+  ! has a small number of CHARACTER(LEN=80) variables (KNAMEQ and
+  ! friends) that cannot be carried through a REAL(rkind) pipe.
+  !
+  ! L-6 coverage: KNAMEQ (equilibrium-data file name, used by the
+  ! MODELG=3 eq-load path on tr_iter01 / tr_tst2).
+  !
+  ! Additional string variables (KNAMEQ2, KNAMTR, KFNLOG, KFNTXT,
+  ! KFNCVS, KUFDIR, KUFDEV, KUFDCG) can be added by extending the
+  ! SELECT CASE below without touching the C ABI (only the name list).
+  !-------------------------------------------------------------------
+  FUNCTION tr_param_set_str(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    CHARACTER(LEN=*), INTENT(IN) :: value
+    INTEGER :: ierr
+
+    ierr = 0
+    SELECT CASE (TRIM(ADJUSTL(name)))
+    CASE ("KNAMEQ"); KNAMEQ = TRIM(value)
+    CASE DEFAULT
+       ierr = 1   ! unknown string-valued name
+    END SELECT
+  END FUNCTION tr_param_set_str
 
   !-------------------------------------------------------------------
   ! Split "NAME" or "NAME[N]" into (base, idx).
