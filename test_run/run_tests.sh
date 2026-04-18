@@ -294,12 +294,18 @@ run_single_test() {
     cd "$test_dir"
     local log_file="$test_dir/output.log"
 
+    # For TR module, enable regression dump (env-guarded inside trregress.f90).
+    local tr_env=()
+    if [[ "$module" == "tr" ]]; then
+        tr_env=(env TR_REGRESS_DUMP=1)
+    fi
+
     if [[ $VERBOSE -eq 1 ]]; then
         echo ""
-        timeout "$timeout" "$binary" < "$full_input_path" 2>&1 | tee "$log_file"
+        "${tr_env[@]}" timeout "$timeout" "$binary" < "$full_input_path" 2>&1 | tee "$log_file"
         local exit_code=${PIPESTATUS[0]}
     else
-        timeout "$timeout" "$binary" < "$full_input_path" > "$log_file" 2>&1
+        "${tr_env[@]}" timeout "$timeout" "$binary" < "$full_input_path" > "$log_file" 2>&1
         local exit_code=$?
     fi
 
@@ -310,14 +316,28 @@ run_single_test() {
         echo -e "${YELLOW}TIMEOUT${NC} (exceeded ${timeout}s)"
         FAILED=$((FAILED + 1))
     elif grep -q "CLOSED" "$log_file" 2>/dev/null; then
-        # CLOSED message found - calculation completed successfully
-        if [[ $exit_code -ne 0 ]]; then
+        # CLOSED message found - calculation completed successfully.
+        # For TR module, also verify numerical metrics against baseline.
+        local reg_ok=1
+        if [[ "$module" == "tr" ]]; then
+            if ! "$SCRIPT_DIR/scripts/check_regression.sh" \
+                    "$test_name" "$test_dir" "$SCRIPT_DIR/baselines" "1e-10" \
+                    > "$test_dir/regression.log" 2>&1; then
+                reg_ok=0
+            fi
+        fi
+        if [[ $reg_ok -eq 0 ]]; then
+            echo -e "${RED}REGRESSION${NC} (metrics drift; see $test_dir/regression.log)"
+            FAILED=$((FAILED + 1))
+        elif [[ $exit_code -ne 0 ]]; then
             echo -e "${GREEN}PASS${NC} (warning: exit code $exit_code)"
+            PASSED=$((PASSED + 1))
+            COMPLETED_TESTS[$test_name]=1
         else
             echo -e "${GREEN}PASS${NC}"
+            PASSED=$((PASSED + 1))
+            COMPLETED_TESTS[$test_name]=1
         fi
-        PASSED=$((PASSED + 1))
-        COMPLETED_TESTS[$test_name]=1
     elif [[ $exit_code -eq 0 ]]; then
         echo -e "${RED}FAIL${NC} (no CLOSED message)"
         FAILED=$((FAILED + 1))

@@ -1,1 +1,4 @@
-test_run/test_output/
+test_output/
+scripts/__pycache__/
+scripts/tests/__pycache__/
+*.pyc

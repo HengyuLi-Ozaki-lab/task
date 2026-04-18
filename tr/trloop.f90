@@ -21,6 +21,7 @@ CONTAINS
       USE trexec
       USE libitp
       USE equnit
+      USE trregress, ONLY : tr_regress_dump_if_enabled
       IMPLICIT NONE
       INTEGER,INTENT(OUT):: IERR
       INTEGER:: nr
@@ -98,6 +99,7 @@ CONTAINS
       ELSE
          RIPS=RIPE
       ENDIF
+      CALL tr_regress_dump_if_enabled   ! Phase 0 regression dump (env-guarded)
       RETURN
     END SUBROUTINE tr_loop
   END MODULE trloop

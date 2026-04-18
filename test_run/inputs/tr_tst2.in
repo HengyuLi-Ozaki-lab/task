@@ -1,0 +1,31 @@
+0
+f
+tr2.TST-2.gs
+c
+   modelg=3
+   KNAMEQ='eqdata.TST-2'
+   NSMAX=2
+   PA(2)=1.D0
+   PZ(2)=1.D0
+   PN =0.010D0,0.010D0
+   PNS=0.001D0,0.001D0
+   PT =0.010D0,0.0010D0
+   PTS=0.001D0,0.0001D0
+   PROFN1=2.D0
+   PROFN2=1.D0
+   MDLIMP=3
+   PNC=0.00001D0
+   PLHCD=0.D0
+   PLHR0=0.15D0
+   PLHRW=0.05D0
+   PLHNPR=4.D0
+   RIPS=0.015
+   RIPE=0.015
+   NTSTEP=1
+   NGTSTP=1
+   NGRSTP=10
+   DT=1.D-5
+   NTMAX=10
+   PLHTOT=0.D0
+r
+q
