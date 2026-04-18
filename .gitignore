@@ -62,6 +62,7 @@ tr/tr2
 tr/tr3
 tr/trparm
 tr/tests/c_abi/test_smoke
+wrx/tests/c_abi/test_smoke
 trn/trn
 trn/trparm
 tx/tx2
