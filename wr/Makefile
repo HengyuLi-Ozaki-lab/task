@@ -53,9 +53,15 @@ SRCS_GRAPHICS = wrgout.f90
 
 SRCS_MENU = wrmenu.f90
 
+# C ABI sources (Phase L-2+). Compiled via the wr_api_check target only;
+# NOT part of $(SRCS) and NOT linked into libwr.a / wr. The full
+# libwrapi.so build arrives in Phase L-4.
+SRCS_API = wr_state.f90 wr_api.f90
+
 SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
 OBJS = $(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))
+OBJ_API = $(addprefix $(OBJDIR)/, $(SRCS_API:.f90=.o))
 
 LIBS = libwr.a  ../dp/libdp.a ../eq/libeq.a ../pl/libpl.a \
        ../lib/libtask.a ../lib/libgrf.a ../../bpsd/libbpsd.a
@@ -90,11 +96,55 @@ libs:
 wr : $(LIB_MTX) $(LIBS) $(OBJDIR)/wrmain.o
 	$(FLINKER) $(OBJDIR)/wrmain.o $(LIBS) -o $@ $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
+# ---------------------------------------------------------------------
+# Phase L-2: C ABI check
+#
+# `make wr_api_check` builds the new API objects (wr_state.o, wr_api.o)
+# AND a small C smoke test against wr_api.h.  This is a header / link
+# sanity check only -- the API objects are NOT linked into libwr.a / wr
+# and the wr binary remains byte-for-byte identical with or without
+# this target being invoked.  The smoke driver expects every entry
+# point to return WR_ERR_NOT_IMPL (=4) at L-2.
+#
+# CC defaults to gcc; override on the command line if necessary
+# (e.g. `make wr_api_check CC=clang`).
+# ---------------------------------------------------------------------
+CC ?= gcc
+CFLAGS_API ?= -Wall -Wextra -O2
+
+WR_API_SMOKE_DIR=tests/c_abi
+WR_API_SMOKE_C=$(WR_API_SMOKE_DIR)/test_smoke.c
+WR_API_SMOKE_O=$(WR_API_SMOKE_DIR)/test_smoke.o
+WR_API_SMOKE_BIN=$(WR_API_SMOKE_DIR)/test_smoke
+
+# Step 1: header-only C compile (matches the documented user-level check
+#         `gcc -Wall -Wextra -c -o test_smoke.o test_smoke.c`).
+$(WR_API_SMOKE_O): $(WR_API_SMOKE_C) wr_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(WR_API_SMOKE_O) $(WR_API_SMOKE_C)
+
+# Step 2: link the C smoke against the API objects only. This proves the
+# BIND(C) names emitted by wr_api.f90 (wr_init, wr_run, wr_set_param,
+# wr_get_state, wr_finalize) match the prototypes in wr_api.h. We use
+# gfortran as the driver so the libgfortran runtime is pulled in
+# automatically; no other wr/ libraries are required at L-2.
+$(WR_API_SMOKE_BIN): $(WR_API_SMOKE_O) $(OBJ_API)
+	$(FLINKER) -o $(WR_API_SMOKE_BIN) $(WR_API_SMOKE_O) $(OBJ_API)
+
+.PHONY: wr_api_check
+wr_api_check: $(OBJ_API) $(WR_API_SMOKE_BIN)
+	@echo "Phase L-2 wr_api_check: running smoke ..."
+	@$(WR_API_SMOKE_BIN)
+	@echo "Phase L-2 wr_api_check OK:"
+	@echo "  - Fortran API objects compiled: $(OBJ_API)"
+	@echo "  - C smoke object compiled    : $(WR_API_SMOKE_O)"
+	@echo "  - C smoke linked + executed  : $(WR_API_SMOKE_BIN)"
+
 clean:
 	-rm -f core a.out *.o *.a ./*~
 	-rm -f ./mod/*.mod
 	-rm -f ./obj/*.o
 	-rm -rf ./*.dSYM
+	-rm -f $(WR_API_SMOKE_O) $(WR_API_SMOKE_BIN)
 
 veryclean: clean
 	-rm -f wr
@@ -125,3 +175,7 @@ $(OBJDIR)/wrsub.o:  wrsub.f90 $(WRCOMM) ../pl/plprof.f90 ../dp/dppola.f90 \
 $(OBJDIR)/wrgout.o: wrgout.f90 $(WRCOMM) ../pl/plprof.f90 ../pl/plgout.f90 \
 wrsub.f90 
 $(OBJDIR)/wrfile.o: wrfile.f90 $(WRCOMM)
+
+# Phase L-2 C ABI sources (independent of WRCOMM at this stage).
+$(OBJDIR)/wr_state.o : wr_state.f90
+$(OBJDIR)/wr_api.o   : wr_api.f90 wr_state.f90 $(OBJDIR)/wr_state.o

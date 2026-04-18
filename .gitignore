@@ -94,6 +94,7 @@ wmfn/wm
 wmfn/wmparm
 wr/wr
 wr/wrparm
+wr/tests/c_abi/test_smoke
 wrx/wr
 wrx/wrparm
 adpost/test-adpost
