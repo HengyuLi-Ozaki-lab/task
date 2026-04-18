@@ -21,10 +21,7 @@ import ctypes
 from typing import Optional
 
 from . import _ffi
-from .errors import (
-    FplibError, FplibInvalidParamError,
-    raise_for_rc,
-)
+from .errors import FplibError, raise_for_rc
 from .state import FpState
 
 
@@ -94,10 +91,7 @@ class Fplib:
         rc = self._lib.fp_set_param(
             name.encode("ascii"), ctypes.c_double(float(value))
         )
-        if rc != _ffi.FP_OK:
-            raise FplibInvalidParamError(
-                f"fp_set_param('{name}', {value}) failed (rc={rc})"
-            )
+        raise_for_rc(rc, f"fp_set_param('{name}', {value})")
 
     def set_params(self, **kwargs) -> None:
         """Bulk-set parameters by keyword.
