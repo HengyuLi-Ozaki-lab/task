@@ -109,6 +109,7 @@ get_binary() {
         tr) echo "$TASK_DIR/tr/tr2" ;;
         fp) echo "$TASK_DIR/fp/fp" ;;
         tx) echo "$TASK_DIR/tx/tx2" ;;
+        wr) echo "$TASK_DIR/wr/wr" ;;
         *) echo "" ;;
     esac
 }
@@ -294,10 +295,12 @@ run_single_test() {
     cd "$test_dir"
     local log_file="$test_dir/output.log"
 
-    # For TR module, enable regression dump (env-guarded inside trregress.f90).
+    # For TR/WR modules, enable regression dump (env-guarded inside *regress.f90).
     local tr_env=()
     if [[ "$module" == "tr" ]]; then
         tr_env=(env TR_REGRESS_DUMP=1)
+    elif [[ "$module" == "wr" ]]; then
+        tr_env=(env WR_REGRESS_DUMP=1)
     fi
 
     if [[ $VERBOSE -eq 1 ]]; then
@@ -317,9 +320,9 @@ run_single_test() {
         FAILED=$((FAILED + 1))
     elif grep -q "CLOSED" "$log_file" 2>/dev/null; then
         # CLOSED message found - calculation completed successfully.
-        # For TR module, also verify numerical metrics against baseline.
+        # For TR/WR modules, also verify numerical metrics against baseline.
         local reg_ok=1
-        if [[ "$module" == "tr" ]]; then
+        if [[ "$module" == "tr" || "$module" == "wr" ]]; then
             if ! "$SCRIPT_DIR/scripts/check_regression.sh" \
                     "$test_name" "$test_dir" "$SCRIPT_DIR/baselines" "1e-10" \
                     > "$test_dir/regression.log" 2>&1; then
