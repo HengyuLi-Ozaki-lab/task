@@ -31,7 +31,7 @@ MODULE tr_api
        WPT, AJT, Q0, BETA0, BETAP0, BETAA, BETAN, &
        TAUE1, TAUE2, ZEFF0, ALI, RQ1, RN, RT, AJ, QP, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
-  USE tr_param_registry, ONLY: tr_param_set
+  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE trinit,            ONLY: trinit_fortran => tr_init
@@ -40,7 +40,7 @@ MODULE tr_api
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, &
-            tr_api_set_param, tr_api_finalize
+            tr_api_set_param, tr_api_set_param_str, tr_api_finalize
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -129,6 +129,49 @@ CONTAINS
        ierr = TR_OK
     END IF
   END FUNCTION tr_api_set_param
+
+  !-------------------------------------------------------------------
+  ! tr_set_param_str : string-valued parameter setter (KNAMEQ, ...).
+  !
+  ! Accepts two NUL-terminated C strings; both must fit in the
+  ! fixed-length Fortran buffers (64 bytes for the name, 128 bytes for
+  ! the value, matching the longest entry in the trcomm_ctrl
+  ! CHARACTER(LEN=80) declarations with some slack).
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_set_param_str(name, value) RESULT(ierr) BIND(C, NAME="tr_set_param_str")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: value
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=64)  :: fname
+    CHARACTER(LEN=128) :: fvalue
+    INTEGER :: i
+
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+
+    ! Convert both C strings (NUL-terminated) to Fortran strings.
+    fname = ' '
+    DO i = 1, LEN(fname)
+       IF (name(i) == C_NULL_CHAR) EXIT
+       fname(i:i) = name(i)
+    END DO
+    fvalue = ' '
+    DO i = 1, LEN(fvalue)
+       IF (value(i) == C_NULL_CHAR) EXIT
+       fvalue(i:i) = value(i)
+    END DO
+
+    IF (tr_param_set_str(TRIM(fname), TRIM(fvalue)) /= 0) THEN
+       ierr = TR_ERR_INVALID
+    ELSE
+       ! Changing KNAMEQ (equilibrium data file) alters the tr_prep
+       ! inputs; invalidate g_prepared so the next tr_run rebuilds.
+       g_prepared = .FALSE.
+       ierr = TR_OK
+    END IF
+  END FUNCTION tr_api_set_param_str
 
   !-------------------------------------------------------------------
   ! tr_run : advance the simulation by ntmax_in steps.
