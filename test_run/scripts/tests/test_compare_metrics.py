@@ -93,6 +93,40 @@ class CompareMetricsTest(unittest.TestCase):
             res = run_compare(act, base)
             self.assertNotEqual(res.returncode, 0)
 
+    def test_fails_when_actual_is_inf(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _sample())
+            infected = _sample()
+            infected["scalars"]["WPT"] = float("inf")
+            write_json(act, infected)
+            res = run_compare(act, base)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("WPT", res.stdout)
+            self.assertIn("Inf", res.stdout)
+
+    def test_fails_when_baseline_is_inf(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            inf_base = _sample()
+            inf_base["scalars"]["WPT"] = float("inf")
+            write_json(base, inf_base)
+            write_json(act, _sample())
+            res = run_compare(act, base)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("WPT", res.stdout)
+            self.assertIn("Inf", res.stdout)
+
+    def test_passes_when_both_are_same_inf(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            inf_sample = _sample()
+            inf_sample["scalars"]["WPT"] = float("inf")
+            write_json(base, inf_sample)
+            write_json(act,  inf_sample)
+            res = run_compare(act, base)
+            self.assertEqual(res.returncode, 0, res.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

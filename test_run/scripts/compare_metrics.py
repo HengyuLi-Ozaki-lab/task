@@ -22,6 +22,10 @@ def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> No
     if math.isnan(bv) or math.isnan(av):
         out.append(f"{label}: NaN (baseline={bv} actual={av})")
         return
+    if math.isinf(bv) or math.isinf(av):
+        if bv != av:
+            out.append(f"{label}: Inf mismatch (baseline={bv} actual={av})")
+        return
     e = _rel_err(bv, av)
     if e > tol:
         out.append(f"{label}: baseline={bv!r} actual={av!r} rel_err={e:.3e} > tol={tol:.3e}")
