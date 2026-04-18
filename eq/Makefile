@@ -25,16 +25,18 @@ MODINCLUDE=-I$(MOD) -I../../bpsd/$(MOD) -I../mtxp/$(MOD) -I../pl/$(MOD) -I../lib
 # The eq / pl / ak binaries still build from the full union.
 
 # --- core: F-1 MODULEs + equilibrium physics + file I/O + regression hook ---
+# Phase F-2: newton / invematrix / eqgetp converted to free-form .f90.
 SRCS_CORE = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90 \
             equcom.f90 equread.f90 eqlib.f90 \
             eqbpsd.f eqinit.f eqcalc.f eqcalq.f eqcalv.f \
             eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
-            eq-eqdsk.f eq-qst.f eqgetp.f eqregress.f \
-            newton.f invematrix.f equnit.f eqrppl.f
+            eq-eqdsk.f eq-qst.f eqgetp.f90 eqregress.f \
+            newton.f90 invematrix.f90 equnit.f eqrppl.f
 
 # --- graphics (GSAF plotting, contour; eqfile uses GUCLIP) ---
 # Note: eqg2d.f / eqg3d.f remain in SRC2D / SRC3D below.
-SRCS_GRAPHICS = eqgout.f eqgsub.f eqfile.f
+# Phase F-2: eqgsub converted to free-form .f90.
+SRCS_GRAPHICS = eqgout.f eqgsub.f90 eqfile.f
 
 # --- interactive menu driver (depends on graphics) ---
 SRCS_MENU = eqmenu.f
@@ -204,22 +206,22 @@ eqbpsd.o: eqbpsd.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqjft2m.o: eqjft2m.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqlib.o : eqlib.f90
 equnit.o: equnit.f eqbpsd.f $(EQCOM_MODS)
-eqgsub.o: eqgsub.f
+eqgsub.o: eqgsub.f90
 eqg2d.o: eqg2d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqg3d.o: eqg3d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 equcom.o: equcom.f90
 equread.o: equread.f90 equcom.f90
 equintf.o: equintf.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqrppl.o: eqrppl.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqgetp.o: eqgetp.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqgetp.o: eqgetp.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqregress.o: eqregress.f $(EQCOMM) eqcom3.inc eqcomq.inc $(EQCOM_MODS)
 trtest.o: trtest.f
 treqin.o: treqin.f $(EQCOMM) eqcom3.inc eqcom4.inc $(EQCOM_MODS)
 pltest.o: pltest.f
 aktest.o: aktest.f
 akeqin.o: akeqin.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-newton.o: newton.f
-invematrix.o: invematrix.f
+newton.o: newton.f90
+invematrix.o: invematrix.f90
 
 # ---------------------------------------------------------------------
 # Phase F-1 Task F-1-3: eq_commontest bootstrap program.
