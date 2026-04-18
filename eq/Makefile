@@ -15,6 +15,13 @@ FFLAGS=-g $(OFLAGS)
 
 MODINCLUDE=-I$(MOD) -I../../bpsd/$(MOD) -I../mtxp/$(MOD) -I../pl/$(MOD) -I../lib/$(MOD)
 
+# SRCS_CORE: Phase F-1 (eq F90 modernization) -- new F90 MODULEs
+# mirroring the eqcom{0..3}.inc COMMON bundles. These must compile
+# before any file that USEs them (directly or via the shim headers
+# eqcom{c,m,q,x}.inc). Keep them at the head of $(OBJS) so the make
+# dependency walker emits their .mod files early.
+SRCS_CORE = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90
+
 SRCX = equcom.f90 equread.f90 eqlib.f90
 SRCS = eqbpsd.f eqinit.f eqmenu.f eqcalc.f eqcalq.f eqcalv.f \
        eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
@@ -28,7 +35,7 @@ SRCA = aktest.f akeqin.f
 SRC2D= eqg2d.f
 SRC3D= eqg3d.f
 
-OBJS = $(SRCX:.f90=.o) $(SRCS:.f=.o)
+OBJS = $(SRCS_CORE:.f90=.o) $(SRCX:.f90=.o) $(SRCS:.f=.o)
 OBJT = $(SRCT:.f=.o)
 OBJP = $(SRCP:.f=.o)
 OBJA = $(SRCA:.f=.o)
@@ -116,7 +123,8 @@ MODINCLUDE_PIC=-I$(MODDIR_PIC) -I../../bpsd/$(MOD) -I../mtxp/mod_pic -I../pl/mod
 # shared object with -Wl,--unresolved-symbols=ignore-in-shared-libs lets
 # the .so load while still failing loudly if a graphics path is ever
 # reached at run-time.
-SRCS_EQ_NOGR = equcom.f90 equread.f90 eqlib.f90
+SRCS_EQ_NOGR = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90
+SRCS_EQ_NOGR += equcom.f90 equread.f90 eqlib.f90
 SRCS_EQ_NOGR += eqbpsd.f eqinit.f eqmenu.f eqcalc.f eqcalq.f eqcalv.f \
                 eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
                 eq-eqdsk.f eq-qst.f eqfile.f eqgetp.f eqregress.f \
@@ -138,39 +146,75 @@ clean_pic:
 
 EQCOMM = eqcom0.inc eqcom1.inc
 
-eqmain.o: eqmain.f $(EQCOMM)
-eqinit.o: eqinit.f $(EQCOMM)
-eqcalc.o: eqcalc.f $(EQCOMM)
-eqcalx.o: eqcalx.f $(EQCOMM) eqcom5.inc
-eqcalq.o: eqcalq.f $(EQCOMM) eqcom3.inc
-eqcalv.o: eqcalv.f $(EQCOMM) eqcom2.inc
-eqsub.o : eqsub.f  $(EQCOMM) eqcom2.inc
-eqfunc.o: eqfunc.f $(EQCOMM) eqcom2.inc eqcom4.inc
-eqsplf.o: eqsplf.f $(EQCOMM) eqcom3.inc
-eqfile.o: eqfile.f $(EQCOMM) eqcom2.inc
-eq-eqdsk.o: eq-eqdsk.f $(EQCOMM) eqcom2.inc
-eq-qst.o: eq-qst.f $(EQCOMM) eqcom2.inc
-eqintf.o: eqintf.f $(EQCOMM) eqcom2.inc
-eqgout.o: eqgout.f $(EQCOMM) eqcom2.inc eqcom3.inc
-eqbpsd.o: eqbpsd.f $(EQCOMM) eqcom3.inc
+# Phase F-1: dependencies for new F90 COMMON-replacement MODULEs.
+# - eqcom0_mod is the root (PARAMETER-only).
+# - eqcom1/2/3_mod USE eqcom0_mod, so their .mod must be available.
+# - Every .f that INCLUDEs a shim (eqcom{c,m,q,x}.inc) now transitively
+#   requires the corresponding .mod file. We list them here so that a
+#   parallel `make -jN` cannot race past module compilation.
+EQCOM_MODS = eqcom0_mod.o eqcom1_mod.o eqcom2_mod.o eqcom3_mod.o
+
+eqcom0_mod.o: eqcom0_mod.f90
+eqcom1_mod.o: eqcom1_mod.f90 eqcom0_mod.o
+eqcom2_mod.o: eqcom2_mod.f90 eqcom0_mod.o
+eqcom3_mod.o: eqcom3_mod.f90 eqcom0_mod.o
+
+# Shim .inc files now USE the new MODULEs; every consumer of a shim
+# therefore depends on those .mod files in addition to the raw .inc.
+eqmain.o: eqmain.f $(EQCOMM) $(EQCOM_MODS)
+eqinit.o: eqinit.f $(EQCOMM) $(EQCOM_MODS)
+eqcalc.o: eqcalc.f $(EQCOMM) $(EQCOM_MODS)
+eqcalx.o: eqcalx.f $(EQCOMM) eqcom5.inc $(EQCOM_MODS)
+eqcalq.o: eqcalq.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqcalv.o: eqcalv.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eqsub.o : eqsub.f  $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eqfunc.o: eqfunc.f $(EQCOMM) eqcom2.inc eqcom4.inc $(EQCOM_MODS)
+eqsplf.o: eqsplf.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqfile.o: eqfile.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eq-eqdsk.o: eq-eqdsk.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eq-qst.o: eq-qst.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eqintf.o: eqintf.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eqgout.o: eqgout.f $(EQCOMM) eqcom2.inc eqcom3.inc $(EQCOM_MODS)
+eqbpsd.o: eqbpsd.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 #eqtrbpsd.o: eqtrbpsd.f $(EQCOMM)
 #eqtrbpsdlib.o: eqtrbpsdlib.f90
-eqjft2m.o: eqjft2m.f $(EQCOMM) eqcom3.inc
+eqjft2m.o: eqjft2m.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqlib.o : eqlib.f90
-equnit.o: equnit.f eqbpsd.f
+equnit.o: equnit.f eqbpsd.f $(EQCOM_MODS)
 eqgsub.o: eqgsub.f
-eqg2d.o: eqg2d.f $(EQCOMM) eqcom3.inc
-eqg3d.o: eqg3d.f $(EQCOMM) eqcom3.inc
+eqg2d.o: eqg2d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqg3d.o: eqg3d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 equcom.o: equcom.f90
 equread.o: equread.f90 equcom.f90
-equintf.o: equintf.f $(EQCOMM) eqcom3.inc
-eqrppl.o: eqrppl.f $(EQCOMM) eqcom3.inc
-eqgetp.o: eqgetp.f $(EQCOMM) eqcom3.inc
-eqregress.o: eqregress.f $(EQCOMM) eqcom3.inc eqcomq.inc
+equintf.o: equintf.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqrppl.o: eqrppl.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqgetp.o: eqgetp.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqregress.o: eqregress.f $(EQCOMM) eqcom3.inc eqcomq.inc $(EQCOM_MODS)
 trtest.o: trtest.f
-treqin.o: treqin.f $(EQCOMM) eqcom3.inc eqcom4.inc
+treqin.o: treqin.f $(EQCOMM) eqcom3.inc eqcom4.inc $(EQCOM_MODS)
 pltest.o: pltest.f
 aktest.o: aktest.f
-akeqin.o: akeqin.f $(EQCOMM) eqcom3.inc
+akeqin.o: akeqin.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 newton.o: newton.f
 invematrix.o: invematrix.f
+
+# ---------------------------------------------------------------------
+# Phase F-1 Task F-1-3: eq_commontest bootstrap program.
+# Standalone test that USEs all four new MODULEs and prints the grid
+# dimensions, so regressions on PARAMETER values fail loudly. Not linked
+# into libeq.a / eq. Build with `make eq_commontest`.
+# ---------------------------------------------------------------------
+EQCOMMONTEST_OBJS = eqcom0_mod.o eqcom1_mod.o eqcom2_mod.o eqcom3_mod.o \
+                   tests/eq_commontest.o
+
+tests/eq_commontest.o: tests/eq_commontest.f90 $(EQCOM_MODS)
+	$(FCFREE) $(FFLAGS) -c $< -o $@ $(MODDIR) $(MODINCLUDE)
+
+eq_commontest: $(EQCOMMONTEST_OBJS)
+	$(FLINKER) $(EQCOMMONTEST_OBJS) -o $@ $(FFLAGS)
+
+run_commontest: eq_commontest
+	./eq_commontest
+
+clean_commontest:
+	-rm -f tests/eq_commontest.o eq_commontest

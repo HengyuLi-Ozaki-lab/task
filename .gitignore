@@ -36,6 +36,7 @@ dp/dp
 dp/dpparm
 eq/eq
 eq/eqparm
+eq/eq_commontest
 exec
 fp/fp
 fp/fpparm
