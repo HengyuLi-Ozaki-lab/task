@@ -295,13 +295,13 @@ run_single_test() {
     cd "$test_dir"
     local log_file="$test_dir/output.log"
 
-    # For TR/TI modules, enable regression dump (env-guarded inside *regress.f90).
+    # For TR/FP/TI modules, enable regression dump (env-guarded inside the dumper).
     local mod_env=()
-    if [[ "$module" == "tr" ]]; then
-        mod_env=(env TR_REGRESS_DUMP=1)
-    elif [[ "$module" == "ti" ]]; then
-        mod_env=(env TI_REGRESS_DUMP=1)
-    fi
+    case "$module" in
+        tr) mod_env=(env TR_REGRESS_DUMP=1) ;;
+        fp) mod_env=(env FP_REGRESS_DUMP=1) ;;
+        ti) mod_env=(env TI_REGRESS_DUMP=1) ;;
+    esac
 
     if [[ $VERBOSE -eq 1 ]]; then
         echo ""
@@ -322,15 +322,8 @@ run_single_test() {
         # CLOSED message found - calculation completed successfully.
         # For TR module, also verify numerical metrics against baseline.
         local reg_ok=1
-        if [[ "$module" == "tr" ]]; then
+        if [[ "$module" == "tr" || "$module" == "fp" || "$module" == "ti" ]]; then
             if ! "$SCRIPT_DIR/scripts/check_regression.sh" \
-                    "$test_name" "$test_dir" "$SCRIPT_DIR/baselines" "1e-10" \
-                    > "$test_dir/regression.log" 2>&1; then
-                reg_ok=0
-            fi
-        elif [[ "$module" == "ti" ]]; then
-            if ! "$SCRIPT_DIR/scripts/check_regression.sh" \
-                    --module ti \
                     "$test_name" "$test_dir" "$SCRIPT_DIR/baselines" "1e-10" \
                     > "$test_dir/regression.log" 2>&1; then
                 reg_ok=0

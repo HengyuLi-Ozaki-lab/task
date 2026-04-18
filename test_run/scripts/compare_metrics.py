@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """Compare two metric JSONs within a relative tolerance.
 
-Supports both TR and TI schemas:
-    Common: NT, NRMAX, NSMAX, scalars (dict), profile (list of dicts)
-    TI extras: nsa_max, scalars_int (dict, exact match), profile entries
-               with list-typed fields (RNA/RTA/RUA) and float fields
-               (RBP/RQP/RJP/ZEFF/BETA/BETAP).
+Schema-agnostic enough to handle TR, TI, and FP regression dumps:
+- TR (extract_tr_metrics.py): NT, NRMAX, NSMAX,
+    scalars (dict), profile rows with NR, RN(list), RT(list), AJ, QP.
+- TI (extract_ti_metrics.py): NT, NRMAX, NSMAX, nsa_max,
+    scalars (dict), scalars_int (dict, exact match),
+    profile rows with NR, list-typed fields (RNA/RTA/RUA) and
+    float fields (RBP/RQP/RJP/ZEFF/BETA/BETAP).
+- FP (extract_fp_metrics.py): NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2,
+    scalars (dict, e.g. TIMEFP), profile rows with NR, NSA, RNT, RWT, ...
 
-The compare() routine inspects each profile dict's value type at runtime,
-so it works for either schema without a schema flag.
+Top-level integer dimension keys present in either baseline or actual
+must match exactly. The scalars dict is compared key-by-key. Profile is
+compared row-by-row; integer index keys (NR, NSA) must match exactly,
+all remaining numeric fields are compared within the relative tolerance.
+List-valued fields (e.g. TR's RN, RT) are compared element-wise.
 
 Exit code 0 on match, 1 on mismatch.
 """
@@ -37,13 +44,25 @@ def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> No
         out.append(f"{label}: baseline={bv!r} actual={av!r} rel_err={e:.3e} > tol={tol:.3e}")
 
 
+_INDEX_KEYS = ("NR", "NSA", "NS")
+_DIMENSION_KEYS = ("NT", "NRMAX", "NSMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2")
+
+
 def compare(baseline: dict, actual: dict, tol: float) -> list:
     errors = []
-    # Top-level dimensional invariants (only check keys present on either side).
-    for k in ("NT", "NRMAX", "NSMAX", "nsa_max"):
-        if k in baseline or k in actual:
-            if baseline.get(k) != actual.get(k):
-                errors.append(f"{k}: baseline={baseline.get(k)} actual={actual.get(k)}")
+    # Compare any top-level integer dimension key present in either side.
+    dim_keys = sorted(
+        (set(baseline) | set(actual)) & set(_DIMENSION_KEYS)
+    )
+    for k in dim_keys:
+        if baseline.get(k) != actual.get(k):
+            errors.append(f"{k}: baseline={baseline.get(k)} actual={actual.get(k)}")
+    # Also compare 'nsa_max' (TI uses lowercase variant).
+    if "nsa_max" in baseline or "nsa_max" in actual:
+        if baseline.get("nsa_max") != actual.get("nsa_max"):
+            errors.append(
+                f"nsa_max: baseline={baseline.get('nsa_max')} actual={actual.get('nsa_max')}"
+            )
     if errors:
         return errors  # dimensions differ; further comparison meaningless
 
@@ -70,19 +89,28 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
         errors.append(f"profile length: baseline={len(b_prof)} actual={len(a_prof)}")
         return errors
     for i, (br, ar) in enumerate(zip(b_prof, a_prof)):
-        if br.get("NR") != ar.get("NR"):
-            errors.append(f"profile[{i}].NR: baseline={br.get('NR')} actual={ar.get('NR')}")
+        # Index keys (NR, NSA, ...) must match exactly when present on either side.
+        index_mismatch = False
+        for ikey in _INDEX_KEYS:
+            if ikey in br or ikey in ar:
+                if br.get(ikey) != ar.get(ikey):
+                    errors.append(
+                        f"profile[{i}].{ikey}: baseline={br.get(ikey)} actual={ar.get(ikey)}"
+                    )
+                    index_mismatch = True
+        if index_mismatch:
+            # Rows are not the same data point; skip field-level comparison.
             continue
-        keys = sorted(set(br) | set(ar))
-        for field in keys:
-            if field == "NR":
-                continue
+        # Compare any remaining numeric/list-valued field present in baseline or actual.
+        all_keys = set(br) | set(ar)
+        for field in sorted(all_keys - set(_INDEX_KEYS)):
             bv = br.get(field)
             av = ar.get(field)
             if bv is None or av is None:
-                errors.append(f"profile[{i}].{field}: missing in one side")
+                errors.append(f"profile[{i}].{field}: missing")
                 continue
             if isinstance(bv, list) or isinstance(av, list):
+                # legacy TR shape with list-valued fields (RN, RT)
                 if not isinstance(bv, list) or not isinstance(av, list):
                     errors.append(f"profile[{i}].{field}: type mismatch")
                     continue
@@ -91,12 +119,14 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
                         f"profile[{i}].{field}: length differ ({len(bv)} vs {len(av)})"
                     )
                     continue
-                for j, (bx, ax) in enumerate(zip(bv, av)):
+                for j, (bvj, avj) in enumerate(zip(bv, av)):
                     _check_scalar(
-                        f"profile[{i}].{field}[{j}]", float(bx), float(ax), tol, errors
+                        f"profile[{i}].{field}[{j}]", float(bvj), float(avj), tol, errors
                     )
             else:
-                _check_scalar(f"profile[{i}].{field}", float(bv), float(av), tol, errors)
+                _check_scalar(
+                    f"profile[{i}].{field}", float(bv), float(av), tol, errors
+                )
     return errors
 
 
