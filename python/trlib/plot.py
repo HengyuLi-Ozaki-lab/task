@@ -53,7 +53,6 @@ from .state import TrState
 # Future revisions may move this to a schema file shared with the MCP
 # `describe_state_schema` tool.
 # =====================================================================
-_PROFILE_XAXIS = {"label": "rg (minor radius, normalised)", "unit": ""}
 
 
 VARIABLE_INFO: Dict[str, Dict[str, Any]] = {
@@ -375,14 +374,16 @@ def plot_sweep(
           for i in _builtins.range(n)]
     ys: List[float] = []
 
-    # Sweep MUST own its own Trlib lifecycle: tr globals are shared, and
-    # nesting `with Trlib()` inside an outer caller's instance would
-    # double-finalize and corrupt state. _run_sweep_spec passes its outer
-    # `tr` argument for documentation purposes only — we ignore it and
-    # spin up a fresh, isolated Trlib here. A future refactor could share
-    # one instance and just reset params per sample.
-    with Trlib() as tr:
-        for x in xs:
+    # Sweep MUST own its own Trlib lifecycle AND re-init per sample:
+    # - One outer Trlib + iteration would inherit cumulative state from the
+    #   previous sample (tr.run advances from the previous end state).
+    # - Even with ntmax=0, scalars derived at tr_init time (WPT, AJT, Q0)
+    #   would freeze at the first sample's value.
+    # So: open a fresh Trlib() for each sample. tr_finalize cleans up,
+    # then the next iteration's tr_init re-reads defaults + applies params.
+    # This means each sample is a completely independent run.
+    for x in xs:
+        with Trlib() as tr:
             if base_params:
                 for k, v in base_params.items():
                     tr.set_param(k, float(v))
