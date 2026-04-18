@@ -45,6 +45,13 @@ SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 # Legacy alias for the module group (kept for any ad-hoc references).
 SRCX = equcom.f90 equread.f90 eqlib.f90
 
+# Phase L-2: C ABI sources. Compiled via the eq_api_compile_check /
+# eq_api_check targets only; NOT part of $(SRCS) and NOT linked into
+# libeq.a or the eq / pl / ak binaries so their behavior is unchanged.
+# The full libeqapi.so build arrives in Phase L-4.
+SRCS_API = eq_state.f90 eq_param_registry.f90 eq_api.f90
+OBJ_API  = $(SRCS_API:.f90=.o) eq_api_common.o
+
 SRCT = trtest.f treqin.f
 SRCP = pltest.f
 SRCA = aktest.f akeqin.f
@@ -155,12 +162,12 @@ libeq_pic.a: $(OBJS_PIC)
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libeq_pic.a
 
-# Dependency sources that force a .o rebuild when equilibrium state
-# definitions change. Includes both the legacy raw .inc files (still
-# INCLUDEd directly by eqcalx.f and a few cross-module consumers) and
-# the F-1 MODULE objects (all shim headers now USE these), so edits
-# to either propagate correctly.
-EQCOMM = eqcom0.inc eqcom1.inc eqcom0_mod.o eqcom1_mod.o eqcom2_mod.o eqcom3_mod.o
+# EQCOMM = legacy raw .inc files (still INCLUDEd directly by eqcalx.f and
+# a few cross-module consumers). For the shim-routed paths, see EQCOM_MODS
+# below — that variable carries the F-1 MODULE objects. Every dependency
+# rule uses BOTH so edits to either propagate correctly without duplicating
+# the same targets in one variable.
+EQCOMM = eqcom0.inc eqcom1.inc
 
 # Phase F-1: dependencies for new F90 COMMON-replacement MODULEs.
 # - eqcom0_mod is the root (PARAMETER-only).
@@ -234,3 +241,46 @@ run_commontest: eq_commontest
 
 clean_commontest:
 	-rm -f tests/eq_commontest.o eq_commontest
+
+# ---------------------------------------------------------------------
+# Phase L-2 C ABI scaffold
+#
+# `make eq_api_compile_check` compiles the new API objects
+# (eq_state.o / eq_param_registry.o / eq_api.o / eq_api_common.o)
+# without linking. It does NOT touch libeq.a, the eq / pl / ak
+# binaries, or any existing objects, so the L-0/L-1 behavior is
+# bit-identical.
+#
+# `make eq_api_check` additionally builds a minimal C driver
+# (tests/c_abi/test_smoke.c) that links libeq.a + OBJ_API and
+# calls eq_init -> eq_get_state -> eq_finalize.
+# ---------------------------------------------------------------------
+CC ?= gcc
+CFLAGS_API ?= -Wall -Wextra -O2
+
+EQ_API_SMOKE_DIR = tests/c_abi
+EQ_API_SMOKE_C   = $(EQ_API_SMOKE_DIR)/test_smoke.c
+EQ_API_SMOKE_O   = $(EQ_API_SMOKE_DIR)/test_smoke.o
+EQ_API_SMOKE_BIN = $(EQ_API_SMOKE_DIR)/test_smoke
+
+eq_state.o          : eq_state.f90
+eq_param_registry.o : eq_param_registry.f90
+eq_api.o            : eq_api.f90 eq_state.f90 eq_param_registry.f90 equnit.f
+eq_api_common.o     : eq_api_common.f $(EQCOMM)
+
+.PHONY: eq_api_compile_check
+eq_api_compile_check: libs libeq.a $(OBJ_API)
+	@echo "Phase L-2 eq_api_compile_check OK: $(OBJ_API)"
+
+$(EQ_API_SMOKE_O): $(EQ_API_SMOKE_C) eq_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(EQ_API_SMOKE_O) $(EQ_API_SMOKE_C)
+
+$(EQ_API_SMOKE_BIN): $(EQ_API_SMOKE_O) $(OBJ_API) libeq.a
+	$(FLINKER) -o $(EQ_API_SMOKE_BIN) $(EQ_API_SMOKE_O) $(OBJ_API) \
+	    $(LIBS2) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
+
+.PHONY: eq_api_check
+eq_api_check: libs libeq.a $(EQ_API_SMOKE_BIN)
+	@echo "Phase L-2 eq_api_check: running $(EQ_API_SMOKE_BIN) ..."
+	@LD_LIBRARY_PATH=.:$${LD_LIBRARY_PATH} $(EQ_API_SMOKE_BIN)
+	@echo "Phase L-2 eq_api_check OK"

@@ -453,9 +453,14 @@ C     ***** CHECK INPUT PARAMETERS *****
 C
       SUBROUTINE EQCHEK(IERR)
 C
+C     Phase F-1: read eqcom2 / eqcom3 state via the new F90 MODULEs so
+C     we share memory with all other shim consumers. A raw INCLUDE of
+C     eqcom2.inc / eqcom3.inc here would declare COMMON blocks that
+C     are disjoint from the MODULE SAVE storage, silently desyncing
+C     EQCHEK from eqcalc / eqcalq / etc.
+      USE eqcom2_mod
+      USE eqcom3_mod
       INCLUDE 'eqcomm.inc'
-      INCLUDE 'eqcom2.inc'
-      INCLUDE 'eqcom3.inc'
 C
       IERR=0
 C
