@@ -284,11 +284,16 @@ LIB_PATH = REPO / "wr" / "libwrapi.so"
 BASELINES = REPO / "test_run" / "baselines"
 
 
-def _state_to_metrics(st) -> dict:
-    """Convert WrState into the same JSON shape extract_wr_metrics.py emits."""
+def _state_to_metrics(st, params: dict) -> dict:
+    """Convert WrState into the same JSON shape extract_wr_metrics.py emits.
+
+    NSTPMAX is taken from the namelist (params), not from runtime nstp_end —
+    the baseline JSON stores the configured upper bound, not the actually-used
+    step count, so comparing max(nstp_end) would diverge.
+    """
     return {
         "NRAYMAX": st.nraymax,
-        "NSTPMAX": int(max(st.nstp_end) if st.nstp_end else 0),
+        "NSTPMAX": int(params["NSTPMAX"]),
         "NRSMAX":  st.nrsmax,
         "NRLMAX":  st.nrlmax,
         "scalars": {

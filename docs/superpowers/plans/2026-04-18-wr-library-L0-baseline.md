@@ -800,7 +800,7 @@ def parse(path: Path) -> dict:
                 out["scalars"][key] = float(val)
         elif section == "rays":
             parts = line.split()
-            if len(parts) < 14:
+            if len(parts) < 15:   # 2 ints + 4 floats + 9 RAYS values (NEQ+1=9)
                 raise SystemExit(f"malformed ray row: {raw}")
             out["rays"].append({
                 "NRAY": int(parts[0]),
