@@ -30,7 +30,7 @@ SRCM=trcom0.f90 trcom1.f90 \
      trcomm.f90 trbpsd.f90
 SRCS=trcdbm.f90 trmodels.f90 \
      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
-     trcoef_resistivity.f90 \
+     trcoef_resistivity.f90 trcoef_adhoc.f90 \
      trinit.f90 trparm.f90 trview.f90 \
      trmetric.f90 trprof.f90 trprep.f90 \
      trufsub.f90 tr_ufile_task.f90 tr_ufile_topics.f90 trufile.f90 \
@@ -158,9 +158,10 @@ $(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90
 $(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90
 $(OBJDIR)/trcoef_resistivity.o  : trcoef_resistivity.f90 trcomm.f90
+$(OBJDIR)/trcoef_adhoc.o        : trcoef_adhoc.f90 trcomm.f90
 $(OBJDIR)/trcoef.o : trcoef.f90 trcomm.f90 trglf.inc \
                      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
-                     trcoef_resistivity.f90
+                     trcoef_resistivity.f90 trcoef_adhoc.f90
 $(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90 
 $(OBJDIR)/trprf.o  : trprf.f90  trcomm.f90 
 $(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90 
