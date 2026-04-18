@@ -28,7 +28,7 @@
 
       implicit none
       integer,          intent(in)    :: mode
-      character(len=*), intent(inout) :: kin
+      character(len=*), intent(in)    :: kin
       integer,          intent(out)   :: ierr
       call eqparm(mode,kin,ierr)
       return
