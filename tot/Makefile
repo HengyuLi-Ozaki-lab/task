@@ -32,7 +32,7 @@ MODINCLUDE= -I$(MOD) -I../open-adas/adf11/adf11-lib/$(MOD) \
 
 EQLIBS= ../pl/noequlib.o ../eq/libeq.a 
 
-SRCS = totmenu.f90
+SRCS = totmenu.f90 totregress.f90
 
 OBJS = $(SRCS:.f90=.o)
 
@@ -103,9 +103,10 @@ libs:
 	(cd ../fp; make libfp.a)
 	(cd ../ti; make libti.a)
 	make totmenu.o
+	make totregress.o
 
-tot : $(LIB_MTX) $(LIBS) totmenu.o totmain.o
-	$(FLINKER) totmenu.o totmain.o -o $@ $(FFLAGS) $(LIBS) $(FLIBS) $(LIBX_MTX)
+tot : $(LIB_MTX) $(LIBS) totmenu.o totregress.o totmain.o
+	$(FLINKER) totmenu.o totregress.o totmain.o -o $@ $(FFLAGS) $(LIBS) $(FLIBS) $(LIBX_MTX)
 
 clean:
 	-rm -f core a.out *.o *.mod ./*~ *.a $(MOD)/*.mod
@@ -113,6 +114,7 @@ clean:
 veryclean: clean
 	-rm -f tot
 
-totmain.o: totmain.f90
+totmain.o: totmain.f90 totregress.o
 totmenu.o: totmenu.f90
+totregress.o: totregress.f90
 

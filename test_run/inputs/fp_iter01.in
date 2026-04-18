@@ -1,0 +1,35 @@
+0
+f
+gsdata.ITER
+c
+p
+ &fp
+   KNAMFP=' '
+   NSMAX=3
+   PA(2)=2.0,PA(3)=3.0
+   PN=0.8,0.4,0.4
+   PNS=0.01,0.005,0.005
+   PTPR=20.0,20.0,20.0
+   PTPP=20.0,20.0,20.0
+   PROFN2=0.5
+   NRMAX=40
+   RMIN=0.4D0
+   RMAX=0.8D0
+   NTMAX=2
+   PMAX=10.D0
+   NPMAX=50
+   NTHMAX=50
+   MODELC=4
+   MODELR=1
+   DELT=1.d-3
+   NTSTEP_COLL=1
+   NSAMAX=1
+   NSBMAX=3
+   NS_NSA(1)=1
+   NS_NSB(1)=1
+   NS_NSB(2)=2
+   NS_NSB(3)=3
+   PABS_WR=1.D0
+ &end
+r
+q

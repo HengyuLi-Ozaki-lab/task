@@ -160,6 +160,27 @@ CONTAINS
     ALLOCATE(pos_pwrmax_rl_nsa_nray(nsamax_wr,nraymax))
     ALLOCATE(pwrmax_rl_nsa_nray(nsamax_wr,nraymax))
 
+    ! Initialize regression-dump-relevant arrays to 0.0 so that any element
+    ! not subsequently written by the solver does not leak uninitialized
+    ! heap memory into the wrx_regress.dat dump (Phase L-0 determinism).
+    ! Without this, e.g. pwr_nray (currently never assigned), and
+    ! pwrmax_{rs,rl}_nsa_nray (only assigned in the interior locmax branch
+    ! of wr_calc_pwr) carry garbage subnormals that break bit-exact baselines.
+    NSTPMAX_NRAY = 0
+    pos_nrs = 0.D0
+    pos_nrl = 0.D0
+    pwr_nray = 0.D0
+    pwr_nsa = 0.D0
+    pwr_nsa_nray = 0.D0
+    pwr_nrs_nsa = 0.D0
+    pwr_nrl_nsa = 0.D0
+    pwr_nrs_nsa_nray = 0.D0
+    pwr_nrl_nsa_nray = 0.D0
+    pos_pwrmax_rs_nsa_nray = 0.D0
+    pwrmax_rs_nsa_nray = 0.D0
+    pos_pwrmax_rl_nsa_nray = 0.D0
+    pwrmax_rl_nsa_nray = 0.D0
+
   END SUBROUTINE wr_allocate
 
   SUBROUTINE wr_deallocate

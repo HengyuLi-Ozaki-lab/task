@@ -1,8 +1,28 @@
 #!/usr/bin/env python3
-"""Compare two TR metric JSONs within a relative tolerance.
+"""Compare two metric JSONs within a relative tolerance.
 
-Expects the schema produced by extract_tr_metrics.py:
-    NT, NRMAX, NSMAX, scalars (dict), profile (list of dicts).
+Schema-agnostic enough to handle TR, TI, and FP regression dumps:
+- TR (extract_tr_metrics.py): NT, NRMAX, NSMAX,
+    scalars (dict), profile rows with NR, RN(list), RT(list), AJ, QP.
+- TI (extract_ti_metrics.py): NT, NRMAX, NSMAX, nsa_max,
+    scalars (dict), scalars_int (dict, exact match),
+    profile rows with NR, list-typed fields (RNA/RTA/RUA) and
+    float fields (RBP/RQP/RJP/ZEFF/BETA/BETAP).
+- FP (extract_fp_metrics.py): NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2,
+    scalars (dict, e.g. TIMEFP), profile rows with NR, NSA, RNT, RWT, ...
+
+Top-level integer dimension keys present in either baseline or actual
+must match exactly. The scalars dict is compared key-by-key. Profile is
+compared row-by-row; integer index keys (NR, NSA) must match exactly,
+all remaining numeric fields are compared within the relative tolerance.
+List-valued fields (e.g. TR's RN, RT) are compared element-wise.
+
+Also supports the extract_tot_metrics.py schema, which adds a top-level
+``modules`` dict whose keys (TR_PRESENT, TI_PRESENT, FP_PRESENT,
+WR_PRESENT) flag which TASK modules contributed to the dump. A drift in
+those flags (e.g. tot stops calling wr_init) is treated as a structural
+regression and fails the check, matching the docstring contract in
+extract_tot_metrics.py.
 
 Exit code 0 on match, 1 on mismatch.
 """
@@ -11,6 +31,12 @@ import json
 import math
 import sys
 from pathlib import Path
+
+
+# Module presence flags emitted by extract_tot_metrics.py. Comparing these
+# guards against silent structural drift (e.g. tot stops dumping a module
+# it used to, or starts dumping one it did not before).
+MODULE_KEYS = ("TR_PRESENT", "TI_PRESENT", "FP_PRESENT", "WR_PRESENT")
 
 
 def _rel_err(a: float, b: float) -> float:
@@ -31,14 +57,51 @@ def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> No
         out.append(f"{label}: baseline={bv!r} actual={av!r} rel_err={e:.3e} > tol={tol:.3e}")
 
 
+_INDEX_KEYS = ("NR", "NSA", "NS", "NRS", "NRL", "NRAY")
+_DIMENSION_KEYS = ("NT", "NRMAX", "NSMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2",
+                   "NRAYMAX", "NSTPMAX", "NRSMAX", "NRLMAX",
+                   "MODELG", "MDLWRI", "MDLWRQ", "mode_beam")
+# Additional list-of-dict sections beyond the default "profile" (used by WR/WRX).
+_PROFILE_SECTIONS = ("profile", "profile_rs", "profile_rl", "rays")
+
+
 def compare(baseline: dict, actual: dict, tol: float) -> list:
     errors = []
-    for k in ("NT", "NRMAX", "NSMAX"):
+    # Compare any top-level integer dimension key present in either side.
+    dim_keys = sorted(
+        (set(baseline) | set(actual)) & set(_DIMENSION_KEYS)
+    )
+    for k in dim_keys:
         if baseline.get(k) != actual.get(k):
             errors.append(f"{k}: baseline={baseline.get(k)} actual={actual.get(k)}")
+    # Also compare 'nsa_max' (TI uses lowercase variant).
+    if "nsa_max" in baseline or "nsa_max" in actual:
+        if baseline.get("nsa_max") != actual.get("nsa_max"):
+            errors.append(
+                f"nsa_max: baseline={baseline.get('nsa_max')} actual={actual.get('nsa_max')}"
+            )
     if errors:
-        return errors  # dimensions differ; further comparison is meaningless
+        return errors  # dimensions differ; further comparison meaningless
 
+    # Module presence flags (tot schema). Absent on the tr-only schema, in
+    # which case both sides report {} and this loop is a no-op.
+    b_mods = baseline.get("modules", {})
+    a_mods = actual.get("modules", {})
+    if b_mods or a_mods:
+        for k in MODULE_KEYS:
+            bv = b_mods.get(k)
+            av = a_mods.get(k)
+            if bv != av:
+                errors.append(
+                    f"modules.{k}: baseline={bv} actual={av} "
+                    "(structural drift — module presence changed)"
+                )
+        # Surface any unexpected module key on either side so additions to
+        # MODULE_KEYS aren't silently ignored.
+        for k in sorted((set(b_mods) | set(a_mods)) - set(MODULE_KEYS)):
+            errors.append(f"modules.{k}: unknown module key (baseline={b_mods.get(k)} actual={a_mods.get(k)})")
+
+    # Float scalars (relative-tolerance comparison).
     b_scalars = baseline.get("scalars", {})
     a_scalars = actual.get("scalars", {})
     for k in sorted(set(b_scalars) | set(a_scalars)):
@@ -47,25 +110,60 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
             continue
         _check_scalar(f"scalars.{k}", float(b_scalars[k]), float(a_scalars[k]), tol, errors)
 
-    b_prof = baseline.get("profile", [])
-    a_prof = actual.get("profile", [])
-    if len(b_prof) != len(a_prof):
-        errors.append(f"profile length: baseline={len(b_prof)} actual={len(a_prof)}")
-        return errors
-    for i, (br, ar) in enumerate(zip(b_prof, a_prof)):
-        if br.get("NR") != ar.get("NR"):
-            errors.append(f"profile[{i}].NR: baseline={br.get('NR')} actual={ar.get('NR')}")
+    # Integer scalars (exact match required).
+    b_int = baseline.get("scalars_int", {})
+    a_int = actual.get("scalars_int", {})
+    for k in sorted(set(b_int) | set(a_int)):
+        if b_int.get(k) != a_int.get(k):
+            errors.append(f"scalars_int.{k}: baseline={b_int.get(k)} actual={a_int.get(k)}")
+
+    # Profiles: iterate all known list-of-dict sections; dispatch list-vs-float at runtime.
+    for section in _PROFILE_SECTIONS:
+        b_prof = baseline.get(section)
+        a_prof = actual.get(section)
+        if b_prof is None and a_prof is None:
             continue
-        for field in ("AJ", "QP"):
-            _check_scalar(f"profile[{i}].{field}", float(br[field]), float(ar[field]), tol, errors)
-        for field in ("RN", "RT"):
-            bv_list = br.get(field, [])
-            av_list = ar.get(field, [])
-            if len(bv_list) != len(av_list):
-                errors.append(f"profile[{i}].{field}: length differ ({len(bv_list)} vs {len(av_list)})")
+        if b_prof is None or a_prof is None:
+            errors.append(f"{section}: missing on one side")
+            continue
+        if len(b_prof) != len(a_prof):
+            errors.append(f"{section} length: baseline={len(b_prof)} actual={len(a_prof)}")
+            continue
+        for i, (br, ar) in enumerate(zip(b_prof, a_prof)):
+            index_mismatch = False
+            for ikey in _INDEX_KEYS:
+                if ikey in br or ikey in ar:
+                    if br.get(ikey) != ar.get(ikey):
+                        errors.append(
+                            f"{section}[{i}].{ikey}: baseline={br.get(ikey)} actual={ar.get(ikey)}"
+                        )
+                        index_mismatch = True
+            if index_mismatch:
                 continue
-            for j, (bv, av) in enumerate(zip(bv_list, av_list)):
-                _check_scalar(f"profile[{i}].{field}[{j}]", float(bv), float(av), tol, errors)
+            all_keys = set(br) | set(ar)
+            for field in sorted(all_keys - set(_INDEX_KEYS)):
+                bv = br.get(field)
+                av = ar.get(field)
+                if bv is None or av is None:
+                    errors.append(f"{section}[{i}].{field}: missing")
+                    continue
+                if isinstance(bv, list) or isinstance(av, list):
+                    if not isinstance(bv, list) or not isinstance(av, list):
+                        errors.append(f"{section}[{i}].{field}: type mismatch")
+                        continue
+                    if len(bv) != len(av):
+                        errors.append(
+                            f"{section}[{i}].{field}: length differ ({len(bv)} vs {len(av)})"
+                        )
+                        continue
+                    for j, (bvj, avj) in enumerate(zip(bv, av)):
+                        _check_scalar(
+                            f"{section}[{i}].{field}[{j}]", float(bvj), float(avj), tol, errors
+                        )
+                else:
+                    _check_scalar(
+                        f"{section}[{i}].{field}", float(bv), float(av), tol, errors
+                    )
     return errors
 
 

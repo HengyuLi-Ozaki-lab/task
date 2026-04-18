@@ -1,0 +1,8 @@
+C STUB i4fctn
+      INTEGER FUNCTION I4FCTN(STR, IERR)
+      CHARACTER*(*) STR
+      INTEGER IERR
+      I4FCTN = 0
+      IERR = 0
+      RETURN
+      END

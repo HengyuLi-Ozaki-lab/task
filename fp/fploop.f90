@@ -17,6 +17,7 @@
       use fpoutdata
       use fplib
       use fpcalj
+      use fpregress, only : fp_regress_dump_if_enabled
 
       contains
 
@@ -291,6 +292,7 @@
 !              (4.D0*PI*EPS0**2*AMFP(1)**2*VC**3)
 !      END IF
 
+      CALL fp_regress_dump_if_enabled   ! Phase L-0 regression dump (env-guarded, MPI rank 0)
       RETURN
       END SUBROUTINE FP_LOOP
 !------------------------------------

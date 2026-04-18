@@ -32,6 +32,7 @@ PROGRAM tot
   USE commpi
   USE libmtx
   USE totmenu,ONLY: tot_menu
+  USE totregress, ONLY : tot_regress_dump_if_enabled
 
   CALL open_trcomm
   CALL open_ticomm_parm
@@ -70,6 +71,8 @@ PROGRAM tot
   CALL ti_broadcast
 
   CALL tot_menu
+
+  CALL tot_regress_dump_if_enabled   ! Phase L-0 regression dump (env-guarded)
 
   IF(nrank.EQ.0) THEN
      CALL GSCLOS

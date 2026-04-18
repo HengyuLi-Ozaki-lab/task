@@ -1,0 +1,6 @@
+C STUB i4unit
+      INTEGER FUNCTION I4UNIT(N)
+      INTEGER N
+      I4UNIT = 6
+      RETURN
+      END

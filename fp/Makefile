@@ -38,6 +38,7 @@ SRCS =  fpcomm.f90 fpinit.f90 fpparm.f90 \
 	fpcalr.f90 fpreadsv.f90 fpoutdata.f90 fpcoef.f90 fpcale.f90 \
 	fpbounce.f90 fpcalj.f90 fpdisrupt.f90 fpprep.f90 fploop.f90 \
 	fpcont.f90 fpfout.f90 fpgsub.f90 fpgout.f90 fpfile.f90 \
+	fpregress.f90 \
 	fpmenu.f90
 
 OBJS=$(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))
@@ -97,7 +98,9 @@ $(OBJDIR)/fpprep.o : fpoutdata.f90 fpcale.f90 fpbounce.f90 fpnfrr.f90 \
                      fpreadeg.f90 fpprep.f90 fpcomm.f90
 $(OBJDIR)/fploop.o : fpoutdata.f90 fpnfrr.f90 fpsave.f90 fpexec.f90 \
                      fpprep.f90 fpcoef.f90 fpdisrupt.f90 fpreadeg.f90 \
-                     fploop.f90 fpcomm.f90 fpoutdata.f90 fplib.f90
+                     fploop.f90 fpcomm.f90 fpoutdata.f90 fplib.f90 \
+                     fpregress.f90 $(OBJDIR)/fpregress.o
+$(OBJDIR)/fpregress.o : fpregress.f90 fpcomm.f90
 $(OBJDIR)/fpexec.o : fpexec.f90 fpcomm.f90
 $(OBJDIR)/fpdrexec.o : fpdrexec.f90 fpcomm.f90
 $(OBJDIR)/fpbroadcast.o : fpbroadcast.f90 fpcomm.f90
