@@ -43,7 +43,9 @@ PROGRAM tot
 
   IF(nrank.EQ.0) THEN
      WRITE(6,*) '##### /TASK/TOT  2019/02/25 #####'
+#ifndef TOT_NO_GRAPHICS
      CALL GSOPEN
+#endif
      OPEN(7,STATUS='SCRATCH',FORM='FORMATTED')
   ENDIF
 
@@ -75,7 +77,9 @@ PROGRAM tot
   CALL tot_regress_dump_if_enabled   ! Phase L-0 regression dump (env-guarded)
 
   IF(nrank.EQ.0) THEN
+#ifndef TOT_NO_GRAPHICS
      CALL GSCLOS
+#endif
      CLOSE(7)
   END IF
 
