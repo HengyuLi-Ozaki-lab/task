@@ -203,7 +203,7 @@ CONTAINS
   SUBROUTINE wr_regress_dump_if_enabled(nstat)
     USE wrcomm, ONLY: rkind, &
          RF, RPI, ZPI, PHII, RNZI, RNPHII, RKR0, UUI, &
-         NRAYMAX, NSTPMAX, NRSMAX, NRLMAX, &
+         NRAYMAX, NSTPMAX, NRSMAX, NRLMAX, NEQ, &
          MDLWRI, MDLWRQ, mode_beam, &
          NSTPMAX_NRAY, RAYS, &
          pos_nrs, pwr_nrs, pos_nrl, pwr_nrl, &

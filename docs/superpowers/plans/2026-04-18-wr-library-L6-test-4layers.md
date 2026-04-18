@@ -345,7 +345,7 @@ class TestEquivalence(unittest.TestCase):
         with Wrlib(lib_path=LIB_PATH) as wr:
             wr.set_params(**params)
             wr.run(0)
-            actual = _state_to_metrics(wr.get_state())
+            actual = _state_to_metrics(wr.get_state(), params)
 
         # We strip input-only scalars (RF/RPI/...) from baseline before compare,
         # since wr_get_state does not currently expose them. They are validated
