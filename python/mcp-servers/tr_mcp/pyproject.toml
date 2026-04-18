@@ -40,9 +40,14 @@ dev = [
 [project.scripts]
 tr-mcp = "tr_mcp.server:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["tr_mcp*"]
+# pyproject.toml sits inside the tr_mcp/ package dir itself (flat layout),
+# so find_packages can't discover a "tr_mcp" subdirectory. Map the package
+# name explicitly to "." instead.
+[tool.setuptools]
+packages = ["tr_mcp"]
+
+[tool.setuptools.package-dir]
+tr_mcp = "."
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

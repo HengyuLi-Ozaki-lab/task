@@ -84,7 +84,9 @@ from trlib import (  # noqa: E402
 # valuable than the last ounce of DRYness. When the Fortran registry
 # changes we'll mirror it here.
 # =====================================================================
-SupportedValue = Union[float, int, List[float], Dict[int, float]]
+# Includes `str` for string-valued parameters like KNAMEQ / MODELG
+# (set via trlib.Trlib.set_param_str).
+SupportedValue = Union[float, int, str, List[float], Dict[int, float]]
 
 
 PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
