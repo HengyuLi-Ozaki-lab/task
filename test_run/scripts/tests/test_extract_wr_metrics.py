@@ -60,5 +60,31 @@ class TestExtract(unittest.TestCase):
         self.assertAlmostEqual(p[1]["pwr_nrl"], 0.020)
 
 
+class TestOutOfRangeRow(unittest.TestCase):
+    """When wrregress.f90 emits "NRAY NSTP_END   ! NSTP_END out of range"
+    for a ray whose NSTPMAX_NRAY is OOB, the parser must strip the
+    Fortran '!' comment and record a partial row (no terminal-sample
+    fields) instead of crashing on int()."""
+
+    FIXTURE_OOB = HERE / "fixtures" / "sample_wr_regress_oob.dat"
+
+    def test_oob_ray_parses(self):
+        out = subprocess.run(
+            [sys.executable, str(SCRIPT), str(self.FIXTURE_OOB)],
+            capture_output=True, text=True, check=True,
+        )
+        data = json.loads(out.stdout)
+        rays = data["rays"]
+        self.assertEqual(len(rays), 2)
+        # Normal row preserved.
+        self.assertEqual(rays[0]["NSTP_END"], 8)
+        self.assertEqual(len(rays[0]["RAYS_END"]), 9)
+        # OOB row: only the two ints, no RAYS_END / pos_pwrmax_rs_nray.
+        self.assertEqual(rays[1]["NRAY"], 2)
+        self.assertEqual(rays[1]["NSTP_END"], -1)
+        self.assertNotIn("RAYS_END", rays[1])
+        self.assertNotIn("pos_pwrmax_rs_nray", rays[1])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -6,8 +6,9 @@ Supports multiple schemas via runtime dispatch on dict shape:
   * TR (extract_tr_metrics.py):
         NT, NRMAX, NSMAX (ints), scalars (dict), profile (list[dict])
   * WR (extract_wr_metrics.py):
-        NRAYMAX, NSTPMAX, NRSMAX, NRLMAX (ints), scalars (dict),
-        rays (list[dict]), profile_rs (list[dict]), profile_rl (list[dict])
+        NRAYMAX, NSTPMAX, NRSMAX, NRLMAX, MODELG, MDLWRI, MDLWRQ, mode_beam
+        (ints), scalars (dict), rays (list[dict]), profile_rs (list[dict]),
+        profile_rl (list[dict])
 
 Numeric fields inside profile/rays rows may be either scalars (float) or
 lists of scalars (list[float]); the comparator handles both transparently
@@ -34,7 +35,10 @@ SCHEMAS = {
         ),
     },
     "wr": {
-        "integer_dimensions": ("NRAYMAX", "NSTPMAX", "NRSMAX", "NRLMAX"),
+        "integer_dimensions": (
+            "NRAYMAX", "NSTPMAX", "NRSMAX", "NRLMAX",
+            "MODELG", "MDLWRI", "MDLWRQ", "mode_beam",
+        ),
         "list_sections": (
             ("rays", "NRAY", ("NSTP_END", "pos_pwrmax_rs_nray", "RAYS_END")),
             ("profile_rs", "NRS", ("pos_nrs", "pwr_nrs")),
@@ -137,7 +141,13 @@ def compare(baseline: dict, actual: dict, tol: float, schema: str | None = None)
                 )
                 continue
             for f in fields:
-                if f not in br or f not in ar:
+                in_b, in_a = (f in br), (f in ar)
+                if not in_b and not in_a:
+                    # Symmetrically absent (e.g., WR rays whose NSTP_END
+                    # is out of range omit the terminal-sample fields on
+                    # both sides — that's deterministic, not a regression).
+                    continue
+                if not in_b or not in_a:
                     errors.append(f"{section}[{i}].{f}: missing")
                     continue
                 _check_value(f"{section}[{i}].{f}", br[f], ar[f], tol, errors)

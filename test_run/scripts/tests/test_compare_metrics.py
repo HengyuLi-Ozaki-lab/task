@@ -128,5 +128,71 @@ class CompareMetricsTest(unittest.TestCase):
             self.assertEqual(res.returncode, 0, res.stderr)
 
 
+def _wr_sample() -> dict:
+    return {
+        "NRAYMAX": 2, "NSTPMAX": 10, "NRSMAX": 1, "NRLMAX": 1,
+        "MODELG": 2, "MDLWRI": 101, "MDLWRQ": 0, "mode_beam": 0,
+        "scalars": {"RF": 1.6e5, "pwrmax_rs": 0.123},
+        "rays": [
+            {"NRAY": 1, "NSTP_END": 8,
+             "pos_pwrmax_rs_nray": 0.25,
+             "RAYS_END": [4.0, 6.0, 0.0, 0.0, -1e3, 0.0, 0.0, 0.9, 0.0]},
+            # OOB row: only the two ints (mirrors extractor output for
+            # rays whose NSTPMAX_NRAY was out of range).
+            {"NRAY": 2, "NSTP_END": -1},
+        ],
+        "profile_rs": [{"NRS": 1, "pos_nrs": 0.25, "pwr_nrs": 0.06}],
+        "profile_rl": [{"NRL": 1, "pos_nrl": 6.5,  "pwr_nrl": 0.04}],
+    }
+
+
+class CompareMetricsWRTest(unittest.TestCase):
+    def _paths(self, td):
+        return Path(td) / "base.json", Path(td) / "act.json"
+
+    def test_wr_passes_on_identical(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _wr_sample())
+            write_json(act,  _wr_sample())
+            res = run_compare(act, base)
+            self.assertEqual(res.returncode, 0, res.stderr)
+
+    def test_wr_fails_on_modelg_drift(self):
+        # MODELG is in the WR integer_dimensions tuple; drift must fail.
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _wr_sample())
+            drifted = _wr_sample()
+            drifted["MODELG"] = 9
+            write_json(act, drifted)
+            res = run_compare(act, base)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("MODELG", res.stdout)
+
+    def test_wr_fails_on_mdlwri_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _wr_sample())
+            drifted = _wr_sample()
+            drifted["MDLWRI"] = 999
+            write_json(act, drifted)
+            res = run_compare(act, base)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("MDLWRI", res.stdout)
+
+    def test_wr_oob_row_symmetric_missing_passes(self):
+        # When both baseline and actual omit RAYS_END / pos_pwrmax_rs_nray
+        # for an OOB row (deterministic), comparator must NOT report
+        # "missing" — that's the symmetric-absence relaxation.
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _wr_sample())
+            write_json(act,  _wr_sample())
+            res = run_compare(act, base)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertNotIn("missing", res.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -39,6 +39,12 @@ def parse(path: Path) -> dict:
     out = {"scalars": {}, "rays": [], "profile_rs": [], "profile_rl": []}
     section = "header"
     for raw in lines:
+        # Section-header lines (start with "#") are matched against the
+        # original raw text BEFORE Fortran-comment stripping, since they
+        # legitimately begin with "#". Data lines, however, may carry a
+        # trailing Fortran "!" comment (e.g., wrregress.f90 emits
+        # "1  -1   ! NSTP_END out of range" when NSTPMAX_NRAY is OOB);
+        # strip those before tokenizing so int()/float() don't choke.
         line = raw.strip()
         if not line:
             continue
@@ -53,6 +59,10 @@ def parse(path: Path) -> dict:
             continue
         if line.startswith("#"):
             continue
+        # Strip trailing Fortran "!" comment from data rows.
+        line = line.split("!", 1)[0].strip()
+        if not line:
+            continue
         if section == "header":
             if "=" not in line:
                 continue
@@ -63,8 +73,23 @@ def parse(path: Path) -> dict:
                 out["scalars"][key] = float(val)
         elif section == "rays":
             parts = line.split()
-            # 2 ints (NRAY, NSTP_END) + 1 float (pos_pwrmax_rs_nray) +
-            # 9 RAYS values (RAYS(0:NEQ,end), NEQ=8 => 9 elements) = 12 cols
+            # Defensive: rows for rays whose NSTP_END is out of range carry
+            # only "NRAY NSTP_END" (the Fortran writer omits the 9 RAYS_END
+            # cols and emits a "! NSTP_END out of range" comment, already
+            # stripped above). Record the partial row with an empty
+            # RAYS_END so length checks still hold downstream.
+            if len(parts) == 2:
+                # Out-of-range row: record only the two ints and let the
+                # comparator's "missing on both sides" branch handle the
+                # absent terminal-sample fields symmetrically.
+                out["rays"].append({
+                    "NRAY": int(parts[0]),
+                    "NSTP_END": int(parts[1]),
+                })
+                continue
+            # Normal row: 2 ints (NRAY, NSTP_END) + 1 float
+            # (pos_pwrmax_rs_nray) + 9 RAYS values
+            # (RAYS(0:NEQ,end), NEQ=8 => 9 elements) = 12 cols.
             if len(parts) < 12:
                 raise SystemExit(f"malformed ray row: {raw}")
             out["rays"].append({
