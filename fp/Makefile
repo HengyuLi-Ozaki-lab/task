@@ -50,7 +50,13 @@ SRCS_MENU = fpmenu.f90
 # --- final SRCS for the existing `fp` binary (unchanged behaviour) ---
 SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
+# --- C ABI sources (Phase L-2+). Compiled via the fp_api_check target only;
+#     NOT part of $(SRCS) and NOT linked into libfp.a / fp. The full
+#     libfpapi.so build arrives in Phase L-4.
+SRCS_API = fp_state.f90 fp_api.f90
+
 OBJS=$(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))
+OBJ_API=$(addprefix $(OBJDIR)/, $(SRCS_API:.f90=.o))
 
 LIBS = libfp.a ../ob/libob.a ../pl/libpl.a ../eq/libeq.a ../dp/libdp.a \
        ../lib/libgrf.a ../lib/libtask.a ../../bpsd/libbpsd.a
@@ -89,11 +95,59 @@ libs:
 fp : $(LIB_MTX) $(LIBS) $(OBJDIR)/fpmain.o
 	$(FLINKER) $(OBJDIR)/fpmain.o $(LIBS) -o $@ $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
+# ---------------------------------------------------------------------
+# Phase L-2: C ABI check
+#
+# `make fp_api_check` builds the new API objects (fp_state.o, fp_api.o)
+# AND a small C smoke test against fp_api.h.  This is a header / link
+# sanity check only -- the API objects are NOT linked into fp and the
+# fp binary remains byte-for-byte identical with or without this
+# target being invoked.  The smoke driver expects every entry point to
+# return FP_ERR_NOT_IMPL (=4) at L-2.
+#
+# CC defaults to gcc; override on the command line if necessary
+# (e.g. `make fp_api_check CC=clang`).
+# ---------------------------------------------------------------------
+CC ?= gcc
+CFLAGS_API ?= -Wall -Wextra -O2
+
+FP_API_SMOKE_DIR=tests/c_abi
+FP_API_SMOKE_C=$(FP_API_SMOKE_DIR)/test_smoke.c
+FP_API_SMOKE_O=$(FP_API_SMOKE_DIR)/test_smoke.o
+FP_API_SMOKE_BIN=$(FP_API_SMOKE_DIR)/test_smoke
+
+# Step 1: header-only C compile (matches the documented user-level check
+#         `gcc -Wall -Wextra -c -o test_smoke.o test_smoke.c`).
+$(FP_API_SMOKE_O): $(FP_API_SMOKE_C) fp_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(FP_API_SMOKE_O) $(FP_API_SMOKE_C)
+
+# Step 2: link the C smoke against the API objects only. This proves the
+# BIND(C) names emitted by fp_api.f90 (fp_init, fp_run, fp_set_param,
+# fp_get_state, fp_finalize) match the prototypes in fp_api.h. We use
+# gfortran as the driver so the libgfortran runtime is pulled in
+# automatically; no other fp/ libraries are required at L-2.
+$(FP_API_SMOKE_BIN): $(FP_API_SMOKE_O) $(OBJ_API)
+	$(FLINKER) -o $(FP_API_SMOKE_BIN) $(FP_API_SMOKE_O) $(OBJ_API)
+
+.PHONY: fp_api_check
+fp_api_check: $(OBJ_API) $(FP_API_SMOKE_BIN)
+	@echo "Phase L-2 fp_api_check: running smoke ..."
+	@$(FP_API_SMOKE_BIN)
+	@echo "Phase L-2 fp_api_check OK:"
+	@echo "  - Fortran API objects compiled: $(OBJ_API)"
+	@echo "  - C smoke object compiled    : $(FP_API_SMOKE_O)"
+	@echo "  - C smoke linked + executed  : $(FP_API_SMOKE_BIN)"
+
 clean :
 	-rm -f core a.out $(OBJDIR)/*.o *.a ./#* ./*~ ./mod/*.mod
+	-rm -f $(FP_API_SMOKE_O) $(FP_API_SMOKE_BIN)
 
 veryclean: clean
 	-rm -f fp
+
+# Phase L-2 C ABI sources (independent of FPCOMM at this stage).
+$(OBJDIR)/fp_state.o : fp_state.f90
+$(OBJDIR)/fp_api.o   : fp_api.f90 fp_state.f90 $(OBJDIR)/fp_state.o
 
 $(OBJDIR)/fpcomm.o : fpcomm.f90 ../pl/plcomm.f90 ../dp/dpcomm.f90
 $(OBJDIR)/fpmain.o : fpinit.f90 fpparm.f90 fpmain.f90 fpcomm.f90
