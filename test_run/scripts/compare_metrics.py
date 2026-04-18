@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Compare two TR metric JSONs within a relative tolerance.
+"""Compare two metric JSONs within a relative tolerance.
 
-Expects the schema produced by extract_tr_metrics.py:
-    NT, NRMAX, NSMAX, scalars (dict), profile (list of dicts).
+Supports both TR and TI schemas:
+    Common: NT, NRMAX, NSMAX, scalars (dict), profile (list of dicts)
+    TI extras: nsa_max, scalars_int (dict, exact match), profile entries
+               with list-typed fields (RNA/RTA/RUA) and float fields
+               (RBP/RQP/RJP/ZEFF/BETA/BETAP).
+
+The compare() routine inspects each profile dict's value type at runtime,
+so it works for either schema without a schema flag.
 
 Exit code 0 on match, 1 on mismatch.
 """
@@ -33,12 +39,15 @@ def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> No
 
 def compare(baseline: dict, actual: dict, tol: float) -> list:
     errors = []
-    for k in ("NT", "NRMAX", "NSMAX"):
-        if baseline.get(k) != actual.get(k):
-            errors.append(f"{k}: baseline={baseline.get(k)} actual={actual.get(k)}")
+    # Top-level dimensional invariants (only check keys present on either side).
+    for k in ("NT", "NRMAX", "NSMAX", "nsa_max"):
+        if k in baseline or k in actual:
+            if baseline.get(k) != actual.get(k):
+                errors.append(f"{k}: baseline={baseline.get(k)} actual={actual.get(k)}")
     if errors:
-        return errors  # dimensions differ; further comparison is meaningless
+        return errors  # dimensions differ; further comparison meaningless
 
+    # Float scalars (relative-tolerance comparison).
     b_scalars = baseline.get("scalars", {})
     a_scalars = actual.get("scalars", {})
     for k in sorted(set(b_scalars) | set(a_scalars)):
@@ -47,6 +56,14 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
             continue
         _check_scalar(f"scalars.{k}", float(b_scalars[k]), float(a_scalars[k]), tol, errors)
 
+    # Integer scalars (exact match required).
+    b_int = baseline.get("scalars_int", {})
+    a_int = actual.get("scalars_int", {})
+    for k in sorted(set(b_int) | set(a_int)):
+        if b_int.get(k) != a_int.get(k):
+            errors.append(f"scalars_int.{k}: baseline={b_int.get(k)} actual={a_int.get(k)}")
+
+    # Profiles: dispatch list-vs-float per dict key at runtime.
     b_prof = baseline.get("profile", [])
     a_prof = actual.get("profile", [])
     if len(b_prof) != len(a_prof):
@@ -56,16 +73,30 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
         if br.get("NR") != ar.get("NR"):
             errors.append(f"profile[{i}].NR: baseline={br.get('NR')} actual={ar.get('NR')}")
             continue
-        for field in ("AJ", "QP"):
-            _check_scalar(f"profile[{i}].{field}", float(br[field]), float(ar[field]), tol, errors)
-        for field in ("RN", "RT"):
-            bv_list = br.get(field, [])
-            av_list = ar.get(field, [])
-            if len(bv_list) != len(av_list):
-                errors.append(f"profile[{i}].{field}: length differ ({len(bv_list)} vs {len(av_list)})")
+        keys = sorted(set(br) | set(ar))
+        for field in keys:
+            if field == "NR":
                 continue
-            for j, (bv, av) in enumerate(zip(bv_list, av_list)):
-                _check_scalar(f"profile[{i}].{field}[{j}]", float(bv), float(av), tol, errors)
+            bv = br.get(field)
+            av = ar.get(field)
+            if bv is None or av is None:
+                errors.append(f"profile[{i}].{field}: missing in one side")
+                continue
+            if isinstance(bv, list) or isinstance(av, list):
+                if not isinstance(bv, list) or not isinstance(av, list):
+                    errors.append(f"profile[{i}].{field}: type mismatch")
+                    continue
+                if len(bv) != len(av):
+                    errors.append(
+                        f"profile[{i}].{field}: length differ ({len(bv)} vs {len(av)})"
+                    )
+                    continue
+                for j, (bx, ax) in enumerate(zip(bv, av)):
+                    _check_scalar(
+                        f"profile[{i}].{field}[{j}]", float(bx), float(ax), tol, errors
+                    )
+            else:
+                _check_scalar(f"profile[{i}].{field}", float(bv), float(av), tol, errors)
     return errors
 
 

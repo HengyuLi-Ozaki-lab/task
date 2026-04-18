@@ -11,8 +11,9 @@
 - `baselines/<name>/`       — 回帰判定用ゴールデン指標（**コミット対象**）
 - `scripts/`
   - `extract_tr_metrics.py` — `tr_regress.dat` を JSON に変換
-  - `compare_metrics.py`    — 2 指標 JSON を相対誤差で比較（デフォルト 1e-10）
-  - `check_regression.sh`   — 抽出＋比較（または baseline 生成）
+  - `extract_ti_metrics.py` — `ti_regress.dat` を JSON に変換
+  - `compare_metrics.py`    — 2 指標 JSON を相対誤差で比較（tr/ti 共用、デフォルト 1e-10）
+  - `check_regression.sh`   — 抽出＋比較（または baseline 生成）。`--module ti` で ti 用に切替
   - `tests/`                — 上記スクリプトの unittest ベースの単体テスト
 
 ## 基本使用例
@@ -109,3 +110,29 @@ TR 本体 (`tr/trregress.f90`) は、環境変数 `TR_REGRESS_DUMP=1` が設定�
 | `tr_iter01` | `eq_iter01` | ITER 相当機（`modelg=3`）、NTMAX=100 短縮版 |
 | `tr_m0904`  | なし       | 解析ジオメトリ（`modelg=2`）、NTMAX=50 |
 | `tr_tst2`   | `eq_tst2`  | TST-2 小型機（`modelg=3`）、NTMAX=10 |
+
+## TI モジュールの回帰判定の仕組み
+
+TR と同じ dump 機構を `ti/tiregress.f90` で実装。`TI_REGRESS_DUMP=1` のときに限り
+`ti_regress.dat` を CWD に書き出す。`run_tests.sh` は ti モジュールテスト実行時に
+この変数を自動でエクスポートする。
+
+dump 内容:
+- スカラー: `NT, NRMAX, NSMAX, nsa_max, T, residual_loop_max, icount_loop_max, icount_mat_max`
+- プロファイル: `NR, RNA(1:nsa_max,NR), RTA(1:nsa_max,NR), RUA(1:nsa_max,NR), RBP, RQP, RJP, ZEFF, BETA, BETAP`
+
+### 登録済みの TI 回帰テスト
+
+| TEST_NAME | 依存 | 用途 |
+|---|---|---|
+| `ti_min` | なし | 最小ケース (NSMAX=1, NRMAX=10, NTMAX=2) |
+| `ti_ar`  | なし | Ar 不純物輸送 (ID_NS=10, NRMAX=20, NTMAX=10) |
+| `ti_w`   | なし | W 不純物輸送 (ID_NS=10, NRMAX=20, NTMAX=5) |
+
+### TI ベースラインの再生成
+
+    ./run_tests.sh ti_min ti_ar ti_w   # produces test_output/ti_*/ti_regress.dat
+    for c in ti_min ti_ar ti_w; do
+        ./scripts/check_regression.sh --module ti "$c" \
+            "$(pwd)/test_output/$c" "$(pwd)/baselines" 1e-10 --generate-baseline
+    done
