@@ -10,7 +10,11 @@
 |----------|------|
 | `task-library-manual.tex` | 正本の LaTeX ソース (xeCJK + tcolorbox + TikZ) |
 | `task-library-manual.pdf` | 同梱の生成済み PDF (A4, 52 ページ) |
-| `_render_pdf.py` | TeX 不在環境向けの matplotlib フォールバック |
+
+**注意:** 同梱の PDF は xelatex が利用できない環境で matplotlib ベースの
+簡易レンダラで生成したため、章タイトルや表レイアウトの整形精度が劣ります
+(章タイトルは "はじめに" のように素直に表示、表は崩れる可能性あり)。
+本番利用時は下記の推奨ビルドで xelatex から再生成してください。
 
 ## 推奨ビルド (TeX Live 利用可能時)
 
@@ -27,19 +31,6 @@ sudo apt-get install -y texlive-xetex texlive-lang-japanese \
      texlive-latex-extra fonts-noto-cjk fonts-noto-cjk-extra \
      fonts-dejavu-core
 ```
-
-## フォールバックビルド (本リポジトリに同梱済み PDF の生成方法)
-
-本マニュアルを書いた環境には xelatex が入っていなかったため,
-PDF は `_render_pdf.py` (matplotlib の `PdfPages`, Noto Serif CJK JP)
-で生成している. 同じ環境で再生成したい場合:
-
-```bash
-python3 docs/manual/_render_pdf.py
-```
-
-matplotlib と Noto CJK フォントが必要.
-整形精度は xelatex より劣るが, 検索可能な PDF (テキスト埋め込み) である.
 
 ## 使用フォント
 
