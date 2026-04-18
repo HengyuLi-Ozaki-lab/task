@@ -113,6 +113,9 @@ get_binary() {
         wrx) echo "$TASK_DIR/wrx/wrx" ;;
         tx) echo "$TASK_DIR/tx/tx2" ;;
         tot) echo "$TASK_DIR/tot/tot" ;;
+        # Phase L-6: python dispatch is not a file on disk but a marker so
+        # list_tests() does not flag python-typed rows as "not built".
+        python) echo "PYTHON_DISPATCH" ;;
         *) echo "" ;;
     esac
 }
@@ -145,7 +148,9 @@ list_tests() {
         if parse_test_def "$line"; then
             local binary=$(get_binary "$MODULE")
             local status=""
-            if [[ ! -x "$binary" ]]; then
+            # PYTHON_DISPATCH is the L-6 marker: it is not a path on disk,
+            # so skip the -x check for those rows.
+            if [[ "$binary" != "PYTHON_DISPATCH" && ! -x "$binary" ]]; then
                 status=" (not built)"
             fi
             printf "%-15s %-6s %-10s %s%s\n" "$TEST_NAME" "$MODULE" "${TIMEOUT}s" "$DESCRIPTION" "$status"
@@ -215,6 +220,8 @@ run_dependencies() {
 run_single_test() {
     local test_name="$1"
     local module="$2"
+    # For MODULE=python the 3rd column is reinterpreted as a shell command
+    # line (see test_definitions.conf "Phase L-6" section).
     local input_file="$3"
     local depends="$4"
     local timeout="$5"
@@ -230,6 +237,46 @@ run_single_test() {
     # Override timeout if specified
     if [[ -n "$TIMEOUT_OVERRIDE" ]]; then
         timeout="$TIMEOUT_OVERRIDE"
+    fi
+
+    # ---------------------------------------------------------------
+    # Phase L-6: python / C-ABI dispatch.
+    #
+    # MODULE=python reinterprets $input_file as a shell command executed
+    # from $TASK_DIR with PYTHONPATH=python. Output is captured to
+    # $TEST_OUTPUT_DIR/$test_name/output.log just like Fortran tests.
+    # Exits early so the Fortran path below stays untouched.
+    # ---------------------------------------------------------------
+    if [[ "$module" == "python" ]]; then
+        echo -n "[$TOTAL] $test_name ($description) ... "
+        local test_dir="$TEST_OUTPUT_DIR/$test_name"
+        mkdir -p "$test_dir"
+        local log_file="$test_dir/output.log"
+        local cmd="$input_file"
+        if [[ $VERBOSE -eq 1 ]]; then
+            echo ""
+            ( cd "$TASK_DIR" && PYTHONPATH=python timeout "$timeout" sh -c "$cmd" ) 2>&1 | tee "$log_file"
+            local exit_code=${PIPESTATUS[0]}
+        else
+            ( cd "$TASK_DIR" && PYTHONPATH=python timeout "$timeout" sh -c "$cmd" ) > "$log_file" 2>&1
+            local exit_code=$?
+        fi
+        if [[ $exit_code -eq 124 ]]; then
+            echo -e "${YELLOW}TIMEOUT${NC} (exceeded ${timeout}s)"
+            FAILED=$((FAILED + 1))
+        elif [[ $exit_code -eq 0 ]]; then
+            echo -e "${GREEN}PASS${NC}"
+            PASSED=$((PASSED + 1))
+            COMPLETED_TESTS[$test_name]=1
+        else
+            echo -e "${RED}FAIL${NC} (exit code: $exit_code)"
+            FAILED=$((FAILED + 1))
+            if [[ $VERBOSE -eq 1 ]]; then
+                echo "  Last 10 lines of log:"
+                tail -10 "$log_file" | sed 's/^/    /'
+            fi
+        fi
+        return 0
     fi
 
     local binary=$(get_binary "$module")

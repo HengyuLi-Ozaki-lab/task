@@ -211,6 +211,7 @@ clean :
 	-rm -f $(TR_API_PARAM_O) $(TR_API_PARAM_BIN)
 	-rm -f $(TR_API_RUN_O)   $(TR_API_RUN_BIN)
 	-rm -f $(TR_API_SO_O)    $(TR_API_SO_BIN)
+	-rm -f $(TR_API_NEG_O)   $(TR_API_NEG_BIN)
 
 veryclean : clean
 	-rm -f tr2 tr3
@@ -223,6 +224,7 @@ distclean: clean
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libtrapi.so
 	-rm -f $(TR_API_SO_O) $(TR_API_SO_BIN)
+	-rm -f $(TR_API_NEG_O) $(TR_API_NEG_BIN)
 
 # =====================================================================
 # Phase L-4: libtrapi.so shared library build
@@ -422,6 +424,39 @@ tr_api_check_so: libtrapi.so $(TR_API_SO_BIN)
 	@echo "Phase L-4 tr_api_check_so: dlopen libtrapi.so + full cycle ..."
 	@TRLIB_PATH=$(CURDIR)/libtrapi.so $(TR_API_SO_BIN)
 	@echo "Phase L-4 tr_api_check_so OK"
+
+# ---------------------------------------------------------------------
+# Phase L-6: Layer 2 (C ABI) test suite
+#
+# Builds + runs the full C ABI test set in one shot so CI (via
+# test_run/run_tests.sh) can invoke a single target. Consists of:
+#
+#   test_smoke     - 4 entry points return TR_OK          (L-3)
+#   test_param     - set_param + get_state dispatch       (L-3)
+#   test_run       - tr_run advances T by N*DT            (L-3)
+#   test_run_so    - dlopen libtrapi.so + full cycle      (L-4)
+#   test_negative  - rejection contracts (L-6, new)
+#
+# The L-3 trio links against OBJ_API + libtr2.a; the dlopen driver uses
+# libdl and loads libtrapi.so at runtime. The negative driver shares
+# the L-3 link path.
+# ---------------------------------------------------------------------
+TR_API_NEG_C=$(TR_API_SMOKE_DIR)/test_negative.c
+TR_API_NEG_O=$(TR_API_SMOKE_DIR)/test_negative.o
+TR_API_NEG_BIN=$(TR_API_SMOKE_DIR)/test_negative
+
+$(TR_API_NEG_O): $(TR_API_NEG_C) tr_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(TR_API_NEG_O) $(TR_API_NEG_C)
+
+$(TR_API_NEG_BIN): $(TR_API_NEG_O) $(OBJ_API) $(LIBS2)
+	$(FLINKER) -o $(TR_API_NEG_BIN) $(TR_API_NEG_O) $(OBJ_API) \
+	   $(TR_API_DEPS) $(FFLAGS) $(FLIBS)
+
+.PHONY: tr_api_check_all
+tr_api_check_all: tr_api_check tr_api_check_so $(TR_API_NEG_BIN)
+	@echo "Phase L-6 tr_api_check_all: running negative tests ..."
+	@$(TR_API_NEG_BIN)
+	@echo "Phase L-6 tr_api_check_all OK: smoke/param/run/run_so/negative"
 
 $(OBJDIR)/trcomm_const.o   : trcomm_const.f90
 $(OBJDIR)/trcomm_param.o   : trcomm_param.f90 trcomm_const.f90 trcom0.f90
