@@ -53,6 +53,11 @@ SRCS_GRAPHICS=trgout.f90 trgrar.f90 trgrat.f90 trgrap.f90 trgrae.f90 \
 # Interactive menu (only used by the tr2 binary).
 SRCS_MENU=trmenu.f90
 
+# C ABI sources (Phase L-2+). Compiled via the tr_api_check target only;
+# NOT part of $(SRCS) and NOT linked into libtr2.a / tr2. The full
+# libtrapi.so build arrives in Phase L-4.
+SRCS_API=tr_state.f90 tr_api.f90
+
 SRCS=$(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
 SRC2D=trg2d.f90
@@ -80,6 +85,7 @@ OBJMMM=$(addprefix $(OBJDIR)/, $(SRCMMM95:.f=.o) $(SRCMMM7:.f90=.o))
 OBJMBGB=$(addprefix $(OBJDIR)/, $(SRCMBGB:.f=.o))
 OBJITG=$(addprefix $(OBJDIR)/, $(SRCITG:.f=.o) $(SRCITGF:.F=.o))
 OBJS=$(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))
+OBJ_API=$(addprefix $(OBJDIR)/, $(SRCS_API:.f90=.o))
 OBJ2D=$(addprefix $(OBJDIR)/, $(SRC2D:.f90=.o))
 OBJ3D=$(addprefix $(OBJDIR)/, $(SRC3D:.f90=.o))
 
@@ -125,11 +131,55 @@ libs:
 tr2: $(LIBS2) $(OBJDIR)/trmain.o 
 	$(FLINKER) $(OBJDIR)/trmain.o $(LIBS2) -o $@ $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
-tr3: $(LIBS3) $(OBJDIR)/trmain.o 
+tr3: $(LIBS3) $(OBJDIR)/trmain.o
 	$(FLINKER) $(OBJDIR)/trmain.o $(LIBS3) -o $@ $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
-clean : 
+# ---------------------------------------------------------------------
+# Phase L-2: C ABI check
+#
+# `make tr_api_check` builds the new API objects (tr_state.o, tr_api.o)
+# AND a small C smoke test against tr_api.h.  This is a header / link
+# sanity check only -- the API objects are NOT linked into tr2 and the
+# tr2 binary remains byte-for-byte identical with or without this
+# target being invoked.  The smoke driver expects every entry point to
+# return TR_ERR_NOT_IMPL (=4) at L-2.
+#
+# CC defaults to gcc; override on the command line if necessary
+# (e.g. `make tr_api_check CC=clang`).
+# ---------------------------------------------------------------------
+CC ?= gcc
+CFLAGS_API ?= -Wall -Wextra -O2
+
+TR_API_SMOKE_DIR=tests/c_abi
+TR_API_SMOKE_C=$(TR_API_SMOKE_DIR)/test_smoke.c
+TR_API_SMOKE_O=$(TR_API_SMOKE_DIR)/test_smoke.o
+TR_API_SMOKE_BIN=$(TR_API_SMOKE_DIR)/test_smoke
+
+# Step 1: header-only C compile (matches the documented user-level check
+#         `gcc -Wall -Wextra -c -o test_smoke.o test_smoke.c`).
+$(TR_API_SMOKE_O): $(TR_API_SMOKE_C) tr_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(TR_API_SMOKE_O) $(TR_API_SMOKE_C)
+
+# Step 2: link the C smoke against the API objects only. This proves the
+# BIND(C) names emitted by tr_api.f90 (tr_init, tr_run, tr_set_param,
+# tr_get_state, tr_finalize) match the prototypes in tr_api.h. We use
+# gfortran as the driver so the libgfortran runtime is pulled in
+# automatically; no other tr/ libraries are required at L-2.
+$(TR_API_SMOKE_BIN): $(TR_API_SMOKE_O) $(OBJ_API)
+	$(FLINKER) -o $(TR_API_SMOKE_BIN) $(TR_API_SMOKE_O) $(OBJ_API)
+
+.PHONY: tr_api_check
+tr_api_check: $(OBJ_API) $(TR_API_SMOKE_BIN)
+	@echo "Phase L-2 tr_api_check: running smoke ..."
+	@$(TR_API_SMOKE_BIN)
+	@echo "Phase L-2 tr_api_check OK:"
+	@echo "  - Fortran API objects compiled: $(OBJ_API)"
+	@echo "  - C smoke object compiled    : $(TR_API_SMOKE_O)"
+	@echo "  - C smoke linked + executed  : $(TR_API_SMOKE_BIN)"
+
+clean :
 	-rm -f ./#* ./*~ $(OBJDIR)/*.o $(OBJDIR)/*/*.o $(MOD)/*.mod $(MOD)/*/*.mod core *.a
+	-rm -f $(TR_API_SMOKE_O) $(TR_API_SMOKE_BIN)
 
 veryclean : clean
 	-rm -f tr2 tr3
@@ -176,13 +226,17 @@ $(OBJDIR)/trcoef_adhoc.o        : trcoef_adhoc.f90 trcomm.f90
 $(OBJDIR)/trcoef.o : trcoef.f90 trcomm.f90 trglf.inc \
                      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
                      trcoef_resistivity.f90 trcoef_adhoc.f90
-$(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90 
-$(OBJDIR)/trprf.o  : trprf.f90  trcomm.f90 
-$(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90 
-$(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90 
-$(OBJDIR)/trpsc.o  : trpsc.f90  trcomm.f90 
+$(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90
+$(OBJDIR)/trprf.o  : trprf.f90  trcomm.f90
+$(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90
+$(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90
+$(OBJDIR)/trpsc.o  : trpsc.f90  trcomm.f90
 
-$(OBJDIR)/trgout.o : trgout.f90 trcomm.f90 
+# Phase L-2 C ABI sources (independent of TRCOMM at this stage).
+$(OBJDIR)/tr_state.o : tr_state.f90
+$(OBJDIR)/tr_api.o   : tr_api.f90 tr_state.f90 $(OBJDIR)/tr_state.o
+
+$(OBJDIR)/trgout.o : trgout.f90 trcomm.f90
 $(OBJDIR)/trgrar.o : trgrar.f90 trcomm.f90 
 $(OBJDIR)/trgrat.o : trgrat.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trgrap.o : trgrap.f90 trcomm.f90 
