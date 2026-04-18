@@ -414,6 +414,13 @@ libs_pic_prereq: ../lib/libtask_pic.a ../lib/libgrf_pic.a ../lib/libmds_pic.a \
 $(OBJBPSD_PIC): | ../lib/libtask_pic.a
 $(OBJS_PIC) $(OBJ_API_PIC) $(OBJ_GR_STUBS_PIC): | libs_pic_prereq
 
+# Inter-module dependencies for the PIC build of SRCS_API (mirror the
+# non-PIC eq_api.o / eq_param_registry.o deps below). Without these,
+# `make -j` can race past eq_state's .mod file emission and fail
+# eq_api.f90 / eq_param_registry.f90 compilation with "module not found".
+$(OBJDIR_PIC)/eq_param_registry.o: $(OBJDIR_PIC)/eq_state.o
+$(OBJDIR_PIC)/eq_api.o:            $(OBJDIR_PIC)/eq_state.o $(OBJDIR_PIC)/eq_param_registry.o
+
 # --- The shared library itself ---
 # gfortran drives the link so libgfortran is pulled in automatically.
 # --start-group / --end-group resolves the cyclic eq <-> pl references.
