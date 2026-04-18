@@ -1,0 +1,207 @@
+! <MODULE>_api.f90
+!
+! Phase L-3: C ABI entry points for lib<MODULE>api (functional layer).
+!
+! All six functions are wired to the real <MOD>COMM state:
+!
+!   <MODULE>_init        -> pl_init + (subordinate inits) + ALLOCATE_<MOD>COMM
+!   <MODULE>_set_param   -> dispatch to <MODULE>_param_registry::<MODULE>_param_set
+!   <MODULE>_set_param_str -> dispatch to <MODULE>_param_registry::<MODULE>_param_set_str
+!   <MODULE>_run         -> <MODULE>_prep (first call) + <MODULE>_loop with NTMAX=n
+!   <MODULE>_get_state   -> populate <MODULE>_state_c from <MOD>COMM
+!   <MODULE>_finalize    -> DEALLOCATE_<MOD>COMM + clear g_* flags
+!
+! Name-collision pattern: the legacy SUBROUTINE <MODULE>_init lives in
+! <MODULE>init.f. We rename via USE-rename so this file's BIND(C) symbol
+! "<MODULE>_init" doesn't clash:
+!
+!   USE <MODULE>init, ONLY: <MODULE>init_fortran => <MODULE>_init
+!   FUNCTION <MODULE>_api_init() RESULT(ierr) BIND(C, NAME="<MODULE>_init")
+
+MODULE <MODULE>_api
+  USE, INTRINSIC :: ISO_C_BINDING
+  USE <MODULE>_state, ONLY: <MODULE>_state_c, <MOD>_MAX_NRMAX, <MOD>_MAX_NSMAX
+  USE <MODULE>comm,   ONLY: rkind, NRMAX, NSMAX, NT, T, NTMAX, &
+                            RN, RT, AJ, QP, &
+                            ALLOCATE_<MOD>COMM, DEALLOCATE_<MOD>COMM
+  USE <MODULE>_param_registry, ONLY: <MODULE>_param_set, <MODULE>_param_set_str
+  USE plinit,   ONLY: pl_init
+  USE <MODULE>init, ONLY: <MODULE>init_fortran => <MODULE>_init
+  USE <MODULE>prep, ONLY: <MODULE>_prep
+  USE <MODULE>loop, ONLY: <MODULE>_loop
+  IMPLICIT NONE
+  PRIVATE
+  PUBLIC :: <MODULE>_api_init, <MODULE>_api_run, <MODULE>_api_get_state, &
+            <MODULE>_api_set_param, <MODULE>_api_set_param_str, <MODULE>_api_finalize
+
+  ! Error codes (must match <MODULE>_api.h enum):
+  INTEGER(C_INT), PARAMETER :: <MOD>_OK              = 0
+  INTEGER(C_INT), PARAMETER :: <MOD>_ERR_INVALID     = 1
+  INTEGER(C_INT), PARAMETER :: <MOD>_ERR_NOT_INIT    = 2
+  INTEGER(C_INT), PARAMETER :: <MOD>_ERR_CALC_FAILED = 3
+  ! NOT_IMPL=4 used in L-2 only.
+
+  ! Lifecycle flags (single-instance state at L-3).
+  LOGICAL, SAVE :: g_initialized = .FALSE.
+  LOGICAL, SAVE :: g_prepared    = .FALSE.
+
+CONTAINS
+
+  !-------------------------------------------------------------------
+  FUNCTION <MODULE>_api_init() RESULT(ierr) BIND(C, NAME="<MODULE>_init")
+    INTEGER(C_INT) :: ierr
+    INTEGER :: alloc_ierr
+
+    IF (g_initialized) THEN
+       ierr = <MOD>_OK    ! idempotent
+       RETURN
+    END IF
+
+    CALL pl_init
+    CALL <MODULE>init_fortran
+
+    CALL ALLOCATE_<MOD>COMM(alloc_ierr)
+    IF (alloc_ierr /= 0) THEN
+       ierr = <MOD>_ERR_CALC_FAILED
+       RETURN
+    END IF
+
+    g_initialized = .TRUE.
+    g_prepared    = .FALSE.
+    ierr = <MOD>_OK
+  END FUNCTION <MODULE>_api_init
+
+  !-------------------------------------------------------------------
+  FUNCTION <MODULE>_api_set_param(name, value) RESULT(ierr) &
+       BIND(C, NAME="<MODULE>_set_param")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
+    REAL(C_DOUBLE), VALUE,                INTENT(IN) :: value
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=64) :: fname
+    INTEGER :: i, n
+
+    IF (.NOT. g_initialized) THEN
+       ierr = <MOD>_ERR_NOT_INIT
+       RETURN
+    END IF
+
+    fname = ' '
+    n = 0
+    DO i = 1, LEN(fname)
+       IF (name(i) == C_NULL_CHAR) EXIT
+       fname(i:i) = name(i)
+       n = i
+    END DO
+
+    ierr = <MODULE>_param_set(fname(1:MAX(n,1)), value)
+    IF (ierr /= 0) ierr = <MOD>_ERR_INVALID
+  END FUNCTION <MODULE>_api_set_param
+
+  !-------------------------------------------------------------------
+  FUNCTION <MODULE>_api_set_param_str(name, value) RESULT(ierr) &
+       BIND(C, NAME="<MODULE>_set_param_str")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name, value
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=64)  :: fname
+    CHARACTER(LEN=256) :: fval
+    INTEGER :: i, n
+
+    IF (.NOT. g_initialized) THEN
+       ierr = <MOD>_ERR_NOT_INIT
+       RETURN
+    END IF
+
+    fname = ' ';  n = 0
+    DO i = 1, LEN(fname)
+       IF (name(i) == C_NULL_CHAR) EXIT
+       fname(i:i) = name(i);  n = i
+    END DO
+
+    fval = ' '
+    DO i = 1, LEN(fval)
+       IF (value(i) == C_NULL_CHAR) EXIT
+       fval(i:i) = value(i)
+    END DO
+
+    ierr = <MODULE>_param_set_str(fname(1:MAX(n,1)), TRIM(fval))
+    IF (ierr /= 0) ierr = <MOD>_ERR_INVALID
+  END FUNCTION <MODULE>_api_set_param_str
+
+  !-------------------------------------------------------------------
+  FUNCTION <MODULE>_api_run(n) RESULT(ierr) BIND(C, NAME="<MODULE>_run")
+    INTEGER(C_INT), VALUE, INTENT(IN) :: n
+    INTEGER(C_INT) :: ierr
+    INTEGER :: ntmax_save, prep_ierr, loop_ierr
+
+    IF (.NOT. g_initialized) THEN
+       ierr = <MOD>_ERR_NOT_INIT
+       RETURN
+    END IF
+
+    IF (.NOT. g_prepared) THEN
+       CALL <MODULE>_prep(prep_ierr)
+       IF (prep_ierr /= 0) THEN
+          ierr = <MOD>_ERR_CALC_FAILED
+          RETURN
+       END IF
+       g_prepared = .TRUE.
+    END IF
+
+    ntmax_save = NTMAX
+    NTMAX      = n
+    CALL <MODULE>_loop(loop_ierr)
+    NTMAX      = ntmax_save
+
+    IF (loop_ierr /= 0) THEN
+       ierr = <MOD>_ERR_CALC_FAILED
+       RETURN
+    END IF
+    ierr = <MOD>_OK
+  END FUNCTION <MODULE>_api_run
+
+  !-------------------------------------------------------------------
+  FUNCTION <MODULE>_api_get_state(s) RESULT(ierr) BIND(C, NAME="<MODULE>_get_state")
+    TYPE(<MODULE>_state_c), INTENT(OUT) :: s
+    INTEGER(C_INT) :: ierr
+    INTEGER :: nr, ns
+
+    IF (.NOT. g_initialized) THEN
+       ierr = <MOD>_ERR_NOT_INIT
+       RETURN
+    END IF
+
+    s%nt    = NT
+    s%nrmax = NRMAX
+    s%nsmax = NSMAX
+    s%T     = T
+
+    ! profile arrays — only the [0..nrmax-1, 0..nsmax-1] slice is valid
+    DO nr = 1, NRMAX
+       DO ns = 1, NSMAX
+          s%RN(ns, nr) = RN(nr, ns)
+          s%RT(ns, nr) = RT(nr, ns)
+       END DO
+       s%AJ(nr) = AJ(nr)
+       s%QP(nr) = QP(nr)
+    END DO
+
+    ierr = <MOD>_OK
+  END FUNCTION <MODULE>_api_get_state
+
+  !-------------------------------------------------------------------
+  FUNCTION <MODULE>_api_finalize() RESULT(ierr) BIND(C, NAME="<MODULE>_finalize")
+    INTEGER(C_INT) :: ierr
+    INTEGER :: dealloc_ierr
+
+    IF (.NOT. g_initialized) THEN
+       ierr = <MOD>_OK
+       RETURN
+    END IF
+
+    CALL DEALLOCATE_<MOD>COMM(dealloc_ierr)
+    g_initialized = .FALSE.
+    g_prepared    = .FALSE.
+    ierr = <MOD>_OK
+  END FUNCTION <MODULE>_api_finalize
+
+END MODULE <MODULE>_api
