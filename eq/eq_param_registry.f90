@@ -261,12 +261,17 @@ CONTAINS
   !-------------------------------------------------------------------
   ! Split "NAME" or "NAME[N]" into (base, idx).
   !
-  !   "RR"       -> base="RR",    idx=0   (scalar form)
+  !   "RR"       -> base="RR",    idx=-1  (no subscript; scalar form)
   !   "PSIB[0]"  -> base="PSIB",  idx=0   (0-origin; unique to EQ)
   !   "PSIB[5]"  -> base="PSIB",  idx=5
   !   "RIPFC[3]" -> base="RIPFC", idx=3   (1-origin for everything
   !                                        except PSIB)
   !   malformed  -> base=<full>,  idx=-1  (caller returns ierr=1)
+  !
+  ! NOTE: idx defaults to -1 (not 0) when no subscript is present so
+  ! that 0-origin arrays like PSIB correctly reject bare "PSIB" — if
+  ! the default were 0, `eq_set_param("PSIB", v)` would silently write
+  ! PSIB(0) instead of failing.
   !-------------------------------------------------------------------
   SUBROUTINE parse_array_subscript(full_name, base, idx)
     CHARACTER(LEN=*), INTENT(IN)  :: full_name
@@ -274,7 +279,7 @@ CONTAINS
     INTEGER,          INTENT(OUT) :: idx
     INTEGER :: lb, rb, ios
     base = ' '
-    idx  = 0
+    idx  = -1
     lb = INDEX(full_name, '[')
     rb = INDEX(full_name, ']')
     IF (lb == 0 .AND. rb == 0) THEN
@@ -283,7 +288,6 @@ CONTAINS
     END IF
     IF (lb == 0 .OR. rb == 0 .OR. rb <= lb + 1) THEN
        base = TRIM(ADJUSTL(full_name))   ! malformed; caller returns ierr=1
-       idx  = -1
        RETURN
     END IF
     base = full_name(1:lb-1)
