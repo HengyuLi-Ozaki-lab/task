@@ -143,6 +143,15 @@ open-adas/adf11/adf11-lib/obj/pic/
 open-adas/adf11/adf11-lib/mod_pic/
 open-adas/adf11/adf11-lib/lib-adf11_pic.a
 
+# tot L-4: libtotapi.so composite shared library build artefacts
+tot/libtotapi.so
+tot/obj/pic/
+tot/mod_pic/
+tot/tests/c_abi/test_smoke
+tot/tests/c_abi/test_param
+tot/tests/c_abi/test_run_so
+tot/tests/c_abi/*.o
+
 # Python
 __pycache__/
 *.pyc
