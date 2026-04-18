@@ -39,7 +39,7 @@
 - 実数: `SMAX, DELS, UUMIN, EPSRAY, DELRAY, DELDER, DELKR, EPSNW`
 - 実数: `RF, RPI, ZPI, PHII, RNZI, RNPHII, RKR0, UUI`
 - 実数: `RCURVA, RCURVB, RBRADA, RBRADB`
-- 実数: `pne_threshold, bdr_threshold, Rmax_wr, Rmin_wr, Zmax_wr, Zmax_wr`
+- 実数: `pne_threshold, bdr_threshold, Rmax_wr, Rmin_wr, Zmin_wr, Zmax_wr`
 
 #### F. WR 固有配列（`wrcomm_parm`、サイズ NRAYM=100）
 - 実数: `RFIN[i], RPIN[i], ZPIN[i], PHIIN[i], RKRIN[i], RNZIN[i], RNPHIIN[i], ANGZIN[i], ANGPHIN[i], UUIN[i], RCURVAIN[i], RCURVBIN[i], RBRADAIN[i], RBRADBIN[i]`
@@ -502,7 +502,7 @@ int main(void) {
     EXPECT(wr_set_param("PN[1]",     1.0),    0);
     EXPECT(wr_set_param("PN[2]",     1.0),    0);
     EXPECT(wr_set_param("NRAYMAX",   1.0),    0);
-    EXPECT(wr_set_param("RFIN[1]",   5.0e3,  0);
+    EXPECT(wr_set_param("RFIN[1]",   5.0e3),  0);
     EXPECT(wr_set_param("MODEWIN[1]",1.0),    0);
 
     /* Failure cases */
@@ -514,8 +514,6 @@ int main(void) {
     return fail ? 1 : 0;
 }
 ```
-
-注: 上記の `RFIN[1], 5.0e3, 0` の閉じ括弧抜けは意図的なミス防止のため、実装時に必ず `EXPECT(wr_set_param("RFIN[1]", 5.0e3), 0);` の形に修正すること。コピペ時の括弧位置に注意。
 
 - [ ] **Step 2: Makefile に test_param_set ターゲット追加**
 

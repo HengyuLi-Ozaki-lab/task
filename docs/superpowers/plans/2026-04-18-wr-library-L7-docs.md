@@ -256,7 +256,7 @@ typedef struct {
     double pwrmax_rs_nray    [WR_MAX_NRAYMAX];
     double pos_pwrmax_rl_nray[WR_MAX_NRAYMAX];
     double pwrmax_rl_nray    [WR_MAX_NRAYMAX];
-    double rays_end          [WR_MAX_NRAYMAX][8]; /* RAYS(0:7, end, j) */
+    double rays_end          [WR_MAX_NRAYMAX][WR_MAX_NRAY_EQ]; /* RAYS(0:NEQ, end, j); NEQ=8 ⇒ 9 elements */
     double pos_nrs           [WR_MAX_NRSMAX];
     double pwr_nrs           [WR_MAX_NRSMAX];
     double pos_nrl           [WR_MAX_NRLMAX];
@@ -293,7 +293,7 @@ class Wrlib:
 | `pos_pwrmax_rl` / `pwrmax_rl` | float | Global peak deposition (major radius) |
 | `nstp_end[i]` | int | Steps used for ray `i` |
 | `pos_pwrmax_*_nray[i]` / `pwrmax_*_nray[i]` | float | Per-ray peak |
-| `rays_end[i][k]` | float | `RAYS(k, end, i)` for `k=0..7` (s, R, phi, Z, kR, kphi, kZ, U) |
+| `rays_end[i][k]` | float | `RAYS(k, end, i)` for `k=0..NEQ` where `NEQ=8` ⇒ 9 components (s, R, phi, Z, kR, kphi, kZ, U, plus the 9th equation slot) |
 | `pos_nrs[j]` / `pwr_nrs[j]` | float | Minor-radius bin position / power |
 | `pos_nrl[j]` / `pwr_nrl[j]` | float | Major-radius bin position / power |
 

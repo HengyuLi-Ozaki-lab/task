@@ -135,7 +135,12 @@ Expected: 行 37-44 付近に SRCS 定義が見える。
 
 Modify `/home/k-yoshimi/program/task/wr/Makefile`.
 
-Old (lines 37-44):
+注: 以下の `Old` ブロックは **L-0 マージ後の Makefile** の状態を表す（L-0 で
+`wrregress.f90` が `wrsetup.f90` と `wrexec.f90` の間に追加されている前提）。
+もし grep 結果と一致しない場合は L-0 が正しく適用されていない可能性が高いので、
+そこで作業を停止して L-0 をやり直すこと。
+
+Old (L-0 適用後の状態; lines 37-44 付近):
 ```
 SRCS = wrcomm.f90 wrinit.f90 wrparm.f90 wrview.f90 \
        wrsub.f90 \

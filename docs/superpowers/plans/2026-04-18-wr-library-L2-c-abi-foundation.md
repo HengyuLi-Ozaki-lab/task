@@ -127,13 +127,13 @@ MODULE wr_state
      REAL(C_DOUBLE) :: pwrmax_rs
      REAL(C_DOUBLE) :: pos_pwrmax_rl
      REAL(C_DOUBLE) :: pwrmax_rl
-     ! Per-ray scalars: NSTP_END(j), pwr peak (rs/rl) per ray, end-state RAYS(0:7,end,j)
+     ! Per-ray scalars: NSTP_END(j), pwr peak (rs/rl) per ray, end-state RAYS(0:NEQ,end,j) with NEQ=8 ⇒ 9 elements
      INTEGER(C_INT) :: nstp_end(WR_MAX_NRAYMAX)
      REAL(C_DOUBLE) :: pos_pwrmax_rs_nray(WR_MAX_NRAYMAX)
      REAL(C_DOUBLE) :: pwrmax_rs_nray(WR_MAX_NRAYMAX)
      REAL(C_DOUBLE) :: pos_pwrmax_rl_nray(WR_MAX_NRAYMAX)
      REAL(C_DOUBLE) :: pwrmax_rl_nray(WR_MAX_NRAYMAX)
-     REAL(C_DOUBLE) :: rays_end(0:7, WR_MAX_NRAYMAX)
+     REAL(C_DOUBLE) :: rays_end(0:8, WR_MAX_NRAYMAX)   ! mirrors WR_MAX_NRAY_EQ-1 = NEQ
      ! Profiles (zero-padded beyond actual dim)
      REAL(C_DOUBLE) :: pos_nrs(WR_MAX_NRSMAX)
      REAL(C_DOUBLE) :: pwr_nrs(WR_MAX_NRSMAX)
@@ -189,6 +189,8 @@ Create `/home/k-yoshimi/program/task/wr/wr_api.h`:
 #define WR_MAX_NRAYMAX 100
 #define WR_MAX_NRSMAX  200
 #define WR_MAX_NRLMAX  400
+/* WR_MAX_NRAY_EQ must equal NEQ+1 in wrcomm.f90 (NEQ=8 ⇒ 9). */
+#define WR_MAX_NRAY_EQ 9
 
 typedef struct {
     int    nraymax, nrsmax, nrlmax;
@@ -198,7 +200,7 @@ typedef struct {
     double pwrmax_rs_nray     [WR_MAX_NRAYMAX];
     double pos_pwrmax_rl_nray [WR_MAX_NRAYMAX];
     double pwrmax_rl_nray     [WR_MAX_NRAYMAX];
-    double rays_end           [WR_MAX_NRAYMAX][8]; /* Fortran rays_end(0:7, j) */
+    double rays_end           [WR_MAX_NRAYMAX][WR_MAX_NRAY_EQ]; /* Fortran rays_end(0:NEQ, j); NEQ=8 ⇒ 9 elements */
     double pos_nrs            [WR_MAX_NRSMAX];
     double pwr_nrs            [WR_MAX_NRSMAX];
     double pos_nrl            [WR_MAX_NRLMAX];
@@ -329,7 +331,7 @@ CONTAINS
   END FUNCTION wr_set_param_c
 
   FUNCTION wr_get_state_c(state) RESULT(ierr) BIND(C, NAME="wr_get_state")
-    USE wrcomm, ONLY: NRAYMAX, NRSMAX, NRLMAX, &
+    USE wrcomm, ONLY: NEQ, NRAYMAX, NRSMAX, NRLMAX, &
                       NSTPMAX_NRAY, RAYS, &
                       pos_nrs, pwr_nrs, pos_nrl, pwr_nrl, &
                       pos_pwrmax_rs, pwrmax_rs, pos_pwrmax_rl, pwrmax_rl, &
@@ -349,6 +351,16 @@ CONTAINS
         NRLMAX  > WR_MAX_NRLMAX) THEN
        ierr = 3; RETURN
     END IF
+
+    ! Defensive: profile / per-ray arrays must have been allocated by wr_calc_pwr.
+    ! If not (caller bug, e.g. wr_run failed silently), bail out with ierr=3
+    ! rather than hitting a Fortran runtime error on the unallocated reads below.
+    IF (.NOT. ALLOCATED(NSTPMAX_NRAY)) THEN; ierr = 3; RETURN; END IF
+    IF (.NOT. ALLOCATED(RAYS))         THEN; ierr = 3; RETURN; END IF
+    IF (.NOT. ALLOCATED(pos_nrs))      THEN; ierr = 3; RETURN; END IF
+    IF (.NOT. ALLOCATED(pwr_nrs))      THEN; ierr = 3; RETURN; END IF
+    IF (.NOT. ALLOCATED(pos_nrl))      THEN; ierr = 3; RETURN; END IF
+    IF (.NOT. ALLOCATED(pwr_nrl))      THEN; ierr = 3; RETURN; END IF
 
     state%nraymax = NRAYMAX
     state%nrsmax  = NRSMAX
@@ -371,7 +383,7 @@ CONTAINS
        state%pwrmax_rs_nray(j)     = pwrmax_rs_nray(j)
        state%pos_pwrmax_rl_nray(j) = pos_pwrmax_rl_nray(j)
        state%pwrmax_rl_nray(j)     = pwrmax_rl_nray(j)
-       DO k = 0, 7
+       DO k = 0, NEQ   ! NEQ=8 ⇒ 9 iterations matching RAYS(0:NEQ,...) first dim
           state%rays_end(k, j) = RAYS(k, NSTPMAX_NRAY(j), j)
        END DO
     END DO

@@ -191,6 +191,8 @@ Create `/home/k-yoshimi/program/task/python/wrlib/state.py`:
 from dataclasses import dataclass, field
 from typing import Any, List
 
+from ._ffi import WR_MAX_NRAY_EQ
+
 try:
     import numpy as np  # type: ignore
     _HAVE_NUMPY = True
@@ -224,7 +226,7 @@ class WrState:
     pwrmax_rs_nray:     Any = None
     pos_pwrmax_rl_nray: Any = None
     pwrmax_rl_nray:     Any = None
-    rays_end:           Any = None  # shape (nraymax, 8)
+    rays_end:           Any = None  # shape (nraymax, WR_MAX_NRAY_EQ) = (nraymax, 9)
     pos_nrs:            Any = None
     pwr_nrs:            Any = None
     pos_nrl:            Any = None
@@ -237,8 +239,9 @@ class WrState:
         nrs = int(c_state.nrsmax)
         nrl = int(c_state.nrlmax)
         # ctypes arrays slice naturally; convert to list/numpy.
+        # rays_end second dim is WR_MAX_NRAY_EQ (=NEQ+1=9) to mirror Fortran RAYS(0:NEQ,...)
         rays_end_2d = [
-            [float(c_state.rays_end[j][k]) for k in range(8)] for j in range(n)
+            [float(c_state.rays_end[j][k]) for k in range(WR_MAX_NRAY_EQ)] for j in range(n)
         ]
         if _HAVE_NUMPY:
             rays_end_arr = np.asarray(rays_end_2d, dtype=float)
@@ -297,6 +300,8 @@ from pathlib import Path
 WR_MAX_NRAYMAX = 100
 WR_MAX_NRSMAX  = 200
 WR_MAX_NRLMAX  = 400
+# Must equal NEQ+1 in wrcomm.f90 (NEQ=8 ⇒ 9). Mirrors WR_MAX_NRAY_EQ in wr_api.h.
+WR_MAX_NRAY_EQ = 9
 
 
 class WrStateC(ctypes.Structure):
@@ -313,7 +318,7 @@ class WrStateC(ctypes.Structure):
         ("pwrmax_rs_nray",     ctypes.c_double * WR_MAX_NRAYMAX),
         ("pos_pwrmax_rl_nray", ctypes.c_double * WR_MAX_NRAYMAX),
         ("pwrmax_rl_nray",     ctypes.c_double * WR_MAX_NRAYMAX),
-        ("rays_end",           (ctypes.c_double * 8) * WR_MAX_NRAYMAX),
+        ("rays_end",           (ctypes.c_double * WR_MAX_NRAY_EQ) * WR_MAX_NRAYMAX),
         ("pos_nrs",            ctypes.c_double * WR_MAX_NRSMAX),
         ("pwr_nrs",            ctypes.c_double * WR_MAX_NRSMAX),
         ("pos_nrl",            ctypes.c_double * WR_MAX_NRLMAX),

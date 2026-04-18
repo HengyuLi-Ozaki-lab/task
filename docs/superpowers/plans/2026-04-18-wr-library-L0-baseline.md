@@ -31,7 +31,7 @@
 **dump 対象として確定した量** (`wr_calc_pwr` 完了時点で値が入っている):
 - 入力スカラー: `RF, RPI, ZPI, PHII, RNZI, RNPHII, RKR0, UUI, NRAYMAX, NSTPMAX, NRSMAX, NRLMAX, MDLWRI, MDLWRQ, mode_beam`
 - 派生スカラー: `pos_pwrmax_rs, pwrmax_rs, pos_pwrmax_rl, pwrmax_rl`
-- 配列 (per-ray): `NSTPMAX_NRAY(NRAY)`, `pos_pwrmax_rs_nray(NRAY)`, `pwrmax_rs_nray(NRAY)`, `pos_pwrmax_rl_nray(NRAY)`, `pwrmax_rl_nray(NRAY)`, 終端値 `RAYS(0:7, NSTPMAX_NRAY(NRAY), NRAY)`
+- 配列 (per-ray): `NSTPMAX_NRAY(NRAY)`, `pos_pwrmax_rs_nray(NRAY)`, `pwrmax_rs_nray(NRAY)`, `pos_pwrmax_rl_nray(NRAY)`, `pwrmax_rl_nray(NRAY)`, 終端値 `RAYS(0:NEQ, NSTPMAX_NRAY(NRAY), NRAY)` (NEQ=8 ⇒ 9 要素)
 - プロファイル: `pos_nrs(NRSMAX), pwr_nrs(NRSMAX)`、`pos_nrl(NRLMAX), pwr_nrl(NRLMAX)`
 
 (これらは全て `wrcomm.f90` で宣言済み — Task 2 Step 2 で実機確認する)
@@ -253,7 +253,7 @@ CONTAINS
     WRITE(UNIT_DUMP, '(A,1PE24.16)') 'pos_pwrmax_rl=', pos_pwrmax_rl
     WRITE(UNIT_DUMP, '(A,1PE24.16)') 'pwrmax_rl=',     pwrmax_rl
 
-    WRITE(UNIT_DUMP, '(A)') '# rays: NRAY NSTP_END pos_pwrmax_rs_nray pwrmax_rs_nray pos_pwrmax_rl_nray pwrmax_rl_nray RAYS(0:7,end)'
+    WRITE(UNIT_DUMP, '(A)') '# rays: NRAY NSTP_END pos_pwrmax_rs_nray pwrmax_rs_nray pos_pwrmax_rl_nray pwrmax_rl_nray RAYS(0:8,end)'
     DO NRAY = 1, NRAYMAX
        NSTP_END = NSTPMAX_NRAY(NRAY)
        WRITE(UNIT_DUMP, '(I5,1X,I7)', ADVANCE='NO') NRAY, NSTP_END
@@ -261,7 +261,7 @@ CONTAINS
        WRITE(UNIT_DUMP, '(1X,1PE24.16)', ADVANCE='NO') pwrmax_rs_nray(NRAY)
        WRITE(UNIT_DUMP, '(1X,1PE24.16)', ADVANCE='NO') pos_pwrmax_rl_nray(NRAY)
        WRITE(UNIT_DUMP, '(1X,1PE24.16)', ADVANCE='NO') pwrmax_rl_nray(NRAY)
-       DO I = 0, 7
+       DO I = 0, NEQ   ! NEQ=8 (wrcomm.f90) ⇒ 9 要素 (RAYS first dim is 0:NEQ)
           WRITE(UNIT_DUMP, '(1X,1PE24.16)', ADVANCE='NO') RAYS(I, NSTP_END, NRAY)
        END DO
        WRITE(UNIT_DUMP, '(A)') ''
@@ -656,9 +656,9 @@ pos_pwrmax_rs=2.5000000000000000E-01
 pwrmax_rs=1.2300000000000000E-01
 pos_pwrmax_rl=8.0000000000000000E+00
 pwrmax_rl=4.5600000000000000E-02
-# rays: NRAY NSTP_END pos_pwrmax_rs_nray pwrmax_rs_nray pos_pwrmax_rl_nray pwrmax_rl_nray RAYS(0:7,end)
-    1       8  2.5000000000000000E-01  6.0000000000000000E-02  8.0000000000000000E+00  2.0000000000000000E-02  4.0000000000000000E+00  6.0000000000000000E+00  0.0000000000000000E+00  0.0000000000000000E+00 -1.0000000000000000E+03  0.0000000000000000E+00  0.0000000000000000E+00  9.0000000000000000E-01
-    2       9  2.5000000000000000E-01  6.3000000000000000E-02  8.0000000000000000E+00  2.5600000000000000E-02  4.5000000000000000E+00  6.5000000000000000E+00  0.0000000000000000E+00  0.0000000000000000E+00 -1.0000000000000000E+03  0.0000000000000000E+00  0.0000000000000000E+00  8.5000000000000000E-01
+# rays: NRAY NSTP_END pos_pwrmax_rs_nray pwrmax_rs_nray pos_pwrmax_rl_nray pwrmax_rl_nray RAYS(0:8,end)
+    1       8  2.5000000000000000E-01  6.0000000000000000E-02  8.0000000000000000E+00  2.0000000000000000E-02  4.0000000000000000E+00  6.0000000000000000E+00  0.0000000000000000E+00  0.0000000000000000E+00 -1.0000000000000000E+03  0.0000000000000000E+00  0.0000000000000000E+00  9.0000000000000000E-01  0.0000000000000000E+00
+    2       9  2.5000000000000000E-01  6.3000000000000000E-02  8.0000000000000000E+00  2.5600000000000000E-02  4.5000000000000000E+00  6.5000000000000000E+00  0.0000000000000000E+00  0.0000000000000000E+00 -1.0000000000000000E+03  0.0000000000000000E+00  0.0000000000000000E+00  8.5000000000000000E-01  0.0000000000000000E+00
 # minor radius profile: NRS pos_nrs pwr_nrs
     1  2.5000000000000000E-01  6.0000000000000000E-02
     2  7.5000000000000000E-01  3.0000000000000000E-02
@@ -709,7 +709,7 @@ class TestExtract(unittest.TestCase):
         self.assertEqual(len(rays), 2)
         self.assertEqual(rays[0]["NRAY"], 1)
         self.assertEqual(rays[0]["NSTP_END"], 8)
-        self.assertEqual(len(rays[0]["RAYS_END"]), 8)
+        self.assertEqual(len(rays[0]["RAYS_END"]), 9)
 
     def test_profile_rs(self):
         p = self.data["profile_rs"]
@@ -749,7 +749,7 @@ Output schema:
     NRAYMAX, NSTPMAX, NRSMAX, NRLMAX (ints),
     scalars (dict[str,float]),
     rays    (list[dict] one per ray with NRAY, NSTP_END, pos_pwrmax_rs_nray,
-             pwrmax_rs_nray, pos_pwrmax_rl_nray, pwrmax_rl_nray, RAYS_END[8]),
+             pwrmax_rs_nray, pos_pwrmax_rl_nray, pwrmax_rl_nray, RAYS_END[9]),
     profile_rs (list[dict] one per minor-radius bin: NRS, pos_nrs, pwr_nrs),
     profile_rl (list[dict] one per major-radius bin: NRL, pos_nrl, pwr_nrl).
 """
@@ -809,7 +809,7 @@ def parse(path: Path) -> dict:
                 "pwrmax_rs_nray": float(parts[3]),
                 "pos_pwrmax_rl_nray": float(parts[4]),
                 "pwrmax_rl_nray": float(parts[5]),
-                "RAYS_END": [float(x) for x in parts[6:14]],
+                "RAYS_END": [float(x) for x in parts[6:15]],  # 9 values (RAYS(0:NEQ,end), NEQ=8)
             })
         elif section == "profile_rs":
             parts = line.split()
@@ -1316,7 +1316,7 @@ minor/major radius 方向の吸収パワープロファイルを `wr_regress.dat
 ### 3. dump に含まれる値
 
 - スカラー: `RF, RPI, ZPI, PHII, RNZI, RNPHII, RKR0, UUI, pos_pwrmax_rs/rl, pwrmax_rs/rl`
-- per-ray: `NSTP_END, pos_pwrmax_*_nray, pwrmax_*_nray, RAYS(0:7, end)`
+- per-ray: `NSTP_END, pos_pwrmax_*_nray, pwrmax_*_nray, RAYS(0:NEQ, end)` (NEQ=8 ⇒ 9 値)
 - minor radius profile: `NRS, pos_nrs, pwr_nrs` (NRSMAX 行)
 - major radius profile: `NRL, pos_nrl, pwr_nrl` (NRLMAX 行)
 

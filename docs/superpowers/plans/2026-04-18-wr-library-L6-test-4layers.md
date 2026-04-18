@@ -154,7 +154,13 @@ PARAMS = {
 
 Create `/home/k-yoshimi/program/task/python/wrlib/tests/fixtures/wr_test001_params.py`:
 ```python
-"""WR test001 short case (mirror of test_run/inputs/wr_test001.in)."""
+"""WR test001 short case (mirror of wr/in/test001.in).
+
+Units (per `wr/wrexecr.f90`: `omega = 2.D6 * PI * RFIN(nray)`):
+- RFIN[i]: MHz  (so 160.0e3 MHz = 160 GHz, matching `RFIN(1)=4*160.D3` in test001.in)
+- RPIN[i]/ZPIN[i]: meters
+- ANGZIN[i]/ANGPHIN[i]: degrees
+"""
 PARAMS = {
     "MODELG":   2,
     "RR":       6.2,
@@ -174,7 +180,7 @@ PARAMS = {
     "MDLWRI":   101, "MDLWRQ": 0,   "MDLWRW": 0,
     "SMAX":     5.0,  "DELS":   0.01,
     "NRAYMAX":  2,    "NSTPMAX": 2000, "NRSMAX": 50, "NRLMAX": 100,
-    "RFIN[1]": 160.0e3, "RFIN[2]": 160.0e3,
+    "RFIN[1]": 160.0e3, "RFIN[2]": 160.0e3,   # MHz (= 160 GHz); cf. test001.in: RFIN(1)=4*160.D3
     "RPIN[1]": 8.5, "RPIN[2]": 8.5,
     "ZPIN[1]": 0.0, "ZPIN[2]": 0.0,
     "PHIIN[1]":0.0, "PHIIN[2]":0.0,
