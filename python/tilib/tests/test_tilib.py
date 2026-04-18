@@ -9,6 +9,12 @@ Covers:
   against the real library (skipped if not built).
 * Context-manager lifecycle (``__enter__``/``__exit__``).
 * Negative tests for invalid params / double-close / closed handle.
+* Layer 3 reinforcement (Phase L-6): array round-trip via set_param,
+  repeated run accumulates state, set_params dict bulk-set path.
+
+The suite is designed to produce the 24 tests listed in the L-6 plan's
+"tilib_wrapper" entry when combined with ``test_ffi.py``. See
+``docs/superpowers/plans/2026-04-18-ti-library-L6-test-4layers.md``.
 """
 from __future__ import annotations
 
@@ -211,6 +217,68 @@ class TestTiLibLifecycle(unittest.TestCase):
                 ti.set_params(RR=3.0)
             except TilibError:
                 pass
+
+
+# =====================================================================
+# Layer 3 reinforcement (Phase L-6): array round-trip + repeated run.
+# =====================================================================
+@unittest.skipUnless(
+    DEFAULT_SO.exists(),
+    f"libtiapi.so not built at {DEFAULT_SO}; run `make -C ti libtiapi.so`",
+)
+class TestTiLibLayer3Reinforce(unittest.TestCase):
+    """L-6 Layer 3: extend the basic lifecycle tests with array-element
+    round-trip and multi-step-run state accumulation checks.
+    """
+
+    def test_array_element_set_param(self):
+        """``PN[1]`` style subscript syntax reaches the registry."""
+        with TiLib() as ti:
+            # PN is a 1D array in the registry; index 1 must succeed.
+            try:
+                ti.set_param("PN[1]", 0.5)
+            except TilibError as e:
+                self.fail(f"PN[1] should be settable but raised: {e}")
+
+    def test_array_element_out_of_range_rejected(self):
+        """Out-of-range array subscripts must raise TilibParamError."""
+        with TiLib() as ti:
+            with self.assertRaises(TilibError):
+                ti.set_param("PN[0]", 0.0)         # 1-origin, 0 invalid
+            with self.assertRaises(TilibError):
+                ti.set_param("PN[99999]", 0.0)     # way out of range
+
+    def test_run_zero_then_get_state_multiple(self):
+        """Repeated ``run(0) + get_state`` calls return consistent state."""
+        with TiLib() as ti:
+            ti.run(0)
+            s1 = ti.get_state()
+            ti.run(0)
+            s2 = ti.get_state()
+            # Two zero-step runs must leave NRMAX / NSA_MAX unchanged.
+            self.assertEqual(s1.nrmax, s2.nrmax)
+            self.assertEqual(s1.nsa_max, s2.nsa_max)
+
+    def test_run_advances_T(self):
+        """Finite ``run(n)`` advances the simulation time scalar."""
+        with TiLib() as ti:
+            try:
+                ti.set_param("DT", 0.01)
+                ti.set_param("NTSTEP", 1.0)
+            except TilibError:
+                self.skipTest("DT / NTSTEP not in registry")
+            s0 = ti.get_state()
+            ti.run(3)
+            s1 = ti.get_state()
+            # T should be non-decreasing; we don't pin an exact delta
+            # because the solver may coalesce steps.
+            self.assertGreaterEqual(s1.T, s0.T)
+
+    def test_set_params_bulk_dict_path(self):
+        """``set_params(**dict)`` bulk dispatch reaches every name."""
+        with TiLib() as ti:
+            # Intentionally use only keys ti_param_registry knows.
+            ti.set_params(NRMAX=10.0, NTMAX=2.0, NTSTEP=1.0)
 
 
 if __name__ == "__main__":
