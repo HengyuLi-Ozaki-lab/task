@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from .loader import apply_config, load_config, run_plots
+from .loader import apply_config, load_config, run_plots, run_sweep_plots
 
 
 _EXIT_OK = 0
@@ -119,6 +119,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _EXIT_LIB
 
     try:
+        # State-dependent plots run inside the with-block (need live tr).
         with Trlib() as tr:
             apply_config(tr, cfg)
             tr.run(ntmax=ntmax)
@@ -131,12 +132,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 try:
                     results = run_plots(tr, cfg)
                 except ImportError as exc:
-                    # matplotlib missing — treat as config-type error.
                     print(f"[trlib] plot backend unavailable: {exc}",
                           file=sys.stderr)
                     return _EXIT_CONFIG
                 for name, descriptor in results:
                     print(f"[trlib] plot {name} -> {descriptor}")
+        # Sweep plots run AFTER the outer Trlib closes — each sweep
+        # sample needs its own tr_init/tr_run/tr_finalize cycle and
+        # would collide with the still-live outer instance.
+        if cfg.get("plots"):
+            try:
+                sweep_results = run_sweep_plots(cfg)
+            except ImportError as exc:
+                print(f"[trlib] plot backend unavailable: {exc}",
+                      file=sys.stderr)
+                return _EXIT_CONFIG
+            for name, descriptor in sweep_results:
+                print(f"[trlib] plot {name} -> {descriptor}")
     except Exception as exc:
         print(f"[trlib] library error: {exc}", file=sys.stderr)
         return _EXIT_LIB

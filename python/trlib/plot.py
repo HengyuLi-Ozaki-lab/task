@@ -366,13 +366,21 @@ def plot_sweep(
             f"y variable {y!r} has no plot support. See plot_available()."
         )
     start, stop, n = rng
+    n = int(n)              # TOML may pass float; range() requires int
     if n < 2:
         raise ValueError("plot_sweep needs at least 2 samples")
     # Use the builtin via __builtins__ since `range` parameter shadows it.
     import builtins as _builtins
-    xs = [start + (stop - start) * i / (n - 1) for i in _builtins.range(n)]
+    xs = [float(start) + (float(stop) - float(start)) * i / (n - 1)
+          for i in _builtins.range(n)]
     ys: List[float] = []
 
+    # Sweep MUST own its own Trlib lifecycle: tr globals are shared, and
+    # nesting `with Trlib()` inside an outer caller's instance would
+    # double-finalize and corrupt state. _run_sweep_spec passes its outer
+    # `tr` argument for documentation purposes only — we ignore it and
+    # spin up a fresh, isolated Trlib here. A future refactor could share
+    # one instance and just reset params per sample.
     with Trlib() as tr:
         for x in xs:
             if base_params:

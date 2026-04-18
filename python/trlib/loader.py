@@ -202,7 +202,10 @@ def _apply_array(tr: Any, name: str, arr: Any) -> None:
 # Plot execution
 # =====================================================================
 def run_plots(tr: Any, cfg: Mapping[str, Any]) -> List[Tuple[str, Any]]:
-    """Execute every plot spec in ``cfg`` against a live :class:`Trlib`.
+    """Execute every state-dependent plot spec in ``cfg`` against a live
+    :class:`Trlib`. **Sweep plots are skipped** here — they require their
+    own isolated Trlib lifecycle (see :func:`run_sweep_plots`) because the
+    Fortran COMMON-block backend is single-instance per process.
 
     Returns a list of ``(varname, output_descriptor)`` tuples where
     ``output_descriptor`` is the return value of :func:`trlib.plot.plot`
@@ -224,17 +227,34 @@ def run_plots(tr: Any, cfg: Mapping[str, Any]) -> List[Tuple[str, Any]]:
             continue
         varname = spec.get("variable")
         if not varname:
-            # Skip sweep / compare entries (future): they need param/y
-            # keys, not variable. We ignore them rather than error so a
-            # forward-compatible TOML still loads cleanly.
-            kind = spec.get("kind")
-            if kind == "sweep":
-                results.append(_run_sweep_spec(tr, spec, _plot_mod))
-                continue
+            # Sweep plots are deferred to run_sweep_plots() which executes
+            # AFTER the outer Trlib has been finalized, since each sweep
+            # sample needs its own fresh tr_init/tr_run/tr_finalize cycle.
             continue
         kw = _plot_kwargs(spec)
         descriptor = _plot_mod.plot(varname, state=state, **kw)
         results.append((varname, descriptor))
+    return results
+
+
+def run_sweep_plots(cfg: Mapping[str, Any]) -> List[Tuple[str, Any]]:
+    """Execute sweep / compare plot specs that need their own Trlib
+    lifecycle. MUST be called AFTER any outer ``with Trlib()`` block has
+    exited — sweeps open fresh Trlib instances internally and would
+    collide with a still-live caller instance.
+    """
+    from . import plot as _plot_mod  # lazy
+
+    plots = cfg.get("plots", [])
+    results: List[Tuple[str, Any]] = []
+    if not plots:
+        return results
+    for spec in plots:
+        if not isinstance(spec, Mapping):
+            continue
+        kind = spec.get("kind")
+        if kind == "sweep":
+            results.append(_run_sweep_spec(None, spec, _plot_mod))
     return results
 
 
@@ -265,4 +285,5 @@ __all__ = [
     "load_config",
     "apply_config",
     "run_plots",
+    "run_sweep_plots",
 ]
