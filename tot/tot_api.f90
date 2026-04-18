@@ -27,10 +27,11 @@
 MODULE tot_api
   USE, INTRINSIC :: ISO_C_BINDING
   USE tot_state, ONLY: tot_state_c, TOT_MAX_NRMAX, TOT_MAX_NSMAX
+  USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: tot_api_init, tot_api_run, tot_api_get_state, &
-            tot_api_set_param, tot_api_finalize
+            tot_api_set_param, tot_api_set_param_str, tot_api_finalize
 
   ! Error codes (must match tot_api.h enum):
   !   0 = OK
@@ -38,6 +39,8 @@ MODULE tot_api
   !   2 = not initialized
   !   3 = per-module init / calculation failed
   !   4 = not implemented (Phase L-2 stub return)
+  INTEGER(C_INT), PARAMETER :: TOT_ERR_OK              = 0
+  INTEGER(C_INT), PARAMETER :: TOT_ERR_INVALID         = 1
   INTEGER(C_INT), PARAMETER :: TOT_ERR_NOT_IMPLEMENTED = 4
 
 CONTAINS
@@ -98,17 +101,62 @@ CONTAINS
     ierr = TOT_ERR_NOT_IMPLEMENTED
   END FUNCTION tot_api_get_state
 
+  !-------------------------------------------------------------------
+  ! tot_set_param : dispatch a namespaced parameter to the matching
+  ! per-module registry.
+  !
+  ! name   - NUL-terminated C string of the form "<ns>:<bare>" where
+  !          <ns> is one of {eq, tr, fp, ti, wr, wrx}. Calls without a
+  !          prefix are rejected (TOT_ERR_INVALID) because the tot
+  !          parameter space is the UNION of the six backing modules
+  !          and there is no single "owner" to default to.
+  ! value  - scalar double.
+  !
+  ! Returns:
+  !   0 = success
+  !   1 = invalid (bad prefix, unknown bare name, downstream rejected)
+  !-------------------------------------------------------------------
   FUNCTION tot_api_set_param(name, value) RESULT(ierr) BIND(C, NAME="tot_set_param")
     CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
-    REAL(C_DOUBLE), VALUE, INTENT(IN) :: value
+    REAL(C_DOUBLE), VALUE,                INTENT(IN) :: value
     INTEGER(C_INT) :: ierr
-    ! Touch the inputs so the compiler does not warn about unused args.
-    IF (name(1) == C_NULL_CHAR .AND. value == HUGE(value)) THEN
-       ierr = TOT_ERR_NOT_IMPLEMENTED
+    CHARACTER(LEN=128) :: fname
+    INTEGER :: rc
+
+    CALL c_string_to_fortran(name, fname)
+    CALL tot_param_set(TRIM(fname), value, rc)
+    IF (rc == 0) THEN
+       ierr = TOT_ERR_OK
     ELSE
-       ierr = TOT_ERR_NOT_IMPLEMENTED
+       ierr = TOT_ERR_INVALID
     END IF
   END FUNCTION tot_api_set_param
+
+  !-------------------------------------------------------------------
+  ! tot_set_param_str : string-valued companion to tot_set_param.
+  !
+  ! At L-3 only the `tr:` namespace has a backing string setter (for
+  ! KNAMEQ and friends). All other namespaces return TOT_ERR_INVALID
+  ! until their registries grow a matching `_str` entry point.
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_set_param_str(name, value) RESULT(ierr) &
+       BIND(C, NAME="tot_set_param_str")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: value
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=128) :: fname
+    CHARACTER(LEN=256) :: fvalue
+    INTEGER :: rc
+
+    CALL c_string_to_fortran(name,  fname)
+    CALL c_string_to_fortran(value, fvalue)
+    CALL tot_param_set_str(TRIM(fname), TRIM(fvalue), rc)
+    IF (rc == 0) THEN
+       ierr = TOT_ERR_OK
+    ELSE
+       ierr = TOT_ERR_INVALID
+    END IF
+  END FUNCTION tot_api_set_param_str
 
   FUNCTION tot_api_finalize() RESULT(ierr) BIND(C, NAME="tot_finalize")
     INTEGER(C_INT) :: ierr
@@ -118,5 +166,22 @@ CONTAINS
     ! followed by mtx_finalize, matching totmain.f90:79.
     ierr = TOT_ERR_NOT_IMPLEMENTED
   END FUNCTION tot_api_finalize
+
+  !-------------------------------------------------------------------
+  ! Copy a NUL-terminated C char array into a fixed-length Fortran
+  ! buffer, space-padded. Safe against names/values longer than the
+  ! destination: we stop at the first NUL or at LEN(dst), whichever
+  ! comes first.
+  !-------------------------------------------------------------------
+  SUBROUTINE c_string_to_fortran(c_str, f_str)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: c_str
+    CHARACTER(LEN=*),                     INTENT(OUT) :: f_str
+    INTEGER :: i
+    f_str = ' '
+    DO i = 1, LEN(f_str)
+       IF (c_str(i) == C_NULL_CHAR) EXIT
+       f_str(i:i) = c_str(i)
+    END DO
+  END SUBROUTINE c_string_to_fortran
 
 END MODULE tot_api
