@@ -124,51 +124,63 @@ architecture, parameter registry, and 4-layer test structure. The
 - Single instance per process only — TI globals are COMMON-block
   state.
 
-## WR Phase L — library-ization (2026-04-18)
+## FP Phase L — library-ization (2026-04-18)
 
-Phase L mirrors the TR library-ization for the TASK/WR ray-tracing
+Phase L mirrors the TR library-ization for the TASK/FP Fokker-Planck
 module: the same 5 C ABI functions, the same wrapper architecture,
-parameter registry, and 4-layer test structure. The `wr` CLI binary
+parameter registry, and 4-layer test structure. The `fp` CLI binary
 and its menu/graphics are unchanged.
 
 ### Added
 
+- **L-0 (2026-04-18, PR #13)** — Phase 0 regression-test
+  infrastructure for FP: `test_run/baselines/fp_{iter01,jt60,dt1}/`,
+  `fpregress.f90` (env-guarded high-precision dump),
+  `test_run/scripts/extract_fp_metrics.py`, and the three baseline
+  test cases `fp_iter01`, `fp_jt60`, `fp_dt1` wired into
+  `test_definitions.conf`.
+- **L-1 (2026-04-18, PR #26)** — `fp/Makefile` split into
+  CORE / GRAPHICS / MENU `SRCS` groups so graphics-free Fortran
+  compilations can be staged without touching the `fp` binary
+  build.
+- **L-2 (2026-04-18, PR #29)** — C ABI foundation: `fp/fp_api.h`,
+  `fp/fp_api.f90`, `fp/fp_state.f90`; 5 entry-point stubs returning
+  `FP_ERR_NOT_IMPL` (ierr=4), plus first C-side compile-only smoke
+  tests under `fp/tests/c_abi/`.
+- **L-3 (2026-04-18, PR #37)** — Parameter registry
+  (`fp/fp_param_registry.f90`) and real bodies for
+  `fp_init` / `fp_run` / `fp_get_state` / `fp_finalize`.
+- **L-4 (2026-04-18, PR #43)** — `make -C fp libfpapi.so` builds the
+  shared library.
+- **L-5 (2026-04-18, PR #55)** — Python wrapper `python/fplib/`.
+- **L-6 (2026-04-18, PR #56)** — 4-layer test suite wired into
+  `test_run/test_definitions.conf`.
+- **L-7 (2026-04-18, PR #68)** — User-facing documentation:
+  rewritten `python/fplib/README.md`, example scripts,
+  architecture doc (`docs/fp-library/architecture.md`).
+
+## WR Phase L — library-ization (2026-04-18)
+
+Phase L mirrors the TR library-ization for the TASK/WR ray-tracing
+module. The `wr` CLI binary and its menu/graphics are unchanged.
+
+### Added
+
 - **L-0 (2026-04-18, PR #15)** — Phase 0 regression-test
-  infrastructure for WR: `test_run/baselines/wr_{iter_lhcd,test001,
-  tst2_ec}/metrics.json`, `tools/extract_wr_metrics.py`,
-  `test_run/inputs/wr_*.in`.
-- **L-1 (2026-04-18, PR #24)** — `wr/Makefile` SRCS split so the
-  graphics-free Fortran layer can be staged into a shared library
-  without touching the `wr` binary build.
+  infrastructure for WR.
+- **L-1 (2026-04-18, PR #24)** — `wr/Makefile` SRCS split.
 - **L-2 (2026-04-18, PR #30)** — C ABI foundation: `wr/wr_api.h`,
-  `wr/wr_api.f90`; 5 entry-point stubs returning `WR_ERR_NOT_IMPL`
-  (ierr=4) with a `wr_api_check` smoke target under
-  `wr/tests/c_abi/`.
-- **L-3 (2026-04-18, PR #36)** — Parameter registry
-  (`wr/wr_param_registry.f90`, ~80 `SELECT CASE` entries covering
-  scalars and 1-D arrays) plus real bodies for `wr_init` / `wr_run`
-  / `wr_get_state` / `wr_finalize`. `wr_set_param` accepts `"NAME"`
-  and `"NAME[idx]"` (1-origin). Includes the Bugbot HIGH fix
-  (double-free on finalize-then-reinit): `wr_allocate` SAVE flags
-  moved to module scope, `wr_reset_alloc_state` added and called
-  from `wr_finalize`, and every `wr_deallocate` guarded with
-  `ALLOCATED()`. Expands `wr_api_check_all` with `test_param`,
-  `test_run`, `test_reinit` C drivers.
-- **L-4 (2026-04-18, PR #42)** — `make -C wr libwrapi.so` builds the
-  shared library. PIC variants (`*_pic.a`) of `lib`, `pl`, `eq`,
-  `dp`, `mtxp`, `bpsd` added to participating Makefiles. Non-PIC
-  archives and the `wr` binary are unchanged.
-- **L-5 (2026-04-18, PR #46)** — Python wrapper `python/wrlib/`:
-  `Wrlib` context manager, `WrState` dataclass, exception hierarchy
-  mirroring `enum wr_error`, `_ffi` ctypes layer with `WRLIB_PATH`
-  override and `RTLD_LAZY` loading.
+  `wr/wr_api.f90`.
+- **L-3 (2026-04-18, PR #36)** — Parameter registry and real
+  bodies. Includes the Bugbot HIGH fix (double-free on
+  finalize-then-reinit): `wr_allocate` SAVE flags moved to module
+  scope, `wr_reset_alloc_state` added and called from `wr_finalize`,
+  and every `wr_deallocate` guarded with `ALLOCATED()`.
+- **L-4 (2026-04-18, PR #42)** — `make -C wr libwrapi.so` builds
+  the shared library.
+- **L-5 (2026-04-18, PR #46)** — Python wrapper `python/wrlib/`.
 - **L-6 (2026-04-18, PR #60)** — 4-layer test suite wired into
-  `test_run/test_definitions.conf`:
-  `wrlib_equivalence` (Layer 1 vs Phase 0 baselines, tol `1e-10`),
-  `wrlib_c_abi` (Layer 2 `make -C wr wr_api_check_all` covering
-  smoke/param/run/reinit/run_so/negative),
-  `wrlib_ffi` + `wrlib_wrapper` (Layer 3 Python),
-  `wrlib_sweep` (Layer 4 3×3 RFIN × ANGPHIN smoke).
+  `test_run/test_definitions.conf`.
 - **L-7 (2026-04-18, this PR)** — User-facing documentation:
   rewritten `python/wrlib/README.md`, example scripts
   (`quickstart.py`, `parameter_sweep.py`, `state_dump.py`),
@@ -177,16 +189,24 @@ and its menu/graphics are unchanged.
 
 ### Known issues
 
+**FP:**
+- `fp_finalize` does not deallocate FPCOMM arrays (asymmetry between
+  `fp_allocate` and `fp_deallocate`); long-running drivers can leak
+  allocations.
+- String parameters (`KNAMFP`, ...) are not wired through
+  `fp_set_param`.
+- Mesh caps `FP_MAX_NRMAX=100` and `FP_MAX_NSAMAX=8` are baked into
+  the exported `fp_state_t`.
+- Single instance per process only.
+
+**WR:**
 - Post-finalize state-reset invariant: `wr_finalize` must call
   `wr_reset_alloc_state` to zero `wr_allocate`'s SAVE flags
   (`INIT`, `NRAYMAX_SAVE`, `NSTPMAX_SAVE`). Do not remove this hook
-  when extending `wr_finalize`; the Layer-4 `wrlib_sweep` and the
-  Layer-2 `test_reinit.c` driver both exercise 9+ full cycles and
-  will crash if the invariant regresses (PR #36 Bugbot HIGH).
+  (PR #36 Bugbot HIGH).
 - Beam tracing (`mode_beam /= 0`) is not exposed through
   `wr_get_state`; only ray-tracing outputs are surfaced.
 - Input scalars (`RF`, `RPI`, ...) are not echoed in
-  `wr_get_state`; reading them back is a future-phase extension.
+  `wr_get_state`.
 - String parameters are not wired through `wr_set_param`.
-- Single instance per process only — WR globals are COMMON-block
-  state plus module-scope allocation flags.
+- Single instance per process only.
