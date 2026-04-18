@@ -10,10 +10,11 @@
 - `test_output/<name>/`     — 実行ごとのログ・成果物・dump（gitignore 対象）
 - `baselines/<name>/`       — 回帰判定用ゴールデン指標（**コミット対象**）
 - `scripts/`
-  - `extract_tr_metrics.py` — `tr_regress.dat` を JSON に変換
-  - `compare_metrics.py`    — 2 指標 JSON を相対誤差で比較（デフォルト 1e-10）
-  - `check_regression.sh`   — 抽出＋比較（または baseline 生成）
-  - `tests/`                — 上記スクリプトの unittest ベースの単体テスト
+  - `extract_tr_metrics.py`  — `tr_regress.dat` を JSON に変換
+  - `extract_wrx_metrics.py` — `wrx_regress.dat` を JSON に変換 (Phase L-0)
+  - `compare_metrics.py`     — 2 指標 JSON を相対誤差で比較（デフォルト 1e-10、`--schema {auto,tr,wrx}`）
+  - `check_regression.sh`    — 抽出＋比較（または baseline 生成、test_name の `tr_*`/`wrx_*` プレフィックスで dispatch）
+  - `tests/`                 — 上記スクリプトの unittest ベースの単体テスト
 
 ## 基本使用例
 
@@ -109,3 +110,38 @@ TR 本体 (`tr/trregress.f90`) は、環境変数 `TR_REGRESS_DUMP=1` が設定�
 | `tr_iter01` | `eq_iter01` | ITER 相当機（`modelg=3`）、NTMAX=100 短縮版 |
 | `tr_m0904`  | なし       | 解析ジオメトリ（`modelg=2`）、NTMAX=50 |
 | `tr_tst2`   | `eq_tst2`  | TST-2 小型機（`modelg=3`）、NTMAX=10 |
+
+## WRX モジュールの回帰判定 (Phase L-0)
+
+WRX (extended wave ray-tracing solver) モジュールも TR と同じ dump-and-compare
+方式を採用。`run_tests.sh` が WRX テストを走らせる際は `WRX_REGRESS_DUMP=1` を
+エクスポートし、`wrx/wrxregress.f90` が `wr_exec` 終了直後に `wrx_regress.dat`
+を `1PE24.16` 書式で書き出す。`scripts/extract_wrx_metrics.py` がそれを JSON
+に変換し、`compare_metrics.py --schema wrx` がベースラインと相対誤差 `1e-10`
+で比較する。
+
+WRX dump に含まれる値:
+
+- スカラー: `NRAYMAX, NSTPMAX, NRSMAX, NRLMAX, NSAMAX_WR, NSMAX, MODELG, MDLWRQ, pwr_tot`
+- 1D 配列: `NSTPMAX_NRAY(NRAYMAX)` (整数), `pwr_nray(NRAYMAX)`, `pwr_nsa(NSAMAX_WR)`,
+  `pos_nrs(NRSMAX)`, `pos_nrl(NRLMAX)`
+- 2D 配列: `pwr_nsa_nray(NSAMAX_WR,NRAYMAX)`, `pwr_nrs_nsa(NRSMAX,NSAMAX_WR)`,
+  `pwr_nrl_nsa(NRLMAX,NSAMAX_WR)`,
+  `pos_pwrmax_rs_nsa_nray(NSAMAX_WR,NRAYMAX)`, `pwrmax_rs_nsa_nray(NSAMAX_WR,NRAYMAX)`,
+  `pos_pwrmax_rl_nsa_nray(NSAMAX_WR,NRAYMAX)`, `pwrmax_rl_nsa_nray(NSAMAX_WR,NRAYMAX)`
+
+ステップ毎の `RAYS(0:NEQ,0:NSTPMAX,NRAYMAX)` 等のフルプロファイルは dump 量が
+大きすぎるため Phase L-0 では含めない（必要なら L-6 で追加）。
+
+WRX のベースラインを再生成する手順:
+
+    ./run_tests.sh wrx_demo wrx_iter01 wrx_jt60         # dump を出す
+    for c in wrx_demo wrx_iter01 wrx_jt60; do
+        scripts/check_regression.sh "$c" "test_output/$c" "baselines" "1e-10" --generate-baseline
+    done
+
+| TEST_NAME    | 依存 | 用途 |
+|---|---|---|
+| `wrx_demo`   | なし | TST-2 最小 1-ray smoke (`modelg=2`) |
+| `wrx_iter01` | なし | ITER ECCD 4-ray (`modelg=2`, 解析平衡) |
+| `wrx_jt60`   | なし | JT-60U ECCD 2-ray (`modelg=2`, 解析平衡) |

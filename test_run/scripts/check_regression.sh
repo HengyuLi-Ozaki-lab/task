@@ -2,12 +2,18 @@
 #
 # check_regression.sh <test_name> <test_output_dir> <baselines_dir> [tolerance] [--generate-baseline]
 #
-# Reads <test_output_dir>/tr_regress.dat (produced when tr2 is run with
-# TR_REGRESS_DUMP=1), extracts metrics to JSON, and compares with
-# <baselines_dir>/<test_name>/metrics.json. Exits 0 on match, 1 on mismatch,
-# 2 on missing dump, 3 on missing baseline.
+# Reads <test_output_dir>/<module>_regress.dat (produced when the matching
+# binary is run with the corresponding <MODULE>_REGRESS_DUMP=1 env var),
+# extracts metrics to JSON, and compares with <baselines_dir>/<test_name>/metrics.json.
+# Exit codes: 0 = match, 1 = mismatch, 2 = missing/malformed dump,
+#             3 = missing baseline, 4 = unsupported test name prefix.
 #
-# With --generate-baseline, the extracted JSON is written as baseline instead.
+# Module dispatch is by the test_name prefix:
+#   tr_*  -> tr_regress.dat  / extract_tr_metrics.py  (schema: tr,  default)
+#   wrx_* -> wrx_regress.dat / extract_wrx_metrics.py (schema: wrx)
+#
+# With --generate-baseline as the 5th arg, the extracted JSON is written
+# as the baseline instead of being compared.
 #
 set -u
 
@@ -18,18 +24,43 @@ BASELINES_DIR="${3:?}"
 TOL="${4:-1e-10}"
 MODE="${5:-compare}"
 
-DUMP="$OUTPUT_DIR/tr_regress.dat"
+case "$TEST_NAME" in
+    tr_*)
+        DUMP_BASENAME="tr_regress.dat"
+        EXTRACTOR="extract_tr_metrics.py"
+        SCHEMA="tr"
+        DUMP_ENV_HINT="TR_REGRESS_DUMP=1"
+        ;;
+    wrx_*)
+        DUMP_BASENAME="wrx_regress.dat"
+        EXTRACTOR="extract_wrx_metrics.py"
+        SCHEMA="wrx"
+        DUMP_ENV_HINT="WRX_REGRESS_DUMP=1"
+        ;;
+    *)
+        echo "check_regression: unsupported test name prefix: $TEST_NAME" >&2
+        echo "  expected one of: tr_*, wrx_*" >&2
+        exit 4
+        ;;
+esac
+
+DUMP="$OUTPUT_DIR/$DUMP_BASENAME"
 METRICS_ACTUAL="$OUTPUT_DIR/metrics.json"
 METRICS_BASE="$BASELINES_DIR/$TEST_NAME/metrics.json"
 
 if [[ ! -f "$DUMP" ]]; then
     echo "check_regression: dump not found: $DUMP" >&2
-    echo "  did the test run with TR_REGRESS_DUMP=1 exported?" >&2
+    echo "  did the test run with $DUMP_ENV_HINT exported?" >&2
     exit 2
 fi
 
-if ! python3 "$SCRIPT_DIR/extract_tr_metrics.py" "$DUMP" > "$METRICS_ACTUAL"; then
-    echo "check_regression: failed to parse $DUMP" >&2
+if [[ ! -f "$SCRIPT_DIR/$EXTRACTOR" ]]; then
+    echo "check_regression: extractor not found: $SCRIPT_DIR/$EXTRACTOR" >&2
+    exit 2
+fi
+
+if ! python3 "$SCRIPT_DIR/$EXTRACTOR" "$DUMP" > "$METRICS_ACTUAL"; then
+    echo "check_regression: failed to parse $DUMP with $EXTRACTOR" >&2
     exit 2
 fi
 
@@ -49,4 +80,5 @@ fi
 python3 "$SCRIPT_DIR/compare_metrics.py" \
     --baseline "$METRICS_BASE" \
     --actual "$METRICS_ACTUAL" \
-    --tolerance "$TOL"
+    --tolerance "$TOL" \
+    --schema "$SCHEMA"
