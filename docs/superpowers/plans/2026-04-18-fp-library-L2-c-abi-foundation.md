@@ -20,6 +20,16 @@ MODULE fp_api (fp_api.f90)          [新規: C ABI 5 関数]
 
 5 関数全て `INTEGER(C_INT)` 戻り値、`bind(c, name="fp_*")` で公開。
 
+**命名規約 — Fortran PUBLIC vs C シンボル:**
+
+Fortran 側では `fp_init_c, fp_run_c, fp_set_param_c, fp_get_state_c, fp_finalize_c`（`_c` サフィックス付き）として PUBLIC 公開する一方、C ABI 上は `BIND(C, NAME="fp_init")` 等で `_c` を取った素のシンボル名を export する。これは:
+
+- Fortran 内では「C ABI 用関数」と分かるよう `_c` サフィックスで識別
+- C ヘッダ / C コードからは素の `fp_init` を呼ぶ（ヘッダの prototype と一致）
+- リンク時には `BIND(C, NAME=...)` 指定により素の名前で解決される
+
+L-3 以降で `nm -D libfpapi.so | grep ' T fp_'` を確認するとき、表示されるのは `fp_init` 等（`_c` 抜き）になる点に注意。
+
 **Tech Stack:** Fortran 2003 (`ISO_C_BINDING`)、既存 fp ビルドシステム、回帰テスト（`fp_iter01/jt60/dt1` の bit-exact 維持）。
 
 **出典設計書:** `docs/superpowers/specs/2026-04-17-tr-library-design.md` セクション 4.1, 4.2, 4.3。
@@ -292,6 +302,30 @@ END MODULE fp_api
 
 注: `fp_deallocate` の呼び出しは L-2 では入れない（既存 fp バイナリ動作不変を最優先）。L-4 で `libfpapi.so` の reuse シナリオが固まってから判断。
 
+**USE chain の事前確認（重要）:**
+
+`fp_api.f90` が `USE fpprep, ONLY: fp_prep` を行うと、`fpprep.f90` の以下の transitive USE が芋づる式に解決される必要がある:
+
+```
+fpprep
+  ├── fpcomm, fpinit, fpsave, fpcoef, fpcalw, fpbounce
+  ├── equnit, fpmpi, libmpi
+  ├── fpcaleind     ← MODULE は fp/fpcale.f90 内に定義（独立 .f90 ではない）
+  ├── fpdisrupt, fplib, libmtx, plprof
+  └── fpbroadcast, fpwrin, fpwmin, fpreadeg
+```
+
+ファイル名は `fpcale.f90` だが、その中で `MODULE fpcaleind` が定義されている。`grep -n "MODULE fpcaleind" fp/fpcale.f90` で確認可能。
+
+事前検証コマンド:
+```bash
+grep -nE "^[[:space:]]+USE[[:space:]]+" /home/k-yoshimi/program/task/fp/fpprep.f90
+grep -n "MODULE fpcaleind" /home/k-yoshimi/program/task/fp/*.f90
+```
+Expected: `fpcale.f90:6:      MODULE fpcaleind` が見つかる。
+
+**フォールバック方針:** もし `fp_api.f90` の compile で transitive USE 解決に失敗した場合（例: `mod_pic` ディレクトリの `.mod` 不整合）、Step 3 では `fp_run_c` を一時的に `ierr = FP_ERR_NOT_INIT` を返す stub に縮退し、L-3 の `fp_param_registry.f90` 実装と並行して fp_run の実体実装を後追いする。「ビルドが通る最小構成」を優先（受け入れ基準: `make fp_api_check` が 0 終了するだけ）。
+
 - [ ] **Step 3: 単独コンパイル確認**
 
 L-2 では `fp_api.o` を `OBJS` に含めずビルドだけ確認したい。手動で:
@@ -306,7 +340,7 @@ ls -la obj/fp_api.o
 ```
 Expected: エラーなしで `obj/fp_api.o` 生成。USE chain（pl_init, eq_init, ob_init, fp_init, fp_prep, fp_loop, fpcomm）が解決できる必要がある。
 
-USE できないモジュール（例: `equnit`）がある場合: `fp/Makefile` の `MODINCLUDE` を確認し、`-I../eq/mod` を追加。
+USE できないモジュール（例: `equnit`）がある場合: `fp/Makefile` の `MODINCLUDE` を確認し、`-I../eq/mod` を追加。`fpprep` が `fpcaleind`（`fpcale.f90` 内）を transitive に USE するため、`fp/fpcale.f90` も先にビルドされている必要がある（`make` の通常ターゲットで自動的に解決される）。
 
 ---
 
@@ -575,6 +609,7 @@ git commit -m "feat(fp): add C ABI foundation (fp_state, fp_api stub, fp_api.h)"
 | 状況 | 対応 |
 |---|---|
 | `fp_api.f90` の USE chain（`equnit, obinit, plinit, fpprep, fploop`）で循環 / 未解決モジュール | `fp_api.f90` に必要最低限の USE だけ残し、`fp_run_c` の中身を一時的に `ierr=FP_ERR_NOT_INIT` の stub にして「ビルド通過 + L-3 で本実装」へ縮退 |
+| `fpprep` 経由で USE される `fpcaleind` の `.mod` が見つからない | `fpcaleind` MODULE は `fp/fpcale.f90` 内に定義されている（独立 .f90 ではない）。通常 `make` で `fp/fpcale.f90` 由来の `fpcale.o` + `fpcaleind.mod` が `obj/` / `mod/` に生成されるはず。先に `make obj/fpcale.o` を実行してから fp_api をビルド |
 | `fp_state_c` の固定サイズが大きすぎてスタックあふれを心配される | `FP_MAX_NRMAX = 50` に減らす（実入力で十分）|
 | `gcc -c` で `fp_api.h` の `[FP_MAX_NSAMAX][FP_MAX_NRMAX]` レイアウトが C99 規約と齟齬 | C99 配列宣言に変更、または `double *RNT;` ポインタ + サイズパラメータの外部 API に切り替えて L-3 で再評価 |
 | `fp_api_check` を Makefile の `all:` ターゲットに含めるべきか | L-2 では含めない（独立ターゲット）。L-4 で `all: libs fp libfpapi.so` に含める |

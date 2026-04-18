@@ -22,6 +22,10 @@
 | `python/fplib/CHANGELOG.md` | 新規 | L-1..L-7 の history を記録 |
 | `doc/fp-library.md` | 新規 | task リポジトリ全体ドキュメント側へのエントリポイント（fplib への link） |
 
+**ディレクトリ名の確認 — `doc/` (singular):**
+
+PR target repo (`k-yoshimi/task`) のルートには `doc/` が存在し `docs/` は存在しない（`ls /home/k-yoshimi/program/task/` で確認済み）。本 plan の `docs/superpowers/plans/` は task-private 側専用パスで、task 公開リポジトリでは使われない。したがって fp library ドキュメントエントリは `doc/fp-library.md` (singular) で正しい。
+
 **Notebook の「最小依存」方針:** `numpy`, `matplotlib` が無くても `sweep_iter01.py` 単体で完走できるよう、可視化部分は notebook のみに置く。
 
 ---

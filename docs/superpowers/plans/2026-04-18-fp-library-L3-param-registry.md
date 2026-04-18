@@ -32,20 +32,49 @@ fp_param_set(name, value) -> ierr        [fp_param_registry.f90]
 
 `fp/fpparm.f90:60-108` の `NAMELIST /FP/` には 110+ 変数が登録されている。L-3 では **頻用パラメータ約 25 個** を最初に登録し、CASE 追加でいつでも拡張できる構造にする。
 
+**重要 — モジュール所属の事前確認:**
+
+`fp_param_registry.f90` で setter にする変数は、実際に宣言されている module を確認した上で USE する必要がある。`fpcomm_parm` は `USE plcomm_parm` を transitive に含むため `USE fpcomm_parm` だけで両者の変数が見えるが、可読性のため **どの変数がどの module 由来か明示** する。
+
+実宣言箇所（grep で確認済み 2026-04-18）:
+
+| 変数 | 宣言モジュール | ファイル:行 |
+|---|---|---|
+| `NSMAX`, `MODELG`, `MODELB`, `MODELQ` | `plcomm_parm` | `pl/plcomm.f90:41,43` |
+| `PA, PZ, PN, PNS, PNM, PTPR, PTPP, PTS, PTM, PU, PUS, PROFN1...` (NSM 配列) | `plcomm_parm` | `pl/plcomm.f90:63-68` |
+| `RR, RA, RB, RKAP, RDLT, BB, Q0, QA, RIP, PROFJ` | `plcomm_parm` | `pl/plcomm.f90:50` |
+| `nsamax, nsbmax` (**小文字**) | `fpcomm_parm` | `fp/fpcomm.f90:19` |
+| `MODELE, MODELA, MODELR, MODELD, MODELS, MODELC(NSM), MODELW(NSM)` | `fpcomm_parm` | `fp/fpcomm.f90:28` |
+| `NRMAX, NPMAX, NTHMAX, NAVMAX, NTMAX` | `fpcomm_parm` | `fp/fpcomm.f90:24-25` |
+| `LMAXFP, IMTX` | `fpcomm_parm` | `fp/fpcomm.f90:36` |
+| `PMAX(NSM), R1, DELR1, RMIN, RMAX, E0, ZEFF` | `fpcomm_parm` | `fp/fpcomm.f90:52-54` |
+| `DELT, RIMPL, EPSFP, EPSM, EPSE` | `fpcomm_parm` | `fp/fpcomm.f90:69` |
+| `PABS_EC, PABS_LH, PABS_FW, PABS_WR, PABS_WM, RF_WM` | `fpcomm_parm` | `fp/fpcomm.f90:55,57` |
+| `MODEL_NBI, MODEL_WAVE, MODEL_DISRUPT, MODEL_BS, MODEL_LOSS, MODEL_SYNCH` | `fpcomm_parm` | `fp/fpcomm.f90:34,38` |
+| `ns_nsa(NSM), ns_nsb(NSM)` (**小文字**) | `fpcomm_parm` | `fp/fpcomm.f90:20` |
+
+**注意点:**
+- `MODELG`, `NSMAX` は **`fpcomm_parm` 直接ではなく `plcomm_parm` 由来**。`USE fpcomm_parm` で transitively 見えるが、確実性のため `USE plcomm_parm, ONLY: ...` を併記する。
+- `nsamax`, `nsbmax`, `ns_nsa`, `ns_nsb` は **小文字宣言**（Fortran は大小不区別だがコードの一貫性のため小文字 CASE 文字列も併記推奨。ただし `SELECT CASE` の文字列比較は大文字に正規化する戦略でも可）。
+- `MODEL_FOW` は fpcomm_parm に**存在しない**ため、最初の登録対象から除外（plan 旧版で登録していたのは grep 漏れによる誤り）。
+
 優先度別の登録対象:
 
-| カテゴリ | 変数 | 型 | 形 |
-|---|---|---|---|
-| **幾何** | `RR, RA, RB, RKAP, RDLT, BB, RIP` | real(rkind) | scalar |
-| **モデルスイッチ (scalar int)** | `MODELG, MODELE, MODELR, MODELC, MODELW, MODELS, MODELD` | integer | scalar (※ MODELC/W は配列。後述) |
-| **メッシュ** | `NRMAX, NPMAX, NTHMAX, NTMAX, NAVMAX` | integer | scalar |
-| **species 数** | `NSMAX, NSAMAX, NSBMAX` | integer | scalar |
-| **species mapping** | `NS_NSA, NS_NSB` | integer | array (NSM) |
-| **species 物理量** | `PA, PZ, PN, PNS, PTPR, PTPP, PTS` | real | array (NSM) |
-| **時間発展** | `DELT, EPSFP, LMAXFP` | real / integer | scalar |
-| **エネルギー / radial** | `PMAX, R1, DELR1, RMIN, RMAX, E0, ZEFF` | real | scalar (※ PMAX は array (NSM)) |
-| **波加熱** | `PABS_EC, PABS_LH, PABS_FW, PABS_WR, PABS_WM, RF_WM` | real | scalar |
-| **MODEL config (scalar int)** | `MODEL_NBI, MODEL_WAVE, MODEL_DISRUPT, MODEL_BS, MODEL_LOSS, MODEL_SYNCH, MODEL_FOW` | integer | scalar |
+| カテゴリ | 変数 | 型 | 形 | source module |
+|---|---|---|---|---|
+| **幾何** | `RR, RA, RB, RKAP, RDLT, BB, RIP` | real(rkind) | scalar | plcomm_parm |
+| **モデルスイッチ (plcomm)** | `MODELG, MODELB, MODELQ` | integer | scalar | plcomm_parm |
+| **モデルスイッチ (fpcomm)** | `MODELE, MODELA, MODELR, MODELD, MODELS` | integer | scalar | fpcomm_parm |
+| **モデルスイッチ (per-species)** | `MODELC(NSM), MODELW(NSM)` | integer | array (NSM) | fpcomm_parm |
+| **メッシュ** | `NRMAX, NPMAX, NTHMAX, NTMAX, NAVMAX` | integer | scalar | fpcomm_parm |
+| **species 数 (plcomm)** | `NSMAX` | integer | scalar | plcomm_parm |
+| **species 数 (fpcomm, lower-case)** | `nsamax, nsbmax` | integer | scalar | fpcomm_parm |
+| **species mapping (lower-case)** | `ns_nsa, ns_nsb` | integer | array (NSM) | fpcomm_parm |
+| **species 物理量** | `PA, PZ, PN, PNS, PTPR, PTPP, PTS` | real | array (NSM) | plcomm_parm |
+| **時間発展** | `DELT, EPSFP, LMAXFP` | real / integer | scalar | fpcomm_parm |
+| **エネルギー / radial** | `PMAX, R1, DELR1, RMIN, RMAX, E0, ZEFF` | real | scalar (※ PMAX は array (NSM)) | fpcomm_parm |
+| **波加熱** | `PABS_EC, PABS_LH, PABS_FW, PABS_WR, PABS_WM, RF_WM` | real | scalar | fpcomm_parm |
+| **MODEL config (scalar int)** | `MODEL_NBI, MODEL_WAVE, MODEL_DISRUPT, MODEL_BS, MODEL_LOSS, MODEL_SYNCH` | integer | scalar | fpcomm_parm |
 
 **配列パラメータの記法:** TR と同じく Python 側で `set_param("PN[1]", 0.7)`、Fortran 側で 1-origin。
 
@@ -95,13 +124,21 @@ Expected: 全 PASS。
 **Files:**
 - Create: `fp/fp_param_registry.f90`
 
-- [ ] **Step 1: `fpcomm_parm` で公開されている対象変数を grep 確認**
+- [ ] **Step 1: `fpcomm_parm` / `plcomm_parm` で公開されている対象変数を grep 確認**
 
-Run:
+`plcomm_parm` 直接宣言の変数群:
 ```bash
-grep -nE "^[[:space:]]+(integer|INTEGER|real|REAL|complex|COMPLEX).*::.*\b(RR|RA|BB|RKAP|RDLT|RIP|NSMAX|NRMAX|NPMAX|NTHMAX|NTMAX|DELT|PMAX|EPSFP|LMAXFP|PN\b|PT\b|PTPR|PTPP|PTS|PNS|PA\b|PZ\b|MODELC|MODELW|MODELE|MODELR|MODELG|MODEL_NBI|MODEL_WAVE|PABS_EC|PABS_WR|PABS_WM)\b" /home/k-yoshimi/program/task/fp/fpcomm.f90 | head -40
+grep -nE "::.*\b(RR|RA|RB|RKAP|RDLT|BB|RIP|NSMAX|MODELG|MODELB|MODELQ|PA|PZ|PN|PNS|PTPR|PTPP|PTS)\b" /home/k-yoshimi/program/task/pl/plcomm.f90 | head -20
 ```
-Expected: ほぼ全変数が `fpcomm_parm`（または `plcomm_parm` 経由）で宣言されている。型と shape を確認。
+Expected: `pl/plcomm.f90:41` (NSMAX), `:43` (MODELG), `:50` (RR,RA,RB,...), `:63-64` (PA,PZ,PN,PNS,PTPR,PTPP,PTS) が見つかる。
+
+`fpcomm_parm` 直接宣言の変数群:
+```bash
+grep -nE "::.*\b(NRMAX|NPMAX|NTHMAX|NAVMAX|NTMAX|nsamax|nsbmax|ns_nsa|ns_nsb|MODELE|MODELA|MODELR|MODELD|MODELS|MODELC|MODELW|DELT|EPSFP|LMAXFP|PMAX|R1|DELR1|RMIN|RMAX|E0|ZEFF|PABS_|RF_WM|MODEL_NBI|MODEL_WAVE|MODEL_DISRUPT|MODEL_BS|MODEL_LOSS|MODEL_SYNCH)\b" /home/k-yoshimi/program/task/fp/fpcomm.f90 | head -40
+```
+Expected: 該当行が全部見つかる。特に `nsamax,nsbmax` は **小文字** で宣言されている点、`ns_nsa,ns_nsb` も小文字である点を確認。
+
+**未登録を避ける:** grep で見つからない変数（例: `MODEL_FOW` は fpcomm_parm に存在しない）は SELECT CASE に入れない。
 
 - [ ] **Step 2: ファイル作成**
 
@@ -110,14 +147,33 @@ Expected: ほぼ全変数が `fpcomm_parm`（または `plcomm_parm` 経由）�
 ```fortran
 ! fp_param_registry.f90
 !
-! Phase L-3: name -> fpcomm_parm setter table for FP library API.
+! Phase L-3: name -> fpcomm_parm / plcomm_parm setter table for FP library API.
 ! Called from fp_api.f90 :: fp_set_param.
 !
 ! Adding a parameter is a one-liner in the SELECT CASE block below.
 ! Array parameters use 1-origin indices via "NAME[idx]" syntax (e.g. PN[2]).
+!
+! Module sourcing note:
+!   fpcomm_parm does `USE plcomm_parm`, so plcomm variables are transitively
+!   visible via `USE fpcomm_parm`. We additionally USE plcomm_parm explicitly
+!   for the variables that originate there (PA/PN/PZ/PTPR/PTPP/PTS/PNS, RR/RA/
+!   RB/RKAP/RDLT/BB/RIP, NSMAX, MODELG/MODELB/MODELQ) to make data flow obvious
+!   and to avoid accidental namespace collisions if fpcomm_parm is later
+!   refactored.
 
 MODULE fp_param_registry
   USE fpcomm_parm
+  USE plcomm_parm, ONLY: &
+       ! geometry
+       RR, RA, RB, RKAP, RDLT, BB, RIP, &
+       ! plcomm model switches
+       MODELG, MODELB, MODELQ, &
+       ! plcomm species count
+       NSMAX, &
+       ! plcomm species arrays
+       PA, PZ, PN, PNS, PTPR, PTPP, PTS, &
+       ! NSM upper bound
+       NSM
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: fp_param_set
@@ -136,7 +192,7 @@ CONTAINS
 
     SELECT CASE (TRIM(base))
 
-    ! ----- geometry (scalar real) -----
+    ! ----- geometry (scalar real, plcomm_parm) -----
     CASE ("RR");      RR    = value
     CASE ("RA");      RA    = value
     CASE ("RB");      RB    = value
@@ -145,7 +201,7 @@ CONTAINS
     CASE ("BB");      BB    = value
     CASE ("RIP");     RIP   = value
 
-    ! ----- mesh (scalar int) -----
+    ! ----- mesh (scalar int, fpcomm_parm) -----
     CASE ("NRMAX");   NRMAX  = NINT(value)
     CASE ("NPMAX");   NPMAX  = NINT(value)
     CASE ("NTHMAX");  NTHMAX = NINT(value)
@@ -153,19 +209,19 @@ CONTAINS
     CASE ("NAVMAX");  NAVMAX = NINT(value)
 
     ! ----- species count -----
-    CASE ("NSMAX");   NSMAX  = NINT(value)
-    CASE ("NSAMAX");  NSAMAX = NINT(value)
-    CASE ("NSBMAX");  NSBMAX = NINT(value)
+    CASE ("NSMAX");   NSMAX  = NINT(value)        ! plcomm_parm
+    CASE ("NSAMAX");  nsamax = NINT(value)        ! fpcomm_parm (lower-case decl)
+    CASE ("NSBMAX");  nsbmax = NINT(value)        ! fpcomm_parm (lower-case decl)
 
-    ! ----- species mapping (1-origin, NSM-bound) -----
+    ! ----- species mapping (1-origin, NSM-bound, fpcomm_parm, lower-case decl) -----
     CASE ("NS_NSA")
        IF (idx < 1 .OR. idx > NSM) THEN; ierr = 2; RETURN; END IF
-       NS_NSA(idx) = NINT(value)
+       ns_nsa(idx) = NINT(value)
     CASE ("NS_NSB")
        IF (idx < 1 .OR. idx > NSM) THEN; ierr = 2; RETURN; END IF
-       NS_NSB(idx) = NINT(value)
+       ns_nsb(idx) = NINT(value)
 
-    ! ----- species real arrays (1-origin) -----
+    ! ----- species real arrays (1-origin, plcomm_parm) -----
     CASE ("PA")
        IF (idx < 1 .OR. idx > NSM) THEN; ierr = 2; RETURN; END IF
        PA(idx)  = value
@@ -188,12 +244,12 @@ CONTAINS
        IF (idx < 1 .OR. idx > NSM) THEN; ierr = 2; RETURN; END IF
        PTS(idx)  = value
 
-    ! ----- time evolution -----
+    ! ----- time evolution (fpcomm_parm) -----
     CASE ("DELT");   DELT   = value
     CASE ("EPSFP");  EPSFP  = value
     CASE ("LMAXFP"); LMAXFP = NINT(value)
 
-    ! ----- energy / radial mesh -----
+    ! ----- energy / radial mesh (fpcomm_parm) -----
     CASE ("PMAX")
        IF (idx < 1 .OR. idx > NSM) THEN; ierr = 2; RETURN; END IF
        PMAX(idx) = value
@@ -204,7 +260,7 @@ CONTAINS
     CASE ("E0");     E0    = value
     CASE ("ZEFF");   ZEFF  = value
 
-    ! ----- wave heating -----
+    ! ----- wave heating (fpcomm_parm) -----
     CASE ("PABS_EC"); PABS_EC = value
     CASE ("PABS_LH"); PABS_LH = value
     CASE ("PABS_FW"); PABS_FW = value
@@ -212,9 +268,14 @@ CONTAINS
     CASE ("PABS_WM"); PABS_WM = value
     CASE ("RF_WM");   RF_WM   = value
 
-    ! ----- model switches (scalar int) -----
+    ! ----- model switches scalar int (plcomm_parm) -----
     CASE ("MODELG"); MODELG = NINT(value)
+    CASE ("MODELB"); MODELB = NINT(value)
+    CASE ("MODELQ"); MODELQ = NINT(value)
+
+    ! ----- model switches scalar int (fpcomm_parm) -----
     CASE ("MODELE"); MODELE = NINT(value)
+    CASE ("MODELA"); MODELA = NINT(value)
     CASE ("MODELR"); MODELR = NINT(value)
     CASE ("MODELS"); MODELS = NINT(value)
     CASE ("MODELD"); MODELD = NINT(value)
@@ -225,7 +286,7 @@ CONTAINS
     CASE ("MODEL_LOSS");     MODEL_LOSS     = NINT(value)
     CASE ("MODEL_SYNCH");    MODEL_SYNCH    = NINT(value)
 
-    ! ----- model switches (per-species int arrays) -----
+    ! ----- model switches per-species int arrays (fpcomm_parm) -----
     CASE ("MODELC")
        IF (idx < 1 .OR. idx > NSM) THEN; ierr = 2; RETURN; END IF
        MODELC(idx) = NINT(value)
@@ -542,7 +603,9 @@ git commit -m "docs(fp): note L-3 parameter registry usage"
 
 | 状況 | 対応 |
 |---|---|
-| `fpcomm_parm` の宣言と SELECT CASE が型不整合 (`PN` の shape など) | 当該変数を一旦削除し、最小 10 個 (`RR/BB/NSMAX/NTMAX/DELT/PN[]/PT[]/MODELW[]/MODELC[]/EPSFP`) で受け入れ基準を満たす |
+| `fpcomm_parm` の宣言と SELECT CASE が型不整合 (`PN` の shape など) | 当該変数を一旦削除し、最小 10 個 (`RR/BB/NSMAX/NTMAX/DELT/PN[]/PTPR[]/MODELW[]/MODELC[]/EPSFP`) で受け入れ基準を満たす |
+| `USE plcomm_parm, ONLY: NSMAX, ...` で `NSMAX` が曖昧 / 重複 ambiguous | `fpcomm_parm` が同名を再 export していないことを確認（`grep -n "NSMAX" fp/fpcomm.f90` が何も返さないはず）。重複する場合は `USE plcomm_parm` を外し、`USE fpcomm_parm` の transitive にのみ依存する |
+| grep で確認したはずの変数が compile 時に未宣言エラー | fpcomm_parm の `MODEL_FOW` や廃止変数に注意。当該 CASE を削除 |
 | `fp/tests/registry/Makefile` のリンクで未解決シンボル (mtxp 等) | `LIBS` に `$(LIB_MTX)` を追加、`include $(FP_DIR)/../mtxp/make.mtxp` を冒頭に挿入 |
 | L-3 単独で 2 週超 | 最小 10 個で merge し、追加変数は L-4/L-5 期間中に sub-PR で増やす |
 

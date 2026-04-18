@@ -75,8 +75,30 @@ cd /home/k-yoshimi/program/task/test_run
 
 L-0 で確立した `compare_metrics.py` を Python 関数として呼べるラッパ + baseline ローダ。
 
+**前提スキーマ:** `metrics.json` のフォーマットは L-0 の "metrics.json schema" 節（`docs/superpowers/plans/2026-04-18-fp-library-L0-baseline.md` Task 2 参照）で固定済み。`_helpers.py` はそこで定義された unchanged contract に依存する。要点:
+
+- top-level int キー: `NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2`
+- `scalars: {"TIMEFP": float, ...}`
+- `profile: [{"NR": int, "NSA": int, "RNT": float, "RWT": float, "RTT": float, "RJT": float, "RPCT": float, "RPWT": float}, ...]`（要素数 `NRMAX * NSAMAX`）
+
+スキーマ変更時は L-0 と本ヘルパを同時に追従すること。
+
 ```python
-"""Internal helpers for fplib tests."""
+"""Internal helpers for fplib tests.
+
+Schema contract (must match L-0 `extract_fp_metrics.py` output):
+    {
+        "NRMAX":  int, "NSAMAX": int, "NPMAX": int, "NTHMAX": int, "NTG2": int,
+        "scalars": {"TIMEFP": float, ...},
+        "profile": [
+            {"NR": int, "NSA": int,
+             "RNT": float, "RWT": float, "RTT": float,
+             "RJT": float, "RPCT": float, "RPWT": float},
+            ...  # length = NRMAX * NSAMAX
+        ],
+    }
+See L-0 plan, Task 2, "metrics.json schema" subsection.
+"""
 import json
 import math
 from pathlib import Path
@@ -86,15 +108,36 @@ from typing import Tuple
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASELINES_DIR = REPO_ROOT / "test_run" / "baselines"
 
+# Field whitelists, kept in sync with extract_fp_metrics.py
+EXPECTED_INT_KEYS    = {"NRMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2"}
+EXPECTED_SCALAR_KEYS = {"TIMEFP"}
+EXPECTED_PROFILE_FIELDS = ("RNT", "RWT", "RTT", "RJT", "RPCT", "RPWT")
+
 
 def load_baseline(test_name: str) -> dict:
-    """Load test_run/baselines/<test_name>/metrics.json (Phase L-0 output)."""
+    """Load test_run/baselines/<test_name>/metrics.json (Phase L-0 output).
+
+    Validates the file conforms to the schema contract above; raises
+    FileNotFoundError or KeyError with a clear message on mismatch.
+    """
     p = BASELINES_DIR / test_name / "metrics.json"
     if not p.exists():
         raise FileNotFoundError(
             f"baseline not found: {p}. Run L-0 baseline generation first."
         )
-    return json.loads(p.read_text())
+    data = json.loads(p.read_text())
+    missing_int = EXPECTED_INT_KEYS - data.keys()
+    if missing_int:
+        raise KeyError(
+            f"baseline {p} is missing int keys {sorted(missing_int)}; "
+            f"regenerate via test_run/scripts/extract_fp_metrics.py (L-0)"
+        )
+    if "scalars" not in data or "profile" not in data:
+        raise KeyError(
+            f"baseline {p} is missing top-level 'scalars' or 'profile'; "
+            f"regenerate via L-0 scripts"
+        )
+    return data
 
 
 def _rel_err(a: float, b: float) -> float:

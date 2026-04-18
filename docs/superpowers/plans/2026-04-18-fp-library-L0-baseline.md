@@ -155,6 +155,44 @@ git commit --allow-empty -m "chore(fp): start Phase L-0 regression scaffolding"
 - **起動条件:** 環境変数 `FP_REGRESS_DUMP=1` のときのみ `fp_regress.dat` を CWD に書き出す。`nrank /= 0` のプロセスは何もしない。
 - **許容誤差:** 初期 `1e-10`。Task 11 で run-to-run 差を実測して必要なら `1e-8` まで緩める。
 
+### `metrics.json` schema (L-0 の出力契約)
+
+`extract_fp_metrics.py` (Task 4) が標準出力に書く JSON のスキーマを正式に固定する。L-6 (`_helpers.py`) と Layer 1 等価性テストはこのスキーマに依存するため、変更時は両方の追従が必要。
+
+```json
+{
+  "NRMAX":  <int>,
+  "NSAMAX": <int>,
+  "NPMAX":  <int>,
+  "NTHMAX": <int>,
+  "NTG2":   <int>,
+  "scalars": {
+    "TIMEFP": <float>
+  },
+  "profile": [
+    {
+      "NR":   <int>,
+      "NSA":  <int>,
+      "RNT":  <float>,
+      "RWT":  <float>,
+      "RTT":  <float>,
+      "RJT":  <float>,
+      "RPCT": <float>,
+      "RPWT": <float>
+    },
+    ... (NRMAX * NSAMAX entries total)
+  ]
+}
+```
+
+不変条件:
+- `len(profile) == NRMAX * NSAMAX`
+- 各 profile 行は `NR ∈ [1..NRMAX], NSA ∈ [1..NSAMAX]` を 1-origin で持つ
+- `scalars` 辞書は最低 `TIMEFP` を含む（将来追加可能）
+- top-level の int キーは `NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2`（`extract_fp_metrics.py` の `INT_KEYS` セットと一致）
+
+**互換性:** scalars に新 scalar を加えるのは後方互換 (consumer はキーが無いことを前提にしない)。profile 列の追加は L-0/L-6 同時更新が必要。
+
 - [ ] **Step 1: dump 対象配列が `fpcomm.f90` に存在することを確認**
 
 Run:

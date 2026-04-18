@@ -105,10 +105,12 @@ $(OBJDIR_PIC):
 	mkdir -p mod_pic
 
 libbpsd_pic.a: $(OBJS_PIC)
-	$(LD) $(LDFLAGS) libbpsd_pic.a $(OBJS_PIC)
+	$(AR) rcs libbpsd_pic.a $(OBJS_PIC)
 ```
 
 注: `bpsd` の `SRCS` 変数名と `OBJDIR` 変数名は実 Makefile に合わせる。`$(SRCS)` ではなく個別ファイル名のリストかもしれない。
+
+注 (アーカイブ作成): 静的ライブラリ `*.a` の作成は `$(AR) rcs` を使う（`r` = insert/replace, `c` = create if needed, `s` = build/update index）。`$(LD)` は実行可能ファイル / shared object 生成用で、`*.a` には不適切。`make.header` に `AR ?= ar` が定義されている前提（無い場合は本 PR で追加するか、各 Makefile 冒頭で `AR ?= ar` を定義）。
 
 - [ ] **Step 3: ビルド**
 
@@ -159,10 +161,12 @@ $(OBJDIR_PIC):
 	mkdir -p $(OBJDIR_PIC) mod_pic
 
 lib<name>_pic.a: $(OBJS_PIC)
-	$(LD) $(LDFLAGS) lib<name>_pic.a $(OBJS_PIC)
+	$(AR) rcs lib<name>_pic.a $(OBJS_PIC)
 ```
 
 `<deps>` 部は依存先の `mod_pic` を `-I` で参照（pl は bpsd だけ、eq は pl + bpsd、dp は pl + bpsd、ob は pl + eq + dp + bpsd）。
+
+**全 7 ライブラリ共通 — 静的アーカイブは `$(AR) rcs` を使うこと:** Task 2.1〜2.7 全て (`libbpsd_pic.a`, `libtask_pic.a`, `libmtxp_pic.a`, `libpl_pic.a`, `libdp_pic.a`, `libeq_pic.a`, `libob_pic.a`) で同じパターン。`$(LD)` (`ld(1)`) は ELF オブジェクト/共有ライブラリ用、`$(AR)` (`ar(1)`) が静的アーカイブ専用。間違えると `*.a` ファイルが生成されないか、後続の `libfpapi.so` リンクで symbol 解決に失敗する。
 
 - [ ] **Step 1-5: 各々のディレクトリでビルド確認**
 
