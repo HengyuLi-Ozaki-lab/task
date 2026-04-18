@@ -28,7 +28,10 @@ SRCM=trcom0.f90 trcom1.f90 \
      trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
      trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90 \
      trcomm.f90 trbpsd.f90
-SRCS=trcdbm.f90 trmodels.f90 \
+
+# Core computation sources (no graphics, no interactive menu).
+# This subset will be linked into libtrapi.so in Phase L-4.
+SRCS_CORE=trcdbm.f90 trmodels.f90 \
      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
      trcoef_resistivity.f90 trcoef_adhoc.f90 \
      trinit.f90 trparm.f90 trview.f90 \
@@ -37,13 +40,20 @@ SRCS=trcdbm.f90 trmodels.f90 \
      trfile.f90 trhelp.f90 \
      trrslt_files.f90 \
      trexec.f90 trcalc.f90 \
-     tradat.f90 \
-     trcoef.f90 tritg.f90 \
+     tradat.f90 trcoef.f90 tritg.f90 \
      trrslt_globals.f90 trrslt_print.f90 \
      trpnb.f90 trprf.f90 trpnf.f90 trpel.f90 trpsc.f90 trmdlt.f90 \
-     trgout.f90 trgrar.f90 trgrat.f90 trgrap.f90 trgrae.f90 \
-     trgrad.f90 trgram.f90 trgsub.f90 trfout.f90 trregress.f90 \
-     trloop.f90 trmenu.f90
+     trfout.f90 trregress.f90 \
+     trloop.f90
+
+# Graphics sources (gsaf/grafix dependent). Excluded from libtrapi.so.
+SRCS_GRAPHICS=trgout.f90 trgrar.f90 trgrat.f90 trgrap.f90 trgrae.f90 \
+     trgrad.f90 trgram.f90 trgsub.f90
+
+# Interactive menu (only used by the tr2 binary).
+SRCS_MENU=trmenu.f90
+
+SRCS=$(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
 SRC2D=trg2d.f90
 SRC3S=trg3d.f90
