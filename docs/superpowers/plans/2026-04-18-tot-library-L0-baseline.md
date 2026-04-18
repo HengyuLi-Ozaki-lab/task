@@ -136,6 +136,7 @@ tot は複数モジュールのオーケストレータなので、dump 対象�
 - **TR プロファイル:** `RN(NR,1:NSMAX), RT(NR,1:NSMAX), AJ(NR), QP(NR)`（同上）
 - **TI 関連スカラー（TI が呼ばれていれば出力、L-0 段階では先送り可）:** プレースホルダのみ。L-0 では `TI_PRESENT=0/1` フラグだけ書く
 - **FP 関連スカラー（FP が呼ばれていれば出力、L-0 段階では先送り可）:** 同上 `FP_PRESENT=0/1` フラグのみ
+- **WR 関連スカラー（WR が呼ばれていれば出力、L-0 段階では先送り可）:** 同上 `WR_PRESENT=0/1` フラグのみ。totmain.f90:53 で `wr_init` が呼ばれるため tot 統合スコープ内
 
 **理由:**
 - L-0 のミッションは「ベースライン取れる枠を整える」こと。TI/FP の細粒度指標は L-6（テスト 4 層）で必要に応じ追加。
@@ -168,7 +169,7 @@ Expected: ticomm/fpcomm モジュール定義が見つかる。L-0 では「ALLO
 Run:
 ```bash
 git add docs/superpowers/plans/2026-04-18-tot-library-L0-baseline.md
-git commit -m "docs(tot): lock L-0 dump scope (TR scalars+profile, TI/FP presence flag)"
+git commit -m "docs(tot): lock L-0 dump scope (TR scalars+profile, TI/FP/WR presence flag)"
 ```
 
 ---
@@ -193,7 +194,7 @@ git commit -m "docs(tot): lock L-0 dump scope (TR scalars+profile, TI/FP presenc
 !
 ! Schema (format v1):
 !   - TR scalars/profile (always written if TR has been allocated)
-!   - TI/FP "presence" flags (1 if module's allocatable state is allocated, else 0)
+!   - TI/FP/WR "presence" flags (1 if module's allocatable state is allocated, else 0)
 
 MODULE totregress
 
@@ -263,9 +264,13 @@ CONTAINS
        WRITE(UNIT_DUMP, '(A)') 'TR_PRESENT=0'
     END IF
 
-    ! TI/FP presence flags (placeholders; richer dump deferred to L-6)
+    ! TI/FP/WR presence flags (placeholders; richer dump deferred to L-6).
+    ! WR is in scope for tot integration (totmain.f90:53 calls wr_init), so
+    ! L-0 must dump WR_PRESENT for parity with L-2 tot_get_state and L-6
+    ! metrics_from_state.
     CALL dump_module_presence(UNIT_DUMP, 'TI_PRESENT', ti_is_allocated())
     CALL dump_module_presence(UNIT_DUMP, 'FP_PRESENT', fp_is_allocated())
+    CALL dump_module_presence(UNIT_DUMP, 'WR_PRESENT', wr_is_allocated())
 
     CLOSE(UNIT_DUMP)
   END SUBROUTINE tot_regress_dump_if_enabled
@@ -291,10 +296,15 @@ CONTAINS
     fp_is_allocated = ALLOCATED(FNS)
   END FUNCTION fp_is_allocated
 
+  LOGICAL FUNCTION wr_is_allocated()
+    USE wrcomm, ONLY: RAYRB1  ! 例: WR の代表 ALLOCATABLE 配列（要 wrcomm 確認）。
+    wr_is_allocated = ALLOCATED(RAYRB1)
+  END FUNCTION wr_is_allocated
+
 END MODULE totregress
 ```
 
-**注:** `ti_is_allocated`/`fp_is_allocated` の `USE` 対象配列名は実際の `ticomm.f90` / `fpcomm.f90` を確認して合わせる。L-0 段階の主目的は「フラグが書ければよい」ので、安全なフラグ判定にできる ALLOCATABLE が無ければ常に `.TRUE.`/`.FALSE.` で書いて L-6 でリッチ化する。
+**注:** `ti_is_allocated`/`fp_is_allocated`/`wr_is_allocated` の `USE` 対象配列名は実際の `ticomm.f90` / `fpcomm.f90` / `wrcomm.f90` を確認して合わせる。L-0 段階の主目的は「フラグが書ければよい」ので、安全なフラグ判定にできる ALLOCATABLE が無ければ常に `.TRUE.`/`.FALSE.` で書いて L-6 でリッチ化する。
 
 - [ ] **Step 2: ti/fp の代表 ALLOCATABLE 配列名を確認して書き換え**
 
@@ -302,8 +312,9 @@ Run:
 ```bash
 grep -n "ALLOCATABLE.*::.*(" /home/k-yoshimi/program/task/ti/ticomm.f90 | head -5
 grep -n "ALLOCATABLE.*::.*(" /home/k-yoshimi/program/task/fp/fpcomm.f90 | head -5
+grep -n "ALLOCATABLE.*::.*(" /home/k-yoshimi/program/task/wr/wrcomm.f90 | head -5
 ```
-Expected: ALLOCATABLE 配列名のリストが取れる。`RNI`/`FNS` に該当する変数名を選び、Step 1 の `USE` 句を書き換える。
+Expected: ALLOCATABLE 配列名のリストが取れる。`RNI`/`FNS`/`RAYRB1` に該当する変数名を選び、Step 1 の `USE` 句を書き換える。
 
 - [ ] **Step 3: コミット**
 
@@ -628,6 +639,7 @@ RQ1=1.8000000000000000E+00
     2  6.5000000000000002E-01  3.0000000000000004E-01  4.2000000000000002E+00  3.9000000000000004E+00  1.4000000000000000E+01  6.5000000000000002E-01
 TI_PRESENT=0
 FP_PRESENT=0
+WR_PRESENT=0
 ```
 
 - [ ] **Step 2: 失敗するテストを書く**
@@ -667,6 +679,7 @@ def test_extracts_module_presence():
     assert data["modules"]["TR_PRESENT"] == 1
     assert data["modules"]["TI_PRESENT"] == 0
     assert data["modules"]["FP_PRESENT"] == 0
+    assert data["modules"]["WR_PRESENT"] == 0
 
 
 def test_extracts_profile():
@@ -685,6 +698,7 @@ def test_handles_tr_absent(tmp_path):
         "TR_PRESENT=0\n"
         "TI_PRESENT=0\n"
         "FP_PRESENT=0\n"
+        "WR_PRESENT=0\n"
     )
     result = subprocess.run(
         [sys.executable, str(SCRIPT), str(dump)],
@@ -718,7 +732,7 @@ Expected: FAIL（スクリプト未実装）。
 Schema:
     {
       "NT": int, "NRMAX": int, "NSMAX": int,
-      "modules": {"TR_PRESENT": 0|1, "TI_PRESENT": 0|1, "FP_PRESENT": 0|1},
+      "modules": {"TR_PRESENT": 0|1, "TI_PRESENT": 0|1, "FP_PRESENT": 0|1, "WR_PRESENT": 0|1},
       "scalars": {...},   # TR scalars when TR_PRESENT=1, else {}
       "profile": [...],   # TR profile rows when TR_PRESENT=1, else []
     }
@@ -736,7 +750,7 @@ SCALAR_KEYS = {
     "T", "WPT", "AJT", "Q0", "BETA0", "BETAP0", "BETAA", "BETAN",
     "TAUE1", "TAUE2", "ZEFF0", "ALI", "RQ1",
 }
-MODULE_KEYS = {"TR_PRESENT", "TI_PRESENT", "FP_PRESENT"}
+MODULE_KEYS = {"TR_PRESENT", "TI_PRESENT", "FP_PRESENT", "WR_PRESENT"}
 RE_PROFILE_HEADER = re.compile(r"^#\s*profile columns:")
 
 
@@ -749,6 +763,13 @@ def parse(dump_path: Path) -> dict:
         "profile": [],
     }
     in_profile = False
+    # `KEY = VAL` (uppercase letters / digits / underscore, then '=') is the
+    # unambiguous signal we are back in scalar/key territory. The Fortran
+    # dump emits TI_PRESENT=/FP_PRESENT=/WR_PRESENT= AFTER the profile rows
+    # WITHOUT a separating blank line or '#' comment, so relying on those
+    # alone leaves the parser stuck in `in_profile=True` and misclassifies
+    # the trailing presence flags as malformed profile rows.
+    RE_KEY_VAL = re.compile(r"^[A-Z_][A-Z0-9_]*\s*=")
     for raw in lines:
         line = raw.strip()
         if not line:
@@ -763,6 +784,10 @@ def parse(dump_path: Path) -> dict:
             # block, so subsequent `KEY = VAL` sections are parsed correctly.
             in_profile = False
             continue
+        if RE_KEY_VAL.match(line):
+            # A KEY=VAL line unambiguously closes the profile block, even
+            # without a preceding blank line or '#' comment.
+            in_profile = False
         if not in_profile:
             if "=" not in line:
                 continue

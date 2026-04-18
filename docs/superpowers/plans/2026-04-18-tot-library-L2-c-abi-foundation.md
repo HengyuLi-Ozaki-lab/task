@@ -167,12 +167,13 @@ git commit -m "feat(tot): add tot_state.f90 (C-compatible composite state)"
 ! C ABI for the integrated tot simulator. Fans out to per-module APIs.
 !
 ! API:
-!   tot_init()              - call pl/eq/tr/ti/fp/dp/wr/wm init in order
+!   tot_init()              - mtx_initialize + per-module *_init + namelist
+!                             *_parm + ti/wm broadcast (mirrors totmain.f90).
 !   tot_run(ntmax)          - advance the integrated system NTMAX TR steps
 !                             (TR drives time; per-step coupling done in L-6)
 !   tot_get_state(state)    - copy current state into tot_state_c
 !   tot_set_param(name, v)  - dispatch to per-module param setters (L-3)
-!   tot_finalize()          - finalize all initialized modules
+!   tot_finalize()          - finalize all initialized modules + mtx_finalize
 !
 ! Error codes: 0=OK, 1=invalid param, 2=not initialized, 3=calc failed.
 
@@ -191,21 +192,31 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION tot_init() RESULT(ierr) BIND(C, NAME="tot_init")
     USE plinit,   ONLY: pl_init
-    USE equnit,   ONLY: eq_init
+    USE plparm,   ONLY: pl_parm
+    USE equnit,   ONLY: eq_init, eqparm
     USE trcomm,   ONLY: open_trcomm
     USE trinit,   ONLY: tr_init
+    USE trparm,   ONLY: tr_parm
     USE ticomm,   ONLY: open_ticomm_parm
     USE tiinit,   ONLY: ti_init
+    USE tiparm,   ONLY: ti_parm, ti_broadcast
     ! NOTE: tot/totmain.f90:24 USEs `fpcomm_parm` (not `fpcomm`) and the
     ! corresponding `CALL open_fpcomm_parm` is commented out (totmain.f90:38
     ! reads `!  CALL open_fpcomm_parm`). Mirror that here: do NOT USE the
     ! `fpcomm` module just for this symbol, and do NOT issue the call.
     USE fpinit,   ONLY: fp_init
+    USE fpparm,   ONLY: fp_parm
     USE dpinit,   ONLY: dp_init
+    USE dpparm,   ONLY: dp_parm
     USE wrcomm,   ONLY: open_wrcomm_parm
     USE wrinit,   ONLY: wr_init
+    USE wrparm,   ONLY: wr_parm
     USE wminit,   ONLY: wm_init
+    USE wmparm,   ONLY: wm_parm, wm_broadcast
+    USE commpi,   ONLY: nrank
+    USE libmtx,   ONLY: mtx_initialize
     INTEGER(C_INT) :: ierr
+    INTEGER :: parm_ierr
 
     ierr = 0
     IF (initialized) THEN
@@ -222,7 +233,13 @@ CONTAINS
 !   CALL open_fpcomm_parm   ! disabled to match totmain.f90:38
     CALL open_wrcomm_parm
 
-    ! Per-module init in the order used by totmain.f90.
+    ! MPI / matrix library init — REQUIRED so that downstream `wm_*`,
+    ! `tr_*`, etc. that touch the libmtx infrastructure can run. totmain.f90:41.
+    ! `mtx_initialize` is idempotent across processes; safe to call from
+    ! a non-MPI driver.
+    CALL mtx_initialize
+
+    ! Per-module init in the order used by totmain.f90:49-56.
     CALL pl_init
     CALL eq_init
     CALL tr_init
@@ -231,6 +248,28 @@ CONTAINS
     CALL wm_init
     CALL fp_init
     CALL ti_init
+
+    ! Namelist-driven parameter loads — matches totmain.f90:60-67.
+    ! These read `<mod>parm` files from CWD (or use defaults if absent).
+    ! The integrated tot CANNOT reproduce a real config without these,
+    ! so they MUST run before the first set_param/run call.
+    !
+    ! parm_ierr is best-effort: a missing namelist file is normal in the
+    ! "all defaults" path (e.g. unit tests for the C ABI). Only a hard
+    ! parse failure should abort init — that case lands as ierr=3.
+    IF (nrank == 0) THEN
+       CALL pl_parm(1, 'plparm', parm_ierr)
+       CALL eqparm (1, 'eqparm', parm_ierr)
+       CALL tr_parm(1, 'trparm', parm_ierr)
+       CALL dp_parm(1, 'dpparm', parm_ierr)
+       CALL wr_parm(1, 'wrparm', parm_ierr)
+       CALL wm_parm(1, 'wmparm', parm_ierr)
+       CALL fp_parm(1, 'fpparm', parm_ierr)
+       CALL ti_parm(1, 'tiparm', parm_ierr)
+    END IF
+    ! Broadcast parm values to non-root ranks — totmain.f90:69-70.
+    CALL wm_broadcast
+    CALL ti_broadcast
 
     initialized = .TRUE.
   END FUNCTION tot_init
@@ -255,7 +294,11 @@ CONTAINS
 
   !-------------------------------------------------------------------
   FUNCTION tot_get_state(state) RESULT(ierr) BIND(C, NAME="tot_get_state")
-    USE tr_api, ONLY: tr_get_state
+    USE tr_api,  ONLY: tr_get_state
+    USE trcomm,  ONLY: TR_RN  => RN     ! TR の代表 ALLOCATABLE
+    USE ticomm,  ONLY: TI_RN  => RN     ! TI の代表 ALLOCATABLE
+    USE fpcomm,  ONLY: FNS              ! FP の代表 ALLOCATABLE
+    USE wrcomm,  ONLY: RAYRB1           ! WR の代表 ALLOCATABLE
     TYPE(tot_state_c), INTENT(OUT) :: state
     INTEGER(C_INT) :: ierr
     INTEGER(C_INT) :: tr_ierr
@@ -265,17 +308,40 @@ CONTAINS
        ierr = 2; RETURN
     END IF
 
-    ! Always populate per-module presence flags first.
-    state%tr_present = 1   ! tr_init is always called by tot_init
-    state%ti_present = 1
-    state%fp_present = 1
-    state%wr_present = 1
+    ! Per-module presence flags. MUST mirror L-0's totregress.f90 logic
+    ! (ALLOCATED() check on a representative array per module) — otherwise
+    ! L-0 dumps 0 for un-allocated modules but L-2 returns 1, breaking the
+    ! Layer-1 equivalence test in L-6. The representative arrays here MUST
+    ! match those used in totregress.f90 (`ti_is_allocated` / `fp_is_allocated`
+    ! / `wr_is_allocated`).
+    IF (ALLOCATED(TR_RN)) THEN
+       state%tr_present = 1
+    ELSE
+       state%tr_present = 0
+    END IF
+    IF (ALLOCATED(TI_RN)) THEN
+       state%ti_present = 1
+    ELSE
+       state%ti_present = 0
+    END IF
+    IF (ALLOCATED(FNS)) THEN
+       state%fp_present = 1
+    ELSE
+       state%fp_present = 0
+    END IF
+    IF (ALLOCATED(RAYRB1)) THEN
+       state%wr_present = 1
+    ELSE
+       state%wr_present = 0
+    END IF
     state%ti_placeholder = 0
     state%fp_placeholder = 0
     state%wr_placeholder = 0
 
-    tr_ierr = tr_get_state(state%tr)
-    IF (tr_ierr /= 0) ierr = tr_ierr
+    IF (state%tr_present == 1) THEN
+       tr_ierr = tr_get_state(state%tr)
+       IF (tr_ierr /= 0) ierr = tr_ierr
+    END IF
   END FUNCTION tot_get_state
 
   !-------------------------------------------------------------------
@@ -295,6 +361,7 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION tot_finalize() RESULT(ierr) BIND(C, NAME="tot_finalize")
     USE tr_api, ONLY: tr_finalize
+    USE libmtx, ONLY: mtx_finalize
     INTEGER(C_INT) :: ierr
     INTEGER(C_INT) :: tr_ierr
 
@@ -304,6 +371,9 @@ CONTAINS
     END IF
     tr_ierr = tr_finalize()
     IF (tr_ierr /= 0) ierr = tr_ierr
+    ! Mirror totmain.f90:79 — release MPI/matrix resources acquired in
+    ! tot_init's `mtx_initialize`. Idempotent across non-MPI drivers.
+    CALL mtx_finalize
     initialized = .FALSE.
   END FUNCTION tot_finalize
 

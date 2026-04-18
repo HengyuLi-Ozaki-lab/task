@@ -38,6 +38,7 @@
 
 **方針:**
 - 最適化対象パラメータは L-3 の prefix 名 (`TR.RR`, `EQ.BB`, `TR.PN[1]`) で指定。
+- **EQ.* 前提条件:** L-3 の `dispatch_eq` は EQ の F90 modernization が完了するまで `ierr=1` を返す stub。L-7 の examples は EQ modernization 完了後を想定 — modernization 未完了なら `EQ.*` を `TR.*` 等価に置換すること（`EQ.RR`→`TR.RR`、`EQ.BB`→`TR.BB`、`EQ.RA`→`TR.RA`）。
 - 目的関数は `f(state: TotState) -> float` の規約。`objectives.py` に共用例を 5-6 個用意。
 - scipy backend が **必須**、optuna は optional dependency。grid backend は外部依存ゼロ。
 - 各 trial の入力 / 結果 / Q0 / WPT などのスカラーを JSON 1 行で append（NDJSON 形式）し、長時間実行でも resume 可能にする。
