@@ -25,21 +25,23 @@ MODINCLUDE=-I$(MOD) -I../../bpsd/$(MOD) -I../mtxp/$(MOD) -I../pl/$(MOD) -I../lib
 # The eq / pl / ak binaries still build from the full union.
 
 # --- core: F-1 MODULEs + equilibrium physics + file I/O + regression hook ---
-# Phase F-2: newton / invematrix / eqgetp converted to free-form .f90.
+# Phase F-2: newton / invematrix / eqgetp / eqgsub converted to free-form .f90.
+# Phase F-3 (MED tier): eqinit / equnit / equintf / eqrppl / eqcalv /
+#   eqfunc / eqintf / eqmenu / eqgout converted to free-form .f90.
 SRCS_CORE = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90 \
             equcom.f90 equread.f90 eqlib.f90 \
-            eqbpsd.f eqinit.f eqcalc.f eqcalq.f eqcalv.f \
-            eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
+            eqbpsd.f eqinit.f90 eqcalc.f eqcalq.f eqcalv.f90 \
+            eqsub.f eqfunc.f90 eqintf.f90 eqsplf.f equintf.f90 \
             eq-eqdsk.f eq-qst.f eqgetp.f90 eqregress.f \
-            newton.f90 invematrix.f90 equnit.f eqrppl.f
+            newton.f90 invematrix.f90 equnit.f90 eqrppl.f90
 
 # --- graphics (GSAF plotting, contour; eqfile uses GUCLIP) ---
 # Note: eqg2d.f / eqg3d.f remain in SRC2D / SRC3D below.
 # Phase F-2: eqgsub converted to free-form .f90.
-SRCS_GRAPHICS = eqgout.f eqgsub.f90 eqfile.f
+SRCS_GRAPHICS = eqgout.f90 eqgsub.f90 eqfile.f
 
 # --- interactive menu driver (depends on graphics) ---
-SRCS_MENU = eqmenu.f
+SRCS_MENU = eqmenu.f90
 
 # --- final SRCS for the existing eq / pl / ak binaries (unchanged behaviour) ---
 SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
@@ -187,32 +189,32 @@ eqcom3_mod.o: eqcom3_mod.f90 eqcom0_mod.o
 # Shim .inc files now USE the new MODULEs; every consumer of a shim
 # therefore depends on those .mod files in addition to the raw .inc.
 eqmain.o: eqmain.f $(EQCOMM) $(EQCOM_MODS)
-eqinit.o: eqinit.f $(EQCOMM) $(EQCOM_MODS)
+eqinit.o: eqinit.f90 $(EQCOMM) $(EQCOM_MODS)
 eqcalc.o: eqcalc.f $(EQCOMM) $(EQCOM_MODS)
 eqcalx.o: eqcalx.f $(EQCOMM) eqcom5.inc $(EQCOM_MODS)
 eqcalq.o: eqcalq.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqcalv.o: eqcalv.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eqcalv.o: eqcalv.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
 eqsub.o : eqsub.f  $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eqfunc.o: eqfunc.f $(EQCOMM) eqcom2.inc eqcom4.inc $(EQCOM_MODS)
+eqfunc.o: eqfunc.f90 $(EQCOMM) eqcom2.inc eqcom4.inc $(EQCOM_MODS)
 eqsplf.o: eqsplf.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqfile.o: eqfile.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
 eq-eqdsk.o: eq-eqdsk.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
 eq-qst.o: eq-qst.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eqintf.o: eqintf.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eqgout.o: eqgout.f $(EQCOMM) eqcom2.inc eqcom3.inc $(EQCOM_MODS)
+eqintf.o: eqintf.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eqgout.o: eqgout.f90 $(EQCOMM) eqcom2.inc eqcom3.inc $(EQCOM_MODS)
 eqbpsd.o: eqbpsd.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 #eqtrbpsd.o: eqtrbpsd.f $(EQCOMM)
 #eqtrbpsdlib.o: eqtrbpsdlib.f90
 eqjft2m.o: eqjft2m.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqlib.o : eqlib.f90
-equnit.o: equnit.f eqbpsd.f $(EQCOM_MODS)
+equnit.o: equnit.f90 eqbpsd.f $(EQCOM_MODS)
 eqgsub.o: eqgsub.f90
 eqg2d.o: eqg2d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqg3d.o: eqg3d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 equcom.o: equcom.f90
 equread.o: equread.f90 equcom.f90
-equintf.o: equintf.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqrppl.o: eqrppl.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+equintf.o: equintf.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqrppl.o: eqrppl.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqgetp.o: eqgetp.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqregress.o: eqregress.f $(EQCOMM) eqcom3.inc eqcomq.inc $(EQCOM_MODS)
 trtest.o: trtest.f
@@ -267,7 +269,7 @@ EQ_API_SMOKE_BIN = $(EQ_API_SMOKE_DIR)/test_smoke
 
 eq_state.o          : eq_state.f90
 eq_param_registry.o : eq_param_registry.f90
-eq_api.o            : eq_api.f90 eq_state.f90 eq_param_registry.f90 equnit.f
+eq_api.o            : eq_api.f90 eq_state.f90 eq_param_registry.f90 equnit.f90
 eq_api_common.o     : eq_api_common.f $(EQCOMM)
 
 .PHONY: eq_api_compile_check

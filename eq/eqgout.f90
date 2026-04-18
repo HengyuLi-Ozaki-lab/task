@@ -1,24 +1,35 @@
-C     $Id$
-C
-C   ************************************************
-C   **             Graphic output                 **
-C   ************************************************
-C
+!     $Id$
+!
+! Phase F-3 (MED tier): free-form F90 conversion of eqgout.f.
+! Graphics main driver: EQGOUT, EQGC1D, EQGC2D, EQGS1D, EQGS2D,
+! EQGSDD, EQGSBB, EQGPRM, EQGTR1, EQGC1M, EQGSRP. Preserves exact
+! numerical semantics of the original fixed-form source.
+!
+! NOTE: IMPLICIT NONE is NOT added here because the INCLUDEd shims
+!       (eqcomc.inc / eqcomq.inc) already supply an IMPLICIT
+!       statement (IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z))
+!       and USE the F-1 MODULEs for the COMMON symbols.
+!
+!   ************************************************
+!   **             Graphic output                 **
+!   ************************************************
+!
       SUBROUTINE EQGOUT(MODE)
-C
+
       USE libchar
       INCLUDE 'eqcomc.inc'
-C
+      INTEGER, INTENT(IN) :: MODE
+
       CHARACTER KSTR*2,K1*1,K2*1
-C
+
     1 IF(MODE.EQ.0) THEN
         WRITE(6,*) ' ## INPUT KID : S,S1,S2,S3,SR,ST,SD,SB TR X/EXIT'
       ELSEIF(MODE.EQ.1 .OR. MODE.EQ.2) THEN
-        WRITE(6,*) ' ## INPUT KID : C,C1,C2 ',
-     &                            'S,S1,S2,S3,SR,ST,SD,SB TR M A X/EXIT'
+        WRITE(6,*) ' ## INPUT KID : C,C1,C2 ', &
+                                  'S,S1,S2,S3,SR,ST,SD,SB TR M A X/EXIT'
       ELSEIF(MODE.EQ.3) THEN
-        WRITE(6,*) ' ## INPUT KID : C,C1,C2 ',
-     &                         'S,S1,S2,S3,SP,SR,ST,SD,SB TR M A X/EXIT'
+        WRITE(6,*) ' ## INPUT KID : C,C1,C2 ', &
+                               'S,S1,S2,S3,SP,SR,ST,SD,SB TR M A X/EXIT'
       ELSEIF(MODE.EQ.-1) THEN
         WRITE(6,*) ' ## INPUT KID : C,C1,C2 X/EXIT'
       ELSE
@@ -85,16 +96,16 @@ C
          GOTO 9000
       ENDIF
       GOTO 1
-C
+
  9000 RETURN
-      END
-C
-C     ****** DRAW CALCULATED EQ1D GRAPH ******
-C
+      END SUBROUTINE EQGOUT
+!
+!     ****** DRAW CALCULATED EQ1D GRAPH ******
+!
       SUBROUTINE EQGC1D
-C
+
       INCLUDE 'eqcomc.inc'
-C
+
       DIMENSION GX(NXM)
       DIMENSION GYPS(NXM,1),GYJT(NXM,3),GYPP(NXM,1),GYTT(NXM,1)
       DIMENSION GRX(NPSM)
@@ -102,31 +113,31 @@ C
       DIMENSION GRYTE(NPSM),GRYOM(NPSM)
       DIMENSION GVX(NRVM)
       DIMENSION GVY1(NRVM,1),GVY2(NRVM,1),GVY3(NRVM,2),GVY4(NRVM,1)
-C
+
       CHARACTER KSTR*80
-C
+
       GX1=2.5
       GX2=12.5
       GY1=10.5
       GY2=17.5
-C
+
       GX3=2.5
       GX4=12.5
       GY3=1.5
       GY4=8.5
-C
+
       GX5=15.0
       GX6=25.0
       GY5=10.5
       GY6=17.5
-C
+
       GX7=15.0
       GX8=25.0
       GY7=1.5
       GY8=8.5
-C
-C     ----- Major radius dependence -----
-C
+!
+!     ----- Major radius dependence -----
+!
       NTGX=NTGMAX/2+1
       DO NSG=NSGMAX,1,-1
          NX=NSGMAX-NSG+1
@@ -147,7 +158,7 @@ C
          RPP(NX)=PP(NTGX,NSG)
          RTT(NX)=TT(NTGX,NSG)
       ENDDO
-C
+
       DO NX=1,2*NSGMAX
          GX(NX)=GUCLIP(XAX(NX))
          GYPS(NX,1)=GUCLIP(RPSI(NX))
@@ -157,41 +168,41 @@ C
          GYPP(NX,1)=GUCLIP(RPP(NX)*1.D-6)
          GYTT(NX,1)=GUCLIP(RTT(NX))
       ENDDO
-C
+
       CALL PAGES
       KSTR='/PSI(X)/'
       CALL EQGR1D(GX1,GX2,GY1,GY2,GX,GYPS(1,1),NXM,2*NSGMAX,1,KSTR,0)
       KSTR='/-HJT(X)/'
-      CALL EQGR1D(GX3,GX4,GY3,GY4,
-     &            GX,GYJT(1,1),NXM,2*NSGMAX,3,KSTR,0)
+      CALL EQGR1D(GX3,GX4,GY3,GY4, &
+                  GX,GYJT(1,1),NXM,2*NSGMAX,3,KSTR,0)
       KSTR='/PP(X)/'
       CALL EQGR1D(GX5,GX6,GY5,GY6,GX,GYPP(1,1),NXM,2*NSGMAX,1,KSTR,0)
       KSTR='/TT(X)/'
       CALL EQGR1D(GX7,GX8,GY7,GY8,GX,GYTT(1,1),NXM,2*NSGMAX,1,KSTR,0)
       CALL PAGEE
-C
+
       GPX1=2.5
       GPX2=12.5
       GPY1=10.5
       GPY2=17.5
-C
+
       GPX3=2.5
       GPX4=12.5
       GPY3=1.5
       GPY4=8.5
-C
+
       GPX5=15.0
       GPX6=25.0
       GPY5=10.5
       GPY6=17.5
-C
+
       GPX7=15.0
       GPX8=25.0
       GPY7=1.5
       GPY8=8.5
-C
-C     ----- Poloidal flux dependence -----
-C
+!
+!     ----- Poloidal flux dependence -----
+!
       DO NPS=1,NPSMAX
          GRX(NPS)=GUCLIP(PSIPS(NPS))
          GRYPP(NPS)=GUCLIP(PPPS(NPS)*1.D-6)
@@ -199,7 +210,7 @@ C
          GRYTE(NPS)=GUCLIP(TEPS(NPS))
          GRYOM(NPS)=GUCLIP(OMPS(NPS))
       ENDDO
-C
+
       CALL PAGES
       KSTR='/PPS(PSI)/'
       CALL EQGR1D(GPX1,GPX2,GPY1,GPY2,GRX,GRYPP,NPSM,NPSMAX,1,KSTR,1)
@@ -210,9 +221,9 @@ C
       KSTR='/OMEGA(PSI)/'
       CALL EQGR1D(GPX7,GPX8,GPY7,GPY8,GRX,GRYOM,NPSM,NPSMAX,1,KSTR,1)
       CALL PAGEE
-C
-C     ----- Flux average quantities -----
-C
+!
+!     ----- Flux average quantities -----
+!
       DO NRV=1,NRVMAX
          GVX(NRV)=GUCLIP(PSIPV(NRV))
          GVY1(NRV,1)=GUCLIP(PSITV(NRV))
@@ -221,7 +232,7 @@ C
          GVY3(NRV,2)=GUCLIP(AVIR2(NRV))
          GVY4(NRV,1)=GUCLIP(AVRR2(NRV))
       ENDDO
-C
+
       CALL PAGES
       KSTR='/PSIT(PSIP)/'
       CALL EQGR1D(GPX1,GPX2,GPY1,GPY2,GVX,GVY1,NRVM,NRVMAX,1,KSTR,1)
@@ -232,20 +243,20 @@ C
       KSTR='/AVRR2(PSIP)/'
       CALL EQGR1D(GPX7,GPX8,GPY7,GPY8,GVX,GVY4,NRVM,NRVMAX,1,KSTR,1)
       CALL PAGEE
-C
+
       RETURN
-      END
-C
-C     ****** DRAW CALCULATED EQ2D GRAPH ******
-C
+      END SUBROUTINE EQGC1D
+!
+!     ****** DRAW CALCULATED EQ2D GRAPH ******
+!
       SUBROUTINE EQGC2D
-C
+
       INCLUDE 'eqcomc.inc'
-C
+
       DIMENSION GF(NSGM,NTGM),GR(NSGM,NTGM),GZ(NSGM,NTGM)
       DIMENSION GRS(NTGMP),GZS(NTGMP)
       DIMENSION KA(8,NSGM,NTGMP)
-C
+
       DO NTG=1,NTGMAX
       DO NSG=1,NSGMAX
          GR(NSG,NTG)=GUCLIP(RR+SIGM(NSG)*RHOM(NTG)*COS(THGM(NTG)))
@@ -253,104 +264,105 @@ C
          GF(NSG,NTG)=GUCLIP(PSI(NTG,NSG))
       ENDDO
       ENDDO
-C
+
       DO NTG=1,NTGMAX
          GRS(NTG)=GUCLIP(RR+RHOM(NTG)*COS(THGM(NTG)))
          GZS(NTG)=GUCLIP(   RHOM(NTG)*SIN(THGM(NTG)))
       ENDDO
       GRS(NTGMAX+1)=GUCLIP(RR+RHOM(1)*COS(THGM(1)))
       GZS(NTGMAX+1)=GUCLIP(   RHOM(1)*SIN(THGM(1)))
-C
+
       CALL PAGES
       CALL SETCHS(0.3,0.0)
       CALL EQGR2D(GF,GR,GZ,GRS,GZS,NSGM,NSGMAX,NTGMAX,KA,'/PSI/')
       CALL EQGPRM
       CALL PAGEE
-C
+
       DO NTG=1,NTGMAX
       DO NSG=1,NSGMAX
          GF(NSG,NTG)=GUCLIP(DELPSI(NTG,NSG))
       ENDDO
       ENDDO
-C
+
       CALL PAGES
       CALL SETCHS(0.3,0.0)
       CALL EQGR2D(GF,GR,GZ,GRS,GZS,NSGM,NSGMAX,NTGMAX,KA,'/DELPSI/')
       CALL EQGPRM
       CALL PAGEE
-C
+
       DO NTG=1,NTGMAX
       DO NSG=1,NSGMAX
          GF(NSG,NTG)=GUCLIP(HJT(NTG,NSG))
       ENDDO
       ENDDO
-C
+
       CALL PAGES
       CALL SETCHS(0.3,0.0)
       CALL EQGR2D(GF,GR,GZ,GRS,GZS,NSGM,NSGMAX,NTGMAX,KA,'/HJT/')
       CALL EQGPRM
       CALL PAGEE
-C
+
       DO NTG=1,NTGMAX
       DO NSG=1,NSGMAX
          GF(NSG,NTG)=GUCLIP(HJP(NTG,NSG))
       ENDDO
       ENDDO
-C
+
       CALL PAGES
       CALL SETCHS(0.3,0.0)
       CALL EQGR2D(GF,GR,GZ,GRS,GZS,NSGM,NSGMAX,NTGMAX,KA,'/HJP/')
       CALL EQGPRM
       CALL PAGEE
-C
+
       DO NTG=1,NTGMAX
       DO NSG=1,NSGMAX
          GF(NSG,NTG)=GUCLIP(HJT1(NTG,NSG))
       ENDDO
       ENDDO
-C
+
       CALL PAGES
       CALL SETCHS(0.3,0.0)
       CALL EQGR2D(GF,GR,GZ,GRS,GZS,NSGM,NSGMAX,NTGMAX,KA,'/HJT1/')
       CALL EQGPRM
       CALL PAGEE
-C
+
       DO NTG=1,NTGMAX
       DO NSG=1,NSGMAX
          GF(NSG,NTG)=GUCLIP(TT(NTG,NSG))
       ENDDO
       ENDDO
-C
+
       CALL PAGES
       CALL SETCHS(0.3,0.0)
       CALL EQGR2D(GF,GR,GZ,GRS,GZS,NSGM,NSGMAX,NTGMAX,KA,'/TT/')
       CALL EQGPRM
       CALL PAGEE
-C
+
       DO NTG=1,NTGMAX
       DO NSG=1,NSGMAX
          GF(NSG,NTG)=GUCLIP(RHO(NTG,NSG))
       ENDDO
       ENDDO
-C
+
       CALL PAGES
       CALL SETCHS(0.3,0.0)
       CALL EQGR2D(GF,GR,GZ,GRS,GZS,NSGM,NSGMAX,NTGMAX,KA,'/RHOM/')
       CALL EQGPRM
       CALL PAGEE
-C
+
       RETURN
-      END
-C
-C     ****** DRAW SPLINED EQ1D GRAPH ******
-C
+      END SUBROUTINE EQGC2D
+!
+!     ****** DRAW SPLINED EQ1D GRAPH ******
+!
       SUBROUTINE EQGS1D(MODE)
-C
+
       USE libspl1d
       INCLUDE 'eqcomq.inc'
-C
+      INTEGER, INTENT(IN) :: MODE
+
       DIMENSION GX(NRM),GY(NRM,6)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GX(NR)=GUCLIP(PSIP(NR))
@@ -364,10 +376,10 @@ C
             GX(NR)=GUCLIP(PSIT(NR))
          ENDDO
       ENDIF
-C
+
       CALL PAGES
       CALL SETCHS(0.35,0.0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(PPS(NR))*1.E-6
@@ -383,7 +395,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@PPS@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(TTS(NR))
@@ -403,7 +415,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@TTS@',1)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(RLEN(NR))
@@ -419,7 +431,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRMAX,1,'@RLEN@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(QPS(NR))
@@ -435,12 +447,12 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRMAX,1,'@QPS@',0)
-C
+
       CALL PAGEE
-C
+
       CALL PAGES
       CALL SETCHS(0.35,0.0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(VPS(NR))
@@ -456,7 +468,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@VPS@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(SPS(NR))
@@ -472,7 +484,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@SPS@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(RRMIN(NR))
@@ -507,9 +519,9 @@ C
             GY(NR,6)=GUCLIP(DAT)
          ENDDO
       ENDIF
-      CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRMAX,6,
-     &            '@RRMIN/MAX,ZZMIN/MAX,BBMIN/MAX@',0)
-C
+      CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRMAX,6, &
+                  '@RRMIN/MAX,ZZMIN/MAX,BBMIN/MAX@',0)
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(BBMIN(NR))
@@ -529,12 +541,12 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRMAX,2,'@BBMIN/MAX@',0)
-C
+
       CALL PAGEE
-C
+
       CALL PAGES
       CALL SETCHS(0.35,0.0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVERR2(NR))
@@ -550,7 +562,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@AVERR2@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVEIR2(NR))
@@ -566,7 +578,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@AVEIR2@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVEBB2(NR))
@@ -582,7 +594,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRMAX,1,'@AVEBB2@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVEIB2(NR))
@@ -598,12 +610,12 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRMAX,1,'@AVEIB2@',0)
-C
+
       CALL PAGEE
-C
+
       CALL PAGES
       CALL SETCHS(0.35,0.0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVEGV2(NR))
@@ -619,7 +631,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@AVEGV2@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVEGVR2(NR))
@@ -635,7 +647,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@AVEGVR2@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVEGP2(NR))
@@ -651,7 +663,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRMAX,1,'@AVEGP2@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVEJPR(NR))*1.E-6
@@ -672,14 +684,14 @@ C
             GY(NR,2)=GUCLIP(DAT)*1.E-6
          ENDDO
       ENDIF
-      CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRMAX,2,
-     &                                           '@AVEJPR,AVEJTR@',0)
-C
+      CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRMAX,2, &
+                                                 '@AVEJPR,AVEJTR@',0)
+
       CALL PAGEE
-C
+
       CALL PAGES
       CALL SETCHS(0.35,0.0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(RRPSI(NR))
@@ -695,7 +707,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@RRPSI@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(RSPSI(NR))
@@ -711,7 +723,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@RSPSI@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(ELIPPSI(NR))
@@ -727,7 +739,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRMAX,1,'@ELIPPSI@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(TRIGPSI(NR))
@@ -743,12 +755,12 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRMAX,1,'@TRIGPSI@',0)
-C
+
       CALL PAGEE
-C
+
       CALL PAGES
       CALL SETCHS(0.35,0.0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(DVDPSIP(NR))
@@ -764,7 +776,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@DVDPSIP@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(DVDPSIT(NR))
@@ -780,7 +792,7 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D(15.0,25.0,10.0,16.0,GX,GY,NRM,NRMAX,1,'@DVDPSIT@',0)
-C
+
       IF(MODE.EQ.0) THEN
          DO NR=1,NRMAX
             GY(NR,1)=GUCLIP(AVEGV(NR))
@@ -796,29 +808,29 @@ C
          ENDDO
       ENDIF
       CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRMAX,1,'@AVEGV@',0)
-C
+
       CALL PAGEE
-C
+
       RETURN
-      END
-C
-C     ****** DRAW SPLINED EQ2D GRAPH ******
-C
+      END SUBROUTINE EQGS1D
+!
+!     ****** DRAW SPLINED EQ2D GRAPH ******
+!
       SUBROUTINE EQGS2D
-C
+
       INCLUDE 'eqcomq.inc'
-C
+
       DIMENSION GR(NTHMP),GZ(NTHMP)
       REAL,DIMENSION(:,:),ALLOCATABLE:: GPSIRZ,GDPSIDR,GDPSIDZ
       DIMENSION GRG(NRGM),GZG(NZGM)
       INTEGER,DIMENSION(:,:,:),ALLOCATABLE:: KA
       CHARACTER KTITL*80
-C
+
       ALLOCATE(GPSIRZ(NRGM,NZGM),GDPSIDR(NRGM,NZGM),GDPSIDZ(NRGM,NZGM))
       ALLOCATE(KA(8,NRGM,NZGM))
 
       CALL setup_psig
-C
+
       DO NR=1,NRGMAX
          GRG(NR)=GUCLIP(RG(NR))
       ENDDO
@@ -833,14 +845,14 @@ C
             GDPSIDZ(NR,NZ)=DPSIDZ
          ENDDO
       ENDDO
-C
+
       CALL GMNMX1(GRG,1,NRGMAX,1,GRMIN,GRMAX)
       CALL GMNMX1(GZG,1,NZGMAX,1,GZMIN,GZMAX)
       CALL GMNMX2(GPSIRZ,NRGM,1,NRGMAX,1,1,NZGMAX,1,GPMIN,GPMAX)
       NPSTEP=20
       GPORG=GPMIN
       GPSTEP=(GPMAX-GPMIN)/NPSTEP
-C
+
       GRLEN=GRMAX-GRMIN
       GZLEN=GZMAX-GZMIN
       IF(GRLEN.GT.GZLEN) THEN
@@ -850,42 +862,42 @@ C
          GPR=15.0*GRLEN/GZLEN
          GPZ=15.0
       ENDIF
-C
+
       CALL PAGES
       CALL MOVE(2.0,17.5)
       KTITL='/PSIRZ contour in R-Z/'
       CALL TEXTX(KTITL)
-C
+
       CALL GQSCAL(GRMIN,GRMAX,GGRMIN,GGRMAX,GGRSTP)
       CALL GQSCAL(GZMIN,GZMAX,GGZMIN,GGZMAX,GGZSTP)
-C
+
       CALL SETLIN(0,2,7)
-      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ,
-     &            GRMIN,GRMAX,GZMIN,GZMAX)
+      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ, &
+                  GRMIN,GRMAX,GZMIN,GZMAX)
       CALL GFRAME
       CALL GSCALE(GGRMIN+GGRSTP,GGRSTP,0.0,0.0,0.1,9)
       CALL GVALUE(GGRMIN+GGRSTP,GGRSTP*2,0.0,0.0,NGULEN(GGRSTP))
       CALL GSCALE(0.0,0.0,0.0,GGZSTP,0.1,9)
       CALL GVALUE(0.0,0.0,0.0,GGZSTP*2,NGULEN(GGZSTP*2))
-C
-C     *** Outside the separatrix ***
+
+!     *** Outside the separatrix ***
       CALL SETRGB(1.0,0.0,0.0)
       CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
-      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            0.5*GPSTEP,GPSTEP,NPSTEP,0,0,KA)
-C     *** The separatrix ***
+      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  0.5*GPSTEP,GPSTEP,NPSTEP,0,0,KA)
+!     *** The separatrix ***
       CALL SETRGB(0.0,1.0,0.0)
-      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            0.0,GPSTEP,1,0,0,KA)
-C     *** Inside the separatrix ***
+      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  0.0,GPSTEP,1,0,0,KA)
+!     *** Inside the separatrix ***
       NPINSD=10
       GPINSD=(0.0-GPMIN)/NPINSD
       CALL SETRGB(0.0,0.0,1.0)
-c$$$      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-c$$$     &            -0.5*GPSTEP,-GPSTEP,NPINSD,0,0,KA)
-      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            -GPINSD,-GPINSD,NPINSD,0,0,KA)
-C     *** Magnetic axis ***
+!$$$      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
+!$$$     &            -0.5*GPSTEP,-GPSTEP,NPINSD,0,0,KA)
+      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  -GPINSD,-GPINSD,NPINSD,0,0,KA)
+!     *** Magnetic axis ***
       GRAXIS=REAL(RAXIS)
       GZAXIS=REAL(ZAXIS)
       GRZSTP=0.1*GGRSTP
@@ -893,7 +905,7 @@ C     *** Magnetic axis ***
       CALL DRAW2D(GRAXIS+GRZSTP,GZAXIS+GRZSTP)
       CALL MOVE2D(GRAXIS+GRZSTP,GZAXIS-GRZSTP)
       CALL DRAW2D(GRAXIS-GRZSTP,GZAXIS+GRZSTP)
-C
+
       IF(NSUMAX.GT.0) THEN
       CALL SETRGB(0.0,1.0,1.0)
       CALL MOVE2D(GUCLIP(RSU(NSUMAX)),GUCLIP(ZSU(NSUMAX)))
@@ -911,47 +923,47 @@ C
       CALL SETRGB(0.0,0.0,0.0)
       CALL EQGPRM
       CALL PAGEE
-C
+
       CALL GMNMX2(GDPSIDR,NRGM,1,NRGMAX,1,1,NZGMAX,1,GPMIN,GPMAX)
       NPSTEP=20
       GPORG=GPMIN
       GPSTEP=(GPMAX-GPMIN)/NPSTEP
-C
+
       CALL PAGES
       CALL MOVE(2.0,17.5)
       KTITL='/DPSIDR contour in R-Z/'
       CALL TEXTX(KTITL)
-C
+
       CALL GQSCAL(GRMIN,GRMAX,GGRMIN,GGRMAX,GGRSTP)
       CALL GQSCAL(GZMIN,GZMAX,GGZMIN,GGZMAX,GGZSTP)
-C
+
       CALL SETLIN(0,2,7)
-      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ,
-     &            GRMIN,GRMAX,GZMIN,GZMAX)
+      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ, &
+                  GRMIN,GRMAX,GZMIN,GZMAX)
       CALL GFRAME
       CALL GSCALE(GGRMIN+GGRSTP,GGRSTP,0.0,0.0,0.1,9)
       CALL GVALUE(GGRMIN+GGRSTP,GGRSTP*2,0.0,0.0,NGULEN(GGRSTP))
       CALL GSCALE(0.0,0.0,0.0,GGZSTP,0.1,9)
       CALL GVALUE(0.0,0.0,0.0,GGZSTP*2,NGULEN(GGZSTP*2))
-C
-C     *** Outside the separatrix ***
+
+!     *** Outside the separatrix ***
       CALL SETRGB(1.0,0.0,0.0)
       CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
-      CALL CONTQ2(GDPSIDR,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            0.5*GPSTEP,GPSTEP,NPSTEP,0,0,KA)
-C     *** The separatrix ***
+      CALL CONTQ2(GDPSIDR,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  0.5*GPSTEP,GPSTEP,NPSTEP,0,0,KA)
+!     *** The separatrix ***
       CALL SETRGB(0.0,1.0,0.0)
-      CALL CONTQ2(GDPSIDR,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            0.0,GPSTEP,1,0,0,KA)
-C     *** Inside the separatrix ***
+      CALL CONTQ2(GDPSIDR,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  0.0,GPSTEP,1,0,0,KA)
+!     *** Inside the separatrix ***
       NPINSD=10
       GPINSD=(0.0-GPMIN)/NPINSD
       CALL SETRGB(0.0,0.0,1.0)
-c$$$      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-c$$$     &            -0.5*GPSTEP,-GPSTEP,NPINSD,0,0,KA)
-      CALL CONTQ2(GDPSIDR,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            -GPINSD,-GPINSD,NPINSD,0,0,KA)
-C     *** Magnetic axis ***
+!$$$      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
+!$$$     &            -0.5*GPSTEP,-GPSTEP,NPINSD,0,0,KA)
+      CALL CONTQ2(GDPSIDR,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  -GPINSD,-GPINSD,NPINSD,0,0,KA)
+!     *** Magnetic axis ***
       GRAXIS=REAL(RAXIS)
       GZAXIS=REAL(ZAXIS)
       GRZSTP=0.1*GGRSTP
@@ -959,7 +971,7 @@ C     *** Magnetic axis ***
       CALL DRAW2D(GRAXIS+GRZSTP,GZAXIS+GRZSTP)
       CALL MOVE2D(GRAXIS+GRZSTP,GZAXIS-GRZSTP)
       CALL DRAW2D(GRAXIS-GRZSTP,GZAXIS+GRZSTP)
-C
+
       IF(NSUMAX.GT.0) THEN
       CALL SETRGB(0.0,1.0,1.0)
       CALL MOVE2D(GUCLIP(RSU(NSUMAX)),GUCLIP(ZSU(NSUMAX)))
@@ -977,47 +989,47 @@ C
       CALL SETRGB(0.0,0.0,0.0)
       CALL EQGPRM
       CALL PAGEE
-C
+
       CALL GMNMX2(GDPSIDZ,NRGM,1,NRGMAX,1,1,NZGMAX,1,GPMIN,GPMAX)
       NPSTEP=20
       GPORG=GPMIN
       GPSTEP=(GPMAX-GPMIN)/NPSTEP
-C
+
       CALL PAGES
       CALL MOVE(2.0,17.5)
       KTITL='/DPSIDZ contour in R-Z/'
       CALL TEXTX(KTITL)
-C
+
       CALL GQSCAL(GRMIN,GRMAX,GGRMIN,GGRMAX,GGRSTP)
       CALL GQSCAL(GZMIN,GZMAX,GGZMIN,GGZMAX,GGZSTP)
-C
+
       CALL SETLIN(0,2,7)
-      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ,
-     &            GRMIN,GRMAX,GZMIN,GZMAX)
+      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ, &
+                  GRMIN,GRMAX,GZMIN,GZMAX)
       CALL GFRAME
       CALL GSCALE(GGRMIN+GGRSTP,GGRSTP,0.0,0.0,0.1,9)
       CALL GVALUE(GGRMIN+GGRSTP,GGRSTP*2,0.0,0.0,NGULEN(GGRSTP))
       CALL GSCALE(0.0,0.0,0.0,GGZSTP,0.1,9)
       CALL GVALUE(0.0,0.0,0.0,GGZSTP*2,NGULEN(GGZSTP*2))
-C
-C     *** Outside the separatrix ***
+
+!     *** Outside the separatrix ***
       CALL SETRGB(1.0,0.0,0.0)
       CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
-      CALL CONTQ2(GDPSIDZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            0.5*GPSTEP,GPSTEP,NPSTEP,0,0,KA)
-C     *** The separatrix ***
+      CALL CONTQ2(GDPSIDZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  0.5*GPSTEP,GPSTEP,NPSTEP,0,0,KA)
+!     *** The separatrix ***
       CALL SETRGB(0.0,1.0,0.0)
-      CALL CONTQ2(GDPSIDZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            0.0,GPSTEP,1,0,0,KA)
-C     *** Inside the separatrix ***
+      CALL CONTQ2(GDPSIDZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  0.0,GPSTEP,1,0,0,KA)
+!     *** Inside the separatrix ***
       NPINSD=10
       GPINSD=(0.0-GPMIN)/NPINSD
       CALL SETRGB(0.0,0.0,1.0)
-c$$$      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-c$$$     &            -0.5*GPSTEP,-GPSTEP,NPINSD,0,0,KA)
-      CALL CONTQ2(GDPSIDZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            -GPINSD,-GPINSD,NPINSD,0,0,KA)
-C     *** Magnetic axis ***
+!$$$      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
+!$$$     &            -0.5*GPSTEP,-GPSTEP,NPINSD,0,0,KA)
+      CALL CONTQ2(GDPSIDZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  -GPINSD,-GPINSD,NPINSD,0,0,KA)
+!     *** Magnetic axis ***
       GRAXIS=REAL(RAXIS)
       GZAXIS=REAL(ZAXIS)
       GRZSTP=0.1*GGRSTP
@@ -1025,7 +1037,7 @@ C     *** Magnetic axis ***
       CALL DRAW2D(GRAXIS+GRZSTP,GZAXIS+GRZSTP)
       CALL MOVE2D(GRAXIS+GRZSTP,GZAXIS-GRZSTP)
       CALL DRAW2D(GRAXIS-GRZSTP,GZAXIS+GRZSTP)
-C
+
       IF(NSUMAX.GT.0) THEN
       CALL SETRGB(0.0,1.0,1.0)
       CALL MOVE2D(GUCLIP(RSU(NSUMAX)),GUCLIP(ZSU(NSUMAX)))
@@ -1043,7 +1055,7 @@ C
       CALL SETRGB(0.0,0.0,0.0)
       CALL EQGPRM
       CALL PAGEE
-C
+
       GRLEN=GRMAX-GRMIN
       GZLEN=GZMAX-GZMIN
       IF(GRLEN.GT.GZLEN) THEN
@@ -1053,24 +1065,24 @@ C
          GPR=15.0*GRLEN/GZLEN
          GPZ=15.0
       ENDIF
-C
+
       CALL PAGES
       CALL MOVE(2.0,17.5)
       KTITL='/PSI contour in R-Z/'
       CALL TEXTX(KTITL)
-C
+
       CALL GQSCAL(GRMIN,GRMAX,GGRMIN,GGRMAX,GGRSTP)
       CALL GQSCAL(GZMIN,GZMAX,GGZMIN,GGZMAX,GGZSTP)
-C
+
       CALL SETLIN(0,2,7)
-      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ,
-     &            GRMIN,GRMAX,GZMIN,GZMAX)
+      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ, &
+                  GRMIN,GRMAX,GZMIN,GZMAX)
       CALL GFRAME
       CALL GSCALE(GGRMIN+GGRSTP,GGRSTP,0.0,0.0,0.1,9)
       CALL GVALUE(GGRMIN+GGRSTP,GGRSTP*2,0.0,0.0,NGULEN(GGRSTP))
       CALL GSCALE(0.0,0.0,0.0,GGZSTP,0.1,9)
       CALL GVALUE(0.0,0.0,0.0,GGZSTP*2,NGULEN(GGZSTP*2))
-C
+
       CALL SETRGB(1.0,0.0,0.0)
       DO NR=1,NRPMAX
          DO NTH=1,NTHMAX
@@ -1081,7 +1093,7 @@ C
          GZ(NTHMAX+1)=GZ(1)
          CALL GPLOTP(GR,GZ,1,NTHMAX+1,1,0,0,0)
       ENDDO
-C
+
       CALL SETRGB(0.0,0.0,1.0)
       DO NR=NRPMAX+1,NRMAX
          DO NTH=1,NTHMAX
@@ -1092,41 +1104,41 @@ C
          GZ(NTHMAX+1)=GZ(1)
          CALL GPLOTP(GR,GZ,1,NTHMAX+1,1,0,0,0)
       ENDDO
-C
+
       CALL SETRGB(0.0,0.0,0.0)
       CALL EQGPRM
       CALL PAGEE
-C
+
       DEALLOCATE(GPSIRZ,GDPSIDR,GDPSIDZ,KA)
-C
+
       RETURN
-      END
-C
-C     ****** DRAW CALCULATED EQ2D DERIVATIVE GRAPH ******
-C
+      END SUBROUTINE EQGS2D
+!
+!     ****** DRAW CALCULATED EQ2D DERIVATIVE GRAPH ******
+!
       SUBROUTINE EQGSDD
-C
+
       INCLUDE 'eqcomq.inc'
-C
+
       DIMENSION GF(NRM,NTHM),GR(NRM,NTHM),GZ(NRM,NTHM)
       DIMENSION GRSU(NSUM),GZSU(NSUM)
       DIMENSION GRSW(NSUM),GZSW(NSUM)
       DIMENSION KA(4,NRM,NTHM)
       CHARACTER KTITL*80
-C
+
       DO NR=1,NRMAX
       DO NTH=1,NTHMAX
          GR(NR,NTH)=GUCLIP(RPS(NTH,NR))
          GZ(NR,NTH)=GUCLIP(ZPS(NTH,NR))
       ENDDO
       ENDDO
-C
+
       DO IND=1,8
-C
+
          IF(IND.EQ.1) THEN
             DO NR=1,NRMAX
             DO NTH=1,NTHMAX
-C               R2=(RPS(NTH,NR)-RAXIS)**2+(ZPS(NTH,NR)-ZAXIS)**2
+!               R2=(RPS(NTH,NR)-RAXIS)**2+(ZPS(NTH,NR)-ZAXIS)**2
                R2=RHOT(NR)**2
                GF(NR,NTH)=GUCLIP(DRPSI(NTH,NR)*R2)
             ENDDO
@@ -1135,7 +1147,7 @@ C               R2=(RPS(NTH,NR)-RAXIS)**2+(ZPS(NTH,NR)-ZAXIS)**2
          ELSEIF(IND.EQ.2) THEN
             DO NR=1,NRMAX
             DO NTH=1,NTHMAX
-C               R2=(RPS(NTH,NR)-RAXIS)**2+(ZPS(NTH,NR)-ZAXIS)**2
+!               R2=(RPS(NTH,NR)-RAXIS)**2+(ZPS(NTH,NR)-ZAXIS)**2
                R2=RHOT(NR)**2
                GF(NR,NTH)=GUCLIP(DZPSI(NTH,NR)*R2)
             ENDDO
@@ -1184,7 +1196,7 @@ C               R2=(RPS(NTH,NR)-RAXIS)**2+(ZPS(NTH,NR)-ZAXIS)**2
             ENDDO
             KTITL='/CHI/'
          ENDIF
-C
+
          GSUM=0.0
          DO NTH=1,NTHMAX
             GSUM=GSUM+GF(1,NTH)
@@ -1193,7 +1205,7 @@ C
          DO NTH=1,NTHMAX
             GF(1,NTH)=GSUM
          ENDDO
-C
+
          IF(IND.NE.8) THEN
             CALL GMNMX2(GF,NRM,1,NRMAX,1,1,NTHMAX,1,GFMIN,GFMAX)
             CALL GQSCAL(GFMIN,GFMAX,GGFMIN,GGFMAX,GGFSTP)
@@ -1206,7 +1218,7 @@ C
             NSTEP=12
             GGFSTP=GFMAX/NSTEP
          ENDIF
-C
+
          IF(NSUMAX.GT.0) THEN
          DO NSU=1,NSUMAX
             GRSU(NSU)=GUCLIP(RSU(NSU))
@@ -1219,7 +1231,7 @@ C
          GRSW(NSUMAX+1)=GUCLIP(RSW(NSU))
          GZSW(NSUMAX+1)=GUCLIP(ZSW(NSU))
          END IF
-C
+
          GRLEN=GUCLIP(RGMAX-RGMIN)
          GZLEN=GUCLIP(ZGMAX-ZGMIN)
          IF(GRLEN.GT.GZLEN) THEN
@@ -1229,33 +1241,33 @@ C
             GPR=15.0*GRLEN/GZLEN
             GPZ=15.0
          ENDIF
-C
+
          CALL PAGES
          CALL MOVE(2.0,17.5)
          CALL TEXTX(KTITL)
-C
+
          CALL SETLIN(0,2,7)
-         CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ,
-     &               REAL(RGMIN),REAL(RGMAX),
-     &               REAL(ZGMIN),REAL(ZGMAX))
+         CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ, &
+                     REAL(RGMIN),REAL(RGMAX), &
+                     REAL(ZGMIN),REAL(ZGMAX))
          CALL GFRAME
          CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
-C
+
          IF(GFMIN*GFMAX.GE.0.) THEN
-            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &                  GGFMIN,GGFSTP,NSTEP,2,0,KA)
+            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                        GGFMIN,GGFSTP,NSTEP,2,0,KA)
          ELSE
-            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &                   0.5*GGFSTP, GGFSTP,NSTEP,2,0,KA)
-            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &                  -0.5*GGFSTP,-GGFSTP,NSTEP,2,2,KA)
+            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                         0.5*GGFSTP, GGFSTP,NSTEP,2,0,KA)
+            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                        -0.5*GGFSTP,-GGFSTP,NSTEP,2,2,KA)
          ENDIF
          CALL OFFCLP
          CALL SETLIN(0,-1,6)
          CALL GPLOTP(GRSU,GZSU,1,NSUMAX+1,1,0,0,0)
          CALL SETLIN(0,-1,5)
          CALL GPLOTP(GRSW,GZSW,1,NSUMAX+1,1,0,0,0)
-C
+
          CALL SETLIN(0,-1,7)
          CALL MOVE(20.0,17.0)
          CALL TEXT('MAX :',5)
@@ -1266,35 +1278,35 @@ C
          CALL MOVE(20.0,16.0)
          CALL TEXT('STEP:',5)
          CALL NUMBR(GGFSTP,'(1PE12.4)',12)
-C
+
          CALL PAGEE
-C
+
       ENDDO
-C
+
       RETURN
-      END
-C
-C     ****** DRAW CALCULATED MAGNETIC FIELD ******
-C
+      END SUBROUTINE EQGSDD
+!
+!     ****** DRAW CALCULATED MAGNETIC FIELD ******
+!
       SUBROUTINE EQGSBB
-C
+
       INCLUDE 'eqcomq.inc'
-C
+
       DIMENSION GF(NRM,NTHM),GR(NRM,NTHM),GZ(NRM,NTHM)
       DIMENSION GRSU(NSUM),GZSU(NSUM)
       DIMENSION GRSW(NSUM),GZSW(NSUM)
       DIMENSION KA(4,NRM,NTHM)
       CHARACTER KTITL*80
-C
+
       DO NR=1,NRMAX
       DO NTH=1,NTHMAX
          GR(NR,NTH)=GUCLIP(RPS(NTH,NR))
          GZ(NR,NTH)=GUCLIP(ZPS(NTH,NR))
       ENDDO
       ENDDO
-C
+
       DO IND=1,4
-C
+
          IF(IND.EQ.1) THEN
             DO NR=1,NRMAX
             DO NTH=1,NTHMAX
@@ -1324,7 +1336,7 @@ C
             ENDDO
             KTITL='/BTP/'
          ENDIF
-C
+
          GSUM=0.0
          DO NTH=1,NTHMAX
             GSUM=GSUM+GF(1,NTH)
@@ -1333,7 +1345,7 @@ C
          DO NTH=1,NTHMAX
             GF(1,NTH)=GSUM
          ENDDO
-C
+
          IF(NSUMAX.GT.0) THEN
          CALL GMNMX2(GF,NRM,1,NRMAX,1,1,NTHMAX,1,GFMIN,GFMAX)
          CALL GQSCAL(GFMIN,GFMAX,GGFMIN,GGFMAX,GGFSTP)
@@ -1350,7 +1362,7 @@ C
          GRSW(NSUMAX+1)=GUCLIP(RSW(NSU))
          GZSW(NSUMAX+1)=GUCLIP(ZSW(NSU))
          END IF
-C
+
          GRLEN=GUCLIP(RGMAX-RGMIN)
          GZLEN=GUCLIP(ZGMAX-ZGMIN)
          IF(GRLEN.GT.GZLEN) THEN
@@ -1360,33 +1372,33 @@ C
             GPR=15.0*GRLEN/GZLEN
             GPZ=15.0
          ENDIF
-C
+
          CALL PAGES
          CALL MOVE(2.0,17.5)
          CALL TEXTX(KTITL)
-C
+
          CALL SETLIN(0,2,7)
-         CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ,
-     &               REAL(RGMIN),REAL(RGMAX),
-     &               REAL(ZGMIN),REAL(ZGMAX))
+         CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ, &
+                     REAL(RGMIN),REAL(RGMAX), &
+                     REAL(ZGMIN),REAL(ZGMAX))
          CALL GFRAME
          CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
-C
+
          IF(GFMIN*GFMAX.GT.0.) THEN
-            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &                  GGFMIN,GGFSTP,NSTEP,2,0,KA)
+            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                        GGFMIN,GGFSTP,NSTEP,2,0,KA)
          ELSE
-            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &                   0.5*GGFSTP, GGFSTP,NSTEP,2,0,KA)
-            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &                  -0.5*GGFSTP,-GGFSTP,NSTEP,2,2,KA)
+            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                         0.5*GGFSTP, GGFSTP,NSTEP,2,0,KA)
+            CALL CONTP5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                        -0.5*GGFSTP,-GGFSTP,NSTEP,2,2,KA)
          ENDIF
          CALL OFFCLP
          CALL SETLIN(0,-1,6)
          CALL GPLOTP(GRSU,GZSU,1,NSUMAX+1,1,0,0,0)
          CALL SETLIN(0,-1,5)
          CALL GPLOTP(GRSW,GZSW,1,NSUMAX+1,1,0,0,0)
-C
+
          CALL SETLIN(0,-1,7)
          CALL MOVE(20.0,17.0)
          CALL TEXT('MAX :',5)
@@ -1397,266 +1409,266 @@ C
          CALL MOVE(20.0,16.0)
          CALL TEXT('STEP:',5)
          CALL NUMBR(GGFSTP,'(1PE12.4)',12)
-C
+
          CALL PAGEE
-C
+
       ENDDO
-C
+
       RETURN
-      END
-C
-C     ***** Draw Parameters *****
-C
+      END SUBROUTINE EQGSBB
+!
+!     ***** Draw Parameters *****
+!
       SUBROUTINE EQGPRM
-C
+
       INCLUDE 'eqcomc.inc'
-C
+
       REAL*4 XPOS,YPOS,DELY
-C
+
       CALL SETCHS(0.3,0.0)
       CALL SETLIN(0,-1,7)
-C
-C      XPOS=16.5
+
+!      XPOS=16.5
       XPOS=20.0
       YPOS=15.0
       DELY= 0.5
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('RR    :',7)
       CALL NUMBD(RR,  '(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('RA    :',7)
       CALL NUMBD(RA, '(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('RKAP  :',7)
       CALL NUMBD(RKAP,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('RDLT  :',7)
       CALL NUMBD(RDLT,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('RIPX  :',7)
       CALL NUMBD(RIPX,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('BB    :',7)
       CALL NUMBD(BB,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('PP0   :',7)
       CALL NUMBD(PP0,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('PP1   :',7)
       CALL NUMBD(PP1,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('PP2   :',7)
       CALL NUMBD(PP2,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('PJ0   :',7)
       CALL NUMBD(PJ0,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('PJ1   :',7)
       CALL NUMBD(PJ1,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('PJ2   :',7)
       CALL NUMBD(PJ2,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('R0:',3)
       CALL NUMBD(PROFR0,'(F5.1)',5)
       CALL NUMBD(PROFP0,'(F5.1)',5)
       CALL NUMBD(PROFJ0,'(F5.1)',5)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('R1:',3)
       CALL NUMBD(PROFR1,'(F5.1)',5)
       CALL NUMBD(PROFP1,'(F5.1)',5)
       CALL NUMBD(PROFJ1,'(F5.1)',5)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('R2:',3)
       CALL NUMBD(PROFR2,'(F5.1)',5)
       CALL NUMBD(PROFP2,'(F5.1)',5)
       CALL NUMBD(PROFJ2,'(F5.1)',5)
       YPOS=YPOS-DELY
-C
+
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('EPSEQ :',7)
       CALL NUMBD(EPSEQ,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('NSGMAX :',7)
       CALL NUMBI(NSGMAX,'(I8)',8)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('NTGMAX:',7)
       CALL NUMBI(NTGMAX,'(I8)',8)
       YPOS=YPOS-DELY
-C
+
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('RAXIS :',7)
       CALL NUMBD(RAXIS,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('ZAXIS :',7)
       CALL NUMBD(ZAXIS,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('PSI0  :',7)
       CALL NUMBD(PSI0,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('PVOL  :',7)
       CALL NUMBD(PVOL,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('RAAVE :',7)
       CALL NUMBD(RAAVE,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('BETAT :',7)
       CALL NUMBD(BETAT,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('BETAP :',7)
       CALL NUMBD(BETAP,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('QAXIS :',7)
       CALL NUMBD(QAXIS,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       CALL MOVE(XPOS,YPOS)
       CALL TEXT('QSURF :',7)
       CALL NUMBD(QSURF,'(1PE11.3)',11)
       YPOS=YPOS-DELY
-C
+
       RETURN
-      END
-C
-C     ****** DRAW 1D METRIC PROFILES FOR TRANSPORT CODES ******
-C
+      END SUBROUTINE EQGPRM
+!
+!     ****** DRAW 1D METRIC PROFILES FOR TRANSPORT CODES ******
+!
       SUBROUTINE EQGTR1
-C
+
       USE libspl1d
       include 'eqcomq.inc'
-C
+
       dimension gx(nrm),gy(nrm)
-C
+
       DO NR=1,NRMAX
          GX(NR)=GUCLIP(RHOT(NR))
          IF(RHOT(NR).EQ.1.D0) NRLMAX=NR
       ENDDO
-C
+
       CALL PAGES
       CALL SETCHS(0.35,0.0)
-C
+
       DO NR=1,NRMAX
          CALL SPL1DF(FNPSIP(RHOT(NR)),DAT,PSIP,UDVDRHO,NRMAX,IERR)
          GY(NR)=GUCLIP(DAT)
       ENDDO
       CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRLMAX,1,"@V'@",0)
-C
+
       DO NR=1,NRMAX
          CALL SPL1DF(FNPSIP(RHOT(NR)),DAT,PSIP,UAVEIR2,NRMAX,IERR)
          GY(NR)=GUCLIP(DAT)
       ENDDO
       CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRLMAX,1,'@<1/R^2>@',1)
-C
+
       DO NR=1,NRMAX
          CALL SPL1DF(FNPSIP(RHOT(NR)),DAT,PSIP,UAVEGRR2,NRMAX,IERR)
          GY(NR)=GUCLIP(DAT)
       ENDDO
-      CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRLMAX,1,
-     &            '@<|grad rho|^2/R^2>@',0)
+      CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRLMAX,1, &
+                  '@<|grad rho|^2/R^2>@',0)
       CALL PAGEE
-C
+
       CALL PAGES
       CALL SETCHS(0.35,0.0)
-C
+
       DO NR=1,NRMAX
          CALL SPL1DF(FNPSIP(RHOT(NR)),DAT,PSIP,UAVEGR,NRMAX,IERR)
          GY(NR)=GUCLIP(DAT)
       ENDDO
-      CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRLMAX,1,
-     &            '@<|grad rho|>@',0)
-C
+      CALL EQGR1D( 3.0,13.0,10.0,16.0,GX,GY,NRM,NRLMAX,1, &
+                  '@<|grad rho|>@',0)
+
       DO NR=1,NRMAX
          CALL SPL1DF(FNPSIP(RHOT(NR)),DAT,PSIP,UAVEGR2,NRMAX,IERR)
          GY(NR)=GUCLIP(DAT)
       ENDDO
-      CALL EQGR1D(15.0,25.0,10.0,16.0,GX,GY,NRM,NRLMAX,1,
-     &            '@<|grad rho|^2>@',1)
-C
+      CALL EQGR1D(15.0,25.0,10.0,16.0,GX,GY,NRM,NRLMAX,1, &
+                  '@<|grad rho|^2>@',1)
+
       DO NR=1,NRMAX
          CALL SPL1DF(FNPSIP(RHOT(NR)),DAT,PSIP,UAVEBB2,NRMAX,IERR)
          GY(NR)=GUCLIP(DAT)
       ENDDO
-      CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRLMAX,1,
-     &            '@<B^2>@',0)
-C
+      CALL EQGR1D( 3.0,13.0, 2.0, 8.0,GX,GY,NRM,NRLMAX,1, &
+                  '@<B^2>@',0)
+
       DO NR=1,NRMAX
          CALL SPL1DF(FNPSIP(RHOT(NR)),DAT,PSIP,UAVEIB2,NRMAX,IERR)
          GY(NR)=GUCLIP(DAT)
       ENDDO
       CALL EQGR1D(15.0,25.0, 2.0, 8.0,GX,GY,NRM,NRLMAX,1,'@<1/B^2>@',0)
       CALL PAGEE
-C
+
       return
-      END
-C
-C     ****** DRAW CALCULATED EQ1D MULTI GRAPH ******
-C
+      END SUBROUTINE EQGTR1
+!
+!     ****** DRAW CALCULATED EQ1D MULTI GRAPH ******
+!
       SUBROUTINE EQGC1M
-C
+
       INCLUDE 'eqcomc.inc'
-C
+
       DIMENSION GX(NXM),GYPS(NXM,5)
-C
+
       CHARACTER KSTR*80
-C
+
       GX1=2.5
       GX2=25.0
       GY1=1.5
       GY2=17.5
-C
-C     ----- Major radius dependence -----
-C
+!
+!     ----- Major radius dependence -----
+!
       NTGX=NTGMAX/2+1
       DO NSG=NSGMAX,1,-1
          NX=NSGMAX-NSG+1
@@ -1677,7 +1689,7 @@ C
          RPSINT(NX,4)=PSIO(NTGX,NSG,4)
          RPSINT(NX,5)=PSIO(NTGX,NSG,5)
       ENDDO
-C
+
       DO NX=1,2*NSGMAX
          GX(NX)=GUCLIP(XAX(NX))
          GYPS(NX,1)=GUCLIP(RPSINT(NX,1))
@@ -1686,30 +1698,30 @@ C
          GYPS(NX,4)=GUCLIP(RPSINT(NX,4))
          GYPS(NX,5)=GUCLIP(RPSINT(NX,5))
       ENDDO
-C
+
       CALL PAGES
       KSTR='/PSI(X)/'
       CALL EQGR1D(GX1,GX2,GY1,GY2,GX,GYPS(1,1),NXM,2*NSGMAX,5,KSTR,0)
       CALL PAGEE
-C
+
       RETURN
-      END
-C
-C     ****** DRAW SPLINED Ripple Contour ******
-C
+      END SUBROUTINE EQGC1M
+!
+!     ****** DRAW SPLINED Ripple Contour ******
+!
       SUBROUTINE EQGSRP
-C
+
       INCLUDE 'eqcomq.inc'
-C
+
       DIMENSION GR(NTHMP),GZ(NTHMP)
       DIMENSION GRG(NRGM),GZG(NZGM)
       DIMENSION GRrp(NRrpM), GZrp(NZrpM)
       REAL,DIMENSION(:,:),ALLOCATABLE:: GPSIRZ,GrpplRZ
       INTEGER,DIMENSION(:,:,:),ALLOCATABLE:: KA,KB,KC
       CHARACTER KTITL*80
-C
-C     *** Psi contour ***
-C
+!
+!     *** Psi contour ***
+!
       ALLOCATE(GPSIRZ(NRGM,NZGM),GrpplRZ(NRrpM,NZrpM))
       ALLOCATE(KA(8,NRGM,NZGM),KB(8,NRrpM,NZrpM),KC(2,NRrpM,NZrpM))
 
@@ -1724,14 +1736,14 @@ C
             GPSIRZ(NR,NZ)=GUCLIP(PSIRZ(NR,NZ))
          ENDDO
       ENDDO
-C
+
       CALL GMNMX1(GRG,1,NRGMAX,1,GRMIN,GRMAX)
       CALL GMNMX1(GZG,1,NZGMAX,1,GZMIN,GZMAX)
       CALL GMNMX2(GPSIRZ,NRGM,1,NRGMAX,1,1,NZGMAX,1,GPMIN,GPMAX)
       NPSTEP=20
       GPORG=GPMIN
       GPSTEP=(GPMAX-GPMIN)/NPSTEP
-C
+
       GRLEN=GRMAX-GRMIN
       GZLEN=GZMAX-GZMIN
       IF(GRLEN.GT.GZLEN) THEN
@@ -1741,40 +1753,40 @@ C
          GPR=15.0*GRLEN/GZLEN
          GPZ=15.0
       ENDIF
-C
+
       CALL PAGES
       CALL MOVE(2.0,17.5)
       KTITL='/PSIRZ contour in R-Z/'
       CALL TEXTX(KTITL)
-C
+
       CALL GQSCAL(GRMIN,GRMAX,GGRMIN,GGRMAX,GGRSTP)
       CALL GQSCAL(GZMIN,GZMAX,GGZMIN,GGZMAX,GGZSTP)
-C
+
       CALL SETLIN(0,2,7)
-      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ,
-     &            GRMIN,GRMAX,GZMIN,GZMAX)
+      CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ, &
+                  GRMIN,GRMAX,GZMIN,GZMAX)
       CALL GFRAME
       CALL GSCALE(GGRMIN+GGRSTP,GGRSTP,0.0,0.0,0.1,9)
       CALL GVALUE(GGRMIN+GGRSTP,GGRSTP*2,0.0,0.0,NGULEN(GGRSTP))
       CALL GSCALE(0.0,0.0,0.0,GGZSTP,0.1,9)
       CALL GVALUE(0.0,0.0,0.0,GGZSTP*2,NGULEN(GGZSTP*2))
-C
-C     *** Outside the separatrix ***
+
+!     *** Outside the separatrix ***
       CALL SETRGB(1.0,0.0,0.0)
-C      CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
-      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            0.5*GPSTEP,GPSTEP,NPSTEP,0,0,KA)
-C     *** The separatrix ***
+!      CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
+      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  0.5*GPSTEP,GPSTEP,NPSTEP,0,0,KA)
+!     *** The separatrix ***
       CALL SETRGB(0.0,1.0,0.0)
-      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            0.0,GPSTEP,1,0,0,KA)
-C     *** Inside the separatrix ***
+      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  0.0,GPSTEP,1,0,0,KA)
+!     *** Inside the separatrix ***
       NPINSD=10
       GPINSD=(0.0-GPMIN)/NPINSD
       CALL SETRGB(0.0,0.0,1.0)
-      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX,
-     &            -GPINSD,-GPINSD,NPINSD,0,0,KA)
-C     *** Magnetic axis ***
+      CALL CONTQ2(GPSIRZ,GRG,GZG,NRGM,NRGMAX,NZGMAX, &
+                  -GPINSD,-GPINSD,NPINSD,0,0,KA)
+!     *** Magnetic axis ***
       GRAXIS=REAL(RAXIS)
       GZAXIS=REAL(ZAXIS)
       GRZSTP=0.1*GGRSTP
@@ -1782,10 +1794,10 @@ C     *** Magnetic axis ***
       CALL DRAW2D(GRAXIS+GRZSTP,GZAXIS+GRZSTP)
       CALL MOVE2D(GRAXIS+GRZSTP,GZAXIS-GRZSTP)
       CALL DRAW2D(GRAXIS-GRZSTP,GZAXIS+GRZSTP)
-C
-C     *** Ripple contour ***
-C
-C     // Pre-processing //
+!
+!     *** Ripple contour ***
+!
+!     // Pre-processing //
       DO NR=1,NRrpM
          GRrp(NR)=GUCLIP(Rrp(NR))
       ENDDO
@@ -1797,11 +1809,11 @@ C     // Pre-processing //
             GRpplRZ(NR,NZ)=GUCLIP(RpplRZ(NR,NZ))
          ENDDO
       ENDDO
-C
+
       CALL GMNMX1(GRrp,1,NRrpM,1,GRMIN,GRMAX)
       CALL GMNMX1(GZrp,1,NZrpM,1,GZMIN,GZMAX)
       CALL GMNMX2(GRpplRZ,NRrpM,1,NRrpM,1,1,NZrpM,1,GPMIN,GPMAX)
-C
+
       GRLEN=GRMAX-GRMIN
       GZLEN=GZMAX-GZMIN
       IF(GRLEN.GT.GZLEN) THEN
@@ -1811,71 +1823,71 @@ C
          GPR=15.0*GRLEN/GZLEN
          GPZ=15.0
       ENDIF
-C
-c$$$      NPSTEP = 5
-c$$$      allocate(GZL(1:NPSTEP),RGB(1:3,1:NPSTEP),ILN(1:NPSTEP),
-c$$$     &         WLN(1:NPSTEP))
-c$$$      GZL(1) = 0.0002
-c$$$      GZL(2) = 0.0004
-c$$$      GZL(3) = 0.0006
-c$$$      GZL(4) = 0.0008
-c$$$      GZL(5) = 0.001
-c$$$C
-c$$$      DO J = 1, NPSTEP
-c$$$         DO I = 1, 3
-c$$$            RGB(I,J) = 0.0
-c$$$         END DO
-c$$$         ILN(J) = 2
-c$$$         WLN(J) = 0.03
-c$$$      END DO
-C
+
+!$$$      NPSTEP = 5
+!$$$      allocate(GZL(1:NPSTEP),RGB(1:3,1:NPSTEP),ILN(1:NPSTEP),
+!$$$     &         WLN(1:NPSTEP))
+!$$$      GZL(1) = 0.0002
+!$$$      GZL(2) = 0.0004
+!$$$      GZL(3) = 0.0006
+!$$$      GZL(4) = 0.0008
+!$$$      GZL(5) = 0.001
+!$$$C
+!$$$      DO J = 1, NPSTEP
+!$$$         DO I = 1, 3
+!$$$            RGB(I,J) = 0.0
+!$$$         END DO
+!$$$         ILN(J) = 2
+!$$$         WLN(J) = 0.03
+!$$$      END DO
+
       CALL INQLIN(ILN_STR,IBL_STR,ICL_STR)
       CALL SETLIN(-1,1,-1)
-C
-C     // From 0.02% to 0.1% //
+
+!     // From 0.02% to 0.1% //
       NPSTEP= 5
       GPMIN = 0.0002
       GPMAX = 0.001
       GPSTEP=(GPMAX-GPMIN)/NPSTEP
-C
+
       CALL SETRGB(0.0,0.0,0.0)
-C      CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
-      CALL CONTQ2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM,
-     &            GPMIN,GPSTEP,NPSTEP,0,1,KB)
-c$$$      CALL CONTE2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM,
-c$$$     &            GZL,NPSTEP,0,0,KC)
-c$$$      CALL CONTG2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM,
-c$$$     &            GZL,RGB,ILN,WLN,NPSTEP,0,0,KC)
-c$$$      deallocate(GZL,RGB,ILN,WLN)
-C
-C     // From 0.2% to 0.8% //
+!      CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
+      CALL CONTQ2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM, &
+                  GPMIN,GPSTEP,NPSTEP,0,1,KB)
+!$$$      CALL CONTE2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM,
+!$$$     &            GZL,NPSTEP,0,0,KC)
+!$$$      CALL CONTG2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM,
+!$$$     &            GZL,RGB,ILN,WLN,NPSTEP,0,0,KC)
+!$$$      deallocate(GZL,RGB,ILN,WLN)
+
+!     // From 0.2% to 0.8% //
       NPSTEP= 4
       GPMIN = 0.002
       GPMAX = 0.008
       GPSTEP=(GPMAX-GPMIN)/NPSTEP
-C
+
       CALL SETRGB(0.0,0.0,0.0)
-      CALL CONTQ2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM,
-     &            GPMIN,GPSTEP,NPSTEP,0,2,KB)
-C
-C     // 1.5% & 2.5% //
+      CALL CONTQ2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM, &
+                  GPMIN,GPSTEP,NPSTEP,0,2,KB)
+
+!     // 1.5% & 2.5% //
       NPSTEP= 2
       GPMIN = 0.015
       GPMAX = 0.025
       GPSTEP=(GPMAX-GPMIN)/NPSTEP
-      CALL CONTQ2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM,
-     &            GPMIN,GPSTEP,NPSTEP,0,2,KB)
-C
-C     // Integer ripple contours //
+      CALL CONTQ2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM, &
+                  GPMIN,GPSTEP,NPSTEP,0,2,KB)
+
+!     // Integer ripple contours //
       NPSTEP= 4
       GPMIN = 0.01
       GPMAX = 0.04
       GPSTEP=(GPMAX-GPMIN)/NPSTEP
-      CALL CONTQ2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM,
-     &            GPMIN,GPSTEP,NPSTEP,0,0,KB)
+      CALL CONTQ2(GRpplRZ,GRrp,GZrp,NRrpM,NRrpM,NZrpM, &
+                  GPMIN,GPSTEP,NPSTEP,0,0,KB)
       CALL SETLIN(ILN_STR,IBL_STR,ICL_STR)
-C
-C     // Ripple well region //
+
+!     // Ripple well region //
       CALL SETMKS(4,0.1)
       IF(GAlpRP(1,1) < 1.0) THEN
          CALL MOVE2D(GRal(1,1),GZal(1,1))
@@ -1891,8 +1903,8 @@ C     // Ripple well region //
             ENDIF
          ENDDO
       ENDDO
-C
-C     // Post-processing //
+
+!     // Post-processing //
       CALL OFFCLP
       CALL SETRGB(0.0,0.0,0.0)
       CALL EQGPRM
@@ -1900,6 +1912,6 @@ C     // Post-processing //
 
       DEALLOCATE(GPSIRZ,GrpplRZ)
       DEALLOCATE(KA,KB,KC)
-C
+
       RETURN
-      END
+      END SUBROUTINE EQGSRP
