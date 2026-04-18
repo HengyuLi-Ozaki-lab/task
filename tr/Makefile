@@ -28,13 +28,14 @@ SRCM=trcom0.f90 trcom1.f90 \
      trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
      trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90 \
      trcomm.f90 trbpsd.f90
-SRCS=trinit.f90 trparm.f90 trview.f90 \
+SRCS=trcdbm.f90 trmodels.f90 \
+     trcoef_turbulence.f90 trcoef_neoclassical.f90 \
+     trinit.f90 trparm.f90 trview.f90 \
      trmetric.f90 trprof.f90 trprep.f90 \
      trufsub.f90 tr_ufile_task.f90 tr_ufile_topics.f90 trufile.f90 \
      trfile.f90 trhelp.f90 \
      trexec.f90 trcalc.f90 \
-     tradat.f90 trcdbm.f90 trmodels.f90 \
-     trcoef_turbulence.f90 \
+     tradat.f90 \
      trcoef.f90 tritg.f90 \
      trrslt.f90 trpnb.f90 trprf.f90 trpnf.f90 trpel.f90 trpsc.f90 trmdlt.f90 \
      trgout.f90 trgrar.f90 trgrat.f90 trgrap.f90 trgrae.f90 \
@@ -149,12 +150,14 @@ $(OBJDIR)/tr_ufile_task.o : tr_ufile_task.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/tr_ufile_topics.o : tr_ufile_topics.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trufsub.o : trufsub.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trloop.o : trloop.f90 trcomm.f90 trcom1.f90
-$(OBJDIR)/trexec.o : trexec.f90 trcomm.f90 trcom1.f90
+$(OBJDIR)/trexec.o : trexec.f90 trcomm.f90 trcom1.f90 trcoef_neoclassical.f90
 $(OBJDIR)/trpl.o : trpl.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trrslt.o : trrslt.f90 trcomm.f90
 $(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90
-$(OBJDIR)/trcoef.o : trcoef.f90 trcomm.f90 trglf.inc trcoef_turbulence.f90
+$(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90
+$(OBJDIR)/trcoef.o : trcoef.f90 trcomm.f90 trglf.inc \
+                     trcoef_turbulence.f90 trcoef_neoclassical.f90
 $(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90 
 $(OBJDIR)/trprf.o  : trprf.f90  trcomm.f90 
 $(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90 
@@ -167,7 +170,7 @@ $(OBJDIR)/trgrat.o : trgrat.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trgrap.o : trgrap.f90 trcomm.f90 
 $(OBJDIR)/trgrae.o : trgrae.f90 trcomm.f90 
 $(OBJDIR)/trgrad.o : trgrad.f90 trcomm.f90 
-$(OBJDIR)/trgram.o : trgram.f90 trcomm.f90 trcom1.f90
+$(OBJDIR)/trgram.o : trgram.f90 trcomm.f90 trcom1.f90 trcoef_neoclassical.f90
 $(OBJDIR)/trgsub.o : trgsub.f90 trcomm.f90 
 $(OBJDIR)/trhelp.o : trhelp.f90 trcomm.f90 
 $(OBJDIR)/trg2d.o  : trg2d.f90  trcomm.f90 

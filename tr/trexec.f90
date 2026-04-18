@@ -28,6 +28,7 @@ CONTAINS
       USE TRCOM1, ONLY : TMU, TMU1, NTXMAX, NTXMAX1
       USE libbnd
       USE libitp
+      USE trcoef_neoclassical, ONLY: TRCFDW_AKDW
       IMPLICIT NONE
       REAL(rkind),INTENT(IN) :: DT
       INTEGER,INTENT(OUT) :: IERR
