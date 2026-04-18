@@ -1,7 +1,7 @@
 /*
  * Phase L-4: test_run_so
  *
- * dlopen libeqapi.so, dlsym the 5 C ABI entry points, and exercise a
+ * dlopen libeqapi.so, dlsym the 6 C ABI entry points, and exercise a
  * minimal init -> set_param -> get_state -> finalize cycle. This
  * proves the shared object is loadable, has the expected external
  * symbols, and that the Fortran-side lifecycle works when driven from
@@ -18,7 +18,7 @@
  *   0      = OK
  *   1..8   = step that failed
  *   90     = dlopen failed
- *   91     = dlsym failed (one of the 5 entry points missing)
+ *   91     = dlsym failed (one of the 6 entry points missing)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +30,7 @@
 typedef int (*eq_init_fn)(void);
 typedef int (*eq_run_fn)(int);
 typedef int (*eq_set_param_fn)(const char *, double);
+typedef int (*eq_set_param_str_fn)(const char *, const char *);
 typedef int (*eq_get_state_fn)(eq_state_t *);
 typedef int (*eq_finalize_fn)(void);
 
@@ -49,17 +50,20 @@ int main(void) {
         return 90;
     }
 
-    eq_init_fn      f_init      = (eq_init_fn)      dlsym(h, "eq_init");
-    eq_run_fn       f_run       = (eq_run_fn)       dlsym(h, "eq_run");
-    eq_set_param_fn f_set_param = (eq_set_param_fn) dlsym(h, "eq_set_param");
-    eq_get_state_fn f_get_state = (eq_get_state_fn) dlsym(h, "eq_get_state");
-    eq_finalize_fn  f_finalize  = (eq_finalize_fn)  dlsym(h, "eq_finalize");
-    if (!f_init || !f_run || !f_set_param || !f_get_state || !f_finalize) {
+    eq_init_fn          f_init          = (eq_init_fn)          dlsym(h, "eq_init");
+    eq_run_fn           f_run           = (eq_run_fn)           dlsym(h, "eq_run");
+    eq_set_param_fn     f_set_param     = (eq_set_param_fn)     dlsym(h, "eq_set_param");
+    eq_set_param_str_fn f_set_param_str = (eq_set_param_str_fn) dlsym(h, "eq_set_param_str");
+    eq_get_state_fn     f_get_state     = (eq_get_state_fn)     dlsym(h, "eq_get_state");
+    eq_finalize_fn      f_finalize      = (eq_finalize_fn)      dlsym(h, "eq_finalize");
+    if (!f_init || !f_run || !f_set_param || !f_set_param_str ||
+        !f_get_state || !f_finalize) {
         fprintf(stderr,
-                "dlsym missing one of eq_{init,run,set_param,get_state,finalize}:"
-                " init=%p run=%p set=%p get=%p fin=%p\n",
+                "dlsym missing one of eq_{init,run,set_param,set_param_str,"
+                "get_state,finalize}: init=%p run=%p set=%p set_str=%p "
+                "get=%p fin=%p\n",
                 (void*)f_init, (void*)f_run, (void*)f_set_param,
-                (void*)f_get_state, (void*)f_finalize);
+                (void*)f_set_param_str, (void*)f_get_state, (void*)f_finalize);
         dlclose(h);
         return 91;
     }
@@ -67,11 +71,14 @@ int main(void) {
     int rc;
     eq_state_t st;
 
-    rc = f_init();                           if (rc != 0) { dlclose(h); return 1; }
-    rc = f_set_param("RR",     3.0);         if (rc != 0) { dlclose(h); return 2; }
-    rc = f_set_param("BB",     3.0);         if (rc != 0) { dlclose(h); return 3; }
-    rc = f_set_param("RIP",    1.0);         if (rc != 0) { dlclose(h); return 4; }
-    rc = f_set_param("MDLEQF", 0.0);         if (rc != 0) { dlclose(h); return 5; }
+    rc = f_init();                                 if (rc != 0) { dlclose(h); return 1; }
+    rc = f_set_param("RR",     3.0);               if (rc != 0) { dlclose(h); return 2; }
+    rc = f_set_param("BB",     3.0);               if (rc != 0) { dlclose(h); return 3; }
+    rc = f_set_param("RIP",    1.0);               if (rc != 0) { dlclose(h); return 4; }
+    rc = f_set_param("MDLEQF", 0.0);               if (rc != 0) { dlclose(h); return 5; }
+    /* Exercise the string setter too so a broken/missing eq_set_param_str
+     * export is caught by this test (Bugbot MED on L-4). */
+    rc = f_set_param_str("KNAMEQ", "eqdata.ITER"); if (rc != 0) { dlclose(h); return 9; }
 
     memset(&st, 0xAA, sizeof(st));
     rc = f_get_state(&st);                   if (rc != 0) { dlclose(h); return 6; }

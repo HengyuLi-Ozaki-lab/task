@@ -291,10 +291,10 @@ eq_api_check: libs libeq.a $(EQ_API_SMOKE_BIN)
 # =====================================================================
 # Phase L-4: libeqapi.so shared library build
 #
-# Builds a position-independent shared object that exposes the 5 C ABI
-# entry points (eq_init, eq_run, eq_set_param, eq_get_state,
-# eq_finalize) by linking SRCS_CORE + SRCS_API (plus eq_graphics_stubs)
-# against PIC rebuilds of bpsd / pl / lib / mtxp.
+# Builds a position-independent shared object that exposes the 6 C ABI
+# entry points (eq_init, eq_run, eq_set_param, eq_set_param_str,
+# eq_get_state, eq_finalize) by linking SRCS_CORE + SRCS_API (plus
+# eq_graphics_stubs) against PIC rebuilds of bpsd / pl / lib / mtxp.
 #
 # The PIC build reuses obj/pic/ + mod_pic/ defined above for libeq_pic.a.
 # Dependent libraries are PIC-rebuilt via opt-in targets added in
