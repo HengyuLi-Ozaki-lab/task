@@ -109,6 +109,7 @@ get_binary() {
         tr) echo "$TASK_DIR/tr/tr2" ;;
         ti) echo "$TASK_DIR/ti/ti" ;;
         fp) echo "$TASK_DIR/fp/fp" ;;
+        wrx) echo "$TASK_DIR/wrx/wrx" ;;
         tx) echo "$TASK_DIR/tx/tx2" ;;
         *) echo "" ;;
     esac
@@ -301,6 +302,7 @@ run_single_test() {
         tr) mod_env=(env TR_REGRESS_DUMP=1) ;;
         fp) mod_env=(env FP_REGRESS_DUMP=1) ;;
         ti) mod_env=(env TI_REGRESS_DUMP=1) ;;
+        wrx) mod_env=(env WRX_REGRESS_DUMP=1) ;;
     esac
 
     if [[ $VERBOSE -eq 1 ]]; then
@@ -322,7 +324,7 @@ run_single_test() {
         # CLOSED message found - calculation completed successfully.
         # For TR module, also verify numerical metrics against baseline.
         local reg_ok=1
-        if [[ "$module" == "tr" || "$module" == "fp" || "$module" == "ti" ]]; then
+        if [[ "$module" == "tr" || "$module" == "fp" || "$module" == "ti" || "$module" == "wrx" ]]; then
             if ! "$SCRIPT_DIR/scripts/check_regression.sh" \
                     "$test_name" "$test_dir" "$SCRIPT_DIR/baselines" "1e-10" \
                     > "$test_dir/regression.log" 2>&1; then
