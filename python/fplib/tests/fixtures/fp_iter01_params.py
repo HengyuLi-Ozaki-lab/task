@@ -25,6 +25,7 @@ SCALARS = {
     "NTMAX":  2,
     "NPMAX":  50,
     "NTHMAX": 50,
+    "MODELG": 3,
     "MODELR": 1,
     "DELT":   1.0e-3,
     "NSAMAX": 1,
