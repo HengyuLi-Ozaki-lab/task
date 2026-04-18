@@ -65,6 +65,15 @@ def _sample() -> dict:
     }
 
 
+def _tot_sample() -> dict:
+    """Sample that mirrors the extract_tot_metrics.py schema (with ``modules``)."""
+    s = _sample()
+    s["modules"] = {
+        "TR_PRESENT": 1, "TI_PRESENT": 0, "FP_PRESENT": 0, "WR_PRESENT": 0,
+    }
+    return s
+
+
 class CompareMetricsTest(unittest.TestCase):
 
     def _paths(self, td):
@@ -154,6 +163,50 @@ class CompareMetricsTest(unittest.TestCase):
             write_json(act,  inf_sample)
             res = run_compare(act, base)
             self.assertEqual(res.returncode, 0, res.stderr)
+
+    # --- modules dict (tot schema) ----------------------------------------
+
+    def test_passes_on_identical_tot_modules(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _tot_sample())
+            write_json(act,  _tot_sample())
+            res = run_compare(act, base)
+            self.assertEqual(res.returncode, 0, res.stderr)
+
+    def test_fails_on_module_presence_drift(self):
+        """Bugbot MEDIUM: structural drift in modules dict must fail."""
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _tot_sample())
+            drifted = _tot_sample()
+            drifted["modules"]["TR_PRESENT"] = 0  # was 1 in baseline
+            write_json(act, drifted)
+            res = run_compare(act, base)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("TR_PRESENT", res.stdout)
+            self.assertIn("modules", res.stdout)
+
+    def test_fails_when_module_appears_only_in_actual(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _sample())  # tr-only schema, no modules dict
+            tot = _tot_sample()
+            write_json(act, tot)
+            res = run_compare(act, base)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("modules", res.stdout)
+
+    def test_fails_on_unknown_module_key(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _tot_sample())
+            drifted = _tot_sample()
+            drifted["modules"]["EQ_PRESENT"] = 1  # not in MODULE_KEYS
+            write_json(act, drifted)
+            res = run_compare(act, base)
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("EQ_PRESENT", res.stdout)
 
 
 class CompareMetricsSchemaTest(unittest.TestCase):
