@@ -184,9 +184,12 @@ interactive menu — those live in `tr/tr2` only.
 - **Single instance per process.** TR backend uses COMMON blocks.
   Two concurrent `Trlib()` instances share state; the second
   `tr_init` resets globals.
-- **No graphics, no MPI, no OpenMP API.** Graphics symbols exist but
-  are not reachable from the 5 exported entry points; the loader uses
-  `RTLD_LAZY` so dangling graphics references never resolve.
+- **No PGPlot/GSAF graphics, no MPI, no OpenMP API.** Fortran-side
+  graphics symbols exist but are not reachable from the 5 exported
+  entry points; the loader uses `RTLD_LAZY` so dangling graphics
+  references never resolve. Python-side visualization is provided
+  separately via `trlib.plot` (matplotlib backend, optional dependency)
+  — see the Plot section below.
 - **String parameters not yet wired** (e.g. `KNAMEQ`, `KNAMTR`). See
   `docs/superpowers/specs/2026-04-17-tr-library-design.md` §4.3.
 - **Unregistered namelist keys** — any name missing from
@@ -225,6 +228,116 @@ The full 4-layer regression suite is wired into
 top-level license. Bug reports and PRs are welcome; please keep
 wrapper changes minimal — the C ABI is the stable layer, so new
 parameters should be added to the Fortran registry first.
+
+## TOML config 実行方法
+
+`python -m trlib <config.toml>` でパラメータ設定 + 計算 + プロットを 1
+コマンドで実行できます。CLI 版の namelist 入力 (`./tr < tr_iter01.in`)
+を Python 側に置き換えるための入口です。
+
+サンプル config はリポジトリ内に同梱しています:
+
+- `python/trlib/samples/iter01.toml` — `test_run/inputs/tr_iter01.in` を TOML 化したもの
+- `python/trlib/samples/tst2.toml` — `test_run/inputs/tr_tst2.in` を TOML 化したもの
+
+```bash
+# 計算 + プロットを一気に実行 (libtrapi.so + matplotlib が必要)
+python -m trlib python/trlib/samples/iter01.toml
+
+# 設定だけ確認 (ライブラリ未ビルドでも OK)
+python -m trlib python/trlib/samples/iter01.toml --dry-run
+
+# NTMAX を上書き
+python -m trlib python/trlib/samples/tst2.toml --ntmax 5
+
+# プロットだけスキップ (matplotlib が無い環境向け)
+python -m trlib python/trlib/samples/iter01.toml --no-plots
+```
+
+### TOML スキーマ
+
+```toml
+[module]
+name = "tr"
+ntmax = 100              # NTMAX scalar への alias
+
+[scalars]
+RR = 3.0
+NSMAX = 4
+
+[arrays]
+PN = [0.7, 0.315, 0.315, 0.035]   # 1-origin リスト
+# PA = { 2 = 1.0 }                 # sparse dict 形式 (PA(1) は default)
+
+[strings]
+KNAMEQ = "eqdata.ITER"
+
+[[plots]]                # 配列 of tables で複数プロット
+variable = "RNT"
+output   = "file"        # window | file | return
+format   = "png"
+path     = "./plots/rnt.png"
+title    = "温度密度プロファイル"
+```
+
+### Exit code
+
+| code | 意味 |
+|---|---|
+| 0 | 正常終了 |
+| 1 | ライブラリ / 計算エラー |
+| 2 | config エラー (未存在ファイル / TOML 構文エラー / matplotlib 不足) |
+
+## プロット
+
+`trlib.plot` は :mod:`matplotlib` をオプション依存とする可視化レイヤー
+です。`trlib` 本体は matplotlib なしでも import できますが、`plot()` を
+呼ぶと `ImportError` になります。
+
+### 対話的に呼ぶ
+
+```bash
+python -c "from trlib import Trlib; \
+  tr = Trlib(); tr.run(0); tr.plot('RNT'); tr.close()"
+```
+
+### 利用可能な変数を確認する
+
+```python
+from trlib import Trlib
+print(Trlib.plot_available())   # ['AJ', 'ALI', 'BETA0', ..., 'WPT']
+```
+
+`VARIABLE_INFO` 辞書 (in `trlib/plot.py`) に登録された変数のみが描画でき
+ます。新しい変数を追加するときはこの dict にエントリを足してください。
+
+### 出力モード
+
+| `output` | 用途 | 戻り値 |
+|---|---|---|
+| `"window"` (default) | CLI / インタラクティブ表示 | `None` |
+| `"file"` | バッチ / CI で画像保存 | `pathlib.Path` |
+| `"return"` | notebook embed / 後処理 | `matplotlib.figure.Figure` |
+
+### サンプル
+
+```python
+from trlib import Trlib
+
+with Trlib() as tr:
+    tr.set_params(RR=8.5, RA=2.0, BB=5.3, NSMAX=2, DT=0.1)
+    tr.run(50)
+    tr.plot("RNT", output="file", path="./rnt.png")    # PNG 保存
+    fig = tr.plot("AJ", output="return")               # Figure 受け取り
+```
+
+### matplotlib が無い環境での挙動
+
+`pip install matplotlib` を行わずに `trlib.plot` を import / `.plot()` を
+呼ぶと、明示的な `ImportError` が発生します。`__main__` では plot
+セクションが無い限り matplotlib を import しないため、`--no-plots` を
+付ければ matplotlib 未インストール環境でも `python -m trlib` を実行でき
+ます。
 
 ## See also
 
