@@ -113,7 +113,7 @@ $(LIB_MTX):
 	(cd ../wmx; make libwm.a)
 ../fp/libfp.a:
 	(cd ../fp; make libfp.a)
-../fp/libob.a:
+../ob/libob.a:
 	(cd ../ob; make libob.a)
 ../ti/libti.a:
 	(cd ../ti; make libti.a)
@@ -237,6 +237,11 @@ clean:
 	-rm -f core a.out *.o *.mod ./*~ *.a $(MOD)/*.mod
 	-rm -f $(TOT_API_SMOKE_O) $(TOT_API_SMOKE_BIN)
 	-rm -f $(TOT_API_PARAM_O) $(TOT_API_PARAM_BIN)
+	-rm -f $(TOT_API_SO_O) $(TOT_API_SO_BIN)
+
+clean_pic:
+	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libtotapi.so
+	-rm -f $(TOT_API_SO_O) $(TOT_API_SO_BIN)
 
 veryclean: clean
 	-rm -f tot
@@ -257,4 +262,194 @@ tot_param_registry.o : tot_param_registry.f90 \
                        ../tr/libtr2.a ../fp/libfp.a ../ti/libti.a \
                        ../wrx/libwr.a ../eq/libeq.a
 tot_api.o   : tot_api.f90 tot_state.f90 tot_state.o tot_param_registry.o
+
+# =====================================================================
+# Phase L-4: libtotapi.so composite shared library build
+#
+# tot is the orchestrator; libtotapi.so is the COMPOSITE shared object
+# that exposes the 6 tot_* C ABI entry points (tot_init, tot_run,
+# tot_set_param, tot_set_param_str, tot_get_state, tot_finalize) and
+# transitively re-exports every per-module *_param_set / *_param_set_str
+# symbol the dispatcher in tot_param_registry hands off to.
+#
+# Architecture: instead of rebuilding each per-module's PIC tree in
+# tot/, we delegate to each per-module Makefile via sub-make and link
+# the produced libXXapi.so / libXX_pic.a archives directly into
+# libtotapi.so. The result is a single .so that any Python/C wrapper
+# can dlopen() and drive without needing to know the per-module layout.
+#
+# tot's own PIC objects (totregress, tot_state, tot_param_registry,
+# tot_api, tot_graphics_stubs) live under obj/pic/ + mod_pic/ so the
+# existing libX.a-based `tot` binary build is untouched.
+#
+# We use --start-group/--end-group around the per-module .so list so ld
+# resolves any cyclic references (eq <-> pl, tr <-> eq, ...) without
+# requiring a hand-crafted topological order. We also pass
+# --unresolved-symbols=ignore-all because each per-module .so still has
+# unresolved graphics symbols on the happy path (handled at runtime by
+# RTLD_LAZY); the test_run_so driver dlopen's libtotapi.so with
+# RTLD_LAZY for the same reason.
+# =====================================================================
+
+OBJDIR_PIC=obj/pic
+MODDIR_PIC=mod_pic
+PIC_FLAGS=-fPIC -J$(MODDIR_PIC) -I$(MODDIR_PIC)
+# tot's PIC compile needs every per-module mod_pic dir on the include
+# path: tot_param_registry USEs eq_param_registry / tr_param_registry /
+# fp_param_registry / ti_param_registry / wrx_param_registry, and each
+# of those .mod files is emitted into its module's mod_pic/ dir by the
+# per-module libXXapi.so build (sub-make below).
+MODINCLUDE_PIC= -I$(MODDIR_PIC) \
+                -I../eq/mod_pic -I../tr/mod_pic -I../fp/mod_pic \
+                -I../ti/mod_pic -I../wrx/mod_pic \
+                -I../pl/mod_pic -I../lib/mod_pic \
+                -I../mtxp/mod_pic \
+                -I../../bpsd/$(MOD)
+
+$(OBJDIR_PIC)/%.o: %.f90
+	@mkdir -p $(@D) $(MODDIR_PIC)
+	$(FCFREE) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+
+# Tot's own PIC objects. totregress is part of SRCS_CORE so library
+# users that wire their own dump path can still call it; the four
+# api/state/registry objects implement the C ABI surface; the graphics
+# stub provides GUCLIP / PAGES no-ops in case any code path inside the
+# linked .so list reaches one and the per-module stubs are not picked
+# up by ld first.
+OBJS_PIC = $(OBJDIR_PIC)/totregress.o \
+           $(OBJDIR_PIC)/tot_state.o \
+           $(OBJDIR_PIC)/tot_param_registry.o \
+           $(OBJDIR_PIC)/tot_api.o \
+           $(OBJDIR_PIC)/tot_graphics_stubs.o
+
+# Inter-module PIC dependency order. Mirrors the non-PIC deps above.
+$(OBJDIR_PIC)/tot_state.o          : tot_state.f90
+$(OBJDIR_PIC)/tot_param_registry.o : tot_param_registry.f90 \
+                                     $(OBJDIR_PIC)/tot_state.o \
+                                     ../eq/libeqapi.so ../tr/libtrapi.so \
+                                     ../fp/libfpapi.so ../ti/libtiapi.so \
+                                     ../wrx/libwrxapi.so
+$(OBJDIR_PIC)/tot_api.o            : tot_api.f90 \
+                                     $(OBJDIR_PIC)/tot_state.o \
+                                     $(OBJDIR_PIC)/tot_param_registry.o
+$(OBJDIR_PIC)/totregress.o         : totregress.f90
+$(OBJDIR_PIC)/tot_graphics_stubs.o : tot_graphics_stubs.f90
+
+# --- bpsd in-tree PIC rebuild (mirrors eq/Makefile L-4) ---
+# tot's own PIC objects do not directly USE bpsd (only tot_state +
+# tot_api + tot_param_registry + totregress + stubs), but listing the
+# bpsd PIC objects keeps a parallel hook available in case future tot
+# orchestrator state slots need bpsd types. Currently bpsd PIC objects
+# are reached transitively via the per-module .so files, so this block
+# stays as a comment-only hook to mirror eq/tr Makefiles' shape.
+#
+# (Intentionally left blank: bpsd PIC is rebuilt by each per-module
+#  sub-make below; tot does not need a second copy.)
+
+# --- Per-module .so prereqs ---
+# Each per-module Makefile's libXXapi.so target builds:
+#   - the module's own SRCS_CORE + SRCS_API PIC objects under
+#     <module>/obj/pic/
+#   - the .mod files under <module>/mod_pic/
+#   - all transitive PIC archives (libpl_pic.a, libeq_pic.a, ...,
+#     libtask_pic.a, libgrf_pic.a, libmds_pic.a, libmtxnompi_pic.o,
+#     libmtxbnd_pic.o) and bpsd PIC objects under each module's
+#     obj/pic/bpsd/
+#
+# We delegate to each per-module sub-make so the build order, mod
+# emission, and PIC archive shape stay owned by the per-module
+# Makefile — tot only needs the final .so.
+../eq/libeqapi.so:
+	(cd ../eq; $(MAKE) libeqapi.so)
+../tr/libtrapi.so:
+	(cd ../tr; $(MAKE) libtrapi.so)
+../fp/libfpapi.so:
+	(cd ../fp; $(MAKE) libfpapi.so)
+../ti/libtiapi.so:
+	(cd ../ti; $(MAKE) libtiapi.so)
+../wrx/libwrxapi.so:
+	(cd ../wrx; $(MAKE) libwrxapi.so)
+
+# List of per-module .so files linked into libtotapi.so. We link the
+# wrx .so (and not wr/) because tot_param_registry routes BOTH `wr:`
+# and `wrx:` prefixes to wrx_param_set (the tot binary likewise links
+# wrx/libwr.a, not wr/libwr.a; see tot_param_registry.f90 doc).
+LIBS_PIC_SO = ../eq/libeqapi.so ../tr/libtrapi.so ../fp/libfpapi.so \
+              ../ti/libtiapi.so ../wrx/libwrxapi.so
+
+# tot's PIC objects must wait until every per-module .so has finished
+# building (so the .mod files are present in each mod_pic/ dir before
+# tot_param_registry.f90 is compiled).
+$(OBJS_PIC): | $(LIBS_PIC_SO)
+
+# --- The composite shared library itself ---
+# gfortran drives the link so libgfortran is pulled in automatically.
+# --start-group/--end-group resolves any cyclic references between the
+# per-module .so files (e.g. eq <-> pl, tr <-> eq, ti <-> fp) without a
+# hand-crafted order. --unresolved-symbols=ignore-all leaves any stray
+# graphics symbols (PAGES, r2w2b_, ...) that one .so references but
+# another doesn't satisfy as deferred to dlopen time. The test_run_so
+# driver uses RTLD_LAZY so those are only resolved if actually called,
+# which never happens on the
+#   tot_init -> tot_set_param(eq:RR) -> tot_set_param(tr:DT) ->
+#   tot_get_state -> tot_finalize
+# happy path.
+#
+# We deliberately drop $(FLIBS) from the link: those pull in non-PIC
+# graphics archives (libg3d/libgsp/libgdp) via GFLIBS plus MDSLIB+LIBLA.
+# libtotapi.so excludes graphics so none of the gsaf calls are
+# reachable; leaving GFLIBS in triggers R_X86_64_PC32 relocation errors
+# when ld tries to copy non-PIC .text from libg3d-gfc64.a into the .so.
+libtotapi.so: $(OBJS_PIC) $(LIBS_PIC_SO)
+	$(FCFREE) -shared -fPIC -Wl,-soname,libtotapi.so \
+	    -Wl,--unresolved-symbols=ignore-all \
+	    $(OBJS_PIC) \
+	    -Wl,--start-group $(LIBS_PIC_SO) -Wl,--end-group \
+	    -o libtotapi.so
+
+.PHONY: libtotapi_inspect
+libtotapi_inspect: libtotapi.so
+	@echo "=== file ==="
+	@file libtotapi.so
+	@echo "=== ldd ==="
+	@ldd libtotapi.so
+	@echo "=== exported tot_* symbols ==="
+	@nm -D libtotapi.so | grep ' T tot_' || true
+	@echo "=== undefined symbols (count) ==="
+	@nm -D libtotapi.so | grep ' U ' | wc -l
+	@echo "=== non-libc/gfortran undefined ==="
+	@nm -D libtotapi.so | grep ' U ' | grep -vE '@(GLIBC|GCC|GFORTRAN)' | head -40
+
+# ---------------------------------------------------------------------
+# Phase L-4: tot_api_check_so
+#
+# Dynamically loads libtotapi.so via dlopen(), resolves the 6 symbols,
+# and runs an init -> set_param(eq:RR) -> set_param(tr:DT) ->
+# get_state -> finalize cycle. tot_init / tot_run / tot_get_state /
+# tot_finalize are still L-3 stubs that return TOT_ERR_NOT_IMPL; the
+# driver accepts NOT_IMPL on those and asserts OK on tot_set_param.
+# ---------------------------------------------------------------------
+TOT_API_SO_C=$(TOT_API_SMOKE_DIR)/test_run_so.c
+TOT_API_SO_O=$(TOT_API_SMOKE_DIR)/test_run_so.o
+TOT_API_SO_BIN=$(TOT_API_SMOKE_DIR)/test_run_so
+
+$(TOT_API_SO_O): $(TOT_API_SO_C) tot_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(TOT_API_SO_O) $(TOT_API_SO_C)
+
+$(TOT_API_SO_BIN): $(TOT_API_SO_O)
+	$(CC) -o $(TOT_API_SO_BIN) $(TOT_API_SO_O) -ldl
+
+# LD_LIBRARY_PATH for tot_api_check_so:
+# libtotapi.so has NEEDED entries for each per-module .so (libeqapi.so,
+# libtrapi.so, libfpapi.so, libtiapi.so, libwrxapi.so) recorded with bare
+# soname. We extend LD_LIBRARY_PATH so the dynamic loader can find them
+# at dlopen time without requiring an `ldconfig` install step.
+TOT_LD_LIBRARY_PATH=$(CURDIR)/../eq:$(CURDIR)/../tr:$(CURDIR)/../fp:$(CURDIR)/../ti:$(CURDIR)/../wrx
+
+.PHONY: tot_api_check_so
+tot_api_check_so: libtotapi.so $(TOT_API_SO_BIN)
+	@echo "Phase L-4 tot_api_check_so: dlopen libtotapi.so + cycle ..."
+	@LD_LIBRARY_PATH=$(TOT_LD_LIBRARY_PATH):$${LD_LIBRARY_PATH} \
+	    TOTLIB_PATH=$(CURDIR)/libtotapi.so $(TOT_API_SO_BIN)
+	@echo "Phase L-4 tot_api_check_so OK"
 

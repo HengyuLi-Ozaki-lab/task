@@ -473,7 +473,7 @@ wrsetup.f90 wrexec.f90 wrgout.f90 wrfile.f90
 $(OBJDIR)/wrinit.o: wrinit.f90 $(WRCOMM)
 $(OBJDIR)/wrparm.o: wrparm.f90 $(WRCOMM) ../dp/dpparm.f90
 $(OBJDIR)/wrview.o: wrview.f90 $(WRCOMM)
-$(OBJDIR)/wrprep.o: wrprep.f90 $(WRCOMM) ../dp/dpparm.f90 ../eq/equnit.f
+$(OBJDIR)/wrprep.o: wrprep.f90 $(WRCOMM) ../dp/dpparm.f90 ../eq/equnit.f90
 $(OBJDIR)/wrsetup.o: wrsetup.f90 $(WRCOMM)
 $(OBJDIR)/wrcalpwr.o: wrcalpwr.f90 $(WRCOMM) ../pl/plprof.f90 \
 ../pl/plprof.f90 
