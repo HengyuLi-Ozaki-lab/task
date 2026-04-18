@@ -122,24 +122,48 @@ CONTAINS
     CASE ("PROFT1");  PROFT1  = value
     CASE ("PROFT2");  PROFT2  = value
 
-    ! --- Plasma arrays (1-origin) ---
-    CASE ("PA");    PA(idx)   = value
-    CASE ("PZ");    PZ(idx)   = value
-    CASE ("PN");    PN(idx)   = value
-    CASE ("PNS");   PNS(idx)  = value
-    CASE ("PTPR");  PTPR(idx) = value
-    CASE ("PTPP");  PTPP(idx) = value
-    CASE ("PTS");   PTS(idx)  = value
+    ! --- Plasma arrays (1-origin, NSM-bounded; SIZE() guards each CASE
+    !     so out-of-range subscripts return ierr=1 instead of corrupting
+    !     adjacent memory). idx<1 is rejected upstream; idx>SIZE here. ---
+    CASE ("PA")
+       IF (idx > SIZE(PA))   THEN; ierr = 1; RETURN; END IF
+       PA(idx)   = value
+    CASE ("PZ")
+       IF (idx > SIZE(PZ))   THEN; ierr = 1; RETURN; END IF
+       PZ(idx)   = value
+    CASE ("PN")
+       IF (idx > SIZE(PN))   THEN; ierr = 1; RETURN; END IF
+       PN(idx)   = value
+    CASE ("PNS")
+       IF (idx > SIZE(PNS))  THEN; ierr = 1; RETURN; END IF
+       PNS(idx)  = value
+    CASE ("PTPR")
+       IF (idx > SIZE(PTPR)) THEN; ierr = 1; RETURN; END IF
+       PTPR(idx) = value
+    CASE ("PTPP")
+       IF (idx > SIZE(PTPP)) THEN; ierr = 1; RETURN; END IF
+       PTPP(idx) = value
+    CASE ("PTS")
+       IF (idx > SIZE(PTS))  THEN; ierr = 1; RETURN; END IF
+       PTS(idx)  = value
 
     ! --- pl/dp integration ---
     CASE ("MODELG"); MODELG  = INT(value)
     CASE ("MODELN"); MODELN  = INT(value)
     CASE ("MODELQ"); MODELQ  = INT(value)
     CASE ("NSAMAX_WR"); NSAMAX_WR = INT(value)
-    CASE ("MODELP"); MODELP(idx) = INT(value)
-    CASE ("MODELV"); MODELV(idx) = INT(value)
-    CASE ("NCMIN");  NCMIN(idx)  = INT(value)
-    CASE ("NCMAX");  NCMAX(idx)  = INT(value)
+    CASE ("MODELP")
+       IF (idx > SIZE(MODELP)) THEN; ierr = 1; RETURN; END IF
+       MODELP(idx) = INT(value)
+    CASE ("MODELV")
+       IF (idx > SIZE(MODELV)) THEN; ierr = 1; RETURN; END IF
+       MODELV(idx) = INT(value)
+    CASE ("NCMIN")
+       IF (idx > SIZE(NCMIN))  THEN; ierr = 1; RETURN; END IF
+       NCMIN(idx)  = INT(value)
+    CASE ("NCMAX")
+       IF (idx > SIZE(NCMAX))  THEN; ierr = 1; RETURN; END IF
+       NCMAX(idx)  = INT(value)
 
     ! --- WRX control scalars ---
     CASE ("NRAYMAX"); NRAYMAX = INT(value)
@@ -153,22 +177,53 @@ CONTAINS
     CASE ("MDLWRQ");  MDLWRQ  = INT(value)
     CASE ("MDLWRW");  MDLWRW  = INT(value)
 
-    ! --- Ray init arrays (NRAYM = 100 max) ---
-    CASE ("RFIN");      RFIN(idx)      = value
-    CASE ("RPIN");      RPIN(idx)      = value
-    CASE ("ZPIN");      ZPIN(idx)      = value
-    CASE ("PHIIN");     PHIIN(idx)     = value
-    CASE ("ANGTIN");    ANGTIN(idx)    = value
-    CASE ("ANGPIN");    ANGPIN(idx)    = value
-    CASE ("RNPHIN");    RNPHIN(idx)    = value
-    CASE ("RNZIN");     RNZIN(idx)     = value
-    CASE ("MODEWIN");   MODEWIN(idx)   = INT(value)
-    CASE ("UUIN");      UUIN(idx)      = value
-    CASE ("RBRADAIN");  RBRADAIN(idx)  = value
-    CASE ("RBRADBIN");  RBRADBIN(idx)  = value
-    CASE ("RCURVAIN");  RCURVAIN(idx)  = value
-    CASE ("RCURVBIN");  RCURVBIN(idx)  = value
-    CASE ("RNKIN");     RNKIN(idx)     = value
+    ! --- Ray init arrays (NRAYM = 100 max in wrcomm; SIZE() guards as
+    !     above to convert out-of-range PHIIN[200] etc. into ierr=1). ---
+    CASE ("RFIN")
+       IF (idx > SIZE(RFIN))      THEN; ierr = 1; RETURN; END IF
+       RFIN(idx)      = value
+    CASE ("RPIN")
+       IF (idx > SIZE(RPIN))      THEN; ierr = 1; RETURN; END IF
+       RPIN(idx)      = value
+    CASE ("ZPIN")
+       IF (idx > SIZE(ZPIN))      THEN; ierr = 1; RETURN; END IF
+       ZPIN(idx)      = value
+    CASE ("PHIIN")
+       IF (idx > SIZE(PHIIN))     THEN; ierr = 1; RETURN; END IF
+       PHIIN(idx)     = value
+    CASE ("ANGTIN")
+       IF (idx > SIZE(ANGTIN))    THEN; ierr = 1; RETURN; END IF
+       ANGTIN(idx)    = value
+    CASE ("ANGPIN")
+       IF (idx > SIZE(ANGPIN))    THEN; ierr = 1; RETURN; END IF
+       ANGPIN(idx)    = value
+    CASE ("RNPHIN")
+       IF (idx > SIZE(RNPHIN))    THEN; ierr = 1; RETURN; END IF
+       RNPHIN(idx)    = value
+    CASE ("RNZIN")
+       IF (idx > SIZE(RNZIN))     THEN; ierr = 1; RETURN; END IF
+       RNZIN(idx)     = value
+    CASE ("MODEWIN")
+       IF (idx > SIZE(MODEWIN))   THEN; ierr = 1; RETURN; END IF
+       MODEWIN(idx)   = INT(value)
+    CASE ("UUIN")
+       IF (idx > SIZE(UUIN))      THEN; ierr = 1; RETURN; END IF
+       UUIN(idx)      = value
+    CASE ("RBRADAIN")
+       IF (idx > SIZE(RBRADAIN))  THEN; ierr = 1; RETURN; END IF
+       RBRADAIN(idx)  = value
+    CASE ("RBRADBIN")
+       IF (idx > SIZE(RBRADBIN))  THEN; ierr = 1; RETURN; END IF
+       RBRADBIN(idx)  = value
+    CASE ("RCURVAIN")
+       IF (idx > SIZE(RCURVAIN))  THEN; ierr = 1; RETURN; END IF
+       RCURVAIN(idx)  = value
+    CASE ("RCURVBIN")
+       IF (idx > SIZE(RCURVBIN))  THEN; ierr = 1; RETURN; END IF
+       RCURVBIN(idx)  = value
+    CASE ("RNKIN")
+       IF (idx > SIZE(RNKIN))     THEN; ierr = 1; RETURN; END IF
+       RNKIN(idx)     = value
 
     ! --- Ray control scalars ---
     CASE ("SMAX");           SMAX           = value
@@ -509,6 +564,7 @@ git commit -m "feat(wrx): implement wrx_run/set_param/get_state with param regis
 - [ ] `parse_array_subscript` が `"PN[1]"` を `base="PN", idx=1` に分解する
 - [ ] `parse_array_subscript` が `"PN"`（subscript なし）を `idx=1` にデフォルトする（1-origin Fortran convention）
 - [ ] `wrx_param_set("PN[0]", ...)` / `"PN[]"` / `"PN[abc]"` が `ierr=1` を返す（1-origin 配列の underflow 防止）
+- [ ] `wrx_param_set("PN[999]", ...)` / `"RFIN[200]"` 等の上限超過が `ierr=1` を返す（各配列 CASE の `IF (idx > SIZE(...))` ガード経由）
 - [ ] `wrx_api.f90` の 5 関数すべて実装完了（stub なし）
 - [ ] `wrx_get_state` が `wrx_run` 未呼出時に `ierr=2` を返す（NOT_INITIALIZED と同コード、`g_run_called` ガード）
 - [ ] `wrx_get_state` が `NRAYMAX > WRX_MAX_NRAYMAX` のとき ierr=1 を返す

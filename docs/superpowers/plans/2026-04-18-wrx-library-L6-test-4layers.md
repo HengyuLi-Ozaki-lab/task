@@ -117,11 +117,13 @@ are listed here. Add new keys when the registry grows.
 """
 PARAMS = {
     "MODELG":   2,
+    "MODELN":   0,    "MODELQ": 0,
     "RR":       6.2,  "RA":  2.0,  "RB":  2.2,
     "BB":       5.3,
     "Q0":       1.0,  "QA":  3.5,
     "PROFJ":    1.0,  "PROFN1": 2.0, "PROFN2": 1.0,
     "PROFT1":   2.0,  "PROFT2": 1.0,
+    "pne_threshold": 1.0e-6,
     "NSMAX":    2,
     "PA[1]":    2.0,        "PA[2]": 5.4462e-4,
     "PZ[1]":    1.0,        "PZ[2]": -1.0,
@@ -157,11 +159,13 @@ Create `/home/k-yoshimi/program/task/python/wrxlib/tests/fixtures/wrx_jt60_param
 """WRX JT-60U ECCD case (mirror of test_run/inputs/wrx_jt60.in)."""
 PARAMS = {
     "MODELG":   2,
+    "MODELN":   0,   "MODELQ": 0,
     "RR":       3.4, "RA":  1.0, "RB":  1.1,
     "BB":       3.5,
     "Q0":       1.2, "QA":  4.0,
     "PROFJ":    1.0, "PROFN1": 2.0, "PROFN2": 1.0,
     "PROFT1":   2.0, "PROFT2": 1.0,
+    "pne_threshold": 1.0e-6,
     "NSMAX":    2,
     "PA[1]":    2.0, "PA[2]":  5.4462e-4,
     "PZ[1]":    1.0, "PZ[2]": -1.0,
@@ -195,11 +199,13 @@ Create `/home/k-yoshimi/program/task/python/wrxlib/tests/fixtures/wrx_demo_param
 """WRX TST-2 minimal 1-ray case (mirror of test_run/inputs/wrx_demo.in)."""
 PARAMS = {
     "MODELG":   2,
+    "MODELN":   0,    "MODELQ": 0,
     "RR":       0.52, "RA":  0.3, "RB":  0.35,
     "BB":       0.308,
     "Q0":       1.0e4, "QA": 1.0e4,
     "PROFJ":    1.0, "PROFN1": 2.0, "PROFN2": 1.0,
     "PROFT1":   8.0, "PROFT2": 1.0,
+    "pne_threshold": 1.0e-6,
     "NSMAX":    2,
     "PA[1]":    5.4462e-4, "PA[2]":  5.4462e-4,
     "PZ[1]":   -1.0,       "PZ[2]": -1.0,
