@@ -3,8 +3,9 @@
 Namelist block (lines 5..29 of the .in file) reproduced as Python data
 for Layer 1 / Layer 4 replay via ``libtrapi.so``.
 
-Unregistered keys are listed in ``UNREGISTERED_KEYS``; see the module
-docstring of :mod:`tr_iter01_params` for the registry-growth protocol.
+All keys now flow through ``tr/tr_param_registry.f90`` after the L-6
+registry extension (MODELG, PROFN1/2, MDLIMP, PNC, PLH*, NGTSTP,
+NGRSTP, PLHTOT) plus the string setter for KNAMEQ.
 
 Edit cautiously: changing values invalidates the Layer 1 equivalence
 test against ``test_run/baselines/tr_tst2/metrics.json``.
@@ -12,12 +13,24 @@ test against ``test_run/baselines/tr_tst2/metrics.json``.
 from __future__ import annotations
 
 SCALARS = {
+    "MODELG": 3,
     "NSMAX":  2,
+    "PROFN1": 2.0,
+    "PROFN2": 1.0,
+    "MDLIMP": 3,
+    "PNC":    0.00001,
+    "PLHCD":  0.0,
+    "PLHR0":  0.15,
+    "PLHRW":  0.05,
+    "PLHNPR": 4.0,
     "RIPS":   0.015,
     "RIPE":   0.015,
     "NTSTEP": 1,
+    "NGTSTP": 1,
+    "NGRSTP": 10,
     "DT":     1.0e-5,
     "NTMAX":  10,
+    "PLHTOT": 0.0,
 }
 
 ARRAYS = {
@@ -31,15 +44,14 @@ ARRAYS = {
     "PTS": [0.001, 0.0001],
 }
 
-# Keys present in tr_tst2.in but not yet in tr_param_registry.f90.
-UNREGISTERED_KEYS = (
-    "modelg", "KNAMEQ",
-    "PROFN1", "PROFN2",
-    "MDLIMP", "PNC",
-    "PLHCD", "PLHR0", "PLHRW", "PLHNPR",
-    "NGTSTP", "NGRSTP",
-    "PLHTOT",
-)
+# String-valued parameters routed through tr_param_set_str
+# (libtrapi.so >= L-6).
+STRINGS = {
+    "KNAMEQ": "eqdata.TST-2",
+}
+
+# All namelist keys now flow through the registry; kept for back-compat.
+UNREGISTERED_KEYS: tuple = ()
 
 SOURCE_INPUT = "test_run/inputs/tr_tst2.in"
 NTMAX = 10
@@ -57,7 +69,9 @@ def _apply_array(tr, name, arr) -> None:
 
 
 def apply(tr) -> None:
-    """Apply all *registered* TST-2 parameters to a Trlib instance."""
+    """Apply all registered TST-2 parameters to a Trlib instance."""
+    for name, value in STRINGS.items():
+        tr.set_param_str(name, str(value))
     for name, value in SCALARS.items():
         tr.set_param(name, float(value))
     for name, arr in ARRAYS.items():

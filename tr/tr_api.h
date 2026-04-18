@@ -45,6 +45,7 @@ typedef struct {
 int tr_init(void);
 int tr_run(int ntmax);
 int tr_set_param(const char* name, double value);
+int tr_set_param_str(const char* name, const char* value);
 int tr_get_state(tr_state_t* state);
 int tr_finalize(void);
 
