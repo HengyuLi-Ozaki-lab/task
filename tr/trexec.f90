@@ -31,7 +31,7 @@ CONTAINS
       IMPLICIT NONE
       REAL(rkind),INTENT(IN) :: DT
       INTEGER,INTENT(OUT) :: IERR
-      INTEGER:: I, ICHCK, INFO, J, L, LDB, M, MWRMAX, &
+      INTEGER:: I, ICHCK, ICONV, INFO, J, L, LDB, M, MWRMAX, &
            N, NEQ, NEQ1, NEQRMAX, NR, NRHS, NSSN, NSSN1, &
            NSTN, NSTN1, NSVN, NSVN1, KL, KU
       REAL(rkind)   :: AJL, FACTOR0, FACTORM, FACTORP, TSL
@@ -52,7 +52,7 @@ CONTAINS
       YY(1:NFM,1:NRMAX) = YV(1:NFM,1:NRMAX)
       IF(MDTC.NE.0) ZZ(1:NSMAX,1:NRMAX) = ZV(1:NSMAX,1:NRMAX)
 
- 2000 CONTINUE
+      converge_loop: DO
 
 !      CALL TR_EDGE_SELECTOR(0)
 
@@ -66,8 +66,7 @@ CONTAINS
          MWRMAX=4*NEQRMAX-1
          CALL BANDRD(AX,X,NEQRMAX*NRMAX,MWRMAX,LDAB,IERR)
          IF(IERR.EQ.30000) THEN
-            WRITE(6,*) 'XX ERROR IN TRLOOP : MATRIX AA IS SINGULAR  AT T = ',T
-            IERR=9000
+            CALL tr_exec_error_t('XX ERROR IN TRLOOP : MATRIX AA IS SINGULAR  AT T = ',T,9000,IERR)
             RETURN
          ENDIF
       ELSEIF(MDLPCK.EQ.1) THEN
@@ -79,8 +78,7 @@ CONTAINS
          LDB=MLM
          CALL LAPACK_DGBTRF(M,N,KL,KU,AX,LDAB,IPIV,INFO)
          IF(INFO.NE.0) THEN
-            WRITE(6,*) 'XX ERROR IN TRLOOP : DGBTRF, INFO = ',INFO
-            IERR=9001
+            CALL tr_exec_error_i('XX ERROR IN TRLOOP : DGBTRF, INFO = ',INFO,9001,IERR)
             RETURN
          ENDIF
          CALL LAPACK_DGBTRS('N',N,KL,KU,NRHS,AX,LDAB,IPIV,X,LDB,INFO)
@@ -106,26 +104,39 @@ CONTAINS
 
 !     /* Convergence check */
 
-      DO I=1,NEQRMAX*NRMAX
-         IF (ABS(X(I)-XX(I)).GT.EPSLTR*ABS(X(I))) GOTO 3000
-      ENDDO
-      DO J=1,NFM
-      DO NR=1,NRMAX
-         IF (ABS(Y(J,NR)-YY(J,NR)).GT.EPSLTR*ABS(Y(J,NR))) GOTO 3000
-      ENDDO
-      ENDDO
-      IF(MDTC.NE.0) THEN
-         DO J=1,NSMAX
+      ICONV = 1
+      conv_check: DO
+         DO I=1,NEQRMAX*NRMAX
+            IF (ABS(X(I)-XX(I)).GT.EPSLTR*ABS(X(I))) THEN
+               ICONV = 0
+               EXIT conv_check
+            ENDIF
+         ENDDO
+         DO J=1,NFM
          DO NR=1,NRMAX
-            IF (ABS(Z(J,NR)-ZZ(J,NR)).GT.EPSLTR*ABS(Z(J,NR))) GOTO 3000
+            IF (ABS(Y(J,NR)-YY(J,NR)).GT.EPSLTR*ABS(Y(J,NR))) THEN
+               ICONV = 0
+               EXIT conv_check
+            ENDIF
          ENDDO
          ENDDO
-      ENDIF
+         IF(MDTC.NE.0) THEN
+            DO J=1,NSMAX
+            DO NR=1,NRMAX
+               IF (ABS(Z(J,NR)-ZZ(J,NR)).GT.EPSLTR*ABS(Z(J,NR))) THEN
+                  ICONV = 0
+                  EXIT conv_check
+               ENDIF
+            ENDDO
+            ENDDO
+         ENDIF
+         EXIT conv_check
+      ENDDO conv_check
 
-      GOTO 4000
+      IF(ICONV.EQ.1) EXIT converge_loop
 
- 3000 L=L+1
-      IF(L.GE.LMAXTR) GOTO 4000
+      L=L+1
+      IF(L.GE.LMAXTR) EXIT converge_loop
 
 !     /* Stored Variables for Convergence Check */
       DO I=1,NEQRMAX*NRMAX
@@ -284,9 +295,9 @@ CONTAINS
 
       CALL TRCALC(IERR)
       IF(IERR.NE.0) RETURN
-      GOTO 2000
+      END DO converge_loop
 
- 4000 T=T+DT
+      T=T+DT
       VSEC=VSEC+VLOOP*DT
       RIP=RIP+DIPDT*DT
 
@@ -846,12 +857,12 @@ CONTAINS
 
       NBSIZE=NEQMAX
       LOOP=0
-      DO NEQ=1,NEQM
+      neq_loop: DO NEQ=1,NEQM
          NNSN=NNS(NEQ)
          NNSN1=NNS(NEQ)
          IF(NNSN.EQ.0) THEN
             NEQRMAX=NEQMAX-LOOP
-            GOTO 1000
+            EXIT neq_loop
          ENDIF
          IF(LOOP.EQ.0) THEN
             NNSOLD=NNSN
@@ -893,9 +904,7 @@ CONTAINS
             A(1:NBSIZE+1,NBSIZE+1,NR)=0.D0
             A(NBSIZE+1,1:NBSIZE+1,NR)=0.D0
          ENDIF
-      ENDDO
-
- 1000 CONTINUE
+      ENDDO neq_loop
 
 !     /* Consummation */
 
@@ -1075,14 +1084,16 @@ CONTAINS
 
       GTS(NGST) = GUCLIP(T)
 
-  100 GVT(NGST,K+89) = GUCLIP(RT(L,1))
-      GVT(NGST,K+90) = GUCLIP(RT(L,2))
-      GVT(NGST,K+91) = GUCLIP(RT(L,3))
-      GVT(NGST,K+92) = GUCLIP(RT(L,4))
+      DO
+         GVT(NGST,K+89) = GUCLIP(RT(L,1))
+         GVT(NGST,K+90) = GUCLIP(RT(L,2))
+         GVT(NGST,K+91) = GUCLIP(RT(L,3))
+         GVT(NGST,K+92) = GUCLIP(RT(L,4))
 
-      K=K+4
-      L=L+IX
-      IF(L.LE.IZERO+(NGPST-1)*IX) GOTO 100
+         K=K+4
+         L=L+IX
+         IF(L.GT.IZERO+(NGPST-1)*IX) EXIT
+      END DO
 
       RETURN
       END SUBROUTINE TRATOTN
@@ -1099,53 +1110,58 @@ CONTAINS
       IMPLICIT NONE
       INTEGER,INTENT(OUT):: ICHCK
       INTEGER :: IND, NEQ, NR, NSSN
+      LOGICAL :: neg_found
 
       ICHCK = 0
-      DO NEQ=1,NEQMAX
+      neg_found = .FALSE.
+      neq_loop: DO NEQ=1,NEQMAX
          IF(NSV(NEQ).EQ.2) THEN
             DO NR=1,NRMAX
                IF(RT(NR,NSS(NEQ)).LT.0.D0) &
                     & write(6,*) NT,NR,NEQ,NSS(NEQ),RT(NR,NSS(NEQ))
-               IF(RT(NR,NSS(NEQ)).LT.0.D0) GOTO 100
+               IF(RT(NR,NSS(NEQ)).LT.0.D0) THEN
+                  neg_found = .TRUE.
+                  EXIT neq_loop
+               ENDIF
             ENDDO
          ENDIF
-      ENDDO
-      GOTO 9000
+      ENDDO neq_loop
 
-  100 CONTINUE
-      IND=0
-      WRITE(6,*) 'XX ERROR : NEGATIVE TEMPERATURE AT STEP ',NT
-      DO NEQ=1,NEQMAX
-         NSSN=NSS(NEQ)
-         IF(NSSN.EQ.1.AND.IND.NE.1) THEN
-            WRITE(6,*) '     TE (',NR,')=',RT(NR,NSSN)
-            IND=1
-         ELSEIF(NSSN.EQ.2.AND.IND.NE.2) THEN
-            WRITE(6,*) '     TD (',NR,')=',RT(NR,NSSN)
-            IND=2
-         ELSEIF(NSSN.EQ.3.AND.IND.NE.3) THEN
-            WRITE(6,*) '     TT (',NR,')=',RT(NR,NSSN)
-            IND=3
-         ELSEIF(NSSN.EQ.4.AND.IND.NE.4) THEN
-            WRITE(6,*) '     TA (',NR,')=',RT(NR,NSSN)
-            IND=4
-         ELSEIF(NSSN.EQ.5.AND.IND.NE.5) THEN
-            WRITE(6,*) '     TI1(',NR,')=',RT(NR,NSSN)
-            IND=5
-         ELSEIF(NSSN.EQ.6.AND.IND.NE.6) THEN
-            WRITE(6,*) '     TI2(',NR,')=',RT(NR,NSSN)
-            IND=6
-!         ELSEIF(NSSN.EQ.7.AND.IND.NE.7) THEN
-!            WRITE(6,*) '     TNC(',NR,')=',RT(NR,NSSN)
-!            IND=7
-!         ELSEIF(NSSN.EQ.8.AND.IND.NE.8) THEN
-!            WRITE(6,*) '     TNH(',NR,')=',RT(NR,NSSN)
-!            IND=8
-         ENDIF
-      ENDDO
-      ICHCK=1
+      IF(neg_found) THEN
+         IND=0
+         WRITE(6,*) 'XX ERROR : NEGATIVE TEMPERATURE AT STEP ',NT
+         DO NEQ=1,NEQMAX
+            NSSN=NSS(NEQ)
+            IF(NSSN.EQ.1.AND.IND.NE.1) THEN
+               WRITE(6,*) '     TE (',NR,')=',RT(NR,NSSN)
+               IND=1
+            ELSEIF(NSSN.EQ.2.AND.IND.NE.2) THEN
+               WRITE(6,*) '     TD (',NR,')=',RT(NR,NSSN)
+               IND=2
+            ELSEIF(NSSN.EQ.3.AND.IND.NE.3) THEN
+               WRITE(6,*) '     TT (',NR,')=',RT(NR,NSSN)
+               IND=3
+            ELSEIF(NSSN.EQ.4.AND.IND.NE.4) THEN
+               WRITE(6,*) '     TA (',NR,')=',RT(NR,NSSN)
+               IND=4
+            ELSEIF(NSSN.EQ.5.AND.IND.NE.5) THEN
+               WRITE(6,*) '     TI1(',NR,')=',RT(NR,NSSN)
+               IND=5
+            ELSEIF(NSSN.EQ.6.AND.IND.NE.6) THEN
+               WRITE(6,*) '     TI2(',NR,')=',RT(NR,NSSN)
+               IND=6
+!            ELSEIF(NSSN.EQ.7.AND.IND.NE.7) THEN
+!               WRITE(6,*) '     TNC(',NR,')=',RT(NR,NSSN)
+!               IND=7
+!            ELSEIF(NSSN.EQ.8.AND.IND.NE.8) THEN
+!               WRITE(6,*) '     TNH(',NR,')=',RT(NR,NSSN)
+!               IND=8
+            ENDIF
+         ENDDO
+         ICHCK=1
+      ENDIF
 
- 9000 RETURN
+      RETURN
       END SUBROUTINE TRCHCK
 
 !     ***********************************************************
@@ -1376,7 +1392,7 @@ CONTAINS
 
       IF(MDLEQE.EQ.1) THEN
          IND=0
-         DO NEQ=1,NEQMAX
+         eqe_loop1: DO NEQ=1,NEQMAX
             NSSN=NSS(NEQ)
             NSVN=NSV(NEQ)
             IF(NSSN.EQ.1.AND.NSVN.EQ.1) THEN
@@ -1412,10 +1428,9 @@ CONTAINS
                ENDDO
                IND=IND+1
             ENDIF
-            IF(IND.EQ.2) GOTO 1000
-         ENDDO
+            IF(IND.EQ.2) EXIT eqe_loop1
+         ENDDO eqe_loop1
       ENDIF
- 1000 CONTINUE
 
 !     /* Interim Parameter */
 
@@ -1558,7 +1573,7 @@ CONTAINS
          DISUMT1=0.D0
          VISUMT2=0.D0
          DISUMT2=0.D0
-         DO NEQ=1,NEQMAX
+         eqe_loop_max: DO NEQ=1,NEQMAX
             NSSN=NSS(NEQ)
             NSVN=NSV(NEQ)
             IF(NSSN.EQ.1.AND.NSVN.EQ.1) THEN
@@ -1590,10 +1605,10 @@ CONTAINS
                D(NEQ,NR) = D(NEQ,NR)+(-VISUMT1+C83*DISUMT1)+(-VISUMT2+C83*DISUMT2)
                IND=IND+1
             ENDIF
-           IF(IND.EQ.2) GOTO 2000
-         ENDDO
+            IF(IND.EQ.2) EXIT eqe_loop_max
+         ENDDO eqe_loop_max
       ELSE
-         DO NEQ=1,NEQMAX
+         eqe_loop_int: DO NEQ=1,NEQMAX
             NSSN=NSS(NEQ)
             NSVN=NSV(NEQ)
             IF(NSSN.EQ.1.AND.NSVN.EQ.1) THEN
@@ -1605,13 +1620,12 @@ CONTAINS
                      D(NEQ,NR)=D(NEQ,NR)+PZ(NSSN1)*D(NEQ1,NR)
                   ENDIF
                ENDDO
-               GOTO 2000
+               EXIT eqe_loop_int
             ENDIF
-         ENDDO
+         ENDDO eqe_loop_int
       ENDIF
 
       ENDIF
- 2000 CONTINUE
 
       RETURN
       END SUBROUTINE TR_COEF_DECIDE
@@ -1763,5 +1777,42 @@ CONTAINS
 
       RETURN
       END FUNCTION RPV
+
+!     ***********************************************************
+!
+!           ERROR REPORT HELPER (INTEGER PAYLOAD)
+!
+!     ***********************************************************
+
+      SUBROUTINE tr_exec_error_i(msg, info, ierr_code, ierr_out)
+      IMPLICIT NONE
+      CHARACTER(LEN=*), INTENT(IN) :: msg
+      INTEGER, INTENT(IN)  :: info, ierr_code
+      INTEGER, INTENT(OUT) :: ierr_out
+
+      WRITE(6,*) msg, info
+      ierr_out = ierr_code
+      RETURN
+      END SUBROUTINE tr_exec_error_i
+
+!     ***********************************************************
+!
+!           ERROR REPORT HELPER (REAL T PAYLOAD)
+!
+!     ***********************************************************
+
+      SUBROUTINE tr_exec_error_t(msg, tval, ierr_code, ierr_out)
+
+      USE TRCOMM, ONLY : rkind
+      IMPLICIT NONE
+      CHARACTER(LEN=*), INTENT(IN) :: msg
+      REAL(rkind), INTENT(IN) :: tval
+      INTEGER, INTENT(IN)  :: ierr_code
+      INTEGER, INTENT(OUT) :: ierr_out
+
+      WRITE(6,*) msg, tval
+      ierr_out = ierr_code
+      RETURN
+      END SUBROUTINE tr_exec_error_t
 
 END MODULE trexec
