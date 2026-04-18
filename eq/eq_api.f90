@@ -139,7 +139,6 @@ CONTAINS
   FUNCTION eq_api_get_state(state) RESULT(ierr) BIND(C, NAME="eq_get_state")
     TYPE(eq_state_c), INTENT(OUT) :: state
     INTEGER(C_INT) :: ierr
-    INTEGER :: nrgm_dim, nzgm_dim, npsm_dim, nrm_dim, nthm_dim, nsum_dim
     INTEGER :: nrgmax_c, nzgmax_c, npsmax_c
     INTEGER :: nrmax_c,  nthmax_c, nsumax_c
     REAL(C_DOUBLE) :: raxis_v, zaxis_v, psi0_v, psipa_v, psita_v
@@ -178,10 +177,9 @@ CONTAINS
        RETURN
     END IF
 
-    ! Pull the compile-time PARAMETER dims (NRGM/NZGM/...) and the
-    ! current runtime counters (NRGMAX/NZGMAX/...) via the F77 bridge.
-    CALL EQ_COMMON_GET_GRID_DIMS(nrgm_dim, nzgm_dim, npsm_dim, &
-                                 nrm_dim, nthm_dim, nsum_dim)
+    ! Pull the current runtime counters (NRGMAX/NZGMAX/...) via the F77 bridge.
+    ! Compile-time PARAMETER dims (NRGM/NZGM/...) are hard-encoded as
+    ! EQ_MAX_* in eq_state.f90 and do not need a runtime fetch.
     CALL EQ_COMMON_GET_GRID_COUNTS(nrgmax_c, nzgmax_c, npsmax_c, &
                                    nrmax_c, nthmax_c, nsumax_c)
 
