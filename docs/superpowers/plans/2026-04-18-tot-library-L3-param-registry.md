@@ -4,7 +4,13 @@
 
 **Goal:** `tot_set_param(name, value)` を実装する。tot は per-module namelist の **union** を扱うため、`name` の prefix（`TR.`, `TI.`, `FP.`, `WR.`, `WM.`, `EQ.`, `PL.`）で対応モジュールに dispatch する `tot_param_registry.f90` を新設する。
 
-**Architecture:** `tot_param_registry.f90` は **薄い dispatcher** で、実体の setter は per-module の `tr_param_set / ti_param_set / fp_param_set / wr_param_set / wm_param_set / pl_param_set` に委譲する。tot 自身が独自に namelist 変数を直接書き換えることはしない（これは「既存 namelist 変数は所有モジュールが管理する」原則に従う）。EQ は F77 で `.inc` includes ベースなので、`EQ.RR` のような少数の主要パラメータのみハードコードで設定する補助 setter を tot 側に持つ。
+**Architecture:** `tot_param_registry.f90` は **薄い dispatcher** で、実体の setter は per-module の `tr_param_set / ti_param_set / fp_param_set / wr_param_set / wm_param_set / pl_param_set` に委譲する。tot 自身が独自に namelist 変数を直接書き換えることはしない（これは「既存 namelist 変数は所有モジュールが管理する」原則に従う）。
+
+**EQ について（重要な制約）:** EQ モジュールは F77 + `.inc` includes ベースで、現状 F90 module としてエクスポートされた **geometry setter は存在しない**（`grep -lr "MODULE equnit_mod" eq/` および `grep "eq_set_geometry" eq/` は両方とも空。既存 `equnit.f` は `subroutine eq_init` などしか PUBLIC にしていない）。L-3 では下記方針を採用する:
+
+1. **タスク順を反転:** EQ 用フォールバック module (`tot/eq_geometry_setter.f90`、後述 Task 2 で先行作成) を最初に作る。これにより `tot_param_registry` の `USE equnit_mod, ONLY: eq_set_geometry` が実装側で常に解決可能になる。
+2. **デフォルトは "out of scope":** フォールバック module 内の `eq_set_geometry` が **EQ ライブラリ化が完了するまでは `INTEGER, PUBLIC :: EQ_SET_DUMMY` のような no-op + 警告ログ** を返し、`dispatch_eq` 自体は **常に `ierr=1` (not implemented)** を返す。「EQ パラメータは EQ の F90-modernization が完了するまで設定不可」と明示する。
+3. テストは `EQ.RR` で `ierr=1` を期待する形に揃える（後述 Task 5 を反転後に書き直し）。
 
 **Tech Stack:** Fortran 90 (`SELECT CASE`, string parsing), 既存 per-module `*_param_set` 関数。
 
@@ -28,7 +34,8 @@
 - prefix は `<MODULE>.<NAME>` 形式（ピリオド区切り）。array index は `<MODULE>.<NAME>[<idx>]`（例: `TR.PN[1]`）。
 - 1-origin インデックス（既存 Fortran 慣習に準拠）。
 - 未知 prefix は `ierr=1`、prefix 内で未知 name は per-module の registry が `ierr=1` を返す。
-- EQ モジュールは Phase 0 段階では非ライブラリ化（F77 + .inc）。L-3 では `EQ.RR / EQ.RA / EQ.BB / EQ.RIP / EQ.RKAP / EQ.RDLT` の 6 つだけ tot 側に直接ハードコード setter を用意（`equnit` モジュールへの直接代入）。それ以上は L-7 で必要に応じ拡張。
+- **EQ は L-3 ではサポートしない (out of scope)**: `EQ.*` を渡すと `dispatch_eq` が常に `ierr=1` (not implemented) を返す。理由は「EQ が F77 + `.inc` ベースで F90 module 化されておらず、`equnit_mod`/`eq_set_geometry` が現存しないため」。EQ パラメータ設定は EQ の F90 modernization が完了する別 phase 送り。L-3 のフォールバック module (`tot/eq_geometry_setter.f90`) は将来の拡張点として **空のシェル** を提供するに留める。
+- **タスク順:** Task 2 で先にフォールバック module (`tot/eq_geometry_setter.f90`) を作成し、その後 Task 3 で `tot_param_registry.f90` を作る（依存解決順を反転）。
 
 ---
 
@@ -128,11 +135,12 @@ int main(void) {
     rc = tot_set_param("RR", 6.2);
     assert(rc == 1 && "name without prefix must return 1");
 
-    /* EQ partial support. */
+    /* EQ is out of scope for L-3 (EQ is still F77 + .inc, no F90 module
+       wraps geometry setters). All EQ.* must return 1 until a future
+       phase F90-modernizes EQ. */
     rc = tot_set_param("EQ.RR", 6.2);
-    assert(rc == 0 && "EQ.RR must be supported in L-3");
+    assert(rc == 1 && "EQ.RR must return 1 (out of L-3 scope, EQ not modernized)");
 
-    /* EQ unsupported parameter. */
     rc = tot_set_param("EQ.NOTYET", 0.0);
     assert(rc == 1 && "EQ.NOTYET must return 1 (out of L-3 scope)");
 
@@ -168,6 +176,8 @@ git commit -m "test(tot): add failing tests for L-3 param dispatcher"
 
 **Files:**
 - Create: `tot/tot_param_registry.f90`
+
+> **重要:** Task 3 を実行する前に **Task 4 (eq_geometry_setter.f90 のフォールバック作成) を先に完了** すること。`tot_param_registry.f90` の `dispatch_eq` は `USE equnit_mod, ONLY: EQ_SET_DUMMY` するため、`equnit_mod` モジュールが先に存在している必要がある。本 plan ではタスク番号は読みやすさのため Task 3 → Task 4 の順だが、**実装順は Task 4 → Task 3** が正しい。
 
 - [ ] **Step 1: 新規作成**
 
@@ -291,22 +301,25 @@ CONTAINS
   END FUNCTION dispatch_pl
 
   FUNCTION dispatch_eq(name, value) RESULT(ierr)
-    ! EQ is F77 + .inc; we set a small whitelist of geometry/coil scalars
-    ! directly through equnit. Full EQ library-ization is a separate phase.
-    USE equnit_mod, ONLY: eq_set_geometry   ! see Task 4 for stub if missing
+    ! EQ is F77 + .inc and has no F90 module exporting a geometry setter
+    ! (verified: `grep -lr "MODULE equnit_mod" eq/` and `grep "eq_set_geometry"
+    ! eq/` are both empty as of Phase 0). Full EQ library-ization is a
+    ! separate, much larger phase (F77 -> F90 modernization of equnit.f).
+    !
+    ! L-3 scope: every EQ.* parameter returns ierr=1 (not implemented).
+    ! The fallback module (tot/eq_geometry_setter.f90, see Task 2) is
+    ! installed as an empty shell so that future phases can flip this
+    ! function to a real dispatcher without changing the call sites.
+    USE equnit_mod, ONLY: EQ_SET_DUMMY   ! present-but-unused; ensures the
+                                         ! USE chain compiles (Task 2 stub)
     CHARACTER(LEN=*), INTENT(IN) :: name
     DOUBLE PRECISION, INTENT(IN) :: value
     INTEGER :: ierr
-    ierr = 0
-    SELECT CASE (TRIM(name))
-    CASE ('RR');   CALL eq_set_geometry('RR',   value)
-    CASE ('RA');   CALL eq_set_geometry('RA',   value)
-    CASE ('BB');   CALL eq_set_geometry('BB',   value)
-    CASE ('RIP');  CALL eq_set_geometry('RIP',  value)
-    CASE ('RKAP'); CALL eq_set_geometry('RKAP', value)
-    CASE ('RDLT'); CALL eq_set_geometry('RDLT', value)
-    CASE DEFAULT; ierr = 1
-    END SELECT
+    INTEGER :: dummy
+    dummy = EQ_SET_DUMMY               ! suppress unused-USE warnings
+    IF (value == 0.0D0) dummy = dummy  ! suppress unused-arg warnings
+    IF (LEN_TRIM(name) == 0) dummy = dummy
+    ierr = 1                            ! always: out of L-3 scope
   END FUNCTION dispatch_eq
 
   ! ----- helpers ----------------------------------------------------
@@ -325,13 +338,14 @@ CONTAINS
 END MODULE tot_param_registry
 ```
 
-- [ ] **Step 2: `eq_set_geometry` の存在を確認**
+- [ ] **Step 2: `equnit_mod` / `eq_set_geometry` が無いことを再確認**
 
 Run:
 ```bash
-grep -rn "eq_set_geometry\|SUBROUTINE eqgsetparm" /home/k-yoshimi/program/task/eq/ 2>&1 | head -5
+grep -lr "MODULE equnit_mod" /home/k-yoshimi/program/task/eq/ 2>&1 | head -5
+grep -rn "eq_set_geometry" /home/k-yoshimi/program/task/eq/ 2>&1 | head -5
 ```
-Expected: 既存にあれば USE できる。なければ Task 4 で簡易 stub を追加。
+Expected: **両方とも空** (Phase 0 時点で確認済み)。`equnit.f` には `eq_init` 等しか PUBLIC 化されていない。よって本 plan の `dispatch_eq` は常に `ierr=1` を返す stub のままとし、Task 2 で作る `tot/eq_geometry_setter.f90` も空シェル (`INTEGER, PUBLIC :: EQ_SET_DUMMY = 0`) のみとする。
 
 - [ ] **Step 3: コミット**
 
@@ -343,66 +357,64 @@ git commit -m "feat(tot): add tot_param_registry.f90 dispatcher"
 
 ---
 
-## Task 4: 必要なら `eq_set_geometry` の薄いラッパを tot 側に作る
+## Task 4: `tot/eq_geometry_setter.f90` を空シェルとして作成（Task 3 の前に実行すること）
 
 **Files:**
-- Create: `tot/eq_geometry_setter.f90` (eq に直接書ける関数が無い場合のみ)
+- Create: `tot/eq_geometry_setter.f90`
 
-- [ ] **Step 1: 既存 EQ モジュールの geometry setter を再確認**
+**重要:** Task 3 の `tot_param_registry.f90` は `USE equnit_mod, ONLY: EQ_SET_DUMMY` するため、**Task 4 を Task 3 の前に完了する必要がある**（ビルド順依存）。
 
-Run:
-```bash
-grep -n "RR\s*=\|RA\s*=\|BB\s*=\|RIP\s*=" /home/k-yoshimi/program/task/eq/equnit.f | head
-grep -n "MODULE\|SUBROUTINE eq_init" /home/k-yoshimi/program/task/eq/equnit.f | head
-```
-Expected: equnit.f 内で RR/RA/BB/RIP の参照が見つかる。
+**方針:** EQ モジュールは Phase 0 時点で F77 + `.inc` ベースであり、F90 module (`equnit_mod`) としてエクスポートされた geometry setter は存在しない (`grep -lr "MODULE equnit_mod" eq/` と `grep "eq_set_geometry" eq/` が共に空であることを Task 1 Step 2 で確認済み)。L-3 では **EQ パラメータ設定をサポートしない**。本ファイルはあくまで
 
-- [ ] **Step 2: ラッパを新規作成（eq_set_geometry が無い場合）**
+- `dispatch_eq` の `USE equnit_mod` をコンパイル可能にするための **空シェル**
+- 将来 EQ を F90 modernize したときの置換ポイント（single edit site）
+
+の 2 つの役割に留める。
+
+- [ ] **Step 1: 空シェル module を新規作成**
 
 作成: `tot/eq_geometry_setter.f90`
 
 ```fortran
 ! eq_geometry_setter.f90
 !
-! Thin wrapper allowing tot_param_registry to set a small subset of EQ
-! geometry scalars without library-izing the F77 EQ module yet.
-! All values are written via the equnit common block / module variable.
+! Placeholder module for future EQ geometry/coil parameter setting.
+!
+! STATUS (Phase 0 / L-3): EQ is still F77 + .inc. No F90 module exposes
+! a geometry setter, and per-module `eq_param_set` does not exist. Setting
+! EQ parameters via tot_set_param is therefore OUT OF SCOPE for L-3:
+! tot_param_registry::dispatch_eq always returns ierr=1 (not implemented).
+!
+! This file exists only to provide the `equnit_mod` module symbol so that
+! `USE equnit_mod, ONLY: EQ_SET_DUMMY` compiles in tot_param_registry.f90.
+! When EQ is later F90-modernized, replace EQ_SET_DUMMY with a real
+! `eq_set_geometry(name, value)` subroutine and flip dispatch_eq.
 
 MODULE equnit_mod
   IMPLICIT NONE
-  PRIVATE
-  PUBLIC :: eq_set_geometry
-
-CONTAINS
-
-  SUBROUTINE eq_set_geometry(name, value)
-    USE plparm, ONLY: RR, RA, BB, RIP, RKAP, RDLT   ! pl owns geometry by convention
-    CHARACTER(LEN=*),    INTENT(IN) :: name
-    DOUBLE PRECISION,    INTENT(IN) :: value
-    SELECT CASE (TRIM(name))
-    CASE ('RR');   RR   = value
-    CASE ('RA');   RA   = value
-    CASE ('BB');   BB   = value
-    CASE ('RIP');  RIP  = value
-    CASE ('RKAP'); RKAP = value
-    CASE ('RDLT'); RDLT = value
-    END SELECT
-    ! Note: EQ recomputes geometry on next eq_init / eqcalc call.
-    ! Caller is responsible for rerunning eq if needed.
-  END SUBROUTINE eq_set_geometry
-
+  PUBLIC
+  INTEGER, PARAMETER :: EQ_SET_DUMMY = 0
 END MODULE equnit_mod
 ```
 
-`plparm` が幾何変数の本籍であることを確認 (`grep "RR\|RA\|BB" /home/k-yoshimi/program/task/pl/plparm.f90 | head`)。違えば適切なモジュールに USE 先を置換。
+- [ ] **Step 2: 構文確認のためにコンパイル**
+
+Run:
+```bash
+cd /home/k-yoshimi/program/task/tot
+make eq_geometry_setter.o 2>&1 | tail -5
+```
+Expected: コンパイル成功。
 
 - [ ] **Step 3: コミット**
 
 Run:
 ```bash
 git add tot/eq_geometry_setter.f90
-git commit -m "feat(tot): add minimal EQ geometry setter for L-3 (RR/RA/BB/RIP/RKAP/RDLT)"
+git commit -m "feat(tot): add empty equnit_mod shell for future EQ F90 modernization"
 ```
+
+> **NOTE:** EQ モジュールの真の F90 modernization（`SUBROUTINE eq_set_geometry` の実装）は **L-3 の外** に位置する別 phase の課題。その phase で本ファイルを「`EQ_SET_DUMMY` を削除し、実際の setter を追加」する形で差し替える予定。
 
 ---
 
@@ -469,7 +481,7 @@ SRCS_API  = tot_state.f90 tot_api.f90
 SRCS_API  = tot_state.f90 eq_geometry_setter.f90 tot_param_registry.f90 tot_api.f90
 ```
 
-注: `eq_geometry_setter.f90` は Task 4 で作った場合のみ含める。
+注: `eq_geometry_setter.f90` は空シェルだが `tot_param_registry.f90` の `USE equnit_mod` が解決できるよう必ず **tot_param_registry.f90 の前に** リストする。
 
 - [ ] **Step 2: コンパイル順序の確認（依存解決）**
 
@@ -595,7 +607,7 @@ git commit --allow-empty -m "test(tot): L-3 verification complete (baseline unch
 
 - [ ] `tot/tot_param_registry.f90` が新規追加され、prefix dispatcher として機能。
 - [ ] `tot_set_param("TR.RR", v)` 等が正しく per-module setter に dispatch される。
-- [ ] `tot_set_param("EQ.RR", v)` 等の限定 EQ パラメータも動作。
+- [ ] `tot_set_param("EQ.*", v)` は **常に `ierr=1` (out of scope for L-3)** を返す（EQ は F90 modernization が別 phase で完了するまでサポート外）。
 - [ ] 未知 prefix (`ZZ.NONE`) や prefix なし (`RR`) は `ierr=1` を返す。
 - [ ] C ABI テストで全 assertion PASS。
 - [ ] tot regression baseline (L-0/L-1/L-2) と数値完全一致。
@@ -620,5 +632,5 @@ git commit --allow-empty -m "test(tot): L-3 verification complete (baseline unch
 
 - shared library `libtotapi.so` ビルド → L-4
 - Python ラッパからの dict 一括セット → L-5
-- EQ モジュールの完全 library 化 → 別 phase（EQ の F77 → F90 移行が前提）
+- **EQ パラメータ設定全般 (`EQ.*`)** → 別 phase（EQ の F77 → F90 modernization と `SUBROUTINE eq_set_geometry` の実装が前提）。L-3 では `dispatch_eq` は常に `ierr=1` を返す。
 - `tot_set_string_param` 文字列パラメータ → L-7 で必要なら追加

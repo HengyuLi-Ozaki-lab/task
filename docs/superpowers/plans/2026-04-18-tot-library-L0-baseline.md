@@ -4,7 +4,21 @@
 
 **Goal:** `tot/` 統合シミュレータ（pl/eq/tr/ti/fp/dp/wr/wm をオーケストレーションする層）について、ライブラリ化に着手する前に「統合計算 → 状態取得 → 数値ベースライン化」の回帰テスト基盤を整える。
 
-**Architecture:** TR Phase 0 (`test_run/scripts/run_tests.sh` + `compare_metrics.py`, merge `926b25b4`) と同じ枠組みを再利用するが、tot は **複数モジュールの状態を統合してダンプする** 必要があるため、新規 `tot/totregress.f90` を導入する。これは TR の `trregress.f90` を雛形にしつつ、TR/TI/FP の状態変数を 1 つの `tot_regress.dat` にまとめて書き出す。環境変数 `TOT_REGRESS_DUMP=1` のときのみ有効化し、通常 `tot` バイナリ実行は完全に挙動不変。
+**Architecture:** TR Phase 0 (`test_run/scripts/run_tests.sh` + `compare_metrics.py`, **PR #2 の develop への merge で導入**) と同じ枠組みを再利用するが、tot は **複数モジュールの状態を統合してダンプする** 必要があるため、新規 `tot/totregress.f90` を導入する。これは TR の `trregress.f90` を雛形にしつつ、TR/TI/FP の状態変数を 1 つの `tot_regress.dat` にまとめて書き出す。環境変数 `TOT_REGRESS_DUMP=1` のときのみ有効化し、通常 `tot` バイナリ実行は完全に挙動不変。
+
+> **Baseline 参照の verify 手順:** PR #2 が merge されたコミット SHA は時間とともに変わり得るため、plan 内では hardcode せず以下で特定する。
+>
+> ```bash
+> # 1. develop 上の TR Phase 0 merge コミット (PR #2) を特定
+> git log --oneline develop --grep "Phase 0" | head -1
+> # 期待: "Merge pull request #2 ... Phase 0 regression baseline" 等の 1 行
+>
+> # 2. もしくは tag ベースで参照
+> git tag -l 'tr-phase0-baseline'         # この plan 適用時は要確認
+> git log --oneline tr-phase0-baseline -1 # tag があればその SHA
+> ```
+>
+> tag `tr-phase0-baseline` が develop に未作成な場合、Task 1 Step 1 で `git tag tr-phase0-baseline <PR#2 merge SHA>` を実行して以後の手順で使える状態にする。
 
 **Tech Stack:** Fortran 90 (`tot/totregress.f90`), Bash (既存 `test_run/run_tests.sh` 拡張), Python 3 標準ライブラリのみ (`extract_tot_metrics.py`, `compare_metrics.py` は既存を再利用), gfortran, 既存 TOT バイナリ `tot/tot`。
 

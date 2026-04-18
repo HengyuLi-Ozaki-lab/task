@@ -26,8 +26,9 @@
 | `python/totlib/tests/__init__.py` | 新規 | 空 |
 | `python/totlib/tests/test_ffi.py` | 新規 | 低レベル FFI のユニットテスト |
 | `python/totlib/tests/test_class.py` | 新規 | `Totlib` クラスのユニットテスト |
-| `python/totlib/tests/conftest.py` | 新規 | 共通 fixtures（library path 解決、init/finalize ライフサイクル） |
 | `python/totlib/README.md` | 新規 | 使用例、API リファレンス |
+
+> **conftest.py は作成しない:** `_ffi.py` は import 時に `ctypes.CDLL` を呼ぶため、pytest fixture (`monkeypatch.setenv`) で `LD_LIBRARY_PATH` を上書きしても **既に手遅れ**（no-op）。代わりに各 Run コマンドでシェル env として `LD_LIBRARY_PATH` を渡す。
 
 **方針:**
 - 個別 Python wrapper (`python/trlib`, `python/tilib`, ...) を `Totlib` クラスの中で wrap しない（重複・循環の温床になる）。代わりに **tot 自身の C ABI 直叩き**で済ませる。個別 wrapper を使いたい場合は別途 `from trlib import Trlib` できる。
@@ -557,31 +558,21 @@ git commit -m "feat(totlib): add Totlib high-level class"
 ## Task 7: ユニットテスト追加（FFI レベル）
 
 **Files:**
-- Create: `python/totlib/tests/conftest.py`
 - Create: `python/totlib/tests/test_ffi.py`
 
-- [ ] **Step 1: conftest.py 作成**
+> **NOTE:** 当初 `conftest.py` で `monkeypatch.setenv("LD_LIBRARY_PATH", ...)` する fixture を置く案だったが、**`_ffi.py` の `ctypes.CDLL` 呼び出しは pytest fixture が走る前のモジュール import 時点で実行される** ため、fixture による env mutation は no-op であり誤解を招く。`LD_LIBRARY_PATH` は **シェル側で設定する** 前提とし、本 plan の各 Run コマンド (`TOTLIB_PATH=...` を含む形式) がそれを既に正しく行っている。conftest は作成しない。
+>
+> ```bash
+> # 推奨実行形式（既に各 Run ステップで採用済）:
+> TOTLIB_PATH=/home/k-yoshimi/program/task/tot/libtotapi.so \
+> LD_LIBRARY_PATH=/home/k-yoshimi/program/task/tot:/home/k-yoshimi/program/task/tr:... \
+> PYTHONPATH=/home/k-yoshimi/program/task/python \
+> python3 -m pytest python/totlib/tests/test_ffi.py -v
+> ```
+>
+> （`TOTLIB_PATH` が絶対パスかつ依存モジュールが同フォルダから自動解決できる場合は `LD_LIBRARY_PATH` 不要なケースもある。失敗したら設定する。）
 
-作成: `python/totlib/tests/conftest.py`
-
-```python
-"""Pytest fixtures for totlib tests."""
-import os
-from pathlib import Path
-
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def _ld_library_path(monkeypatch):
-    """Ensure tot/ and per-module dirs are on LD_LIBRARY_PATH."""
-    repo = Path(__file__).resolve().parents[3]
-    extra = ":".join(str(repo / m) for m in ["tot", "tr", "ti", "fp", "wr", "wm", "pl"])
-    cur = os.environ.get("LD_LIBRARY_PATH", "")
-    monkeypatch.setenv("LD_LIBRARY_PATH", f"{extra}:{cur}")
-```
-
-- [ ] **Step 2: FFI テスト作成**
+- [ ] **Step 1: FFI テスト作成**
 
 作成: `python/totlib/tests/test_ffi.py`
 
@@ -646,7 +637,7 @@ class TestFfiGetState:
         assert state.tr.nsmax > 0
 ```
 
-- [ ] **Step 3: テスト実行**
+- [ ] **Step 2: テスト実行**
 
 Run:
 ```bash
@@ -655,13 +646,13 @@ TOTLIB_PATH=/home/k-yoshimi/program/task/tot/libtotapi.so \
 PYTHONPATH=/home/k-yoshimi/program/task/python \
 python3 -m pytest python/totlib/tests/test_ffi.py -v
 ```
-Expected: 全 PASS。
+Expected: 全 PASS。`libtotapi.so` の依存ライブラリ解決でエラーが出る場合は `LD_LIBRARY_PATH` をシェル env に設定（fixture では遅すぎて効かない）。
 
-- [ ] **Step 4: コミット**
+- [ ] **Step 3: コミット**
 
 Run:
 ```bash
-git add python/totlib/tests/conftest.py python/totlib/tests/test_ffi.py
+git add python/totlib/tests/test_ffi.py
 git commit -m "test(totlib): add FFI lifecycle and dispatcher tests"
 ```
 

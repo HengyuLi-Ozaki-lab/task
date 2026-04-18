@@ -435,6 +435,14 @@ class OptimizationProblem:
     ntmax: int = 10
     max_iterations: int = 100
     seed: int = 0
+    # State-leak safety: reuse of a single Totlib across trials can leak
+    # state (TR internal caches, EQ geometry, allocatable buffers) and
+    # cause trial N to depend on trial N-1's params. That is non-obvious
+    # and makes Nelder-Mead / TPE behave as if the search surface is
+    # path-dependent. Default is therefore to recreate Totlib per trial.
+    # Set False only if you have explicitly verified that the module
+    # you are sweeping has idempotent set_params + deterministic run.
+    fresh_each_trial: bool = True
 
     def initial_vector(self) -> np.ndarray:
         return np.array([
@@ -468,19 +476,35 @@ class OptimizationProblem:
 # ------------------------------------------------------------------
 
 class TrialRunner:
-    """Wraps a single Totlib instance and records each trial."""
+    """Wraps Totlib sessions and records each trial.
+
+    Because TOT stores all state in Fortran module-level globals, reusing
+    a single Totlib instance across trials leaks state between calls:
+    TR internal caches, EQ geometry, allocatable buffers, and any value
+    set via set_param persist until finalize(). This makes trial N's
+    result depend on trials 1..N-1 even for the same input parameters.
+
+    The safe default (`problem.fresh_each_trial=True`) therefore calls
+    `Totlib.finalize(); Totlib.init()` around every `evaluate()`. The
+    fast path (reuse) is available only as an opt-in after the user has
+    verified determinism for their specific workload.
+    """
 
     def __init__(self, problem: OptimizationProblem, trials_path: Path) -> None:
         self.problem = problem
         self.trials_path = trials_path
         self._counter = 0
-        self.tot = Totlib()
-        # Apply fixed parameters once.
-        if problem.fixed_params:
-            self.tot.set_params(problem.fixed_params)
+        # Persistent Totlib instance is only created for the reuse path.
+        self._persistent_tot: Totlib | None = None
+        if not problem.fresh_each_trial:
+            self._persistent_tot = Totlib()
+            if problem.fixed_params:
+                self._persistent_tot.set_params(problem.fixed_params)
 
     def close(self) -> None:
-        self.tot.finalize()
+        if self._persistent_tot is not None:
+            self._persistent_tot.finalize()
+            self._persistent_tot = None
 
     def __enter__(self) -> "TrialRunner":
         return self
@@ -488,16 +512,18 @@ class TrialRunner:
     def __exit__(self, *a: Any) -> None:
         self.close()
 
-    def evaluate(self, x: np.ndarray) -> float:
-        params = self.problem.vector_to_dict(x)
-        t0 = time.time()
+    def _evaluate_fresh(self, params: dict[str, float]) -> "tuple[float | None, dict[str, float]]":
+        """Open a brand-new Totlib session per trial (safe default)."""
         scalars: dict[str, float] = {}
         objective: float | None = None
-        err: str | None = None
-        try:
-            self.tot.set_params(params)
-            self.tot.run(ntmax=self.problem.ntmax)
-            state = self.tot.get_state()
+        # Use `with` so that finalize runs even on exception — guarantees
+        # no state leaks into the next trial.
+        with Totlib() as tot:
+            if self.problem.fixed_params:
+                tot.set_params(self.problem.fixed_params)
+            tot.set_params(params)
+            tot.run(ntmax=self.problem.ntmax)
+            state = tot.get_state()
             objective = float(self.problem.objective(state))
             if state.tr is not None:
                 scalars = {
@@ -507,6 +533,37 @@ class TrialRunner:
                     "BETA0": float(state.tr.BETA0),
                     "ALI": float(state.tr.ALI),
                 }
+        return objective, scalars
+
+    def _evaluate_reuse(self, params: dict[str, float]) -> "tuple[float | None, dict[str, float]]":
+        """Reuse the persistent Totlib (opt-in, fast, may leak state)."""
+        assert self._persistent_tot is not None
+        scalars: dict[str, float] = {}
+        self._persistent_tot.set_params(params)
+        self._persistent_tot.run(ntmax=self.problem.ntmax)
+        state = self._persistent_tot.get_state()
+        objective = float(self.problem.objective(state))
+        if state.tr is not None:
+            scalars = {
+                "Q0": float(state.tr.Q0),
+                "WPT": float(state.tr.WPT),
+                "TAUE1": float(state.tr.TAUE1),
+                "BETA0": float(state.tr.BETA0),
+                "ALI": float(state.tr.ALI),
+            }
+        return objective, scalars
+
+    def evaluate(self, x: np.ndarray) -> float:
+        params = self.problem.vector_to_dict(x)
+        t0 = time.time()
+        scalars: dict[str, float] = {}
+        objective: float | None = None
+        err: str | None = None
+        try:
+            if self.problem.fresh_each_trial:
+                objective, scalars = self._evaluate_fresh(params)
+            else:
+                objective, scalars = self._evaluate_reuse(params)
         except Exception as e:  # noqa: BLE001 — record any failure
             err = type(e).__name__ + ": " + str(e)
         t1 = time.time()
@@ -1241,8 +1298,8 @@ git commit --allow-empty -m "feat(tot): L-7 parameter optimization workflow comp
 **Fallback:**
 - scipy が利用不可 → grid backend のみで進める。README に手順明記済み。
 - optuna が利用不可 → notebook 03 はマージ前に削除 or `pip install` 済み環境でのみ実行する旨を明記。
-- 単一 trial が遅すぎて最適化が現実的でない → `Totlib` の incremental run（trial 間で state を持続させて差分だけ計算）を将来 phase で検討。
-- TR/EQ で `set_param` が走った後、内部キャッシュ（geometry など）が古いまま → trial 開始時に **毎回 `Totlib()` を再作成** する設計も可（パフォーマンス trade-off）。L-7 の TrialRunner は同一 Totlib を使い回す高速版。問題が出たら `OptimizationProblem.fresh_each_trial=True` フラグを足して切り替えられるよう拡張。
+- 単一 trial が遅すぎて最適化が現実的でない → `OptimizationProblem.fresh_each_trial=False` で `Totlib` 使い回しの高速パスに切り替え可能（ただしユーザが「対象モジュールの set_params は idempotent、run は決定的」と検証した場合のみ）。これでも遅ければ、trial 間で state を持続させて差分だけ計算する incremental run を将来 phase で検討。
+- 状態リーク懸念: 実は **L-7 のデフォルトが既に `fresh_each_trial=True`**（trial ごとに `with Totlib() as tot:` で新規セッション）。TR/EQ の内部キャッシュ・EQ geometry・`set_param` の残存値が trial N → N+1 に漏れる問題を未然に防ぐ。`fresh_each_trial=False` を選ぶ前に、L-0 の dump 再現性チェックが「state 共有でも同一入力で同一出力」となることを手動検証する必要がある。
 
 ---
 

@@ -21,7 +21,7 @@
 | `tot/tot_state.f90` | 新規 | `tot_state_c` 型（C 互換 BIND(C)）。per-module state を入れ子で保持 |
 | `tot/tot_api.f90` | 新規 | C ABI 5 関数の Fortran 側スタブ。`BIND(C, NAME=...)` 付き |
 | `tot/tot_api.h` | 新規 | 上記 5 関数 + `tot_state_t` 構造体の C ヘッダ |
-| `tot/Makefile` | 修正 | `SRCS_API = tot_state.f90 tot_api.f90` の追加、オブジェクト生成 |
+| `tot/Makefile` | 修正 | 新規 `totapi-stubs` ターゲットを追加（デフォルトの `tot` ターゲットには含めない）。`ifeq ($(TR_API_READY),1)` で TR-L-2 完了時のみ stub をコンパイルする条件化も併用 |
 | `tot/tests/c_abi/test_abi.c` | 新規 | C から `tot_init/tot_finalize` を呼んで戻り値を検査する最小ユニットテスト |
 | `tot/tests/c_abi/Makefile` | 新規 | テストビルド（`gcc test_abi.c -o test_abi -L../.. -ltotapi`） |
 
@@ -30,6 +30,9 @@
 - `tot_get_state` も TR の state だけ埋めて、TI/FP は presence flag のみ（L-0 の dump 方針と整合）。
 - `tot_set_param` は **L-2 では常に `ierr=1`（unimplemented）**を返す stub。本実装は L-3。
 - 物理的に意味のある呼び出しは L-6 のテストで初めて検証する。L-2 はあくまで **シンボル/型/リンクの土台**。
+- **依存分離:** `tot_state.f90` / `tot_api.f90` は TR Phase L-2 (`tr_state`, `tr_api`) に強く依存する。これらをデフォルト `tot` ターゲットの `SRCS` に含めると **TR-L-2 が未完成のとき既存 `tot` バイナリのビルドが壊れる**。これを避けるため:
+  - L-2 では別ターゲット `totapi-stubs` を新設し、デフォルト `make tot` には含めない（`make totapi-stubs` で明示的にビルド）。
+  - 加えて `ifeq ($(TR_API_READY),1)` ガードを置き、TR-L-2 完了が確認できた段階で初めて自動ビルドに昇格できるようにする（TR-L-2 完了時に `make TR_API_READY=1 totapi-stubs` を呼べる）。
 
 ---
 
@@ -193,7 +196,10 @@ CONTAINS
     USE trinit,   ONLY: tr_init
     USE ticomm,   ONLY: open_ticomm_parm
     USE tiinit,   ONLY: ti_init
-    USE fpcomm,   ONLY: open_fpcomm_parm
+    ! NOTE: tot/totmain.f90:24 USEs `fpcomm_parm` (not `fpcomm`) and the
+    ! corresponding `CALL open_fpcomm_parm` is commented out (totmain.f90:38
+    ! reads `!  CALL open_fpcomm_parm`). Mirror that here: do NOT USE the
+    ! `fpcomm` module just for this symbol, and do NOT issue the call.
     USE fpinit,   ONLY: fp_init
     USE dpinit,   ONLY: dp_init
     USE wrcomm,   ONLY: open_wrcomm_parm
@@ -208,9 +214,12 @@ CONTAINS
     END IF
 
     ! Open module-private comm areas (matches totmain.f90 sequence).
+    ! Note: `open_fpcomm_parm` is intentionally NOT called — totmain.f90:38
+    ! has it commented out (`!  CALL open_fpcomm_parm`), and we keep the
+    ! C ABI behaviorally identical to the menu-driven binary at L-2.
     CALL open_trcomm
     CALL open_ticomm_parm
-    CALL open_fpcomm_parm
+!   CALL open_fpcomm_parm   ! disabled to match totmain.f90:38
     CALL open_wrcomm_parm
 
     ! Per-module init in the order used by totmain.f90.
@@ -323,12 +332,14 @@ git commit -m "feat(tot): add tot_api.f90 (C ABI 5-function stub)"
 
 ---
 
-## Task 4: `tot/Makefile` に SRCS_API を追加
+## Task 4: `tot/Makefile` に独立 stub ターゲットを追加
 
 **Files:**
 - Modify: `tot/Makefile`
 
-- [ ] **Step 1: SRCS_API を追加**
+**重要:** `tot_state.f90` は `USE tr_state` で TR Phase L-2 (`tr/tr_state.f90`) に hard depend する。これをデフォルトの `tot` ターゲットの `SRCS` に入れると、TR-L-2 が未完成な develop で `make tot` が壊れる。L-2 では **「明示的に呼んだときだけビルドされる stub ターゲット」** として独立化する。
+
+- [ ] **Step 1: stub 専用ターゲットを追加（デフォルト `tot` には含めない）**
 
 `tot/Makefile` の SRCS ブロックを以下に修正:
 
@@ -343,11 +354,25 @@ SRCS      = $(SRCS_CORE) $(SRCS_MENU)
 ```makefile
 SRCS_CORE = totregress.f90
 SRCS_MENU = totmenu.f90
+# SRCS_API は tot_state/tot_api で構成され、TR Phase L-2 (tr_state, tr_api) に
+# 強く依存する。SRCS には入れず、専用 `totapi-stubs` ターゲットでだけビルドする。
 SRCS_API  = tot_state.f90 tot_api.f90
-SRCS      = $(SRCS_CORE) $(SRCS_MENU) $(SRCS_API)
+SRCS      = $(SRCS_CORE) $(SRCS_MENU)
+OBJS_API  = $(SRCS_API:.f90=.o)
+
+# Conditional auto-include: when TR Phase L-2 is complete, callers can pass
+# TR_API_READY=1 to fold the API objects into the default tot build.
+ifeq ($(TR_API_READY),1)
+SRCS += $(SRCS_API)
+endif
+
+# Standalone stub-build entry point (always available; manual invocation).
+# Use:  make totapi-stubs
+.PHONY: totapi-stubs
+totapi-stubs: $(OBJS_API)
 ```
 
-- [ ] **Step 2: `tot` バイナリ自体は API オブジェクトを使わないが、ビルドが通ることを確認**
+- [ ] **Step 2: 既存 `tot` バイナリビルドが壊れないことを確認（stub 抜きビルド）**
 
 Run:
 ```bash
@@ -355,7 +380,19 @@ cd /home/k-yoshimi/program/task/tot
 make clean && make tot 2>&1 | tail -10
 ls -la tot
 ```
-Expected: `tot_state.o`, `tot_api.o` がコンパイルされ、`tot` バイナリ生成成功。`tot` バイナリ動作は L-1 から不変。
+Expected: `tot` バイナリ生成成功。`tot_state.o`/`tot_api.o` は **コンパイルされない**（依然 TR-L-2 が無い develop でも壊れないことを保証）。`tot` バイナリ動作は L-1 から不変。
+
+- [ ] **Step 2b: TR-L-2 が完了している場合のみ stub をビルドする**
+
+Run:
+```bash
+cd /home/k-yoshimi/program/task/tot
+ls /home/k-yoshimi/program/task/tr/tr_state.f90 /home/k-yoshimi/program/task/tr/tr_api.f90 2>&1 | head -5
+# 上記が両方存在すれば stub ビルド可能:
+make totapi-stubs 2>&1 | tail -10
+ls -la tot_state.o tot_api.o 2>&1 | head
+```
+Expected: `tr_state.o` がリンク可能なら `tot_state.o`/`tot_api.o` が生成される。未完成ならスキップ（L-2 完了基準は「`make totapi-stubs` が TR-L-2 ありで成功する」）。
 
 - [ ] **Step 3: 既存テストが PASS することを確認**
 
@@ -580,7 +617,8 @@ git commit --allow-empty -m "test(tot): L-2 verification complete (baseline unch
 ## Verification (Phase L-2 完了基準)
 
 - [ ] `tot/tot_state.f90`, `tot/tot_api.f90`, `tot/tot_api.h` が新規追加されている。
-- [ ] `tot/Makefile` に `SRCS_API` が追加され、デフォルトビルドで `tot_state.o`, `tot_api.o` が生成される。
+- [ ] `tot/Makefile` に `totapi-stubs` ターゲットが追加され、`make totapi-stubs` で `tot_state.o`, `tot_api.o` が生成される（**デフォルト `make tot` には含まれない**）。
+- [ ] デフォルトの `make tot` が TR-L-2 未完成な develop でも引き続き成功する（L-2 stub の追加で既存ビルドが壊れていないこと）。
 - [ ] `tot/tests/c_abi/test_abi` が PASS する（C から `tot_set_param`/`tot_finalize` のシンボルが解決され、stub 戻り値も期待通り）。
 - [ ] 通常 `tot` バイナリの動作と tot regression テストが L-0/L-1 と数値完全一致。
 - [ ] per-module API が利用可能な範囲で `tot_init`/`tot_run`/`tot_get_state`/`tot_finalize` が fan-out している（未利用な部分は明示的に TODO コメント）。
