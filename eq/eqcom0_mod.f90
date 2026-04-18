@@ -30,12 +30,12 @@ MODULE eqcom0_mod
   INTEGER, PARAMETER :: NTHM  = 2049
   INTEGER, PARAMETER :: NPFCM = 10
 
-  ! Note: NRMP=NRM+1 and NTHMP=NTHM+1 are NOT declared here even though
-  ! they are derived from eqcom0 PARAMETERs. They already exist as local
-  ! PARAMETERs inside eqcom3.inc (INCLUDEd directly by eqinit.f:EQCHEK);
-  ! declaring them here would collide with that local PARAMETER when the
-  ! eqcomm.inc shim (which USEs this module) is combined with a direct
-  ! INCLUDE of eqcom3.inc in the same scope. Instead, NRMP/NTHMP are
-  ! re-exported from eqcom3_mod for consumers who USE that module.
+  ! Note: NTHMP = NTHM+1 is NOT declared here even though derived from
+  ! eqcom0 PARAMETERs. NTHMP already exists as a local PARAMETER inside
+  ! eqcom3.inc (INCLUDEd directly by eqinit.f:EQCHEK); declaring it here
+  ! would collide with that local PARAMETER when the eqcomm.inc shim
+  ! (which USEs this module) is combined with a direct INCLUDE of
+  ! eqcom3.inc in the same scope. Instead, NTHMP is re-exported from
+  ! eqcom3_mod for consumers who USE that module.
 
 END MODULE eqcom0_mod

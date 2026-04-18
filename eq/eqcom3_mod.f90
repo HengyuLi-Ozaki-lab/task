@@ -11,8 +11,9 @@ MODULE eqcom3_mod
   SAVE
 
   ! --- derived PARAMETERs (mirror eqcom3.inc) ---
+  ! Only NTHMP is declared in eqcom3.inc; NRMP was erroneously added here
+  ! in an earlier revision and is NOT part of the original COMMON layout.
   INTEGER, PARAMETER :: NTHMP = NTHM + 1
-  INTEGER, PARAMETER :: NRMP  = NRM  + 1
   INTEGER, PARAMETER :: NRrpM = 129
   INTEGER, PARAMETER :: NZrpM = 129
 

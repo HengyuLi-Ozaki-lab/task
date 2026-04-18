@@ -41,9 +41,8 @@ PROGRAM eq_commontest
   WRITE(6, '(A,I0)')  '  NTHM  = ', NTHM
   WRITE(6, '(A,I0)')  '  NPFCM = ', NPFCM
 
-  ! --- eqcom3_mod re-exports NRMP / NTHMP ---
+  ! --- eqcom3_mod re-exports NTHMP ---
   WRITE(6, '(A)') '-- eqcom3_mod derived PARAMETERs --'
-  WRITE(6, '(A,I0)')  '  NRMP  = ', NRMP
   WRITE(6, '(A,I0)')  '  NTHMP = ', NTHMP
   WRITE(6, '(A,I0)')  '  NRrpM = ', NRrpM
   WRITE(6, '(A,I0)')  '  NZrpM = ', NZrpM
@@ -72,7 +71,6 @@ PROGRAM eq_commontest
   IF (NRM   /= 1001) CALL fail('NRM',   NRM,   1001)
   IF (NTHM  /= 2049) CALL fail('NTHM',  NTHM,  2049)
   IF (NPFCM /= 10  ) CALL fail('NPFCM', NPFCM, 10)
-  IF (NRMP  /= NRM + 1 ) CALL fail('NRMP',  NRMP,  NRM  + 1)
   IF (NTHMP /= NTHM + 1) CALL fail('NTHMP', NTHMP, NTHM + 1)
 
   ! --- Touch one SAVE variable from each non-parameter module to
