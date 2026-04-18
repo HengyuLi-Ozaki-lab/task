@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare two metric JSONs within a relative tolerance.
 
-Schema-agnostic enough to handle TR, TI, and FP regression dumps:
+Schema-agnostic enough to handle TR, TI, FP, and EQ regression dumps:
 - TR (extract_tr_metrics.py): NT, NRMAX, NSMAX,
     scalars (dict), profile rows with NR, RN(list), RT(list), AJ, QP.
 - TI (extract_ti_metrics.py): NT, NRMAX, NSMAX, nsa_max,
@@ -10,6 +10,9 @@ Schema-agnostic enough to handle TR, TI, and FP regression dumps:
     float fields (RBP/RQP/RJP/ZEFF/BETA/BETAP).
 - FP (extract_fp_metrics.py): NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2,
     scalars (dict, e.g. TIMEFP), profile rows with NR, NSA, RNT, RWT, ...
+- EQ (extract_eq_metrics.py): NRMAX, NTHMAX, NSUMAX, NSGMAX, NTGMAX,
+    NPSMAX, NRVMAX, scalars (dict, e.g. RAXIS/PSI0/QAXIS/...),
+    profile rows with NR and float fields PSIP/PSIT/PPS/TTS/QPS/VPS/RST.
 
 Top-level integer dimension keys present in either baseline or actual
 must match exactly. The scalars dict is compared key-by-key. Profile is
@@ -60,7 +63,9 @@ def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> No
 _INDEX_KEYS = ("NR", "NSA", "NS", "NRS", "NRL", "NRAY")
 _DIMENSION_KEYS = ("NT", "NRMAX", "NSMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2",
                    "NRAYMAX", "NSTPMAX", "NRSMAX", "NRLMAX",
-                   "MODELG", "MDLWRI", "MDLWRQ", "mode_beam")
+                   "MODELG", "MDLWRI", "MDLWRQ", "mode_beam",
+                   # EQ-specific dims (extract_eq_metrics.py):
+                   "NSUMAX", "NSGMAX", "NTGMAX", "NPSMAX", "NRVMAX")
 # Additional list-of-dict sections beyond the default "profile" (used by WR/WRX).
 _PROFILE_SECTIONS = ("profile", "profile_rs", "profile_rl", "rays")
 

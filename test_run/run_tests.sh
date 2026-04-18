@@ -298,7 +298,7 @@ run_single_test() {
     cd "$test_dir"
     local log_file="$test_dir/output.log"
 
-    # For TR/FP/TI/TOT modules, enable regression dump (env-guarded inside the dumper).
+    # For TR/FP/TI/WR/WRX/EQ/TOT modules, enable regression dump (env-guarded inside the dumper).
     local mod_env=()
     case "$module" in
         tr) mod_env=(env TR_REGRESS_DUMP=1) ;;
@@ -306,6 +306,7 @@ run_single_test() {
         ti) mod_env=(env TI_REGRESS_DUMP=1) ;;
         wr) mod_env=(env WR_REGRESS_DUMP=1) ;;
         wrx) mod_env=(env WRX_REGRESS_DUMP=1) ;;
+        eq) mod_env=(env EQ_REGRESS_DUMP=1) ;;
         tot)
             mod_env=(env TOT_REGRESS_DUMP=1)
             cp "$SCRIPT_DIR/inputs/eqdata."* "$test_dir/" 2>/dev/null || true
@@ -334,7 +335,7 @@ run_single_test() {
         # CLOSED message found - calculation completed successfully.
         # For TR module, also verify numerical metrics against baseline.
         local reg_ok=1
-        if [[ "$module" == "tr" || "$module" == "fp" || "$module" == "ti" || "$module" == "wr" || "$module" == "wrx" || "$module" == "tot" ]]; then
+        if [[ "$module" == "tr" || "$module" == "fp" || "$module" == "ti" || "$module" == "wr" || "$module" == "wrx" || "$module" == "eq" || "$module" == "tot" ]]; then
             if ! "$SCRIPT_DIR/scripts/check_regression.sh" \
                     "$test_name" "$test_dir" "$SCRIPT_DIR/baselines" "1e-10" \
                     > "$test_dir/regression.log" 2>&1; then

@@ -12,6 +12,7 @@
 #   tr_*  -> tr_regress.dat  / extract_tr_metrics.py
 #   fp_*  -> fp_regress.dat  / extract_fp_metrics.py
 #   ti_*  -> ti_regress.dat  / extract_ti_metrics.py
+#   eq_*  -> eq_regress.dat  / extract_eq_metrics.py
 #   tot_* -> tot_regress.dat / extract_tot_metrics.py
 #
 # With --generate-baseline as the 5th arg, the extracted JSON is written
@@ -33,10 +34,11 @@ case "$TEST_NAME" in
   ti_*)  DUMP_BASENAME="ti_regress.dat";  EXTRACTOR="extract_ti_metrics.py" ;;
   wr_*)  DUMP_BASENAME="wr_regress.dat";  EXTRACTOR="extract_wr_metrics.py" ;;
   wrx_*) DUMP_BASENAME="wrx_regress.dat"; EXTRACTOR="extract_wrx_metrics.py" ;;
+  eq_*)  DUMP_BASENAME="eq_regress.dat";  EXTRACTOR="extract_eq_metrics.py" ;;
   tot_*) DUMP_BASENAME="tot_regress.dat"; EXTRACTOR="extract_tot_metrics.py" ;;
   *)
     echo "check_regression: unsupported test name prefix: $TEST_NAME" >&2
-    echo "  expected one of: tr_*, fp_*, ti_*, wr_*, wrx_*, tot_*" >&2
+    echo "  expected one of: tr_*, fp_*, ti_*, wr_*, wrx_*, eq_*, tot_*" >&2
     exit 4
     ;;
 esac

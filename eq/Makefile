@@ -19,7 +19,7 @@ SRCX = equcom.f90 equread.f90 eqlib.f90
 SRCS = eqbpsd.f eqinit.f eqmenu.f eqcalc.f eqcalq.f eqcalv.f \
        eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
        eq-eqdsk.f eq-qst.f eqfile.f \
-       eqgout.f eqgsub.f eqgetp.f \
+       eqgout.f eqgsub.f eqgetp.f eqregress.f \
        newton.f invematrix.f equnit.f eqrppl.f
 
 SRCT = trtest.f treqin.f
@@ -119,7 +119,7 @@ MODINCLUDE_PIC=-I$(MODDIR_PIC) -I../../bpsd/$(MOD) -I../mtxp/mod_pic -I../pl/mod
 SRCS_EQ_NOGR = equcom.f90 equread.f90 eqlib.f90
 SRCS_EQ_NOGR += eqbpsd.f eqinit.f eqmenu.f eqcalc.f eqcalq.f eqcalv.f \
                 eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
-                eq-eqdsk.f eq-qst.f eqfile.f eqgetp.f \
+                eq-eqdsk.f eq-qst.f eqfile.f eqgetp.f eqregress.f \
                 newton.f invematrix.f equnit.f eqrppl.f
 OBJS_PIC = $(addprefix $(OBJDIR_PIC)/, $(patsubst %.f90,%.o,$(patsubst %.f,%.o,$(SRCS_EQ_NOGR))))
 
@@ -166,6 +166,7 @@ equread.o: equread.f90 equcom.f90
 equintf.o: equintf.f $(EQCOMM) eqcom3.inc
 eqrppl.o: eqrppl.f $(EQCOMM) eqcom3.inc
 eqgetp.o: eqgetp.f $(EQCOMM) eqcom3.inc
+eqregress.o: eqregress.f $(EQCOMM) eqcom3.inc eqcomq.inc
 trtest.o: trtest.f
 treqin.o: treqin.f $(EQCOMM) eqcom3.inc eqcom4.inc
 pltest.o: pltest.f
