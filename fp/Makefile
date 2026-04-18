@@ -28,7 +28,8 @@ ${OBJDIR}/%.o:%.f
 ${OBJDIR}/%.o:%.f90
 	$(FCFREE) $(FFLAGS) -c $< -o $@ $(MODDIR) $(MODINCLUDE)
 
-SRCS =  fpcomm.f90 fpinit.f90 fpparm.f90 \
+# --- core (Fokker-Planck physics + I/O, no graphics, no menu) ---
+SRCS_CORE = fpcomm.f90 fpinit.f90 fpparm.f90 \
 	fpmpi.f90 fpbroadcast.f90 fplib.f90 \
 	fpexec.f90 fpreadeg.f90 fpsave.f90 fpwrite.f90 \
 	fpcaltp.f90 fpcalte.f90 fpcaldeff.f90 fpcalchieff.f90 \
@@ -37,9 +38,17 @@ SRCS =  fpcomm.f90 fpinit.f90 fpparm.f90 \
 	cdbmfp.f90 \
 	fpcalr.f90 fpreadsv.f90 fpoutdata.f90 fpcoef.f90 fpcale.f90 \
 	fpbounce.f90 fpcalj.f90 fpdisrupt.f90 fpprep.f90 fploop.f90 \
-	fpcont.f90 fpfout.f90 fpgsub.f90 fpgout.f90 fpfile.f90 \
-	fpregress.f90 \
-	fpmenu.f90
+	fpfile.f90 \
+	fpregress.f90
+
+# --- graphics (plotting, contour, plot-oriented file output) ---
+SRCS_GRAPHICS = fpcont.f90 fpfout.f90 fpgsub.f90 fpgout.f90
+
+# --- interactive menu driver (depends on graphics) ---
+SRCS_MENU = fpmenu.f90
+
+# --- final SRCS for the existing `fp` binary (unchanged behaviour) ---
+SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
 OBJS=$(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))
 
