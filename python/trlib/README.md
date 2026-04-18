@@ -1,106 +1,236 @@
-# trlib - Python wrapper for TASK/TR
+# trlib — Python wrapper for TASK/TR
 
-`trlib` is a ctypes-based Python binding for `tr/libtrapi.so` (Phase L-4
-product). It uses only the Python standard library (`ctypes`,
-`dataclasses`, `pathlib`, `os`). `numpy` is optional and not required.
+`trlib` is a thin `ctypes`-based Python wrapper around
+`tr/libtrapi.so`, the in-process shared-library version of the TASK/TR
+transport code. It lets scripts drive TR simulations from Python
+without shelling out to the standalone `tr` / `tr2` binary or going
+through namelist files.
 
-See `docs/superpowers/specs/2026-04-17-tr-library-design.md` §6 for the
-design.
+## Overview
 
-## Architecture
+TASK/TR has two user-facing deliverables:
 
-Two layers:
+| | Traditional CLI | Library (Phase L) |
+|---|---|---|
+| Binary | `tr/tr2` | `tr/libtrapi.so` |
+| Entry | interactive menu | 5 C ABI functions |
+| I/O | namelist + ASCII output | in-memory state struct |
+| Graphics | PGPlot / Fortran 90 graphics | excluded |
+| Python | — | `python/trlib` |
 
-* `trlib._ffi` - low-level ctypes binding. Exposes `TrStateC`
-  (mirror of `tr_state_t`) and `load_library()` which resolves and
-  `CDLL`-loads `libtrapi.so` with function prototypes attached.
-* `trlib.Trlib` - high-level context manager with `init/run/set_param/
-  get_state/finalize` methods and `TrState` dataclass output.
+The C ABI is defined in `tr/tr_api.h`; the Fortran backend
+(`tr/tr_api.f90`, `tr/tr_param_registry.f90`) is unchanged Fortran that
+is also linked into `tr2`. `python/trlib` only wraps the 5 C entry
+points and marshals a `tr_state_t` struct into the pure-Python
+`TrState` dataclass.
 
-## Install / Build prerequisites
+No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
+`dataclasses`, `pathlib`, `os`). `numpy` is optional.
 
-1. Build the shared library:
+## Installation
 
-   ```bash
-   cd tr && make libtrapi.so
-   ```
+Build the shared library once:
 
-   This produces `tr/libtrapi.so` and its 5 exported C symbols
-   (`tr_init`, `tr_run`, `tr_set_param`, `tr_get_state`, `tr_finalize`).
+```bash
+cd /path/to/task
+make -C tr libtrapi.so
+```
 
-2. Add the `python/` directory to `PYTHONPATH`:
+This produces `tr/libtrapi.so` with 5 exported symbols (`tr_init`,
+`tr_run`, `tr_set_param`, `tr_get_state`, `tr_finalize`) plus PIC
+variants of the dependent libraries (`lib*_pic.a`). The pre-existing
+non-PIC `*.a` archives and the `tr2` binary are unchanged.
 
-   ```bash
-   export PYTHONPATH=$(pwd)/python:$PYTHONPATH
-   ```
+Put the wrapper on `PYTHONPATH`:
 
-## Library-path lookup
+```bash
+export PYTHONPATH=/path/to/task/python:$PYTHONPATH
+```
 
-When you do `Trlib()` (no arguments) the loader searches in order:
+Optionally point at a library file outside the repository:
 
-1. `TRLIB_PATH` environment variable, if set
-2. `<repo>/tr/libtrapi.so` (default build location)
-3. `<repo>/lib/libtrapi.so` (install-style location)
+```bash
+export TRLIB_PATH=/custom/path/libtrapi.so
+```
 
-Override by passing `Trlib(lib_path="/custom/path/libtrapi.so")`.
+Library lookup order (first match wins): `TRLIB_PATH` env var,
+`<repo>/tr/libtrapi.so`, `<repo>/lib/libtrapi.so`.
 
-## Quick example
+## Quick start
 
 ```python
 from trlib import Trlib
 
 with Trlib() as tr:
-    tr.set_params(RR=7.5, BB=5.3)        # scalar params via kwargs
-    tr.set_param("PN[1]", 0.7)            # array element by name
-    tr.run(ntmax=100)
+    tr.set_params(RR=8.5, RA=2.0, BB=5.3,
+                  NSMAX=2, DT=0.1, NTSTEP=10)
+    tr.set_param("PN[1]", 1.0)   # array element (1-origin)
+    tr.set_param("PN[2]", 1.0)
+    tr.run(ntmax=50)
     state = tr.get_state()
 
-print("T =", state.scalars["T"])
-print("first RT row =", state.RT[0])
-
-# JSON-serialisable dict in Phase-0 baseline format:
-import json
-print(json.dumps(state.to_dict())[:200])
+print(f"T={state.scalars['T']:.3f}  WPT={state.scalars['WPT']:.3f}")
 ```
 
-## Errors
+See `examples/` for runnable scripts:
 
-All exceptions derive from `trlib.TrlibError`. Specific subclasses
-match the C ABI `enum tr_error` in `tr/tr_api.h`:
+- `examples/quickstart.py` — smallest complete run
+- `examples/parameter_sweep.py` — RR / BB grid
+- `examples/state_dump.py` — single run, full `TrState.to_dict()` as JSON
 
-| `ierr` | exception | meaning |
+## API reference
+
+### `Trlib(lib_path: str | None = None)`
+
+Context manager. `__enter__` calls `tr_init`; `__exit__` / `close()`
+calls `tr_finalize`. Only one live instance per process is meaningful
+(TR backend holds global COMMON-block state).
+
+### `Trlib.set_param(name, value) -> None`
+
+Set a single parameter. Use `"NAME[i]"` (1-origin) for array elements;
+Python keyword arguments cannot contain brackets so array elements
+must use `set_param`, not `set_params`.
+
+### `Trlib.set_params(**kwargs) -> None`
+
+Bulk-set **scalar** parameters. Raises `TrlibError` on keys containing
+`__` (common array-syntax mistake).
+
+### `Trlib.run(ntmax: int) -> None`
+
+Advance the simulation by `ntmax` steps. `ntmax=0` is a valid no-op
+used by the smoke tests.
+
+### `Trlib.get_state() -> TrState`
+
+Snapshot current TRCOMM scalars and `[0:nrmax][0:nsmax]` profile
+arrays into a `TrState` dataclass. Trailing padding (up to
+`TR_MAX_NRMAX=500` / `TR_MAX_NSMAX=8`) is ignored.
+
+### `Trlib.close() -> None`
+
+Idempotent. The context manager calls this automatically.
+
+## Supported parameters
+
+The registry below reflects `tr/tr_param_registry.f90` at Phase L-3.
+Add to it by extending that Fortran `SELECT CASE`; no Python change
+is required — the wrapper forwards names verbatim.
+
+| Group | Names | Notes |
 |---|---|---|
-| 0 | - | success |
-| 1 | `TrlibParamError` | invalid parameter name / value |
-| 2 | `TrlibStateError` | library not initialised |
-| 3 | `TrlibRunError` | calculation / get_state failed |
-| 4 | `TrlibNotImplementedError` | L-2 stub; not implemented yet |
+| Geometry / device | `RR`, `RA`, `RKAP`, `RDLT`, `BB`, `PHIA` | scalar doubles |
+| Plasma (arrays, 1..NSMM) | `PA[i]`, `PZ[i]`, `PN[i]`, `PNS[i]`, `PT[i]`, `PTS[i]` | 1-origin index |
+| Plasma scalars | `NSMAX` | cast to INT |
+| Current | `RIPS`, `RIPE` | |
+| Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR` | int-typed coerced |
+| Transport switches | `MDLKAI`, `MDLETA`, `MDLAD`, `MDLAVK`, `CHP`, `CK0`, `CK1` | |
+| Transport arrays | `CDW[i]` | |
+| Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF` | |
 
-Aliases with the `TrLib...` capitalisation (`TrLibInvalidParam`,
-`TrLibNotInitialized`, `TrLibCalculationFailed`, `TrLibNotImplemented`)
-are also exported for callers that prefer the spec naming.
+Unknown names return ierr=1 (raised as `TrlibParamError`).
 
-## `set_params` vs `set_param`
+## `TrState` fields
 
-`set_params(**kwargs)` is **scalar-only** because Python keyword
-argument names cannot contain `[` or `]`. For array elements call
-`set_param()` directly:
+Matches `tr_state_t` in `tr/tr_api.h`. Full dict layout is available
+via `state.to_dict()` (JSON-serialisable; matches the Phase 0 baseline
+format so `compare_metrics.py` can diff wrapper vs `tr2` output).
 
-```python
-tr.set_params(RR=3.0, BB=2.0)
-tr.set_param("PN[1]", 0.7)      # array element
-```
+| Attribute | Type | Meaning |
+|---|---|---|
+| `nt` | int | current time-step index |
+| `nrmax` | int | radial points actually in use |
+| `nsmax` | int | species actually in use |
+| `scalars` | dict[str, float] | 13 plasma scalars (see below) |
+| `RN` | list[list[float]] | `[nrmax][nsmax]` density profile |
+| `RT` | list[list[float]] | `[nrmax][nsmax]` temperature profile |
+| `AJ` | list[float] | `[nrmax]` current density profile |
+| `QP` | list[float] | `[nrmax]` safety-factor profile |
 
-Keys containing `__` are rejected in `set_params` as a common
-array-syntax mistake.
+Scalars (canonical order): `T`, `WPT`, `AJT`, `Q0`, `BETA0`,
+`BETAP0`, `BETAA`, `BETAN`, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`.
 
-## Running the tests
+## Exceptions
+
+Every `tr_*` return code maps to a concrete subclass of `TrlibError`:
+
+| ierr | class | meaning |
+|---|---|---|
+| 0 | — | success |
+| 1 | `TrlibParamError` | invalid parameter name / index / value |
+| 2 | `TrlibStateError` | API call before `tr_init` or after `close` |
+| 3 | `TrlibRunError` | calculation or `tr_get_state` failed |
+| 4 | `TrlibNotImplementedError` | Phase L-2 stub return |
+
+Spec-style aliases (`TrLibInvalidParam`, `TrLibNotInitialized`,
+`TrLibCalculationFailed`, `TrLibNotImplemented`) are also exported.
+
+## Migration: `tr` CLI → `trlib.Trlib`
+
+| CLI step | `trlib` equivalent |
+|---|---|
+| edit `trparm` namelist | `tr.set_param(...)` / `tr.set_params(...)` |
+| menu option `R` (run) | `tr.run(ntmax=...)` |
+| inspect output file | `tr.get_state()` |
+| menu `Q` (quit) | exit context manager / `tr.close()` |
+| batch parameter sweep | Python `for` loop (see `examples/parameter_sweep.py`) |
+
+The wrapper does **not** wrap graphics, file output, or the
+interactive menu — those live in `tr/tr2` only.
+
+## Known limitations
+
+- **Single instance per process.** TR backend uses COMMON blocks.
+  Two concurrent `Trlib()` instances share state; the second
+  `tr_init` resets globals.
+- **No graphics, no MPI, no OpenMP API.** Graphics symbols exist but
+  are not reachable from the 5 exported entry points; the loader uses
+  `RTLD_LAZY` so dangling graphics references never resolve.
+- **String parameters not yet wired** (e.g. `KNAMEQ`, `KNAMTR`). See
+  `docs/superpowers/specs/2026-04-17-tr-library-design.md` §4.3.
+- **Unregistered namelist keys** — any name missing from
+  `tr_param_registry.f90` returns `TrlibParamError`. Known gaps include
+  geometry/profile tunables that the design spec deferred to later
+  phases (string parameters, model-specific tuning coefficients beyond
+  `CDW` / `CHP` / `CK0` / `CK1`).
+- **`tr_m0904` baseline drift** — the `tr_m0904` regression fixture
+  exhibited small (`~1e-8`) drift between `tr2` and the Layer 1 suite
+  during Phase L-6 and is pinned to its Phase 0 baseline. Use `1e-10`
+  tolerance for `tr_iter01` / `tr_tst2` but allow looser comparison for
+  `tr_m0904` when diffing against freshly regenerated tr2 runs.
+
+## Testing
 
 ```bash
 cd python/trlib/tests
 python3 -m unittest discover -v
 ```
 
-Tests that require `libtrapi.so` are skipped when it hasn't been built
-yet; the remaining tests (ctypes layout, error wiring,
+Tests that require `libtrapi.so` are skipped when the shared library
+is absent; pure-Python tests (ctypes layout, error wiring,
 `TrState.from_c`, `to_dict` shape) always run.
+
+The full 4-layer regression suite is wired into
+`test_run/test_definitions.conf`:
+
+- `trlib_c_abi` — Layer 2 C ABI (`make -C tr tr_api_check_all`)
+- `trlib_ffi`, `trlib_wrapper` — Layer 3 Python wrapper
+- `trlib_equivalence` — Layer 1 vs Phase 0 baselines (tol `1e-10`)
+- `trlib_sweep` — Layer 4 3×3 RR×BB smoke
+
+## License / contributions
+
+`trlib` is part of the TASK code and distributed under the repository's
+top-level license. Bug reports and PRs are welcome; please keep
+wrapper changes minimal — the C ABI is the stable layer, so new
+parameters should be added to the Fortran registry first.
+
+## See also
+
+- `docs/superpowers/specs/2026-04-17-tr-library-design.md` — full
+  design spec (Phase L)
+- `docs/tr-library/architecture.md` — system diagram and Phase
+  completion matrix
+- `tr/tr_api.h` — C ABI header
+- `CHANGELOG.md` — per-phase history

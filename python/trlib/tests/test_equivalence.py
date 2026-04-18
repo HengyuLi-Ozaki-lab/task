@@ -5,7 +5,8 @@ For each case (``tr_iter01``, ``tr_tst2``):
 
 1. open a :class:`trlib.Trlib` handle (loads ``tr/libtrapi.so``),
 2. replay the registered subset of the namelist fixture via
-   :py:meth:`~trlib.Trlib.set_param`,
+   :py:meth:`~trlib.Trlib.set_param` /
+   :py:meth:`~trlib.Trlib.set_param_str`,
 3. advance the simulation for the fixture's ``NTMAX``,
 4. serialise the resulting :class:`~trlib.state.TrState` via
    :py:meth:`~trlib.state.TrState.to_dict`,
@@ -16,11 +17,19 @@ If ``libtrapi.so`` has not been built (or ``python/trlib`` is not
 available) the whole class is skipped -- this matches the design
 contract that Layer 1 is an *integration* test gated on L-4 + L-5.
 
+MODELG=3 cases (tr_iter01 / tr_tst2) read ``eqdata.<DEV>`` from the
+process's current working directory. The Phase-0 baselines are
+generated from ``test_run/test_output/<case>/`` with the corresponding
+eqdata file pre-copied; we honor the same convention here by changing
+into that directory for each replay. If the eqdata file is missing,
+the test is skipped with a message that points at the Phase-0 runner.
+
 See ``docs/superpowers/plans/2026-04-18-tr-library-L6-test-4layers.md``
 Task 2 for the iteration protocol when the 1e-10 match is not yet met.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -33,8 +42,20 @@ HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
 BASELINES_DIR = REPO / "test_run" / "baselines"
+TEST_OUTPUT_DIR = REPO / "test_run" / "test_output"
 COMPARE_SCRIPT = REPO / "test_run" / "scripts" / "compare_metrics.py"
 DEFAULT_SO = REPO / "tr" / "libtrapi.so"
+
+
+@contextlib.contextmanager
+def _pushd(target: Path):
+    """chdir to ``target`` inside a ``with`` block, restore on exit."""
+    prev = Path.cwd()
+    os.chdir(target)
+    try:
+        yield target
+    finally:
+        os.chdir(prev)
 
 # Make ``import trlib`` work whether tests are launched from the repo
 # root (PYTHONPATH=python) or from inside python/trlib/tests/.
@@ -42,17 +63,36 @@ if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
 
-def _run_case(apply_fn, ntmax: int) -> dict:
+def _run_case(apply_fn, ntmax: int, cwd: Path | None = None) -> dict:
     """Drive a single libtrapi.so cycle and return the metrics dict.
+
+    Parameters
+    ----------
+    apply_fn:
+        Callable that takes a :class:`trlib.Trlib` handle and sets all
+        fixture parameters via ``set_param`` / ``set_param_str``.
+    ntmax:
+        Number of time steps to advance.
+    cwd:
+        If provided, :func:`os.chdir` into this directory for the whole
+        replay. MODELG=3 cases need the directory to contain the
+        ``eqdata.<DEV>`` file referenced by ``KNAMEQ``.
 
     Keeping this outside ``TestEquivalence`` lets Layer 4 reuse the
     same replay helper without importing a TestCase class.
     """
     from trlib import Trlib  # noqa: WPS433 (intentional local import)
-    with Trlib() as tr:
-        apply_fn(tr)
-        tr.run(int(ntmax))
-        state = tr.get_state()
+
+    if cwd is None:
+        ctx = contextlib.nullcontext()
+    else:
+        ctx = _pushd(cwd)
+
+    with ctx:
+        with Trlib() as tr:
+            apply_fn(tr)
+            tr.run(int(ntmax))
+            state = tr.get_state()
     return state.to_dict()
 
 
@@ -125,8 +165,25 @@ class TestEquivalence(unittest.TestCase):
 
         The fixture module must expose ``apply`` / ``NTMAX`` /
         ``BASELINE_NAME`` (see :mod:`fixtures.tr_iter01_params`).
+
+        When the fixture ships a STRINGS dict with ``KNAMEQ``, the
+        replay runs inside ``test_run/test_output/<case>/`` so that
+        the referenced eqdata file is visible to tr_prep. The Phase-0
+        runner writes that directory as a side effect of running
+        ``./run_tests.sh <case>``.
         """
-        actual = _run_case(fixture_module.apply, ntmax=fixture_module.NTMAX)
+        cwd = None
+        knameq = getattr(fixture_module, "STRINGS", {}).get("KNAMEQ")
+        if knameq:
+            candidate = TEST_OUTPUT_DIR / fixture_module.BASELINE_NAME
+            if not (candidate / knameq).exists():
+                self.skipTest(
+                    f"eqdata '{knameq}' missing under {candidate}; "
+                    "run `./test_run/run_tests.sh "
+                    f"{fixture_module.BASELINE_NAME}` first."
+                )
+            cwd = candidate
+        actual = _run_case(fixture_module.apply, ntmax=fixture_module.NTMAX, cwd=cwd)
         _compare_with_baseline(actual, fixture_module.BASELINE_NAME, self.TOLERANCE)
 
     def test_iter01(self):
