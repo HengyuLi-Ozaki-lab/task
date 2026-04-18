@@ -63,6 +63,9 @@ tr/tr2
 tr/tr3
 tr/trparm
 tr/tests/c_abi/test_smoke
+tr/tests/c_abi/test_param
+tr/tests/c_abi/test_run
+tr/tests/c_abi/*.o
 wrx/tests/c_abi/test_smoke
 trn/trn
 trn/trparm
