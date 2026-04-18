@@ -127,6 +127,15 @@ ti/tests/c_abi/test_run
 ti/tests/c_abi/test_run_so
 ti/tests/c_abi/test_negative
 ti/tests/c_abi/*.o
+
+# eq L-4: libeqapi.so build artefacts
+eq/libeqapi.so
+eq/libeq_pic.a
+eq/obj/pic/
+eq/mod_pic/
+eq/tests/c_abi/test_run_so
+eq/tests/c_abi/test_smoke
+eq/tests/c_abi/*.o
 adpost/obj/pic/
 adpost/mod_pic/
 adpost/lib-adpost_pic.a
