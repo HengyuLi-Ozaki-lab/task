@@ -97,3 +97,10 @@ adpost/test-adpost
 ti/ti
 cv/cv
 cv/cvj
+wr/libwrapi.so
+wr/obj/pic/
+wr/mod_pic/
+wr/tests/c_abi/test_run_so
+dp/obj/pic/
+dp/mod_pic/
+dp/libdp_pic.a

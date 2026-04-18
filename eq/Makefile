@@ -116,7 +116,7 @@ MODINCLUDE_PIC=-I$(MODDIR_PIC) -I../../bpsd/$(MOD) -I../mtxp/mod_pic -I../pl/mod
 # shared object with -Wl,--unresolved-symbols=ignore-in-shared-libs lets
 # the .so load while still failing loudly if a graphics path is ever
 # reached at run-time.
-SRCS_EQ_NOGR = equcom.f90 eqlib.f90
+SRCS_EQ_NOGR = equcom.f90 equread.f90 eqlib.f90
 SRCS_EQ_NOGR += eqbpsd.f eqinit.f eqmenu.f eqcalc.f eqcalq.f eqcalv.f \
                 eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
                 eq-eqdsk.f eq-qst.f eqfile.f eqgetp.f \
