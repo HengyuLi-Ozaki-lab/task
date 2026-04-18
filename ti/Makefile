@@ -40,7 +40,7 @@ SRCS_MENU=     timenu.f90
 # C ABI sources (Phase L-2+). Compiled via the ti_api_check target only;
 # NOT part of $(SRCS) and NOT linked into libti.a / ti. The full
 # libtiapi.so build arrives in Phase L-4.
-SRCS_API=ti_state.f90 ti_api.f90
+SRCS_API=ti_state.f90 ti_param_registry.f90 ti_api.f90
 
 SRCS=$(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
@@ -105,14 +105,21 @@ srcs-menu-list:
 	@echo $(SRCS_MENU)
 
 # ---------------------------------------------------------------------
-# Phase L-2: C ABI check
+# Phase L-2 / L-3: C ABI check
 #
-# `make ti_api_check` builds the new API objects (ti_state.o, ti_api.o)
-# AND a small C smoke test against ti_api.h.  This is a header / link
-# sanity check only -- the API objects are NOT linked into ti and the
-# ti binary remains byte-for-byte identical with or without this
-# target being invoked.  The smoke driver expects every entry point to
-# return TI_ERR_NOT_IMPL (=4) at L-2.
+# `make ti_api_check` builds the new API objects (ti_state.o,
+# ti_param_registry.o, ti_api.o) and three small C drivers linked
+# against ti_api.h:
+#
+#   test_smoke  : 4 entry points return TI_OK           (sanity)
+#   test_param  : ti_set_param + ti_get_state dispatch  (L-3)
+#   test_run    : ti_run advances T by N*DT             (L-3)
+#
+# The API objects are NOT linked into libti.a / ti and the ti binary
+# remains byte-for-byte identical with or without this target being
+# invoked. L-3 drivers depend on libti.a (for TICOMM, ti_exec, ti_prep,
+# ...) so we link it in after the API objects. The full libtiapi.so
+# build arrives in Phase L-4.
 #
 # CC defaults to gcc; override on the command line if necessary
 # (e.g. `make ti_api_check CC=clang`).
@@ -125,31 +132,54 @@ TI_API_SMOKE_C=$(TI_API_SMOKE_DIR)/test_smoke.c
 TI_API_SMOKE_O=$(TI_API_SMOKE_DIR)/test_smoke.o
 TI_API_SMOKE_BIN=$(TI_API_SMOKE_DIR)/test_smoke
 
+TI_API_PARAM_C=$(TI_API_SMOKE_DIR)/test_param.c
+TI_API_PARAM_O=$(TI_API_SMOKE_DIR)/test_param.o
+TI_API_PARAM_BIN=$(TI_API_SMOKE_DIR)/test_param
+
+TI_API_RUN_C=$(TI_API_SMOKE_DIR)/test_run.c
+TI_API_RUN_O=$(TI_API_SMOKE_DIR)/test_run.o
+TI_API_RUN_BIN=$(TI_API_SMOKE_DIR)/test_run
+
+# At L-3 the API drivers pull in TICOMM, ti_exec, ti_prep, ... so we
+# need the full ti + eq + pl + bpsd + mtx link just like ti.
+TI_API_DEPS=$(LIBS) $(LIBX_MTX)
+
 # Step 1: header-only C compile (matches the documented user-level check
 #         `gcc -Wall -Wextra -c -o test_smoke.o test_smoke.c`).
 $(TI_API_SMOKE_O): $(TI_API_SMOKE_C) ti_api.h
 	$(CC) $(CFLAGS_API) -I. -c -o $(TI_API_SMOKE_O) $(TI_API_SMOKE_C)
+$(TI_API_PARAM_O): $(TI_API_PARAM_C) ti_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(TI_API_PARAM_O) $(TI_API_PARAM_C)
+$(TI_API_RUN_O):   $(TI_API_RUN_C)   ti_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(TI_API_RUN_O)   $(TI_API_RUN_C)
 
-# Step 2: link the C smoke against the API objects only. This proves the
-# BIND(C) names emitted by ti_api.f90 (ti_init, ti_run, ti_set_param,
-# ti_get_state, ti_finalize) match the prototypes in ti_api.h. We use
-# gfortran as the driver so the libgfortran runtime is pulled in
-# automatically; no other ti/ libraries are required at L-2.
-$(TI_API_SMOKE_BIN): $(TI_API_SMOKE_O) $(OBJ_API)
-	$(FLINKER) -o $(TI_API_SMOKE_BIN) $(TI_API_SMOKE_O) $(OBJ_API)
+# Step 2: link against API objects + ti/eq/pl/bpsd/mtx. gfortran drives
+# the link so libgfortran is pulled in automatically.
+$(TI_API_SMOKE_BIN): $(TI_API_SMOKE_O) $(OBJ_API) libti.a
+	$(FLINKER) -o $(TI_API_SMOKE_BIN) $(TI_API_SMOKE_O) $(OBJ_API) \
+	   $(TI_API_DEPS) $(FFLAGS) $(FLIBS)
+$(TI_API_PARAM_BIN): $(TI_API_PARAM_O) $(OBJ_API) libti.a
+	$(FLINKER) -o $(TI_API_PARAM_BIN) $(TI_API_PARAM_O) $(OBJ_API) \
+	   $(TI_API_DEPS) $(FFLAGS) $(FLIBS)
+$(TI_API_RUN_BIN):   $(TI_API_RUN_O)   $(OBJ_API) libti.a
+	$(FLINKER) -o $(TI_API_RUN_BIN)   $(TI_API_RUN_O)   $(OBJ_API) \
+	   $(TI_API_DEPS) $(FFLAGS) $(FLIBS)
 
 .PHONY: ti_api_check
-ti_api_check: $(OBJ_API) $(TI_API_SMOKE_BIN)
-	@echo "Phase L-2 ti_api_check: running smoke ..."
+ti_api_check: $(OBJ_API) $(TI_API_SMOKE_BIN) $(TI_API_PARAM_BIN) $(TI_API_RUN_BIN)
+	@echo "Phase L-3 ti_api_check: running smoke / param / run ..."
 	@$(TI_API_SMOKE_BIN)
-	@echo "Phase L-2 ti_api_check OK:"
-	@echo "  - Fortran API objects compiled: $(OBJ_API)"
-	@echo "  - C smoke object compiled    : $(TI_API_SMOKE_O)"
-	@echo "  - C smoke linked + executed  : $(TI_API_SMOKE_BIN)"
+	@$(TI_API_PARAM_BIN)
+	@$(TI_API_RUN_BIN)
+	@echo "Phase L-3 ti_api_check OK:"
+	@echo "  - Fortran API objects : $(OBJ_API)"
+	@echo "  - C drivers executed  : test_smoke, test_param, test_run"
 
 clean :
 	rm -f ./#* ./*~ *.o nclass/*.o itg/*.o glf/*.o cytran/*.o mmm95/*.o mbgb/*.o a.out core *.a *.mod $(MOD)/*.mod
 	rm -f $(TI_API_SMOKE_O) $(TI_API_SMOKE_BIN)
+	rm -f $(TI_API_PARAM_O) $(TI_API_PARAM_BIN)
+	rm -f $(TI_API_RUN_O)   $(TI_API_RUN_BIN)
 
 veryclean : clean
 	rm -f ti
@@ -175,9 +205,12 @@ tisource.o : tisource.f90 ticomm.f90
 ticalc.o : ticalc.f90 ticomm.f90
 tirecord.o : tirecord.f90 ticomm.f90
 
-# Phase L-2 C ABI sources (independent of TICOMM at this stage).
+# Phase L-2 / L-3 C ABI sources. ti_state is independent of TICOMM;
+# ti_param_registry and ti_api pull in TICOMM plus ti_prep / ti_exec.
 ti_state.o : ti_state.f90
-ti_api.o   : ti_api.f90 ti_state.f90 ti_state.o
+ti_param_registry.o : ti_param_registry.f90 ticomm.f90 ticomm.o
+ti_api.o   : ti_api.f90 ti_state.f90 ti_state.o ti_param_registry.o \
+             ticomm.o tiinit.o tiprep.o tiexec.o
 
 nclass/rarray_sum.o : nclass/rarray_sum.f
 nclass/rarray_copy.o: nclass/rarray_copy.f

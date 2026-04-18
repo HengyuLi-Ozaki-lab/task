@@ -109,5 +109,8 @@ wrx/wrparm
 adpost/test-adpost
 ti/ti
 ti/tests/c_abi/test_smoke
+ti/tests/c_abi/test_param
+ti/tests/c_abi/test_run
+ti/tests/c_abi/*.o
 cv/cv
 cv/cvj
