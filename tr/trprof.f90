@@ -341,6 +341,7 @@ CONTAINS
 
       USE trcomm
       USE libitp
+      USE trcoef_resistivity, ONLY: TRCFET
       IMPLICIT NONE
       INTEGER:: NR
       REAL(rkind), DIMENSION(NRMAX) :: DSRHO

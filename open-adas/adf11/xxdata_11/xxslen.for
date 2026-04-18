@@ -1,0 +1,8 @@
+C STUB xxslen
+      SUBROUTINE XXSLEN(STR, IFIRST, ILAST)
+      CHARACTER*(*) STR
+      INTEGER IFIRST, ILAST
+      IFIRST = 1
+      ILAST = LEN(STR)
+      RETURN
+      END
