@@ -98,5 +98,6 @@ wrx/wr
 wrx/wrparm
 adpost/test-adpost
 ti/ti
+ti/tests/c_abi/test_smoke
 cv/cv
 cv/cvj
