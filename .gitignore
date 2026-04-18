@@ -58,6 +58,7 @@ tools/guiread
 tools/usplit
 tot/tot
 tot/totparm
+tot/tests/c_abi/test_smoke
 tr/tr2
 tr/tr3
 tr/trparm
