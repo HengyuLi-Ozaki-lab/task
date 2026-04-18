@@ -23,6 +23,7 @@ CONTAINS
     USE wrexec,ONLY: wr_exec
     USE wrgout,ONLY: wr_gout
     USE wrfile,ONLY: wr_save,wr_load,wr_write
+    USE wrxregress,ONLY: wrx_regress_dump_if_enabled
     USE libkio
     IMPLICIT NONE
     CHARACTER(LEN=1):: KID
@@ -71,6 +72,7 @@ CONTAINS
          CALL wr_setup(ierr)
          IF(ierr.NE.0) GO TO 1
          CALL wr_exec(nstat,ierr)
+         CALL wrx_regress_dump_if_enabled   ! Phase L-0 regression dump (env-guarded)
       ELSEIF(KID.EQ.'G') THEN
          CALL WR_GOUT(NSTAT)
       ELSEIF(KID.EQ.'S') THEN

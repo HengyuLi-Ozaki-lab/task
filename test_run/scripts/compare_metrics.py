@@ -61,7 +61,7 @@ _INDEX_KEYS = ("NR", "NSA", "NS", "NRS", "NRL", "NRAY")
 _DIMENSION_KEYS = ("NT", "NRMAX", "NSMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2",
                    "NRAYMAX", "NSTPMAX", "NRSMAX", "NRLMAX",
                    "MODELG", "MDLWRI", "MDLWRQ", "mode_beam")
-# Additional list-of-dict sections beyond the default "profile" (used by WR).
+# Additional list-of-dict sections beyond the default "profile" (used by WR/WRX).
 _PROFILE_SECTIONS = ("profile", "profile_rs", "profile_rl", "rays")
 
 
