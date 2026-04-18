@@ -34,14 +34,19 @@ ${OBJDIR}/%.o:%.f
 MODINCLUDE= -I./$(MOD) -I../pl/$(MOD) -I../dp/$(MOD) -I../eq/$(MOD) \
             -I../lib/$(MOD) -I../mtxp/$(MOD) -I../../bpsd/$(MOD)
 
-SRCS = wrcomm.f90 wrinit.f90 wrparm.f90 wrprep.f90 wrview.f90 \
-       wrsub.f90 \
-       wrsetup.f90 wrcalpwr.f90 wrfdrv.f90 wroxb.f90 \
-       wrexecr.f90 wrexecb.f90 \
-       wrexec.f90 \
-       wrgout.f90 wrfile.f90 \
-       wrxregress.f90 \
-       wrmenu.f90
+SRCS_CORE = wrcomm.f90 wrinit.f90 wrparm.f90 wrprep.f90 wrview.f90 \
+            wrsub.f90 \
+            wrsetup.f90 wrcalpwr.f90 wrfdrv.f90 wroxb.f90 \
+            wrexecr.f90 wrexecb.f90 \
+            wrexec.f90 \
+            wrfile.f90 \
+            wrxregress.f90
+
+SRCS_GRAPHICS = wrgout.f90
+
+SRCS_MENU = wrmenu.f90
+
+SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
 OBJS = $(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))
 
