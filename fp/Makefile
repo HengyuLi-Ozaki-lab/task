@@ -172,6 +172,7 @@ clean :
 	-rm -f $(FP_API_PARAM_O) $(FP_API_PARAM_BIN)
 	-rm -f $(FP_API_RUN_O) $(FP_API_RUN_BIN)
 	-rm -f $(FP_API_SO_O) $(FP_API_SO_BIN)
+	-rm -f $(FP_API_NEG_O) $(FP_API_NEG_BIN)
 
 veryclean: clean
 	-rm -f fp
@@ -179,6 +180,7 @@ veryclean: clean
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libfpapi.so
 	-rm -f $(FP_API_SO_O) $(FP_API_SO_BIN)
+	-rm -f $(FP_API_NEG_O) $(FP_API_NEG_BIN)
 
 # =====================================================================
 # Phase L-4: libfpapi.so shared library build
@@ -361,6 +363,39 @@ fp_api_check_so: libfpapi.so $(FP_API_SO_BIN)
 	@echo "Phase L-4 fp_api_check_so: dlopen libfpapi.so + full cycle ..."
 	@FPLIB_PATH=$(CURDIR)/libfpapi.so $(FP_API_SO_BIN)
 	@echo "Phase L-4 fp_api_check_so OK"
+
+# ---------------------------------------------------------------------
+# Phase L-6: Layer 2 (C ABI) test suite
+#
+# Builds + runs the full C ABI test set in one shot so CI (via
+# test_run/run_tests.sh) can invoke a single target. Consists of:
+#
+#   test_smoke     - 5 entry points return FP_OK          (L-3)
+#   test_param     - set_param + get_state dispatch       (L-3)
+#   test_run       - fp_run advances TIMEFP               (L-3)
+#   test_run_so    - dlopen libfpapi.so + full cycle      (L-4)
+#   test_negative  - rejection contracts (L-6, new)
+#
+# The L-3 trio links against OBJ_API + libfp.a; the dlopen driver uses
+# libdl and loads libfpapi.so at runtime. The negative driver shares
+# the L-3 link path.
+# ---------------------------------------------------------------------
+FP_API_NEG_C=$(FP_API_SMOKE_DIR)/test_negative.c
+FP_API_NEG_O=$(FP_API_SMOKE_DIR)/test_negative.o
+FP_API_NEG_BIN=$(FP_API_SMOKE_DIR)/test_negative
+
+$(FP_API_NEG_O): $(FP_API_NEG_C) fp_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(FP_API_NEG_O) $(FP_API_NEG_C)
+
+$(FP_API_NEG_BIN): $(FP_API_NEG_O) $(OBJ_API) $(LIB_MTX) $(LIBS)
+	$(FLINKER) -o $(FP_API_NEG_BIN) $(FP_API_NEG_O) $(OBJ_API) \
+	    $(LIBS) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
+
+.PHONY: fp_api_check_all
+fp_api_check_all: fp_api_check fp_api_check_so $(FP_API_NEG_BIN)
+	@echo "Phase L-6 fp_api_check_all: running negative tests ..."
+	@$(FP_API_NEG_BIN)
+	@echo "Phase L-6 fp_api_check_all OK: smoke/param/run/run_so/negative"
 
 # Phase L-3 C ABI sources. fp_param_registry depends on fpcomm; fp_api
 # depends on fpcomm + fpinit + fpprep + fploop + plinit + equnit +
