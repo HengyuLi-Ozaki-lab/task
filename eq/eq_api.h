@@ -8,15 +8,24 @@ extern "C" {
 /*
  * TASK/EQ C ABI public header.
  *
- * Phase L-2 status: function symbols are present in libeqapi (built from
- * eq_api.f90). eq_init / eq_finalize / eq_get_state return EQ_OK; eq_run
- * and eq_set_param return EQ_ERR_NOT_IMPL (=4) pending the L-3 registry
- * + calc dispatch work. The struct layout and enum are final, so
- * downstream consumers can compile against this header today.
+ * Phase L-3 status:
+ *   - eq_init / eq_finalize / eq_get_state : EQ_OK.
+ *   - eq_set_param : real SELECT CASE dispatch (eq_param_registry.f90,
+ *                    ~60 names covering /EQ/ namelist scalars + PSIB[0..5]
+ *                    + RIPFC/RPFC/ZPFC/WPFC[1..10]).
+ *   - eq_set_param_str : NEW in L-3. Covers KNAMEQ/KNAMWR/KNAMWM/
+ *                    KNAMFP/KNAMFO/KNAMPF/KNAMEQ2 (CHARACTER(LEN=80)).
+ *   - eq_run(1) : real EQDSK load via equnit::eq_load using the current
+ *                 MODELG + KNAMEQ. eq_run(0) and other modes still
+ *                 return EQ_ERR_NOT_IMPL pending L-4.
  *
  * Memory note: every array in eq_state_t is fixed-size (max-capacity).
  * Valid runtime slots are 1..nrmax / 1..npsmax / 1..nrgmax / etc.;
  * the remainder is zero-padded by eq_get_state before return.
+ *
+ * PSIB indexing note: PSIB is 0-origin (0..5) because the underlying
+ * Fortran declaration is REAL(8) :: PSIB(0:5). All other 1D array
+ * parameters (RIPFC/RPFC/ZPFC/WPFC) are 1-origin.
  */
 
 #define EQ_MAX_NRGM 513
@@ -69,6 +78,10 @@ typedef struct eq_state_t {
 int eq_init(void);
 int eq_run(int mode);
 int eq_set_param(const char* name, double value);
+/* Set a string-valued parameter. Supported names:
+ *   KNAMEQ, KNAMEQ2, KNAMWR, KNAMWM, KNAMFP, KNAMFO, KNAMPF
+ * All are CHARACTER(LEN=80) on the Fortran side. */
+int eq_set_param_str(const char* name, const char* value);
 int eq_get_state(eq_state_t* state);
 int eq_finalize(void);
 

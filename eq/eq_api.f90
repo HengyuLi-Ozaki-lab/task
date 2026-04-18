@@ -1,36 +1,38 @@
 ! eq_api.f90
 !
-! Phase L-2: C ABI entry points for libeqapi (scaffold layer).
+! Phase L-2/L-3: C ABI entry points for libeqapi.
 !
-! Five BIND(C) functions are exposed. In L-2 they are intentionally
-! minimal scaffolding so that the C ABI surface (symbol names, arg
-! layout, error-code enum) is fixed before L-3 wires them to real
-! calculation drivers:
+! Six BIND(C) functions are exposed:
 !
-!   eq_init       -> marks the library as initialized (idempotent)
-!                    and returns EQ_OK. Does NOT touch the legacy eq
-!                    COMMON blocks so existing eq / pl / ak binaries
-!                    keep bit-identical behavior.
-!   eq_run        -> returns EQ_ERR_NOT_IMPL. Real dispatch (eqcalc /
-!                    eqcalq / eq_bpsd_* etc.) arrives in L-3.
-!   eq_set_param  -> delegates to eq_param_registry::eq_param_set
-!                    which itself is an L-2 stub (always NOT_IMPL).
-!   eq_get_state  -> reads grid dimensions and plasma scalars out of
-!                    the legacy COMMON blocks via the F77 bridge
-!                    routines in eq_api_common.f, then zeros the
-!                    C struct and fills the scalars + 1D profiles
-!                    up to the compile-time maxima in eq_state.
-!   eq_finalize   -> clears the initialized flag. No COMMON cleanup
-!                    yet (the legacy binaries rely on implicit
-!                    static storage).
+!   eq_init           -> marks the library as initialized (idempotent)
+!                        and returns EQ_OK. Does NOT touch the legacy
+!                        eq COMMON blocks so existing eq / pl / ak
+!                        binaries keep bit-identical behavior.
+!   eq_run            -> L-3: mode=1 loads equilibrium via
+!                        equnit::eq_load using the current MODELG +
+!                        KNAMEQ. Other modes still return
+!                        EQ_ERR_NOT_IMPL.
+!   eq_set_param      -> delegates to eq_param_registry::eq_param_set
+!                        (Phase L-3 real dispatch).
+!   eq_set_param_str  -> delegates to eq_param_registry::eq_param_set_str
+!                        for file-name parameters (KNAMEQ, KNAMWR, ...).
+!   eq_get_state      -> reads grid dimensions and plasma scalars out of
+!                        the legacy COMMON blocks via the F77 bridge
+!                        routines in eq_api_common.f, then zeros the
+!                        C struct and fills the scalars + 1D profiles
+!                        up to the compile-time maxima in eq_state.
+!   eq_finalize       -> clears the initialized flag. No COMMON cleanup
+!                        yet (the legacy binaries rely on implicit
+!                        static storage).
 !
 ! Name-collision resolution: equnit.f already defines MODULE equnit
 ! with PUBLIC eq_init. The C-visible symbol also has to be named
 ! eq_init (per the design spec), so the BIND(C, NAME="eq_init")
 ! wrapper lives in this module as FUNCTION eq_api_init. When the
-! wrapper needs to call equnit::eq_init it renames the import with
-!   USE equnit, ONLY: equnit_eq_init => eq_init
-! (done below), avoiding the name clash inside this module.
+! wrapper needs to call equnit::eq_init / eq_load it renames the
+! import with
+!   USE equnit, ONLY: equnit_eq_init => eq_init, equnit_eq_load => eq_load
+! avoiding the name clash inside this module.
 !
 ! See docs/superpowers/specs/2026-04-17-tr-library-design.md §4 for
 ! the overall C ABI shape; tr_api.f90 / ti_api.f90 are the L-3
@@ -41,16 +43,18 @@ MODULE eq_api
   USE eq_state, ONLY: eq_state_c, &
                       EQ_MAX_NRGM, EQ_MAX_NZGM, EQ_MAX_NPSM, &
                       EQ_MAX_NRM,  EQ_MAX_NTHM, EQ_MAX_NSUM
-  USE eq_param_registry, ONLY: eq_param_set
-  ! Rename equnit::eq_init away from the C-visible eq_init symbol.
-  ! Not actually called in L-2 (eq_api_init is a no-op scaffold), but
-  ! the USE line documents the resolution we will use in L-3 when
-  ! eq_api_init starts delegating to the equnit initializer.
-  USE equnit, ONLY: equnit_eq_init => eq_init
+  USE eq_param_registry, ONLY: eq_param_set, eq_param_set_str
+  ! Rename equnit::eq_init / eq_load away from the C-visible eq_init /
+  ! eq_run symbols.
+  USE equnit, ONLY: equnit_eq_init => eq_init, &
+                    equnit_eq_load => eq_load
+  ! Pull MODELG + KNAMEQ directly from plcomm so eq_api_run can forward
+  ! them to equnit_eq_load without going through a COMMON-block bridge.
+  USE plcomm, ONLY: MODELG, KNAMEQ
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: eq_api_init, eq_api_run, eq_api_get_state, &
-            eq_api_set_param, eq_api_finalize
+            eq_api_set_param, eq_api_set_param_str, eq_api_finalize
 
   ! Error codes. Must match eq_api.h.
   INTEGER(C_INT), PARAMETER :: EQ_OK              = 0
@@ -80,11 +84,21 @@ CONTAINS
   END FUNCTION eq_api_init
 
   !-------------------------------------------------------------------
-  ! eq_run : L-2 stub. Real dispatch lands in L-3.
+  ! eq_run : L-3 dispatch.
+  !
+  !   mode == 0 : run the full calc (eqcalc / eqcalq / ...).
+  !               Not yet implemented in L-3 because eqcalc has no
+  !               ierr-returning shape; a wrapper arrives in L-4.
+  !   mode == 1 : load equilibrium from the file pointed to by KNAMEQ,
+  !               then run eq_bpsd_init / eqcalq / eq_bpsd_put via
+  !               equnit::eq_load.
+  !   other     : EQ_ERR_NOT_IMPL (reserved for future modes).
   !-------------------------------------------------------------------
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
     INTEGER(C_INT), VALUE, INTENT(IN) :: mode
     INTEGER(C_INT) :: ierr
+    INTEGER :: load_ierr
+    CHARACTER(LEN=80) :: knameq_local
     ! Contract: NOT_INIT takes precedence over INVALID (mirrors tr_api_run).
     ! So callers that hit an uninitialised library always see the same
     ! NOT_INIT error regardless of what other arguments they passed.
@@ -96,11 +110,26 @@ CONTAINS
        ierr = EQ_ERR_INVALID
        RETURN
     END IF
-    ierr = EQ_ERR_NOT_IMPL
+
+    SELECT CASE (mode)
+    CASE (1)
+       ! EQDSK-based load via equnit::eq_load(MODELG, KNAMEQ, ierr).
+       ! MODELG and KNAMEQ come from plcomm_parm; callers are expected
+       ! to set them via eq_set_param / eq_set_param_str beforehand.
+       knameq_local = KNAMEQ
+       CALL equnit_eq_load(MODELG, knameq_local, load_ierr)
+       IF (load_ierr /= 0) THEN
+          ierr = EQ_ERR_CALC_FAILED
+          RETURN
+       END IF
+       ierr = EQ_OK
+    CASE DEFAULT
+       ierr = EQ_ERR_NOT_IMPL
+    END SELECT
   END FUNCTION eq_api_run
 
   !-------------------------------------------------------------------
-  ! eq_set_param : delegate to the (L-2 stub) parameter registry.
+  ! eq_set_param : delegate to the L-3 parameter registry.
   !-------------------------------------------------------------------
   FUNCTION eq_api_set_param(name, value) RESULT(ierr) &
            BIND(C, NAME="eq_set_param")
@@ -125,12 +154,48 @@ CONTAINS
     CALL eq_param_set(TRIM(fname), value, reg_ierr)
     IF (reg_ierr == 0) THEN
        ierr = EQ_OK
-    ELSE IF (reg_ierr == 4) THEN
-       ierr = EQ_ERR_NOT_IMPL
     ELSE
        ierr = EQ_ERR_INVALID
     END IF
   END FUNCTION eq_api_set_param
+
+  !-------------------------------------------------------------------
+  ! eq_set_param_str : string-valued parameter setter (KNAMEQ, ...).
+  !
+  ! Mirrors the pattern in tr_api::tr_api_set_param_str.
+  !-------------------------------------------------------------------
+  FUNCTION eq_api_set_param_str(name, value) RESULT(ierr) &
+           BIND(C, NAME="eq_set_param_str")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: value
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=64) :: fname
+    CHARACTER(LEN=80) :: fvalue
+    INTEGER :: i, reg_ierr
+
+    IF (.NOT. g_initialized) THEN
+       ierr = EQ_ERR_NOT_INIT
+       RETURN
+    END IF
+
+    fname = ' '
+    DO i = 1, LEN(fname)
+       IF (name(i) == C_NULL_CHAR) EXIT
+       fname(i:i) = name(i)
+    END DO
+    fvalue = ' '
+    DO i = 1, LEN(fvalue)
+       IF (value(i) == C_NULL_CHAR) EXIT
+       fvalue(i:i) = value(i)
+    END DO
+
+    reg_ierr = eq_param_set_str(TRIM(fname), TRIM(fvalue))
+    IF (reg_ierr == 0) THEN
+       ierr = EQ_OK
+    ELSE
+       ierr = EQ_ERR_INVALID
+    END IF
+  END FUNCTION eq_api_set_param_str
 
   !-------------------------------------------------------------------
   ! eq_get_state : fill the C-visible struct from the legacy COMMON
