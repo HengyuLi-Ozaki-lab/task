@@ -428,5 +428,55 @@ class CompareMetricsJsonIoTest(unittest.TestCase):
             self.assertIn("JSONDecodeError", res.stderr)
 
 
+def _fp_sample() -> dict:
+    return {
+        "NRMAX": 2, "NSAMAX": 2, "NPMAX": 10, "NTHMAX": 10, "NTG2": 1,
+        "scalars": {"TIMEFP": 1.0e-3},
+        "profile": [
+            {"NR": 1, "NSA": 1, "RNT": 0.7,  "RWT": 4.5, "RTT": 4.2, "RJT": 15.4, "RPCT": 0.3,   "RPWT": 0.12},
+            {"NR": 2, "NSA": 1, "RNT": 0.65, "RWT": 4.2, "RTT": 3.9, "RJT": 14.0, "RPCT": 0.28,  "RPWT": 0.11},
+            {"NR": 1, "NSA": 2, "RNT": 0.31, "RWT": 2.0, "RTT": 2.1, "RJT": 3.4,  "RPCT": 0.04,  "RPWT": 0.03},
+            {"NR": 2, "NSA": 2, "RNT": 0.30, "RWT": 1.8, "RTT": 1.9, "RJT": 3.0,  "RPCT": 0.035, "RPWT": 0.025},
+        ],
+    }
+
+
+class CompareMetricsFpTest(unittest.TestCase):
+    """Verify compare_metrics is module-agnostic enough for FP schema."""
+
+    def _paths(self, td):
+        return Path(td) / "base.json", Path(td) / "act.json"
+
+    def test_passes_on_identical_fp_schema(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _fp_sample())
+            write_json(act,  _fp_sample())
+            res = run_compare(act, base)
+            self.assertEqual(res.returncode, 0, res.stderr)
+
+    def test_fails_on_fp_profile_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _fp_sample())
+            drifted = _fp_sample()
+            drifted["profile"][0]["RWT"] = 4.5 * (1.0 + 1e-7)
+            write_json(act, drifted)
+            res = run_compare(act, base, tol="1e-10")
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("RWT", res.stdout)
+
+    def test_fails_when_fp_dimensions_differ(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _fp_sample())
+            short = _fp_sample()
+            short["NRMAX"] = 1
+            short["profile"] = short["profile"][:2]
+            write_json(act, short)
+            res = run_compare(act, base)
+            self.assertNotEqual(res.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
