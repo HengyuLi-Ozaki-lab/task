@@ -331,7 +331,7 @@ int main(void) {
     int rc = tot_init();
     assert(rc == 0 && "tot_init must succeed");
 
-    rc = tot_set_param("ZZ.UNKNOWN", 0.0);
+    rc = tot_set("ZZ.UNKNOWN", 0.0);
     assert(rc == 1 && "unknown prefix must return 1 via .so");
 
     rc = tot_finalize();

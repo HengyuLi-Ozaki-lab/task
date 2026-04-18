@@ -227,12 +227,16 @@ Future maintenance: if you change tot_demo2014_short.in, regenerate
 the baseline and update this dict.
 """
 PARAMS = {
-    "EQ.RR":   8.5,
-    "EQ.RA":   2.42,
-    "EQ.RKAP": 1.65,
-    "EQ.RDLT": 0.33,
-    "EQ.BB":   5.94,
-    "EQ.RIP": 12.3,
+    # NOTE: L-3 dispatch_eq is a stub (ierr=1) until EQ is F90-modernized,
+    # so EQ.* setters cannot be driven from totlib yet. Until then the
+    # equivalence test relies on EQ namelist defaults baked into the .so
+    # matching tot_demo2014_short.in. When EQ.* dispatch lands, restore:
+    #     "EQ.RR":   8.5,
+    #     "EQ.RA":   2.42,
+    #     "EQ.RKAP": 1.65,
+    #     "EQ.RDLT": 0.33,
+    #     "EQ.BB":   5.94,
+    #     "EQ.RIP": 12.3,
     # TR side typically inherits geometry from EQ; explicit overrides below.
     # Keep this list MINIMAL — the standalone tot binary uses defaults from
     # the namelist defaults. Verify by diffing dumps.
@@ -520,7 +524,9 @@ class TestPrefixCoverage:
     @pytest.mark.parametrize("name,value", [
         ("TR.RR", 6.2),
         ("TR.PN[1]", 0.7),
-        ("EQ.RR", 6.2),
+        # Note: EQ.* is intentionally excluded — L-3's dispatch_eq always
+        # returns ierr=1 (out of L-3 scope) until EQ is F90-modernized.
+        # See L-3 plan, Task 4 / dispatch_eq.
     ])
     def test_known_prefix_dispatches(self, name, value):
         with Totlib() as tot:
@@ -528,6 +534,9 @@ class TestPrefixCoverage:
 
     @pytest.mark.parametrize("name", [
         "TR.NOSUCHVAR",
+        # All EQ.* (known or unknown) raise InvalidParam in L-3 because
+        # dispatch_eq is a stub returning ierr=1.
+        "EQ.RR",
         "EQ.NOSUCHVAR",
         "ZZ.NONE",
         "RR",  # missing prefix
@@ -632,8 +641,10 @@ from totlib import Totlib
 
 @pytest.mark.parametrize("rr,bb", list(product([6.0, 6.2, 6.4], [5.0, 5.3, 5.6])))
 def test_sweep_grid_completes(rr, bb):
+    # Use TR.* (not EQ.*): L-3's dispatch_eq is a stub returning ierr=1.
+    # Once EQ is F90-modernized, swap these back to EQ.RR / EQ.BB.
     with Totlib() as tot:
-        tot.set_params({"EQ.RR": rr, "EQ.BB": bb})
+        tot.set_params({"TR.RR": rr, "TR.BB": bb})
         tot.run(ntmax=1)
         st = tot.get_state()
     assert st.tr_present
@@ -647,7 +658,8 @@ def test_sweep_recovers_after_finalize():
     """Multiple init/finalize cycles in the same process must work."""
     for rr in (6.0, 6.2):
         with Totlib() as tot:
-            tot.set_param("EQ.RR", rr)
+            # See note above: TR.* until EQ.* dispatch lands.
+            tot.set_param("TR.RR", rr)
             tot.run(ntmax=1)
             assert tot.get_state().tr_present
 ```

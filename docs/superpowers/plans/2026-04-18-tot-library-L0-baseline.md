@@ -752,11 +752,16 @@ def parse(dump_path: Path) -> dict:
     for raw in lines:
         line = raw.strip()
         if not line:
+            # Blank line terminates the current section (e.g. profile block).
+            in_profile = False
             continue
         if RE_PROFILE_HEADER.match(line):
             in_profile = True
             continue
         if line.startswith("#"):
+            # Any non-profile-header comment line also closes the profile
+            # block, so subsequent `KEY = VAL` sections are parsed correctly.
+            in_profile = False
             continue
         if not in_profile:
             if "=" not in line:
