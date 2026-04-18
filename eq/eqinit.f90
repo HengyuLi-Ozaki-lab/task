@@ -388,7 +388,7 @@
 !
       USE libkio
       INTEGER,          INTENT(IN)    :: MODE
-      CHARACTER(LEN=*), INTENT(INOUT) :: KIN
+      CHARACTER(LEN=*), INTENT(IN)    :: KIN
       INTEGER,          INTENT(OUT)   :: IERR
       EXTERNAL EQNLIN,EQPLST
 
