@@ -72,6 +72,36 @@ clean:
 veryclean: clean
 	-rm -f ob
 
+# ---------------------------------------------------------------------
+# PIC build (Phase L-4) - opt-in target for libfpapi.so.
+#
+# libfpapi.so excludes graphics/menu; obgout/obmenu pull in plgout/libgrf
+# and are dropped.
+# ---------------------------------------------------------------------
+OBJDIR_PIC=obj/pic
+MODDIR_PIC=mod_pic
+PIC_FLAGS=-fPIC -J$(MODDIR_PIC) -I$(MODDIR_PIC)
+MODINCLUDE_PIC=-I$(MODDIR_PIC) -I../pl/mod_pic -I../eq/mod_pic \
+               -I../lib/mod_pic -I../mtxp/mod_pic -I../../bpsd/$(MOD)
+
+SRCS_OB_NOGR = obcomm.f90 obinit.f90 obparm.f90 obview.f90 \
+               obprep.f90 obexec.f90 obcalc.f90
+
+OBJS_PIC = $(addprefix $(OBJDIR_PIC)/, $(SRCS_OB_NOGR:.f90=.o))
+
+${OBJDIR_PIC}/%.o:%.f
+	@mkdir -p $(OBJDIR_PIC) $(MODDIR_PIC)
+	$(FCFIXED) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+${OBJDIR_PIC}/%.o:%.f90
+	@mkdir -p $(OBJDIR_PIC) $(MODDIR_PIC)
+	$(FCFREE) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+
+libob_pic.a: $(OBJS_PIC)
+	$(AR) rcs libob_pic.a $(OBJS_PIC)
+
+clean_pic:
+	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libob_pic.a
+
 OBCOMM=obcomm.f90 ../pl/plcomm.f90
 obcomm.o: obcomm.f90
 obinit.o: obinit.f90 $(OBCOMM)

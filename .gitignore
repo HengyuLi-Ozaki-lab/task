@@ -104,3 +104,10 @@ wr/tests/c_abi/test_run_so
 dp/obj/pic/
 dp/mod_pic/
 dp/libdp_pic.a
+fp/libfpapi.so
+fp/obj/pic/
+fp/mod_pic/
+fp/tests/c_abi/test_run_so
+ob/libob_pic.a
+ob/obj/pic/
+ob/mod_pic/
