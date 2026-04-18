@@ -44,7 +44,7 @@ MODULE wr_api
        pos_pwrmax_rs, pwrmax_rs, pos_pwrmax_rl, pwrmax_rl, &
        pos_pwrmax_rs_nray, pwrmax_rs_nray, &
        pos_pwrmax_rl_nray, pwrmax_rl_nray, &
-       wr_allocate, wr_deallocate
+       wr_allocate, wr_deallocate, wr_reset_alloc_state
   USE wr_param_registry, ONLY: wr_param_set
   USE plinit,            ONLY: pl_init
   USE dpinit,            ONLY: dp_init
@@ -89,6 +89,14 @@ CONTAINS
        ierr = WR_OK
        RETURN
     END IF
+
+    ! Belt-and-suspenders: if a previous lifecycle left WRCOMM arrays
+    ! allocated (e.g. caller crashed before wr_finalize), free them and
+    ! reset the wr_allocate SAVE state so this cycle starts clean.
+    ! Safe to call even on a fresh process (wr_deallocate is now
+    ! ALLOCATED()-guarded; wr_reset_alloc_state is a pure flag reset).
+    CALL wr_deallocate
+    CALL wr_reset_alloc_state
 
     ! Match the trmain.f90 / wrmain.f90 init order:
     ! pl_init -> EQINIT -> dp_init -> wr_init (Fortran).
@@ -303,6 +311,12 @@ CONTAINS
        CALL wr_deallocate
        g_allocated = .FALSE.
     END IF
+
+    ! Reset the wr_allocate SAVE state machine so a subsequent
+    ! wr_init + wr_run cycle starts clean. Without this, the next
+    ! wr_allocate would jump into its "already initialized" branch and
+    ! double-free the just-deallocated arrays (Bugbot HIGH, PR #36).
+    CALL wr_reset_alloc_state
 
     g_initialized = .FALSE.
     ierr = WR_OK

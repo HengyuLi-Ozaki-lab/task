@@ -132,6 +132,10 @@ WR_API_RUN_C=$(WR_API_SMOKE_DIR)/test_run.c
 WR_API_RUN_O=$(WR_API_SMOKE_DIR)/test_run.o
 WR_API_RUN_BIN=$(WR_API_SMOKE_DIR)/test_run
 
+WR_API_REINIT_C=$(WR_API_SMOKE_DIR)/test_reinit.c
+WR_API_REINIT_O=$(WR_API_SMOKE_DIR)/test_reinit.o
+WR_API_REINIT_BIN=$(WR_API_SMOKE_DIR)/test_reinit
+
 # At L-3 the API drivers pull in WRCOMM, wr_setup, wr_exec, ... so we
 # need the full wr + dp + eq + pl + bpsd + mtx link just like wr.
 WR_API_DEPS=$(LIBS) $(LIBX_MTX)
@@ -144,6 +148,8 @@ $(WR_API_PARAM_O): $(WR_API_PARAM_C) wr_api.h
 	$(CC) $(CFLAGS_API) -I. -c -o $(WR_API_PARAM_O) $(WR_API_PARAM_C)
 $(WR_API_RUN_O):   $(WR_API_RUN_C)   wr_api.h
 	$(CC) $(CFLAGS_API) -I. -c -o $(WR_API_RUN_O)   $(WR_API_RUN_C)
+$(WR_API_REINIT_O): $(WR_API_REINIT_C) wr_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(WR_API_REINIT_O) $(WR_API_REINIT_C)
 
 # Step 2: link against API objects + wr/dp/eq/pl/bpsd/mtx. gfortran
 # drives the link so libgfortran is pulled in automatically.
@@ -156,16 +162,21 @@ $(WR_API_PARAM_BIN): $(WR_API_PARAM_O) $(OBJ_API) $(LIBS) $(LIB_MTX)
 $(WR_API_RUN_BIN):   $(WR_API_RUN_O)   $(OBJ_API) $(LIBS) $(LIB_MTX)
 	$(FLINKER) -o $(WR_API_RUN_BIN)   $(WR_API_RUN_O)   $(OBJ_API) \
 	    $(WR_API_DEPS) $(FFLAGS) $(FLIBS)
+$(WR_API_REINIT_BIN): $(WR_API_REINIT_O) $(OBJ_API) $(LIBS) $(LIB_MTX)
+	$(FLINKER) -o $(WR_API_REINIT_BIN) $(WR_API_REINIT_O) $(OBJ_API) \
+	    $(WR_API_DEPS) $(FFLAGS) $(FLIBS)
 
 .PHONY: wr_api_check
-wr_api_check: $(OBJ_API) $(WR_API_SMOKE_BIN) $(WR_API_PARAM_BIN) $(WR_API_RUN_BIN)
-	@echo "Phase L-3 wr_api_check: running smoke / param / run ..."
+wr_api_check: $(OBJ_API) $(WR_API_SMOKE_BIN) $(WR_API_PARAM_BIN) \
+              $(WR_API_RUN_BIN) $(WR_API_REINIT_BIN)
+	@echo "Phase L-3 wr_api_check: running smoke / param / run / reinit ..."
 	@$(WR_API_SMOKE_BIN)
 	@$(WR_API_PARAM_BIN)
 	@$(WR_API_RUN_BIN)
+	@$(WR_API_REINIT_BIN)
 	@echo "Phase L-3 wr_api_check OK:"
 	@echo "  - Fortran API objects : $(OBJ_API)"
-	@echo "  - C drivers executed  : test_smoke, test_param, test_run"
+	@echo "  - C drivers executed  : test_smoke, test_param, test_run, test_reinit"
 
 clean:
 	-rm -f core a.out *.o *.a ./*~
@@ -175,6 +186,7 @@ clean:
 	-rm -f $(WR_API_SMOKE_O) $(WR_API_SMOKE_BIN)
 	-rm -f $(WR_API_PARAM_O) $(WR_API_PARAM_BIN)
 	-rm -f $(WR_API_RUN_O)   $(WR_API_RUN_BIN)
+	-rm -f $(WR_API_REINIT_O) $(WR_API_REINIT_BIN)
 
 veryclean: clean
 	-rm -f wr
