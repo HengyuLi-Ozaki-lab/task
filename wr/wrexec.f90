@@ -13,6 +13,7 @@ CONTAINS
     USE dpprep
     USE wrexecr
     USE wrexecb
+    USE wrregress, ONLY: wr_regress_dump_if_enabled
     IMPLICIT NONE
     INTEGER,INTENT(OUT):: nstat,ierr
 
@@ -33,5 +34,6 @@ CONTAINS
        CALL wr_exec_beams(ierr)
        nstat=2
     END IF
+    CALL wr_regress_dump_if_enabled(nstat)   ! Phase L-0 regression dump (env-guarded)
   END SUBROUTINE wr_exec
 END MODULE wrexec

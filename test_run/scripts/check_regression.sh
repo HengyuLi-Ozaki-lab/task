@@ -30,10 +30,11 @@ case "$TEST_NAME" in
   tr_*) DUMP_BASENAME="tr_regress.dat"; EXTRACTOR="extract_tr_metrics.py" ;;
   fp_*) DUMP_BASENAME="fp_regress.dat"; EXTRACTOR="extract_fp_metrics.py" ;;
   ti_*) DUMP_BASENAME="ti_regress.dat"; EXTRACTOR="extract_ti_metrics.py" ;;
+  wr_*) DUMP_BASENAME="wr_regress.dat"; EXTRACTOR="extract_wr_metrics.py" ;;
   wrx_*) DUMP_BASENAME="wrx_regress.dat"; EXTRACTOR="extract_wrx_metrics.py" ;;
   *)
     echo "check_regression: unsupported test name prefix: $TEST_NAME" >&2
-    echo "  expected one of: tr_*, fp_*, ti_*, wrx_*" >&2
+    echo "  expected one of: tr_*, fp_*, ti_*, wr_*, wrx_*" >&2
     exit 4
     ;;
 esac
