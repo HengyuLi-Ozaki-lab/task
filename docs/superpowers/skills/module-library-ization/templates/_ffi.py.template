@@ -1,0 +1,156 @@
+"""Low-level ctypes FFI for lib<MODULE>api.so.
+
+Mirrors ``<module>/<MODULE>_api.h`` (C ABI). Higher-level helpers live
+in ``<MODULE>lib.py``; this module intentionally exposes only raw
+ctypes objects so tests can exercise the boundary directly.
+
+Library-path resolution order (first match wins):
+
+1. explicit ``path`` argument to :func:`load_library`
+2. ``<MOD>LIB_PATH`` environment variable
+3. ``<repo>/<MODULE>/lib<MODULE>api.so`` (standard L-4 build location)
+4. ``<repo>/lib/lib<MODULE>api.so`` (install-style location, future-proofing)
+
+The package layout is ``python/<MODULE>lib/_ffi.py`` so the repository
+root is two parents above this file (``__file__.parents[2]``).
+"""
+from __future__ import annotations
+
+import ctypes
+import os
+from pathlib import Path
+from typing import Optional
+
+# Optional numpy (we never require it; state.py uses lists).
+try:
+    import numpy as _np  # noqa: F401
+    HAS_NUMPY = True
+except ImportError:  # pragma: no cover
+    HAS_NUMPY = False
+
+
+# ---------------------------------------------------------------------
+# Layout constants. Must match <MODULE>_api.h exactly.
+# ---------------------------------------------------------------------
+<MOD>_MAX_NRMAX = 500
+<MOD>_MAX_NSMAX = 8
+
+
+# ---------------------------------------------------------------------
+# Error codes (kept in sync with <MODULE>_api.h::enum <MODULE>_error).
+# ---------------------------------------------------------------------
+<MOD>_OK = 0
+<MOD>_ERR_INVALID = 1
+<MOD>_ERR_NOT_INIT = 2
+<MOD>_ERR_CALC_FAILED = 3
+<MOD>_ERR_NOT_IMPL = 4
+
+
+# ---------------------------------------------------------------------
+# ctypes mirror of <MODULE>_state_t from <MODULE>/<MODULE>_api.h.
+#
+# Memory-layout note: in C, RN[NRMAX][NSMAX] is row-major; in Fortran
+# the matching declaration is RN(NSMAX, NRMAX) column-major. Both lay
+# out the same bytes; only the index order differs.
+# ---------------------------------------------------------------------
+class <Module>StateC(ctypes.Structure):
+    _fields_ = [
+        ("nt", ctypes.c_int),
+        ("nrmax", ctypes.c_int),
+        ("nsmax", ctypes.c_int),
+        ("T", ctypes.c_double),
+        # add scalar fields mirroring the Fortran TYPE here
+        ("RN", (ctypes.c_double * <MOD>_MAX_NSMAX) * <MOD>_MAX_NRMAX),
+        ("RT", (ctypes.c_double * <MOD>_MAX_NSMAX) * <MOD>_MAX_NRMAX),
+        ("AJ", ctypes.c_double * <MOD>_MAX_NRMAX),
+        ("QP", ctypes.c_double * <MOD>_MAX_NRMAX),
+    ]
+
+
+# ---------------------------------------------------------------------
+# Library loader.
+# ---------------------------------------------------------------------
+def _repo_root() -> Path:
+    """Return the repository root (two parents up from this file)."""
+    return Path(__file__).resolve().parents[2]
+
+
+def _candidate_paths() -> list[Path]:
+    root = _repo_root()
+    return [
+        root / "<MODULE>" / "lib<MODULE>api.so",
+        root / "lib" / "lib<MODULE>api.so",
+    ]
+
+
+def _default_lib_path() -> Path:
+    env = os.environ.get("<MOD>LIB_PATH")
+    if env:
+        return Path(env)
+    for cand in _candidate_paths():
+        if cand.exists():
+            return cand
+    return _candidate_paths()[0]
+
+
+def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
+    """Attach argtypes / restype to the 6 exported C ABI symbols."""
+    lib.<MODULE>_init.restype = ctypes.c_int
+    lib.<MODULE>_init.argtypes = []
+
+    lib.<MODULE>_run.restype = ctypes.c_int
+    lib.<MODULE>_run.argtypes = [ctypes.c_int]
+
+    lib.<MODULE>_set_param.restype = ctypes.c_int
+    lib.<MODULE>_set_param.argtypes = [ctypes.c_char_p, ctypes.c_double]
+
+    try:
+        lib.<MODULE>_set_param_str.restype = ctypes.c_int
+        lib.<MODULE>_set_param_str.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    except AttributeError:
+        # Older .so without the string setter. Wrapper.set_param_str will
+        # raise on first use instead of failing import.
+        pass
+
+    lib.<MODULE>_get_state.restype = ctypes.c_int
+    lib.<MODULE>_get_state.argtypes = [ctypes.POINTER(<Module>StateC)]
+
+    lib.<MODULE>_finalize.restype = ctypes.c_int
+    lib.<MODULE>_finalize.argtypes = []
+    return lib
+
+
+# RTLD_LAZY: resolve symbols on first use rather than at dlopen. The L-4
+# build of lib<MODULE>api.so retains a handful of symbols reachable only
+# from graphics-only call paths the C ABI never invokes (e.g.
+# viewgtlist_ inside a "?" branch of <MODULE>fout). Lazy binding is safe.
+_RTLD_LAZY = 1
+
+
+def load_library(path: Optional[str] = None) -> ctypes.CDLL:
+    """Load lib<MODULE>api.so and return the CDLL with prototypes applied."""
+    p = Path(path) if path else _default_lib_path()
+    if not p.exists():
+        tried = [str(x) for x in _candidate_paths()]
+        raise FileNotFoundError(
+            f"lib<MODULE>api.so not found at {p}. "
+            f"Tried <MOD>LIB_PATH and {tried}. "
+            "Build it via `make -C <MODULE> lib<MODULE>api.so` or set <MOD>LIB_PATH."
+        )
+    mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
+    lib = ctypes.CDLL(str(p), mode=mode)
+    return _apply_prototypes(lib)
+
+
+__all__ = [
+    "<MOD>_MAX_NRMAX",
+    "<MOD>_MAX_NSMAX",
+    "<MOD>_OK",
+    "<MOD>_ERR_INVALID",
+    "<MOD>_ERR_NOT_INIT",
+    "<MOD>_ERR_CALC_FAILED",
+    "<MOD>_ERR_NOT_IMPL",
+    "<Module>StateC",
+    "HAS_NUMPY",
+    "load_library",
+]

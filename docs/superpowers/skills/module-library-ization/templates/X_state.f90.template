@@ -1,0 +1,42 @@
+! <MODULE>_state.f90
+!
+! Phase L-2: C-interoperable state struct for the <MOD> library API.
+!
+! Mirrors <MODULE>_api.h::<MODULE>_state_t exactly. Fixed-size arrays
+! per docs/superpowers/specs/<DATE>-<MODULE>-library-design.md §4.2.
+!
+! Memory layout note:
+!   In C, RN[NRMAX][NSMAX] is row-major;
+!   in Fortran the matching declaration is RN(NSMAX, NRMAX) (column-major).
+!   The two layouts agree byte-for-byte, but only RN(0:nrmax-1, 0:nsmax-1)
+!   carry valid runtime data (the rest is padding up to <MOD>_MAX_*).
+
+MODULE <MODULE>_state
+  USE, INTRINSIC :: ISO_C_BINDING
+  IMPLICIT NONE
+  PRIVATE
+  PUBLIC :: <MODULE>_state_c, <MOD>_MAX_NRMAX, <MOD>_MAX_NSMAX
+
+  ! Fixed maxima for the C-side struct. Must match <MODULE>_api.h.
+  INTEGER(C_INT), PARAMETER :: <MOD>_MAX_NRMAX = 500
+  INTEGER(C_INT), PARAMETER :: <MOD>_MAX_NSMAX = 8
+
+  TYPE, BIND(C) :: <MODULE>_state_c
+     ! --- scalar fields -------------------------------------------
+     INTEGER(C_INT)  :: nt
+     INTEGER(C_INT)  :: nrmax
+     INTEGER(C_INT)  :: nsmax
+     REAL(C_DOUBLE)  :: T
+     ! ... add per-module scalars here, mirroring the Fortran COMMON
+     !     state your CLI binary's regression dump emits.
+
+     ! --- profile arrays -----------------------------------------
+     ! In Fortran column-major: RN(NSMAX, NRMAX); in C: RN[NRMAX][NSMAX].
+     ! Layout matches byte-for-byte.
+     REAL(C_DOUBLE)  :: RN(<MOD>_MAX_NSMAX, <MOD>_MAX_NRMAX)
+     REAL(C_DOUBLE)  :: RT(<MOD>_MAX_NSMAX, <MOD>_MAX_NRMAX)
+     REAL(C_DOUBLE)  :: AJ(<MOD>_MAX_NRMAX)
+     REAL(C_DOUBLE)  :: QP(<MOD>_MAX_NRMAX)
+  END TYPE <MODULE>_state_c
+
+END MODULE <MODULE>_state

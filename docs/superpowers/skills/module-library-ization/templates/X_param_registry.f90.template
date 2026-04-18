@@ -1,0 +1,140 @@
+! <MODULE>_param_registry.f90
+!
+! Phase L-3: SELECT CASE dispatch table that maps a parameter name
+! (optionally with a 1-origin subscript in square brackets, e.g.
+! "PN[1]") to an assignment into the matching <MOD>COMM variable.
+!
+! Two entry points:
+!   - <MODULE>_param_set      (numeric)  : name + REAL(rkind) value
+!   - <MODULE>_param_set_str  (string)   : name + CHARACTER(*) value
+!
+! Bare-name array writes (e.g. set_param("PA", 1.0) without "[i]") are
+! REJECTED via the parse_array_subscript default idx = -1 sentinel.
+
+MODULE <MODULE>_param_registry
+  USE <MODULE>comm, ONLY: rkind, &
+       ! geometry / device
+       RR, RA, RKAP, RDLT, BB, &
+       ! plasma
+       NSMAX, PA, PZ, PN, PNS, PT, PTS, &
+       ! time evolution
+       DT, NTMAX, NTSTEP, EPSL<MOD>, LMAX<MOD>, &
+       ! transport / model switches (per-module list)
+       MDLKAI, MDLETA, &
+       ! strings (separate setter)
+       KNAMEQ
+  IMPLICIT NONE
+  PRIVATE
+  PUBLIC :: <MODULE>_param_set
+  PUBLIC :: <MODULE>_param_set_str
+  PUBLIC :: parse_array_subscript_pub        ! exported only for unit tests
+
+CONTAINS
+
+  !-------------------------------------------------------------------
+  FUNCTION <MODULE>_param_set(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    REAL(rkind),      INTENT(IN) :: value
+    INTEGER :: ierr
+    INTEGER :: idx
+    CHARACTER(LEN=32) :: b
+
+    ierr = 0
+    CALL parse_array_subscript(name, b, idx)
+
+    SELECT CASE (TRIM(b))
+    ! --- geometry / device scalars --------------------------------
+    CASE ("RR");    RR    = value
+    CASE ("RA");    RA    = value
+    CASE ("RKAP");  RKAP  = value
+    CASE ("RDLT");  RDLT  = value
+    CASE ("BB");    BB    = value
+
+    ! --- plasma scalars -------------------------------------------
+    CASE ("NSMAX"); NSMAX = INT(value)
+
+    ! --- plasma arrays (1-origin; bare name => idx=-1 => REJECT) --
+    CASE ("PA")
+       IF (idx < 1 .OR. idx > SIZE(PA))  THEN; ierr = 1; ELSE; PA(idx)  = value; END IF
+    CASE ("PZ")
+       IF (idx < 1 .OR. idx > SIZE(PZ))  THEN; ierr = 1; ELSE; PZ(idx)  = value; END IF
+    CASE ("PN")
+       IF (idx < 1 .OR. idx > SIZE(PN))  THEN; ierr = 1; ELSE; PN(idx)  = value; END IF
+    CASE ("PNS")
+       IF (idx < 1 .OR. idx > SIZE(PNS)) THEN; ierr = 1; ELSE; PNS(idx) = value; END IF
+    CASE ("PT")
+       IF (idx < 1 .OR. idx > SIZE(PT))  THEN; ierr = 1; ELSE; PT(idx)  = value; END IF
+    CASE ("PTS")
+       IF (idx < 1 .OR. idx > SIZE(PTS)) THEN; ierr = 1; ELSE; PTS(idx) = value; END IF
+
+    ! --- time evolution ------------------------------------------
+    CASE ("DT");      DT      = value
+    CASE ("NTMAX");   NTMAX   = INT(value)
+    CASE ("NTSTEP");  NTSTEP  = INT(value)
+    CASE ("EPSL<MOD>"); EPSL<MOD> = value
+    CASE ("LMAX<MOD>"); LMAX<MOD> = INT(value)
+
+    ! --- model switches ------------------------------------------
+    CASE ("MDLKAI"); MDLKAI = INT(value)
+    CASE ("MDLETA"); MDLETA = INT(value)
+
+    CASE DEFAULT
+       ierr = 1   ! unknown name
+    END SELECT
+  END FUNCTION <MODULE>_param_set
+
+  !-------------------------------------------------------------------
+  FUNCTION <MODULE>_param_set_str(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    CHARACTER(LEN=*), INTENT(IN) :: value
+    INTEGER :: ierr
+
+    ierr = 0
+    SELECT CASE (TRIM(name))
+    CASE ("KNAMEQ"); KNAMEQ = value
+    ! ... add per-module string parameters here ...
+    CASE DEFAULT
+       ierr = 1
+    END SELECT
+  END FUNCTION <MODULE>_param_set_str
+
+  !-------------------------------------------------------------------
+  ! Parse "NAME" or "NAME[idx]". Default idx = -1 (sentinel) so callers
+  ! can detect bare-name array writes and reject them.
+  !-------------------------------------------------------------------
+  SUBROUTINE parse_array_subscript(name, base, idx)
+    CHARACTER(LEN=*), INTENT(IN)  :: name
+    CHARACTER(LEN=*), INTENT(OUT) :: base
+    INTEGER,          INTENT(OUT) :: idx
+    INTEGER :: lb, rb, ios
+
+    idx = -1     ! sentinel — REJECT bare-name array writes
+    base = ' '
+
+    lb = INDEX(name, '[')
+    rb = INDEX(name, ']')
+
+    IF (lb == 0 .AND. rb == 0) THEN
+       base = name
+       RETURN
+    END IF
+
+    IF (lb == 0 .OR. rb == 0 .OR. rb <= lb + 1) THEN
+       base = name        ! malformed -> propagate, caller will reject
+       RETURN
+    END IF
+
+    base = name(1:lb-1)
+    READ(name(lb+1:rb-1), *, IOSTAT=ios) idx
+    IF (ios /= 0) idx = -1
+  END SUBROUTINE parse_array_subscript
+
+  ! Public wrapper for unit tests.
+  SUBROUTINE parse_array_subscript_pub(name, base, idx)
+    CHARACTER(LEN=*), INTENT(IN)  :: name
+    CHARACTER(LEN=*), INTENT(OUT) :: base
+    INTEGER,          INTENT(OUT) :: idx
+    CALL parse_array_subscript(name, base, idx)
+  END SUBROUTINE parse_array_subscript_pub
+
+END MODULE <MODULE>_param_registry
