@@ -136,3 +136,16 @@ open-adas/adf11/adf11-lib/lib-adf11_pic.a
 # Python
 __pycache__/
 *.pyc
+
+# LaTeX aux files for docs/manual/
+docs/manual/*.aux
+docs/manual/*.log
+docs/manual/*.toc
+docs/manual/*.out
+docs/manual/*.fls
+docs/manual/*.fdb_latexmk
+docs/manual/*.synctex.gz
+docs/manual/*.lof
+docs/manual/*.lot
+docs/manual/*.bbl
+docs/manual/*.blg
