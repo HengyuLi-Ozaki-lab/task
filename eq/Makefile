@@ -125,7 +125,7 @@ veryclean: clean
 	rm -f eq pl ak
 
 # ---------------------------------------------------------------------
-# PIC build (Phase L-4) - opt-in target for libtrapi.so.
+# PIC build (Phase L-4) - opt-in target for libtrapi.so / libeqapi.so.
 #
 # `libeq_pic.a` mirrors libeq.a but uses -fPIC and a separate
 # obj/pic + mod_pic tree so the existing libeq.a/eq build is untouched.
@@ -162,7 +162,8 @@ libeq_pic.a: $(OBJS_PIC)
 	$(AR) rcs libeq_pic.a $(OBJS_PIC)
 
 clean_pic:
-	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libeq_pic.a
+	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libeq_pic.a libeqapi.so
+	-rm -f $(EQ_API_SO_O) $(EQ_API_SO_BIN)
 
 # EQCOMM = legacy raw .inc files (still INCLUDEd directly by eqcalx.f and
 # a few cross-module consumers). For the shim-routed paths, see EQCOM_MODS
@@ -286,3 +287,185 @@ eq_api_check: libs libeq.a $(EQ_API_SMOKE_BIN)
 	@echo "Phase L-2 eq_api_check: running $(EQ_API_SMOKE_BIN) ..."
 	@LD_LIBRARY_PATH=.:$${LD_LIBRARY_PATH} $(EQ_API_SMOKE_BIN)
 	@echo "Phase L-2 eq_api_check OK"
+
+# =====================================================================
+# Phase L-4: libeqapi.so shared library build
+#
+# Builds a position-independent shared object that exposes the 5 C ABI
+# entry points (eq_init, eq_run, eq_set_param, eq_get_state,
+# eq_finalize) by linking SRCS_CORE + SRCS_API (plus eq_graphics_stubs)
+# against PIC rebuilds of bpsd / pl / lib / mtxp.
+#
+# The PIC build reuses obj/pic/ + mod_pic/ defined above for libeq_pic.a.
+# Dependent libraries are PIC-rebuilt via opt-in targets added in
+# pl/lib/mtxp Makefiles (libpl_pic.a, libtask_pic.a, libmds_pic.a,
+# libgrf_pic.a, libmtxnompi_pic.o, libmtxbnd_pic.o) by TR/TI/WR Phase L-4.
+#
+# The bpsd sources live in the parent ../../bpsd/ repo which is outside
+# our worktree; we PIC-rebuild bpsd objects in-tree (obj/pic/bpsd/) so
+# we don't need to modify bpsd/Makefile.  This mirrors tr/Makefile.
+# =====================================================================
+
+# --- bpsd in-tree PIC rebuild (mirrors tr/Makefile L-4) ---
+BPSD_SRC=../../bpsd
+OBJBPSD_PIC=$(OBJDIR_PIC)/bpsd/bpsd_kinds.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_constants.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_flags.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libchar.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libfio.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libspl.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_types.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_types_internal.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_subs.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_shot.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_device.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_species.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_equ1D.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_metric1D.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_trsource.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_base.o
+
+$(OBJDIR_PIC)/bpsd/%.o: $(BPSD_SRC)/%.f90
+	@mkdir -p $(@D) $(MODDIR_PIC)
+	$(FCFREE) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+
+# bpsd dependency order (copied verbatim from tr/Makefile L-4)
+$(OBJDIR_PIC)/bpsd/bpsd_constants.o:       $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_flags.o:            $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libchar.o:          $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libfio.o:           $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libspl.o:           $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_types.o:            $(OBJDIR_PIC)/bpsd/bpsd_kinds.o $(OBJDIR_PIC)/bpsd/bpsd_constants.o
+$(OBJDIR_PIC)/bpsd/bpsd_types_internal.o:   $(OBJDIR_PIC)/bpsd/bpsd_types.o
+$(OBJDIR_PIC)/bpsd/bpsd_subs.o:             $(OBJDIR_PIC)/bpsd/bpsd_types_internal.o $(OBJDIR_PIC)/bpsd/bpsd_libchar.o $(OBJDIR_PIC)/bpsd/bpsd_libfio.o $(OBJDIR_PIC)/bpsd/bpsd_libspl.o $(OBJDIR_PIC)/bpsd/bpsd_flags.o
+$(OBJDIR_PIC)/bpsd/bpsd_shot.o:             $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_device.o:           $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_species.o:          $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_equ1D.o:            $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_metric1D.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o:          $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_trsource.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_base.o:             $(OBJDIR_PIC)/bpsd/bpsd_shot.o $(OBJDIR_PIC)/bpsd/bpsd_device.o $(OBJDIR_PIC)/bpsd/bpsd_species.o $(OBJDIR_PIC)/bpsd/bpsd_equ1D.o $(OBJDIR_PIC)/bpsd/bpsd_metric1D.o $(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o $(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o $(OBJDIR_PIC)/bpsd/bpsd_trsource.o
+
+.PHONY: bpsd_pic
+bpsd_pic: $(OBJBPSD_PIC)
+
+# --- Object sets for libeqapi.so ---
+# SRCS_API is the C ABI trio; OBJS_PIC already covers SRCS_CORE.
+OBJ_API_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_API:.f90=.o)) $(OBJDIR_PIC)/eq_api_common.o
+
+# Graphics stubs that satisfy GUCLIP / PAGES / ... without dragging in
+# non-PIC libgsp/libg3d. PIC-only; NOT added to SRCS, so the eq / pl /
+# ak binaries never see these symbols and still pick up the real GSAF.
+SRCS_GR_STUBS=eq_graphics_stubs.f90
+OBJ_GR_STUBS_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_GR_STUBS:.f90=.o))
+
+OBJ_LIBEQAPI= $(OBJS_PIC) $(OBJ_API_PIC) $(OBJ_GR_STUBS_PIC)
+
+# Dependent PIC archives / objects. libgrf_pic.a is NOT linked in:
+# equread.f90::eqdsk has a single `call grd2d` that is unreachable from
+# the C ABI happy path; linking libgrf_pic.a would drag in grdconvert.o
+# which in turn calls r2w2b_ / text_ / move_ and chains of non-PIC
+# GSAF symbols. Instead we rely on --unresolved-symbols=ignore-all to
+# leave `grd2d_` undefined in the .so and RTLD_LAZY at dlopen time to
+# defer resolution until the call actually happens (which it never
+# does on the eq_init -> eq_run -> eq_get_state -> eq_finalize path).
+# libgrf's .mod file (compile-time) is still reached via MODINCLUDE_PIC
+# -> ../lib/mod_pic, so equread.f90 compiles fine.
+LIBS_PIC=../pl/libpl_pic.a ../lib/libtask_pic.a ../lib/libmds_pic.a
+LIBMTX_PIC=../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o
+
+# Build dependent PIC libs on demand. libgrf_pic.a is still listed as
+# a prereq because equread.f90 USEs libgrf at compile time (we need
+# its .mod file in ../lib/mod_pic) even though we do not link the
+# archive into libeqapi.so (see LIBS_PIC note above).
+../pl/libpl_pic.a:
+	(cd ../pl; $(MAKE) libpl_pic.a)
+../lib/libtask_pic.a:
+	(cd ../lib; $(MAKE) libtask_pic.a)
+../lib/libmds_pic.a:
+	(cd ../lib; $(MAKE) libmds_pic.a)
+../lib/libgrf_pic.a:
+	(cd ../lib; $(MAKE) libgrf_pic.a)
+../mtxp/libmtxnompi_pic.o:
+	(cd ../mtxp; $(MAKE) libmtxnompi_pic.o)
+../mtxp/libmtxbnd_pic.o:
+	(cd ../mtxp; $(MAKE) libmtxbnd_pic.o)
+
+# Force serialization: the intermediate archives list each other as
+# prereqs so they build top-down even under `make -jN`.
+../lib/libgrf_pic.a: ../lib/libtask_pic.a
+../mtxp/libmtxnompi_pic.o: ../lib/libtask_pic.a
+../mtxp/libmtxbnd_pic.o: ../mtxp/libmtxnompi_pic.o
+
+# eq's own PIC sources (SRCS_CORE + SRCS_API + stubs) USE plcomm/
+# plprof modules via eq_param_registry and equread. Ensure all
+# dependent libraries and bpsd in-tree objects build first. libgrf_pic.a
+# is here so its .mod is present for equread.f90's `use libgrf`; it is
+# NOT linked into libeqapi.so (see LIBS_PIC above).
+.PHONY: libs_pic_prereq
+libs_pic_prereq: ../lib/libtask_pic.a ../lib/libgrf_pic.a ../lib/libmds_pic.a \
+                 ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o \
+                 $(OBJBPSD_PIC) ../pl/libpl_pic.a
+
+$(OBJBPSD_PIC): | ../lib/libtask_pic.a
+$(OBJS_PIC) $(OBJ_API_PIC) $(OBJ_GR_STUBS_PIC): | libs_pic_prereq
+
+# --- The shared library itself ---
+# gfortran drives the link so libgfortran is pulled in automatically.
+# --start-group / --end-group resolves the cyclic eq <-> pl references.
+# We deliberately drop $(FLIBS) from the link: FLIBS pulls in non-PIC
+# graphics archives (libg3d/libgsp/libgdp) via GFLIBS. libeqapi.so
+# excludes SRCS_GRAPHICS/SRCS_MENU so none of the gsaf calls are
+# reachable; leaving GFLIBS in triggers R_X86_64_PC32 relocation errors
+# when ld tries to copy non-PIC .text from libg3d-gfc64.a into the .so.
+# --unresolved-symbols=ignore-all lets any stray references into
+# libpl_pic.a/libeq_pic.a (e.g. plgout-side symbols and the GSAF
+# text_/move_/gdefin_ symbols that libgrf_pic's grfutils.o references
+# but our .so does not reach) stay deferred to dlopen time; the dlopen
+# driver uses RTLD_LAZY so those are only resolved if actually called,
+# which never happens on the eq_init -> eq_run -> eq_get_state ->
+# eq_finalize happy path.
+libeqapi.so: $(OBJ_LIBEQAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC)
+	$(FCFREE) -shared -fPIC -Wl,-soname,libeqapi.so \
+	    -Wl,--unresolved-symbols=ignore-all \
+	    $(OBJ_LIBEQAPI) $(OBJBPSD_PIC) $(LIBMTX_PIC) \
+	    -Wl,--start-group $(LIBS_PIC) -Wl,--end-group \
+	    -o libeqapi.so
+
+.PHONY: libeqapi_inspect
+libeqapi_inspect: libeqapi.so
+	@echo "=== file ==="
+	@file libeqapi.so
+	@echo "=== ldd ==="
+	@ldd libeqapi.so
+	@echo "=== exported eq_* symbols ==="
+	@nm -D libeqapi.so | grep ' T eq_' || true
+	@echo "=== undefined symbols (count) ==="
+	@nm -D libeqapi.so | grep ' U ' | wc -l
+	@echo "=== non-libc/gfortran undefined ==="
+	@nm -D libeqapi.so | grep ' U ' | grep -vE '@(GLIBC|GCC|GFORTRAN)' | head -40
+
+# ---------------------------------------------------------------------
+# Phase L-4: eq_api_check_so
+#
+# Dynamically loads libeqapi.so via dlopen() and runs the full cycle.
+# ---------------------------------------------------------------------
+EQ_API_SO_C=$(EQ_API_SMOKE_DIR)/test_run_so.c
+EQ_API_SO_O=$(EQ_API_SMOKE_DIR)/test_run_so.o
+EQ_API_SO_BIN=$(EQ_API_SMOKE_DIR)/test_run_so
+
+$(EQ_API_SO_O): $(EQ_API_SO_C) eq_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(EQ_API_SO_O) $(EQ_API_SO_C)
+
+$(EQ_API_SO_BIN): $(EQ_API_SO_O)
+	$(CC) -o $(EQ_API_SO_BIN) $(EQ_API_SO_O) -ldl
+
+.PHONY: eq_api_check_so
+eq_api_check_so: libeqapi.so $(EQ_API_SO_BIN)
+	@echo "Phase L-4 eq_api_check_so: dlopen libeqapi.so + full cycle ..."
+	@EQLIB_PATH=$(CURDIR)/libeqapi.so $(EQ_API_SO_BIN)
+	@echo "Phase L-4 eq_api_check_so OK"
