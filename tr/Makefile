@@ -56,7 +56,7 @@ SRCS_MENU=trmenu.f90
 # C ABI sources (Phase L-2+). Compiled via the tr_api_check target only;
 # NOT part of $(SRCS) and NOT linked into libtr2.a / tr2. The full
 # libtrapi.so build arrives in Phase L-4.
-SRCS_API=tr_state.f90 tr_api.f90
+SRCS_API=tr_state.f90 tr_param_registry.f90 tr_api.f90
 
 SRCS=$(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
@@ -135,14 +135,21 @@ tr3: $(LIBS3) $(OBJDIR)/trmain.o
 	$(FLINKER) $(OBJDIR)/trmain.o $(LIBS3) -o $@ $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
 # ---------------------------------------------------------------------
-# Phase L-2: C ABI check
+# Phase L-2/L-3: C ABI check
 #
-# `make tr_api_check` builds the new API objects (tr_state.o, tr_api.o)
-# AND a small C smoke test against tr_api.h.  This is a header / link
-# sanity check only -- the API objects are NOT linked into tr2 and the
-# tr2 binary remains byte-for-byte identical with or without this
-# target being invoked.  The smoke driver expects every entry point to
-# return TR_ERR_NOT_IMPL (=4) at L-2.
+# `make tr_api_check` builds the new API objects (tr_state.o,
+# tr_param_registry.o, tr_api.o) and three small C drivers linked
+# against tr_api.h:
+#
+#   test_smoke  : 4 entry points return TR_OK           (sanity)
+#   test_param  : tr_set_param + tr_get_state dispatch  (L-3)
+#   test_run    : tr_run advances T by N*DT             (L-3)
+#
+# The API objects are NOT linked into libtr2.a / tr2 and the tr2 binary
+# remains byte-for-byte identical with or without this target being
+# invoked. L-3 drivers depend on libtr2.a (for TRCOMM, tr_loop, ...) so
+# we link it in after the API objects. The full libtrapi.so build
+# arrives in Phase L-4.
 #
 # CC defaults to gcc; override on the command line if necessary
 # (e.g. `make tr_api_check CC=clang`).
@@ -155,31 +162,54 @@ TR_API_SMOKE_C=$(TR_API_SMOKE_DIR)/test_smoke.c
 TR_API_SMOKE_O=$(TR_API_SMOKE_DIR)/test_smoke.o
 TR_API_SMOKE_BIN=$(TR_API_SMOKE_DIR)/test_smoke
 
+TR_API_PARAM_C=$(TR_API_SMOKE_DIR)/test_param.c
+TR_API_PARAM_O=$(TR_API_SMOKE_DIR)/test_param.o
+TR_API_PARAM_BIN=$(TR_API_SMOKE_DIR)/test_param
+
+TR_API_RUN_C=$(TR_API_SMOKE_DIR)/test_run.c
+TR_API_RUN_O=$(TR_API_SMOKE_DIR)/test_run.o
+TR_API_RUN_BIN=$(TR_API_SMOKE_DIR)/test_run
+
+# At L-3 the API drivers pull in TRCOMM, tr_loop, tr_prep, ... so we
+# need the full tr + eq + pl + bpsd + mtx link just like tr2.
+TR_API_DEPS=$(LIBS2) $(LIBX_MTX)
+
 # Step 1: header-only C compile (matches the documented user-level check
 #         `gcc -Wall -Wextra -c -o test_smoke.o test_smoke.c`).
 $(TR_API_SMOKE_O): $(TR_API_SMOKE_C) tr_api.h
 	$(CC) $(CFLAGS_API) -I. -c -o $(TR_API_SMOKE_O) $(TR_API_SMOKE_C)
+$(TR_API_PARAM_O): $(TR_API_PARAM_C) tr_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(TR_API_PARAM_O) $(TR_API_PARAM_C)
+$(TR_API_RUN_O):   $(TR_API_RUN_C)   tr_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(TR_API_RUN_O)   $(TR_API_RUN_C)
 
-# Step 2: link the C smoke against the API objects only. This proves the
-# BIND(C) names emitted by tr_api.f90 (tr_init, tr_run, tr_set_param,
-# tr_get_state, tr_finalize) match the prototypes in tr_api.h. We use
-# gfortran as the driver so the libgfortran runtime is pulled in
-# automatically; no other tr/ libraries are required at L-2.
-$(TR_API_SMOKE_BIN): $(TR_API_SMOKE_O) $(OBJ_API)
-	$(FLINKER) -o $(TR_API_SMOKE_BIN) $(TR_API_SMOKE_O) $(OBJ_API)
+# Step 2: link against API objects + tr/eq/pl/bpsd/mtx. gfortran drives
+# the link so libgfortran is pulled in automatically.
+$(TR_API_SMOKE_BIN): $(TR_API_SMOKE_O) $(OBJ_API) $(LIBS2)
+	$(FLINKER) -o $(TR_API_SMOKE_BIN) $(TR_API_SMOKE_O) $(OBJ_API) \
+	   $(TR_API_DEPS) $(FFLAGS) $(FLIBS)
+$(TR_API_PARAM_BIN): $(TR_API_PARAM_O) $(OBJ_API) $(LIBS2)
+	$(FLINKER) -o $(TR_API_PARAM_BIN) $(TR_API_PARAM_O) $(OBJ_API) \
+	   $(TR_API_DEPS) $(FFLAGS) $(FLIBS)
+$(TR_API_RUN_BIN):   $(TR_API_RUN_O)   $(OBJ_API) $(LIBS2)
+	$(FLINKER) -o $(TR_API_RUN_BIN)   $(TR_API_RUN_O)   $(OBJ_API) \
+	   $(TR_API_DEPS) $(FFLAGS) $(FLIBS)
 
 .PHONY: tr_api_check
-tr_api_check: $(OBJ_API) $(TR_API_SMOKE_BIN)
-	@echo "Phase L-2 tr_api_check: running smoke ..."
+tr_api_check: $(OBJ_API) $(TR_API_SMOKE_BIN) $(TR_API_PARAM_BIN) $(TR_API_RUN_BIN)
+	@echo "Phase L-3 tr_api_check: running smoke / param / run ..."
 	@$(TR_API_SMOKE_BIN)
-	@echo "Phase L-2 tr_api_check OK:"
-	@echo "  - Fortran API objects compiled: $(OBJ_API)"
-	@echo "  - C smoke object compiled    : $(TR_API_SMOKE_O)"
-	@echo "  - C smoke linked + executed  : $(TR_API_SMOKE_BIN)"
+	@$(TR_API_PARAM_BIN)
+	@$(TR_API_RUN_BIN)
+	@echo "Phase L-3 tr_api_check OK:"
+	@echo "  - Fortran API objects : $(OBJ_API)"
+	@echo "  - C drivers executed  : test_smoke, test_param, test_run"
 
 clean :
 	-rm -f ./#* ./*~ $(OBJDIR)/*.o $(OBJDIR)/*/*.o $(MOD)/*.mod $(MOD)/*/*.mod core *.a
 	-rm -f $(TR_API_SMOKE_O) $(TR_API_SMOKE_BIN)
+	-rm -f $(TR_API_PARAM_O) $(TR_API_PARAM_BIN)
+	-rm -f $(TR_API_RUN_O)   $(TR_API_RUN_BIN)
 
 veryclean : clean
 	-rm -f tr2 tr3
@@ -232,9 +262,15 @@ $(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90
 $(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90
 $(OBJDIR)/trpsc.o  : trpsc.f90  trcomm.f90
 
-# Phase L-2 C ABI sources (independent of TRCOMM at this stage).
+# Phase L-2 / L-3 C ABI sources. tr_state is independent of TRCOMM;
+# tr_param_registry and tr_api pull in TRCOMM plus tr_prep / tr_loop.
 $(OBJDIR)/tr_state.o : tr_state.f90
-$(OBJDIR)/tr_api.o   : tr_api.f90 tr_state.f90 $(OBJDIR)/tr_state.o
+$(OBJDIR)/tr_param_registry.o : tr_param_registry.f90 trcomm.f90 \
+                     $(OBJDIR)/trcomm.o
+$(OBJDIR)/tr_api.o   : tr_api.f90 tr_state.f90 \
+                     $(OBJDIR)/tr_state.o $(OBJDIR)/tr_param_registry.o \
+                     $(OBJDIR)/trcomm.o $(OBJDIR)/trinit.o \
+                     $(OBJDIR)/trprep.o $(OBJDIR)/trloop.o
 
 $(OBJDIR)/trgout.o : trgout.f90 trcomm.f90
 $(OBJDIR)/trgrar.o : trgrar.f90 trcomm.f90 
