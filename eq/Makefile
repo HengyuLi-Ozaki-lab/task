@@ -155,7 +155,12 @@ libeq_pic.a: $(OBJS_PIC)
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libeq_pic.a
 
-EQCOMM = eqcom0.inc eqcom1.inc
+# Dependency sources that force a .o rebuild when equilibrium state
+# definitions change. Includes both the legacy raw .inc files (still
+# INCLUDEd directly by eqcalx.f and a few cross-module consumers) and
+# the F-1 MODULE objects (all shim headers now USE these), so edits
+# to either propagate correctly.
+EQCOMM = eqcom0.inc eqcom1.inc eqcom0_mod.o eqcom1_mod.o eqcom2_mod.o eqcom3_mod.o
 
 # Phase F-1: dependencies for new F90 COMMON-replacement MODULEs.
 # - eqcom0_mod is the root (PARAMETER-only).
