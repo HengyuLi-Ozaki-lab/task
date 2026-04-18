@@ -178,5 +178,66 @@ class TestLoadLibraryReal(unittest.TestCase):
         )
 
 
+# =====================================================================
+# Phase L-6 reinforcement: raw-ctypes view of the C ABI rejection
+# contracts. Complements wr/tests/c_abi/test_negative.c at the Python
+# layer without going through the high-level Wrlib wrapper.
+# =====================================================================
+@unittest.skipUnless(
+    DEFAULT_SO.exists(),
+    f"libwrapi.so not built at {DEFAULT_SO}; run `make -C wr libwrapi.so`",
+)
+class TestRawAbiContracts(unittest.TestCase):
+    """Exercise the 5 C ABI entry points via raw ctypes only.
+
+    Runs full init -> finalize and then post-finalize NOT_INIT check.
+    We do NOT run before-init tests here because any other test in the
+    module may have left the singleton in an initialized state; init /
+    finalize form an explicit open/close pair here.
+    """
+
+    def test_round_trip_cycle(self):
+        lib = _ffi.load_library()
+        # Open, set a known param, finalize.
+        self.assertEqual(lib.wr_init(), 0)
+        try:
+            rc = lib.wr_set_param(b"RR", ctypes.c_double(6.2))
+            self.assertEqual(rc, 0, f"wr_set_param RR=6.2 -> {rc}")
+            state = _ffi.WrStateC()
+            rc = lib.wr_get_state(ctypes.byref(state))
+            self.assertEqual(rc, 0, f"wr_get_state -> {rc}")
+            # Runtime dims must fit in the static layout.
+            self.assertLessEqual(state.nraymax, _ffi.WR_MAX_NRAYMAX)
+            self.assertLessEqual(state.nrsmax,  _ffi.WR_MAX_NRSMAX)
+            self.assertLessEqual(state.nrlmax,  _ffi.WR_MAX_NRLMAX)
+        finally:
+            rc = lib.wr_finalize()
+            self.assertEqual(rc, 0, f"wr_finalize -> {rc}")
+
+        # After finalize, every operation must return NOT_INIT (=2).
+        # This is the wr-specific PR #36 reset-SAVE-on-deallocate
+        # invariant: a process that goes through finalize must not be
+        # able to run / get_state / set_param until another init.
+        self.assertEqual(lib.wr_run(1), _ffi.WR_ERR_NOT_INIT)
+        state = _ffi.WrStateC()
+        self.assertEqual(
+            lib.wr_get_state(ctypes.byref(state)), _ffi.WR_ERR_NOT_INIT,
+        )
+        self.assertEqual(
+            lib.wr_set_param(b"RR", ctypes.c_double(1.0)),
+            _ffi.WR_ERR_NOT_INIT,
+        )
+
+    def test_unknown_param_rejected(self):
+        lib = _ffi.load_library()
+        self.assertEqual(lib.wr_init(), 0)
+        try:
+            rc = lib.wr_set_param(b"DEFINITELY_NOT_A_PARAM",
+                                  ctypes.c_double(0.0))
+            self.assertNotEqual(rc, 0)
+        finally:
+            lib.wr_finalize()
+
+
 if __name__ == "__main__":
     unittest.main()
