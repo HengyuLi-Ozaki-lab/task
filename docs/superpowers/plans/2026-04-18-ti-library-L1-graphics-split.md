@@ -97,8 +97,10 @@ Expected: 14 個の `.f90` ファイルとそれぞれが定義する MODULE/PRO
 - `tiprep.f90` — 計算前処理
 - `tiregress.f90` — L-0 で追加した regression dump（env-guarded）
 - `tiexec.f90` — メインループ実行
-- `tinclass.f90` — NCLASS interface（**注:** 現行 `Makefile` の SRCS に含まれていない可能性あり、Step 3 で確認）
-- `ticdbm.f90` — CDBM model（同上）
+
+**SRCS_CORE 候補に含めない（理由: 現行 `ti/Makefile` の `SRCS` 未登録）:**
+- `tinclass.f90` — NCLASS interface。ファイルは存在するが現行ビルドでは使われていない（実機 `grep "SRCS" ti/Makefile` で確認済: `SRCS= ticomm.f90 tiadas.f90 tiinit.f90 tiparm.f90 ticoef.f90 tisource.f90 ticalc.f90 tirecord.f90 tiprep.f90 tiexec.f90 tigout.f90 timenu.f90`）。L-1 のスコープ（graphics 分離）では追加しない。将来 `MODEL_NC` 等で必要になった時点で別 PR で `SRCS_CORE` に追加。
+- `ticdbm.f90` — CDBM model interface。同上の理由で除外。
 
 **SRCS_GRAPHICS** (libtiapi.so から除外):
 - `tigout.f90` — GSAF/GSCLOS 等の描画
@@ -106,17 +108,15 @@ Expected: 14 個の `.f90` ファイルとそれぞれが定義する MODULE/PRO
 **SRCS_MENU** (libtiapi.so から除外):
 - `timenu.f90` — 対話メニュー (READ(5,...))
 
-- [ ] **Step 3: tinclass / ticdbm が現行 SRCS にあるか確認**
+- [ ] **Step 3: tinclass / ticdbm が現行 SRCS にあるか確認（除外判定の追認）**
 
 Run:
 ```bash
 grep "tinclass\|ticdbm" /home/k-yoshimi/program/task/ti/Makefile
 ```
-Expected:
-- 現行 `SRCS=` に **無ければ** 本計画でも core から外す（標準ビルド対象外を維持）。
-- ある場合は SRCS_CORE に含める。
+Expected: ヒット **無し**（現行 `SRCS=` には含まれていない）。本計画でも `SRCS_CORE` から外す方針を維持。
 
-実際の `Makefile` SRCS 行（L-0 後の状態）に従う。**ファイルの存在や独立 module の有無に関わらず、Makefile に未登録のものは本フェーズでも追加しない**（L-1 のスコープは graphics 分離のみ）。
+将来含めることになった場合（L-3+ で `MODEL_NC` 系を有効化したい等）は、別 PR で `SRCS_CORE` に追加し、依存 lib（NCLASS の static lib）のリンクと PIC 化（L-4 で `_pic.a` 必要）を併せて行う。
 
 - [ ] **Step 4: 分類を plan に固定したことをメモコミット**
 

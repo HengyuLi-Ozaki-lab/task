@@ -571,104 +571,190 @@ git commit -m "test(ti): add Layer 2 ti_get_state value-check"
 
 **目的:** 現在の `run_tests.sh` は `module` を Fortran バイナリに紐付けて分岐する。新たに `module=python` (任意の Python unittest を実行) と `module=c` (任意の C 実行ファイルを直接実行) を追加し、`test_definitions.conf` から呼べるようにする。
 
-- [ ] **Step 1: get_binary を拡張**
+以下はすべて `test_run/run_tests.sh` (現行 commit 331e3dbf 時点) に対する unified diff 形式。該当位置は行番号 **prefix (旧) → (新)** で示す。
 
-`test_run/run_tests.sh` の `get_binary()` 関数の case に追加:
-```bash
-        python) echo "python3" ;;
-        c)      echo "" ;;   # binary path is the input_file itself
+- [ ] **Step 1: `get_binary()` に `python` / `c` 分岐を追加**
+
+`run_tests.sh` 105 行付近の case を以下に変更:
+
+```diff
+@@ -104,10 +104,12 @@ done
+ # Function to get module binary path
+ get_binary() {
+     local module="$1"
+     case "$module" in
+         eq) echo "$TASK_DIR/eq/eq" ;;
+         tr) echo "$TASK_DIR/tr/tr2" ;;
++        ti) echo "$TASK_DIR/ti/ti" ;;
+         fp) echo "$TASK_DIR/fp/fp" ;;
+         tx) echo "$TASK_DIR/tx/tx2" ;;
++        python) echo "python3" ;;
++        c)      echo "" ;;   # binary path = the input_file itself
+         *) echo "" ;;
+     esac
+ }
 ```
 
-- [ ] **Step 2: 実行ロジックを multi-module 対応に**
+注: `ti) ...` 行は本来 L-0 Task 8 Step 2 で追加されるが、L-6 で改めて確認。既に入っていれば skip。
 
-`run_single_test()` 関数の "Run the test" セクションを以下に置換:
+- [ ] **Step 2: SKIP 判定を python/c に対応**
 
-```bash
-    # Build the command based on module type.
-    local cmd_array=()
-    case "$module" in
-        python)
-            # input_file is interpreted as a python -m target (e.g. tilib.tests.test_ffi)
-            cmd_array=(python3 -m unittest "$full_input_path" -v)
-            ;;
-        c)
-            # input_file is interpreted as a path to an executable
-            cmd_array=("$full_input_path")
-            ;;
-        *)
-            cmd_array=("${mod_env[@]}" timeout "$timeout" "$binary")
-            # stdin is redirected from input file in the existing flow
-            ;;
-    esac
+`run_tests.sh` 245 行付近 (`# Check if binary exists`) を以下に変更:
 
-    if [[ "$module" == "python" || "$module" == "c" ]]; then
-        if [[ $VERBOSE -eq 1 ]]; then
-            "${cmd_array[@]}" 2>&1 | tee "$log_file"
-            local exit_code=${PIPESTATUS[0]}
-        else
-            "${cmd_array[@]}" > "$log_file" 2>&1
-            local exit_code=$?
-        fi
-    else
-        if [[ $VERBOSE -eq 1 ]]; then
-            "${cmd_array[@]}" < "$full_input_path" 2>&1 | tee "$log_file"
-            local exit_code=${PIPESTATUS[0]}
-        else
-            "${cmd_array[@]}" < "$full_input_path" > "$log_file" 2>&1
-            local exit_code=$?
-        fi
-    fi
+```diff
+@@ -242,12 +244,16 @@ run_single_test() {
+     echo -n "[$TOTAL] $test_name ($description) ... "
+ 
+     # Check if binary exists
+-    if [[ ! -x "$binary" ]]; then
++    if [[ "$module" != "python" && "$module" != "c" && ! -x "$binary" ]]; then
+         echo -e "${YELLOW}SKIP${NC} (module not built)"
+         SKIPPED=$((SKIPPED + 1))
+         return 0
+     fi
++    # For module=c, require the input_file to be an executable.
++    if [[ "$module" == "c" && ! -x "$full_input_path" ]]; then
++        echo -e "${YELLOW}SKIP${NC} (c executable not built: $full_input_path)"
++        SKIPPED=$((SKIPPED + 1))
++        return 0
++    fi
 ```
 
-そして PASS 判定を以下に変更（python/c では CLOSED マーカー無しで exit 0 を成功とする）:
+**重要**: 上記の `full_input_path` は 236 行付近で既に解決されている (`$SCRIPT_DIR/${input_file#@}` or `$module_dir/$input_file`)。python module では入力ファイルが実ファイルではなく dotted module path なので、その前段で分岐を追加する（Step 3）。
 
-```bash
-    if [[ $exit_code -eq 124 ]]; then
-        echo -e "${YELLOW}TIMEOUT${NC} (exceeded ${timeout}s)"
-        FAILED=$((FAILED + 1))
-    elif [[ "$module" == "python" || "$module" == "c" ]]; then
-        if [[ $exit_code -eq 0 ]]; then
-            echo -e "${GREEN}PASS${NC}"
-            PASSED=$((PASSED + 1))
-            COMPLETED_TESTS[$test_name]=1
-        else
-            echo -e "${RED}FAIL${NC} (exit code: $exit_code)"
-            FAILED=$((FAILED + 1))
-            if [[ $VERBOSE -eq 1 ]]; then
-                tail -10 "$log_file" | sed 's/^/    /'
-            fi
-        fi
-    elif grep -q "CLOSED" "$log_file" 2>/dev/null; then
-        # ... existing CLOSED-based logic for fortran modules ...
+- [ ] **Step 3: input_file の解釈分岐を追加**
+
+`run_tests.sh` 235 行付近 (`# Handle @inputs prefix ...`) を以下に変更:
+
+```diff
+@@ -232,11 +232,16 @@ run_single_test() {
+     local binary=$(get_binary "$module")
+     local module_dir="$TASK_DIR/$module"
+ 
+     # Handle @inputs prefix for local test inputs
+     local full_input_path
+-    if [[ "$input_file" == @* ]]; then
++    if [[ "$module" == "python" ]]; then
++        # input_file holds a dotted module path (e.g. tilib.tests.test_ffi).
++        # unittest resolves it from PYTHONPATH; no path expansion here.
++        full_input_path="$input_file"
++    elif [[ "$input_file" == @* ]]; then
+         full_input_path="$SCRIPT_DIR/${input_file#@}"
+     else
+         full_input_path="$module_dir/$input_file"
+     fi
 ```
 
-注: 上記は擬似コード。既存ロジックを **置換しない** で **追加** する形（python/c の elif を CLOSED 判定の前に挿入）。実装時は実際の `run_tests.sh` の構造に合わせて編集。
+- [ ] **Step 4: "Copy module-specific parameter files" の前に PYTHONPATH 自動設定と `input file exists` チェックをスキップする分岐を追加**
 
-- [ ] **Step 3: skip 判定の調整**
+`run_tests.sh` 252 行付近 (`# Check if input file exists`) を以下に変更:
 
-python module の場合、`get_binary()` は `python3` の絶対パスを返す。`if [[ ! -x "$binary" ]]` は普通通る。c module の場合は `$binary` が空文字なので、判定をスキップ:
-```bash
-    if [[ "$module" != "c" && "$module" != "python" && ! -x "$binary" ]]; then
-        echo -e "${YELLOW}SKIP${NC} (module not built)"
-        SKIPPED=$((SKIPPED + 1))
-        return 0
-    fi
+```diff
+@@ -249,12 +254,22 @@ run_single_test() {
+     fi
+ 
+     # Check if input file exists
+-    if [[ ! -f "$full_input_path" ]]; then
+-        echo -e "${YELLOW}SKIP${NC} (input file not found: $full_input_path)"
+-        SKIPPED=$((SKIPPED + 1))
+-        return 0
+-    fi
++    if [[ "$module" != "python" && "$module" != "c" ]]; then
++        if [[ ! -f "$full_input_path" ]]; then
++            echo -e "${YELLOW}SKIP${NC} (input file not found: $full_input_path)"
++            SKIPPED=$((SKIPPED + 1))
++            return 0
++        fi
++    fi
++
++    # Auto-export PYTHONPATH so unittest finds `tilib` without caller setup.
++    if [[ "$module" == "python" ]]; then
++        export PYTHONPATH="$TASK_DIR/python:${PYTHONPATH:-}"
++    fi
 ```
 
-- [ ] **Step 4: input_file 解釈の上書き**
+- [ ] **Step 5: `Run the test` セクションを python/c 対応に置換**
 
-python module の `INPUT_FILE` は dotted module path (`tilib.tests.test_equivalence`) を直接受け取る。c module は実行ファイルパス（`@..` 解釈は通常通り）。
+`run_tests.sh` 293〜310 行 (`# Run the test` から exit_code 取得まで) を以下に置換:
 
-```bash
-    if [[ "$module" == "python" ]]; then
-        # input_file holds the dotted module path; no path resolution needed
-        full_input_path="$input_file"
-    elif [[ "$input_file" == @* ]]; then
-        full_input_path="$SCRIPT_DIR/${input_file#@}"
-    else
-        full_input_path="$module_dir/$input_file"
-    fi
+```diff
+@@ -292,19 +307,36 @@ run_single_test() {
+     # Run the test
+     cd "$test_dir"
+     local log_file="$test_dir/output.log"
+ 
+-    # For TR module, enable regression dump (env-guarded inside trregress.f90).
+-    local tr_env=()
++    # For TR/TI Fortran modules, enable regression dump (env-guarded).
++    local mod_env=()
+     if [[ "$module" == "tr" ]]; then
+-        tr_env=(env TR_REGRESS_DUMP=1)
++        mod_env=(env TR_REGRESS_DUMP=1)
++    elif [[ "$module" == "ti" ]]; then
++        mod_env=(env TI_REGRESS_DUMP=1)
+     fi
+ 
+-    if [[ $VERBOSE -eq 1 ]]; then
+-        echo ""
+-        "${tr_env[@]}" timeout "$timeout" "$binary" < "$full_input_path" 2>&1 | tee "$log_file"
+-        local exit_code=${PIPESTATUS[0]}
++    local exit_code
++    if [[ "$module" == "python" ]]; then
++        if [[ $VERBOSE -eq 1 ]]; then
++            timeout "$timeout" python3 -m unittest "$full_input_path" -v 2>&1 | tee "$log_file"
++            exit_code=${PIPESTATUS[0]}
++        else
++            timeout "$timeout" python3 -m unittest "$full_input_path" -v > "$log_file" 2>&1
++            exit_code=$?
++        fi
++    elif [[ "$module" == "c" ]]; then
++        if [[ $VERBOSE -eq 1 ]]; then
++            timeout "$timeout" "$full_input_path" 2>&1 | tee "$log_file"
++            exit_code=${PIPESTATUS[0]}
++        else
++            timeout "$timeout" "$full_input_path" > "$log_file" 2>&1
++            exit_code=$?
++        fi
++    elif [[ $VERBOSE -eq 1 ]]; then
++        "${mod_env[@]}" timeout "$timeout" "$binary" < "$full_input_path" 2>&1 | tee "$log_file"
++        exit_code=${PIPESTATUS[0]}
+     else
+-        "${tr_env[@]}" timeout "$timeout" "$binary" < "$full_input_path" > "$log_file" 2>&1
+-        local exit_code=$?
++        "${mod_env[@]}" timeout "$timeout" "$binary" < "$full_input_path" > "$log_file" 2>&1
++        exit_code=$?
+     fi
 ```
+
+注: `tr_env` → `mod_env` リネームで L-0 Task 8 と整合。`exit_code` の宣言を 1 箇所に寄せるため `local exit_code` を前倒し。
+
+- [ ] **Step 6: PASS 判定を python/c 対応に追加**
+
+`run_tests.sh` 313〜355 行 (`# Check result ... ` から関数末尾まで) を以下に置換:
+
+```diff
+@@ -310,6 +342,19 @@ run_single_test() {
+     # Check result - CLOSED message is the primary success indicator
+     if [[ $exit_code -eq 124 ]]; then
+         echo -e "${YELLOW}TIMEOUT${NC} (exceeded ${timeout}s)"
+         FAILED=$((FAILED + 1))
++    elif [[ "$module" == "python" || "$module" == "c" ]]; then
++        # For python/c modules: exit 0 means PASS; there's no CLOSED marker.
++        if [[ $exit_code -eq 0 ]]; then
++            echo -e "${GREEN}PASS${NC}"
++            PASSED=$((PASSED + 1))
++            COMPLETED_TESTS[$test_name]=1
++        else
++            echo -e "${RED}FAIL${NC} (exit code: $exit_code)"
++            FAILED=$((FAILED + 1))
++            if [[ $VERBOSE -eq 1 ]]; then
++                tail -10 "$log_file" | sed 's/^/    /'
++            fi
++        fi
+     elif grep -q "CLOSED" "$log_file" 2>/dev/null; then
+```
+
+以下 L-0 Task 8 Step 4 で追加した `elif [[ "$module" == "ti" ]]` 分岐を含む既存 CLOSED-based 判定はそのまま温存。
 
 - [ ] **Step 5: test_definitions.conf に 4 ケース追加**
 
@@ -701,16 +787,9 @@ PYTHONPATH=/home/k-yoshimi/program/task/python ./run_tests.sh tilib_ffi tilib_sw
 ```
 Expected: 4 ケースすべて PASS。
 
-- [ ] **Step 7: PYTHONPATH の自動設定**
+- [ ] **Step 7: PYTHONPATH 自動設定の動作確認**
 
-`run_tests.sh` の python module 分岐の前に以下を追加して PYTHONPATH を自動設定:
-```bash
-    if [[ "$module" == "python" ]]; then
-        export PYTHONPATH="$TASK_DIR/python:${PYTHONPATH:-}"
-    fi
-```
-
-これで `run_tests.sh` を呼ぶ側で PYTHONPATH を設定する必要がなくなる。
+Step 4 で `module=python` のとき `PYTHONPATH=$TASK_DIR/python:...` を export しているので、呼び出し側で設定不要になっているはず。
 
 Run:
 ```bash

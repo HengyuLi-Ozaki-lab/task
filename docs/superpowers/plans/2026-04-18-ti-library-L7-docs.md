@@ -182,7 +182,9 @@ BASE = dict(
 # Per-impurity-species (NS=3 = Ar) settings via array subscript syntax.
 AR_SETUP = {
     "NPA[3]":     18.0,
-    "PM[3]":      39.95,
+    # Atomic mass: plcomm true name is PA; the ti namelist's `PM` is a local
+    # alias via `USE plcomm, pm=>pa`. The C ABI registry registers PA only.
+    "PA[3]":      39.95,
     "ID_NS[3]":   10.0,
     "NZMIN_NS[3]": 15.0,
     "NZMAX_NS[3]": 18.0,
@@ -429,7 +431,7 @@ git commit -m "test(tilib): add smoke for examples (quickstart run, sweep import
     "    NTMAX=5,\n",
     ")\n",
     "AR_SETUP = {\n",
-    "    'NPA[3]': 18.0, 'PM[3]': 39.95, 'ID_NS[3]': 10.0,\n",
+    "    'NPA[3]': 18.0, 'PA[3]': 39.95, 'ID_NS[3]': 10.0,\n",
     "    'NZMIN_NS[3]': 15.0, 'NZMAX_NS[3]': 18.0,\n",
     "    'MODEL_BND[1,3]': 2.0, 'BND_VALUE[1,3]': 1.0,\n",
     "}"
@@ -626,7 +628,7 @@ Registered in `ti/ti_param_registry.f90`. Highlights:
 
 - Geometry: `RR`, `RA`, `RKAP`, `RDLT`, `BB`, `RIP`
 - Profile shape: `PROFN1/2`, `PROFT1/2`, `PROFU1/2`
-- Plasma: `NSMAX`, `PM[NS]`, `PZ[NS]`, `PN[NS]`, `PNS[NS]`, `PT[NS]`, `PTPR[NS]`, `PTPP[NS]`, `PTS[NS]`, `PU[NS]`, `PUS[NS]`
+- Plasma: `NSMAX`, `PA[NS]` (atomic mass; ti namelist alias `PM`), `PZ[NS]`, `PN[NS]`, `PNS[NS]`, `PT[NS]`, `PTPR[NS]`, `PTPP[NS]`, `PTS[NS]`, `PU[NS]`, `PUS[NS]`
 - Species type: `NPA[NS]`, `ID_NS[NS]`, `NZMIN_NS[NS]`, `NZMAX_NS[NS]`, `NZINI_NS[NS]`
 - Time: `DT`, `NRMAX`, `NTMAX`, `NTSTEP`, `NGTSTEP`, `NGRSTEP`, `MAXLOOP`, `EPSLOOP`, `EPSMAT`, `MATTYPE`
 - Transport switches: `MODELG/Q/_PROF/_NPROF/_KAI/_DRR/_VR/_NC/_NF/_NB/_EC/_LH/_IC/_CD/_SYNC/_PEL/_PSC`

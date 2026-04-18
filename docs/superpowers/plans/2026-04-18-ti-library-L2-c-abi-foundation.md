@@ -48,6 +48,27 @@ grep "SRCS_CORE\|SRCS_GRAPHICS" /home/k-yoshimi/program/task/ti/Makefile | head 
 ```
 Expected: develop に L-1 の `SRCS_CORE/GRAPHICS/MENU` 分割が入っている。新ブランチに居る。
 
+- [ ] **Step 1b: 依存モジュール `plinit` / `equnit` / `tiinit` の存在を verify**
+
+`ti_api.f90` で `USE plinit, ONLY: pl_init` / `USE equnit, ONLY: eq_init` / `USE tiinit, ONLY: ti_init` を呼ぶため、対応する `MODULE` 定義が実在することを確認する。
+
+Run:
+```bash
+grep -ln "^[[:space:]]*MODULE plinit\b" /home/k-yoshimi/program/task/pl/ -r
+grep -ln "^[[:space:]]*MODULE equnit\b" /home/k-yoshimi/program/task/eq/ -r
+grep -n "USE plinit\|USE equnit\|USE tiinit" /home/k-yoshimi/program/task/ti/timain.f90
+```
+Expected:
+- `pl/plinit.f90` に `MODULE plinit` がある（既存 `ti/timain.f90:12` の `USE plinit, ONLY: pl_init` が解決できているはず）。
+- `eq/equnit.f` に `MODULE equnit` がある（拡張子 `.f` の固定形式）。
+- `ti/timain.f90` の USE 行（`USE plinit,ONLY: pl_init` / `USE equnit,ONLY: eq_init` / `USE tiinit,ONLY: ti_init`）が表示される。
+
+**フォールバック (どれかが欠けていた場合):**
+- `plinit` が無い場合: `pl/plload.f90` 等を grep して `pl_init` を提供している実モジュール名を探し、`ti_api.f90` の USE 行を実モジュール名に置換する。
+- `equnit` が無い場合: `eq/eqinit.f`, `eq/eqcalc.f` などから `eq_init` の MODULE を探して置換。
+- `tiinit` のサブルーチン名が `ti_init` 以外（例: `init_ti`）の場合: 名前衝突回避が二重に必要 → `ti_api.f90` で `USE tiinit, ONLY: ti_init_internal => <real_name>` の rename を導入。
+- どれも実在しない極端な場合: `ti/timain.f90` の実 USE 行を移植する（同じ初期化シーケンスを再現）。
+
 - [ ] **Step 2: L-0 回帰テストが PASS することを確認**
 
 Run:
@@ -174,6 +195,15 @@ MODULE ti_api
   PRIVATE
   PUBLIC :: ti_init_c, ti_run_c, ti_get_state_c, ti_set_param_c, ti_finalize_c
 
+  ! Module-level lifecycle state.
+  ! `g_initialized` is set by ti_init_c, cleared by ti_finalize_c.
+  ! `g_prepped`     is set by the first ti_run_c (after ti_prep), cleared by
+  !                 ti_finalize_c so that the NEXT ti_init_c/ti_run_c cycle
+  !                 re-runs ti_prep. This is critical for L-6 sweep tests
+  !                 (per-cell `with Tilib():` blocks) — see fallback table.
+  INTEGER, SAVE :: g_initialized = 0
+  INTEGER, SAVE :: g_prepped     = 0
+
 CONTAINS
 
   FUNCTION ti_init_c() RESULT(ierr) BIND(C, NAME="ti_init")
@@ -185,6 +215,8 @@ CONTAINS
     CALL pl_init
     CALL eq_init
     CALL ti_init                   ! sets defaults, allocates nothing yet
+    g_initialized = 1
+    g_prepped     = 0              ! force re-prep on the next ti_run_c
   END FUNCTION ti_init_c
 
   FUNCTION ti_run_c(ntmax_arg) RESULT(ierr) BIND(C, NAME="ti_run")
@@ -194,17 +226,20 @@ CONTAINS
     INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax_arg
     INTEGER(C_INT) :: ierr
     INTEGER :: jerr
-    INTEGER, SAVE :: prepped = 0
 
     ierr = 0
+    IF (g_initialized == 0) THEN
+       ierr = 2                    ! lifecycle violation (call ti_init first)
+       RETURN
+    END IF
     NTMAX = ntmax_arg
-    IF (prepped == 0) THEN
+    IF (g_prepped == 0) THEN
        CALL ti_prep(jerr)
        IF (jerr /= 0) THEN
           ierr = 3
           RETURN
        END IF
-       prepped = 1
+       g_prepped = 1
     END IF
     CALL ti_exec(jerr)
     IF (jerr /= 0) ierr = 3
@@ -278,12 +313,16 @@ CONTAINS
     INTEGER(C_INT) :: ierr
     ierr = 0
     CALL deallocate_ticomm
+    g_initialized = 0
+    g_prepped     = 0              ! ensure next init->run cycle re-preps
   END FUNCTION ti_finalize_c
 
 END MODULE ti_api
 ```
 
-注: `deallocate_ticomm` の名前は `ticomm.f90` を確認して合わせる（Step 2 で確認）。
+注: `deallocate_ticomm` の名前は `ticomm.f90` を確認して合わせる（Step 2 で確認）。`ticomm.f90:361` に `SUBROUTINE deallocate_ticomm` が存在することは確認済（worktree state 2026-04-18 時点）。
+
+注 2 (L-6 連携): 上記の **module-level `g_prepped` リセット** は、L-6 で実装する `test_sweep.py` の per-cell `with Tilib():` パターンに不可欠。`SAVE` 変数を関数内に閉じ込めると `ti_finalize_c` 経由でリセットできず、2 セル目以降で `ti_prep` がスキップされて `RNA/RTA/RUA` が ALLOCATE されない不具合になる。
 
 - [ ] **Step 2: deallocate_ticomm の正確な名前を確認**
 
@@ -607,6 +646,8 @@ gh pr create --base develop \
 | 障害 | 対処 |
 |---|---|
 | `ti_init` 名衝突がコンパイラで解消されない | Fortran 内部関数名を `ti_init_c` に固定（本計画通り）し `BIND(C, NAME="ti_init")` で C シンボルだけ揃える。それでもダメなら C 側を `tilib_init` 等にリネーム |
-| `deallocate_ticomm` が無い | `ticomm.f90` で実名を確認して置換。無い場合は `ALLOCATABLE` 個別の `IF(ALLOCATED) DEALLOCATE` を `ti_finalize_c` 内で順次行う |
-| `equnit` モジュールが無い | `eq_init` の供給元を `eq/equnit.f90` から探して USE 行を修正 |
+| `deallocate_ticomm` が無い | 確認済: `ticomm.f90:361 SUBROUTINE deallocate_ticomm` が存在。万一実環境で renamed されていた場合は `grep -n "deallocate_ticomm\|deallocate.ticomm" ti/ticomm.f90` で実名を確認して置換。代替: `ALLOCATABLE` 個別の `IF(ALLOCATED) DEALLOCATE` を `ti_finalize_c` 内で順次実行 |
+| `equnit` モジュールが無い | 確認済: `eq/equnit.f` (固定形式) に `MODULE equnit` が定義されており、`ti/timain.f90:13` の `USE equnit, ONLY: eq_init` と整合。万一見当たらなければ `grep -lr "MODULE equnit\|SUBROUTINE eq_init" eq/` で実モジュールを探して USE 行を修正 |
+| `plinit` モジュールが無い | 確認済: `pl/plinit.f90` に `MODULE plinit` あり。`pl_init` も同モジュール内 PUBLIC |
+| `ti_run` 2 回目以降が `ti_prep` をスキップする | 本計画は module-level `g_prepped` を `ti_finalize_c` でリセット済（L-6 sweep 対策）。万一 `g_prepped` でなく関数内 `SAVE` を残す場合は、L-6 で per-cell `with Tilib():` テストが落ちるので注意 |
 | ti_state_t が大きすぎる | `TI_MAX_NRMAX` を 100 に下げる、または将来 dynamic API に切り替え |

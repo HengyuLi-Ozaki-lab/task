@@ -88,10 +88,24 @@ ti namelist の中から以下のパラメータを L-3 で registry に登録�
 - `NSMAX`
 
 **プラズマ種別配列 (1D real, 添字 NS):**
-- `PM[NS], PZ[NS], PN[NS], PNS[NS], PT[NS], PTS[NS], PU[NS], PUS[NS]`
+- `PA[NS]` (atomic mass; ti コードは `pm=>pa` リネームで `pm` と呼んでいるが、registry では **plcomm 真名 `PA` を C ABI 名としても採用** する。下記「PA / pm 命名の決定」参照)
+- `PZ[NS], PN[NS], PNS[NS], PT[NS], PTS[NS], PU[NS], PUS[NS]`
 
 **プラズマ種別配列 (1D int, 添字 NS):**
 - `NPA[NS], ID_NS[NS], NZMIN_NS[NS], NZMAX_NS[NS], NZINI_NS[NS]`
+
+**PA / pm 命名の決定（plcomm rename quirk）:**
+
+`ti/ticomm.f90:5` は `USE plcomm, pm=>pa` で **pa を pm にリネーム** して取り込んでいる（既存 ti コード内では `pm(NS)` と書く）。一方 `plcomm.f90:64` の真名は `PA(NSM)`（atomic mass）。
+
+L-3 registry では混乱を避けるため、**真名 `PA` を 1 つだけ正式 C ABI 名として登録** する（`ti.set_param("PA[1]", 39.95)` で Ar の atomic mass を設定）。`pm` は登録しない。
+
+理由:
+1. plcomm 自体は `PA` を export する。`USE plcomm, ONLY: PM` はリンク時に `No such entity in module plcomm` エラーになる。
+2. ti 内コードの `pm` はあくまで USE-rename された **ローカル名**。registry を `USE plcomm` から構築する以上、真名 `PA` でアクセスするのが自然。
+3. ユーザー向け C ABI で 2 つの別名（PA と PM）を併存させると混乱する。L-7 の README で「ti namelist の `PM` は内部 alias、registry では `PA` を使う」と明記する。
+
+互換性が必要な場合の選択肢: `CASE("PA", "PM"); PA(i1) = value` と 2 つの CASE で同一 setter にマップする（実装は容易、ただし上記理由で本計画では PA のみ採用）。
 
 **時間発展 (scalar):**
 - `DT, NRMAX, NTMAX, NTSTEP, NGTSTEP, NGRSTEP, MAXLOOP, EPSLOOP, EPSMAT, MATTYPE`
@@ -134,7 +148,10 @@ PROGRAM test_param_registry
   USE equnit, ONLY: eq_init
   USE tiinit, ONLY: ti_init
   USE ti_param_registry, ONLY: ti_param_set
-  USE plcomm, ONLY: RR, RA, BB, NSMAX, PN, PNS
+  ! NOTE: plcomm exposes PA (atomic mass) under its true name. The ti codebase
+  ! renames it to `pm` via `USE plcomm, pm=>pa` but the rename is not
+  ! re-exported; we verify the registry setter by reading PA directly here.
+  USE plcomm, ONLY: RR, RA, BB, NSMAX, PN, PNS, PA
   USE ticomm_parm, ONLY: DT, NTMAX, MODEL_KAI
   IMPLICIT NONE
   INTEGER :: ierr
@@ -181,6 +198,12 @@ PROGRAM test_param_registry
   ierr = ti_param_set("PNS[2]", 0.05D0)
   IF (ierr /= 0)                  CALL fail("PNS[2] set returned non-zero")
   IF (ABS(PNS(2) - 0.05D0) > TOL) CALL fail("PNS(2) not updated")
+
+  ! Atomic mass via true plcomm name `PA`. This is the ti-library-canonical
+  ! name; the ticomm rename `pm=>pa` does not apply to the C ABI.
+  ierr = ti_param_set("PA[3]", 39.95D0)
+  IF (ierr /= 0)                    CALL fail("PA[3] set returned non-zero")
+  IF (ABS(PA(3) - 39.95D0) > TOL)   CALL fail("PA(3) not updated")
 
   ! invalid name
   ierr = ti_param_set("NO_SUCH_PARAM", 1.0D0)
@@ -289,8 +312,15 @@ git commit -m "test(ti): add Fortran-side smoke test for ti_param_registry (fail
 ! Supports scalar names ("RR") and 1D/2D array subscripts ("PN[1]", "MODEL_BND[1,3]").
 
 MODULE ti_param_registry
+  ! NOTE: `plcomm` defines the atomic-mass array as `PA(NSM)`. `ti/ticomm.f90`
+  ! does `USE plcomm, pm=>pa` so internal ti code refers to it as `pm`, but
+  ! that rename is local and does NOT re-export. We therefore USE plcomm
+  ! WITHOUT the rename here and expose `PA` (the true name) as the C ABI key.
+  ! `KID_NS` is character-valued and not settable through the float-only
+  ! ti_set_param ABI; keep it imported anyway for completeness / future
+  ! ti_set_string_param extension, but no SELECT CASE entry below.
   USE plcomm,    ONLY: RR, RA, RKAP, RDLT, BB, RIP, &
-                       NSMAX, PM, PZ, PN, PNS, PTPR, PTPP, PTS, PU, PUS, &
+                       NSMAX, PA, PZ, PN, PNS, PTPR, PTPP, PTS, PU, PUS, &
                        NPA, ID_NS, KID_NS, &
                        MODELG, MODELQ, MODEL_PROF, MODEL_NPROF, &
                        PROFN1, PROFN2, PROFT1, PROFT2, PROFU1, PROFU2
@@ -351,7 +381,10 @@ CONTAINS
     CASE ("NSMAX");        NSMAX        = INT(value)
 
     ! ---- 1D arrays indexed by NS (plcomm) ----
-    CASE ("PM");   IF (i1 < 1) THEN; ierr=ERR_BAD_INDEX; ELSE; PM(i1)   = value; END IF
+    ! PA = atomic mass (plcomm true name). ti namelist calls this "PM" via
+    ! the `pm=>pa` rename in ticomm_parm; here we expose only PA. See the
+    ! "PA / pm 命名の決定" note above for rationale.
+    CASE ("PA");   IF (i1 < 1) THEN; ierr=ERR_BAD_INDEX; ELSE; PA(i1)   = value; END IF
     CASE ("PZ");   IF (i1 < 1) THEN; ierr=ERR_BAD_INDEX; ELSE; PZ(i1)   = value; END IF
     CASE ("PN");   IF (i1 < 1) THEN; ierr=ERR_BAD_INDEX; ELSE; PN(i1)   = value; END IF
     CASE ("PNS");  IF (i1 < 1) THEN; ierr=ERR_BAD_INDEX; ELSE; PNS(i1)  = value; END IF
@@ -598,6 +631,7 @@ gh pr create --base develop \
 | 障害 | 対処 |
 |---|---|
 | `USE plcomm, ONLY: PROFN1` 等で「No such entity」エラー | 該当シンボルが本当に plcomm に無い → registry から削除して initial set を縮小 |
-| `PT` の参照元モジュール不整合 | `tiparm.f90` を再確認。`PT` は ticomm_parm 側で宣言されていることを確認した上で USE 文を調整 |
+| `USE plcomm, ONLY: PM` で「No such entity」エラー | 既知の quirk: plcomm の真名は `PA`（`ticomm_parm` の `USE plcomm, pm=>pa` は re-export しない）。本計画は `PA` で登録する方針。万一 `PM` エイリアスも公開したければ `CASE ("PA", "PM"); PA(i1) = value` と 2 つのキーを 1 setter にマップする |
+| `PT` の参照元モジュール不整合 | 確認済: `PT(NSM)` は `ticomm_parm` 側（`ticomm.f90:32`）で宣言されている。`USE ticomm_parm, ONLY: PT` で正しく取れる。これは `plcomm` 側には存在しない |
 | `parse_subscript` が一部の入力で誤動作 | `IOSTAT` でエラー時 `i1=-1` を返す現実装で十分。L-3 では基本ケースだけサポートし、複雑な記法は L-5 wrapper 側で吸収 |
 | Fortran スモークテストのリンクで未解決シンボル | tests/c_abi/Makefile の `TI_LIBS` に必要な lib を追記、または `mtxp/libmtxp.a` を加える |

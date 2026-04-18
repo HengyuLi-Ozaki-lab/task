@@ -165,9 +165,14 @@ git commit -m "docs(ti): lock L-0 comparison strategy (tiregress dump, tol 1e-10
 
 Run:
 ```bash
-grep -n "END SUBROUTINE ti_exec\|DEALLOCATE(v)" /home/k-yoshimi/program/task/ti/tiexec.f90
+grep -n "END SUBROUTINE ti_exec\|IF(ALLOCATED(v))" /home/k-yoshimi/program/task/ti/tiexec.f90
 ```
-Expected: `IF(ALLOCATED(v)) DEALLOCATE(v)` の直後、`RETURN` の前にフックを差し込めることを確認。
+Expected: 既存コードは `IF(ALLOCATED(v)) DEALLOCATE(v)` という単一行（`tiexec.f90:43`）。`DEALLOCATE(v)` 単独パターンで grep しても一致しないので注意。この行の **直後**、`RETURN` の **直前** にフックを差し込めることを確認。
+
+注: 念のため両パターンで確認しておくとよい:
+```bash
+grep -n "ALLOCATED.*DEALLOCATE\|DEALLOCATE(v)" /home/k-yoshimi/program/task/ti/tiexec.f90
+```
 
 - [ ] **Step 2: `ti/tiregress.f90` を新規作成**
 
@@ -358,7 +363,26 @@ git commit -m "feat(ti): add env-guarded high-precision dump for L-0 regression 
 - Create: `test_run/inputs/ti_ar.in`
 - Create: `test_run/inputs/ti_w.in`
 
-**目的:** `tiparm.org`（最小）と `tiparm.Ar`（Ar 不純物）を移植し、加えて W 不純物のケースを 1 つ追加。menu 入力（`R\nQ\n`）は run_tests.sh が `<` で標準入力を流し込むので、各 .in は namelist のみとし menu 操作は run_tests.sh 側で wrap する。
+**目的:** `tiparm.org`（最小）と `tiparm.Ar`（Ar 不純物）を移植し、加えて W 不純物のケースを 1 つ追加。menu 入力は `R\nQ\n` を namelist の後ろに追記して `<` で stdin に流し込む方式（既存 `tr` 系ケースと同じ。`run_tests.sh` は `< "$full_input_path"` で入力ファイル全体を渡す）。
+
+- [ ] **Step 0: ti の menu 起動方式を実機で検証**
+
+Run:
+```bash
+# tiparm.org (namelist のみ) に R/Q を後付けして 1 ファイルに結合し、stdin で渡せるか確認
+mkdir -p /tmp/ti-menu-check && cd /tmp/ti-menu-check
+cat /home/k-yoshimi/program/task/ti/tiparm.org > combined.in
+printf 'R\nQ\n' >> combined.in
+timeout 60 /home/k-yoshimi/program/task/ti/ti < combined.in > out.log 2>&1 || true
+echo "exit=$?"
+grep -E "TI MENU|XX|CLOSED" out.log | head -10
+```
+Expected:
+- `## TI MENU: P,V/PARM  R/RUN  L/LOAD  W/WRITE  H/HELP  Q/QUIT` が log に出る。
+- `R` で計算が始まり、`Q` で終了。最終的に `CLOSED`（GSCLOS 由来）が出る。
+- 異常停止（`XX` 行）が無い。
+
+これが動かない場合（例えば `READ(5,*,ERR=1,END=1) nid` の周りで 1 行追加入力が必要、など）は `timenu.f90` を再確認（`L` ケースで `READ` していることに注意。本テストでは `L` を使わないので問題にはならないはず）。
 
 - [ ] **Step 1: ti を menu モードで実行する手順を確認**
 
@@ -1370,7 +1394,9 @@ Expected: PR が develop に向けて作成される。
 
 ## Dependencies
 
-- 前段階: なし（develop の現状から開始可能）。
+- 前段階: なし（develop の現状から開始可能）。develop は以下の TR Phase 0 関連 PR がマージ済みの想定:
+  - PR #2 (`926b25b4`) — `feat(tr): env-guarded high-precision dump + 3 baselines`（参照する `compare_metrics.py` / `check_regression.sh` / `extract_tr_metrics.py` の出所）
+  - PR #3 (`c559e06e`) — `docs(tr): add Phase L library-ization design spec`（本 ti 計画群の設計根拠）
 - 後段階: L-1 以降、すべての Phase L サブが本 baseline に依存する。
 
 ## Fallback
