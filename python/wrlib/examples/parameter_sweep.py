@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Iterable, List, Tuple
+from typing import List, Sequence, Tuple
 
 from wrlib import Wrlib
 
@@ -57,7 +57,7 @@ def _apply_base(wr: Wrlib) -> None:
             wr.set_param(f"{name}[{i}]", float(v))
 
 
-def _sweep(rf_vals: Iterable[float], ang_vals: Iterable[float]
+def _sweep(rf_vals: Sequence[float], ang_vals: Sequence[float]
            ) -> List[Tuple[float, float, float, float]]:
     """Return list of ``(RFIN, ANGPHIN, pwrmax_rs, pos_pwrmax_rs)`` tuples."""
     rows: List[Tuple[float, float, float, float]] = []
