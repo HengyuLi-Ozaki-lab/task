@@ -541,7 +541,7 @@ CC      ?= gcc
 CFLAGS  ?= -Wall -Wextra -O0
 
 test_abi_smoke.o: test_abi_smoke.c ../../fp_api.h
-	$(CC) $(CFLAGS) -I.. -c test_abi_smoke.c -o test_abi_smoke.o
+	$(CC) $(CFLAGS) -I../.. -c test_abi_smoke.c -o test_abi_smoke.o
 
 .PHONY: check
 check: test_abi_smoke.o

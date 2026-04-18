@@ -376,7 +376,9 @@ class TestSweep(unittest.TestCase):
         for rr in rr_grid:
             for bb in bb_grid:
                 with Fplib() as fp:
-                    fp.set_params(**ITER01_PARAMS, RR=rr, BB=bb, NTMAX=1)
+                    # ITER01_PARAMS already contains NTMAX; override per-trial
+                    sweep_params = {**ITER01_PARAMS, "RR": rr, "BB": bb, "NTMAX": 1}
+                    fp.set_params(**sweep_params)
                     fp.run(ntmax=1)
                     st = fp.get_state()
                     results.append((rr, bb, st.timefp))
