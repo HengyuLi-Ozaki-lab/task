@@ -24,7 +24,10 @@ MODINCLUDE= -I./$(MOD) -I../pl/$(MOD) -I../eq/$(MOD) \
             -I../lib/$(MOD) -I../mtxp/$(MOD) \
             -I../../bpsd/$(MOD)
 
-SRCM=trcom0.f90 trcom1.f90 trcomm.f90 trbpsd.f90
+SRCM=trcom0.f90 trcom1.f90 \
+     trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
+     trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90 \
+     trcomm.f90 trbpsd.f90
 SRCS=trinit.f90 trparm.f90 trview.f90 \
      trmetric.f90 trprof.f90 trprep.f90 \
      trufsub.f90 tr_ufile_task.f90 tr_ufile_topics.f90 trufile.f90 \
@@ -120,7 +123,16 @@ distclean: clean
 	cd ../eq && make clean
 	cd ../lib && make clean
 
-$(OBJDIR)/trmain.o : trmain.f90 trcomm.f90  
+$(OBJDIR)/trcomm_const.o   : trcomm_const.f90
+$(OBJDIR)/trcomm_param.o   : trcomm_param.f90 trcomm_const.f90 trcom0.f90
+$(OBJDIR)/trcomm_ctrl.o    : trcomm_ctrl.f90 trcom0.f90
+$(OBJDIR)/trcomm_mtx.o     : trcomm_mtx.f90 trcom0.f90
+$(OBJDIR)/trcomm_profile.o : trcomm_profile.f90 trcom0.f90
+$(OBJDIR)/trcomm_globals.o : trcomm_globals.f90 trcom0.f90
+$(OBJDIR)/trcomm.o : trcomm.f90 trcom0.f90 trcom1.f90 \
+                     trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
+                     trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90
+$(OBJDIR)/trmain.o : trmain.f90 trcomm.f90
 $(OBJDIR)/trmenu.o : trmenu.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trinit.o : trinit.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trparm.o : trparm.f90 trcomm.f90 trcom1.f90
