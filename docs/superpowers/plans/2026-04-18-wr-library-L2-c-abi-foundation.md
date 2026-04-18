@@ -263,6 +263,7 @@ MODULE wr_api
   PUBLIC :: wr_init_c, wr_run_c, wr_set_param_c, wr_get_state_c, wr_finalize_c
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
+  LOGICAL, SAVE :: g_allocated   = .FALSE.
   LOGICAL, SAVE :: g_executed    = .FALSE.
 
 CONTAINS
@@ -306,6 +307,7 @@ CONTAINS
     END IF
 
     CALL wr_allocate
+    g_allocated = .TRUE.   ! set immediately so wr_finalize can clean up even on partial failure
     CALL wr_setup(setup_ierr)
     IF (setup_ierr /= 0) THEN
        ierr = 3; RETURN
@@ -408,10 +410,15 @@ CONTAINS
     INTEGER(C_INT) :: ierr
 
     ierr = 0
-    IF (g_executed) THEN
+    ! Use g_allocated (set immediately after wr_allocate in wr_run_c) so that
+    ! arrays are released even if wr_setup or wr_exec failed mid-run, leaving
+    ! g_executed=.FALSE. Calling wr_deallocate when nothing was allocated
+    ! would be unsafe, so the guard is essential.
+    IF (g_allocated) THEN
        CALL wr_deallocate
     END IF
     g_initialized = .FALSE.
+    g_allocated   = .FALSE.
     g_executed    = .FALSE.
   END FUNCTION wr_finalize_c
 
