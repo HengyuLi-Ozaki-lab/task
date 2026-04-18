@@ -6,7 +6,31 @@
 
       SUBROUTINE TRGLOB
 
-      USE trcomm
+      USE TRCOMM, ONLY: rkind, &
+           NRMAX, NRAMAX, NROMAX, NSM, NSMAX, NEQMAX, NFM, NSS, NSV, MDLUF, &
+           PI, RKEV, RMU0, &
+           RR, RA, RKAP, BB, RHOA, RIP, &
+           DR, DVRHO, DVRHOG, ABVRHOG, RDPVRHOG, RMJRHO, &
+           RG, RM, RN, RT, RW, RNF, &
+           BP, EZOH, BETA, BETA0, BETAA, BETAL, BETAN, BETAP, BETAP0, BETAPA, &
+           BETAPL, BETAQ, BETAQ0, &
+           PA, PNSS, PTS, GT, &
+           AJ, AJBS, AJBST, AJNB, AJNBT, AJOH, AJOHT, AJRF, AJRFT, AJRFV, &
+           AJRFVT, AJT, AJTOR, AJTTOR, &
+           ANS0, ANSAV, ANF0, ANFAV, ANLAV, &
+           Q0, QF, QP, RQ1, RKEV, &
+           PBM, PBCL, PBCLT, PBIN, PBINT, PCX, PCXT, PEX, PEXST, PEXT, &
+           PFCL, PFCLT, PFIN, PFINT, PIE, PIET, PINT, PLT, &
+           PNB, PNBT, PNF, PNFT, POH, POHT, POUT, &
+           PRB, PRBT, PRC, PRCT, PRF, PRFST, PRFT, PRFV, PRFVT, PRL, PRLT, &
+           PRSUM, PRSUMT, &
+           SIE, SIET, SINT, SLT, SNB, SNBT, SNF, SNFT, SOUT, SPE, SPET, &
+           SPSC, SPSCT, &
+           T, TPRE, TS0, TSAV, TF0, TFAV, &
+           TAUE1, TAUE2, TAUE89, TAUE98, H98Y2, &
+           VLOOP, VV, ALI, &
+           WBULKT, WFT, WPDOT, WPPRE, WPT, WST, WTAILT, &
+           ZEFF, ZEFF0, DD
       USE trexec
       USE libitp
       IMPLICIT NONE
@@ -670,7 +694,25 @@
 
       SUBROUTINE TRPRNT(KID)
 
-      USE trcomm
+      USE TRCOMM, ONLY: rkind, &
+           NRMAX, NTMAX, NGT, NGR, NSMAX, NSM, NFM, &
+           BB, DT, GTCPU1, T, &
+           ANC, ANFE, ANFAV, ANSAV, &
+           AJ, AJBST, AJNBT, AJOHT, AJRFT, AJT, AJTTOR, ALI, &
+           BETA0, BETAA, BETAN, BETAP0, BETAPA, &
+           PN, PNB, PNBT, PNF, PNFT, POH, POHT, POUT, &
+           PIN, PIE, PIET, PINT, &
+           PCX, PCXT, PEX, PFCLT, PFIN, PFINT, &
+           PBCLT, PBIN, PBINT, &
+           PRBT, PRCT, PRFT, PRL, PRLT, PRSUMT, &
+           PLT, PLHNPR, PLHTOT, PICTOT, &
+           Q0, QF, QP, RQ1, &
+           RIPS, RIPE, &
+           S, SIE, SIET, SINT, SLT, SNB, SNBT, SNF, SNFT, SOUT, &
+           TAUE1, TAUE2, TAUE89, TAUE98, TF0, TFAV, TS0, TSAV, &
+           VLOOP, VSEC, &
+           WBULKT, WFT, WPDOT, WPT, WST, WTAILT, &
+           ZEFF, ZEFF0, KFNLOG
       USE trparm
       IMPLICIT NONE
       CHARACTER(LEN=1),INTENT(IN):: KID
@@ -1662,7 +1704,28 @@
 
       SUBROUTINE tr_setup_kv
 
-      USE TRCOMM
+      USE TRCOMM, ONLY: rkind, &
+           NRMAX, RA, RR, RKAP, BB, RIP, &
+           AJ, AJBS, AJBST, AJNB, AJNBT, AJOH, AJOHT, AJRF, AJRFT, AJRFV, &
+           AJT, AJTTOR, &
+           AK, AKDW, ALI, ALPHA, &
+           ANC, ANFE, ANF0, ANFAV, ANLAV, ANS0, ANSAV, &
+           AR1RHO, AR2RHO, &
+           BETA, BETA0, BETAA, BETAP, BETAP0, BETAPA, &
+           BP, ER, ETA, EZOH, &
+           H98Y2, KVRT, KVT, &
+           PBCLT, PBINT, PCX, PCXT, PEX, PEXT, &
+           PFCLT, PFINT, PIE, PIET, PINT, PLT, &
+           PNB, PNBT, PNF, PNFT, POH, POHT, POUT, &
+           PRBT, PRCT, PRF, PRFT, PRFV, PRFVT, PRL, PRLT, PRSUMT, &
+           Q0, QF, QP, RQ1, &
+           RKPRHO, RMJRHO, RMNRHO, &
+           RN, RPSI, RT, RW, &
+           S, SIET, SINT, SLT, SNBT, SNFT, SOUT, &
+           TAUE1, TAUE2, TAUE89, TAUE98, TF0, TFAV, TS0, TSAV, &
+           VLOOP, VPOL, VTOR, &
+           WBULKT, WFT, WPDOT, WPT, WST, WTAILT, &
+           ZEFF, ZEFF0
       IMPLICIT NONE
 
       KVT( 1) = 'ANS0(1)   '

@@ -29,7 +29,7 @@ CONTAINS
 !     IERR=7 : unknown MODE
 !     IERR=10X : input parameter out of range
 
-      USE TRCOMM
+      USE TRCOMM, ONLY: NTMAX, NTMAX_SAVE
       USE libkio
       IMPLICIT NONE
       INTEGER,INTENT(IN) :: MODE
@@ -51,7 +51,34 @@ CONTAINS
 
     SUBROUTINE tr_nlin(NID,IST,IERR)
 
-      USE trcomm
+      USE TRCOMM, ONLY: NTMAX, NTMAX_SAVE, &
+           RR, RA, RKAP, RDLT, BB, RIPS, RIPE, RHOA, &
+           PA, PZ, PN, PNS, PT, PTS, PNC, PNFE, PNNU, PNNUS, &
+           PROFN1, PROFN2, PROFT1, PROFT2, PROFU1, PROFU2, &
+           PROFJ1, PROFJ2, ALP, AD0, AV0, CNP, CNH, CDP, CDH, CNN, CDW, &
+           CWEB, CALF, CNB, CSPRS, &
+           MDLKAI, MDLETA, MDLAD, MDLAVK, MDLJBS, MDLKNC, MDLTPF, &
+           DT, NRMAX, NTSTEP, NGTSTP, NGRSTP, NGPST, TSST, &
+           EPSLTR, LMAXTR, CHP, CK0, CK1, CKALFA, CKBETA, CKGUMA, &
+           TPRST, &
+           MDLST, MDLNF, IZERO, MODELG, NTEQIT, MDEDGE, MDLIMP, &
+           MDLXP, MDLUF, MDNCLS, MDLWLD, MDLFLX, MDLER, MDCD05, &
+           PNBTOT, PNBR0, PNBRW, PNBVY, PNBVW, PNBENG, PNBRTG, MDLNB, &
+           NRNBMAX, &
+           PECTOT, PECR0, PECRW, PECTOE, PECNPR, MDLEC, &
+           PLHTOT, PLHR0, PLHRW, PLHTOE, PLHNPR, MDLLH, &
+           PICTOT, PICR0, PICRW, PICTOE, PICNPR, MDLIC, &
+           PNBCD, PECCD, PLHCD, PICCD, PBSCD, MDLCD, &
+           PELTOT, PELR0, PELRW, PELRAD, PELVEL, MDLPEL, &
+           MDLPR, SYNCABS, SYNCSELF, &
+           PELTIM, PELPAT, &
+           pellet_time_start, pellet_time_interval, &
+           number_of_pellet_repeat, &
+           KNAMEQ, KNAMEQ2, KNAMTR, KFNLOG, KFNTXT, KFNCVS, &
+           MDLEQB, MDLEQN, MDLEQT, MDLEQU, MDLEQZ, MDLEQ0, MDLEQE, &
+           MDLEOI, NSMAX, NSZMAX, NSNMAX, &
+           KUFDIR, KUFDEV, KUFDCG, TIME_INT, MODEP, MDNI, MDLJQ, MDTC, &
+           MDLPCK, MDLPSC, NPSCMAX, PSCTOT, PSCR0, PSCRW, NSPSC
       IMPLICIT NONE
       INTEGER,INTENT(IN) :: NID
       INTEGER,INTENT(OUT):: IST, IERR

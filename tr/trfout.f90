@@ -15,7 +15,13 @@ CONTAINS
 
       SUBROUTINE tr_fout
 
-      USE TRCOMM
+      USE TRCOMM, ONLY: rkind, NRMAX, NGT, NGR, NCTM, NCGM, NCRTM, &
+                        BB, RM, RN, RT, AD, AV, AK, ANC, ANFE, &
+                        AJ, AJBS, AJOH, QP, ZEFF, &
+                        PIN, POH, PNB, PNF, PEX, PRF, PFCL, &
+                        PRB, PRC, PRL, PVOLRHOG, &
+                        BP, EZOH, ER, VTOR, VPOL, &
+                        GT, GVT, GVR, GVRT, GRM, KVRT
       USE libchar
       USE libfio
       IMPLICIT NONE

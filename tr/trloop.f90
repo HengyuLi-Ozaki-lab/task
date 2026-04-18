@@ -15,7 +15,11 @@ CONTAINS
 
   SUBROUTINE tr_loop(ierr)
 
-      USE TRCOMM
+      USE TRCOMM, ONLY: NT, NTMAX, NRMAX, MDLUF, NTEQIT, MODELG, &
+                        PI, DT, &
+                        DIPDT, RIP, RIPS, RIPE, &
+                        Q0, QP, QPINV, RG, TST, TPRST, &
+                        RDPVRHOG, TTRHOG, ARRHOG
       USE TRCOM1, ONLY : NTAMAX
       USE trbpsd, ONLY: tr_bpsd_put, tr_bpsd_get
       USE trexec
