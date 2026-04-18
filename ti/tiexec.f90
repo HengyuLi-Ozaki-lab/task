@@ -11,6 +11,7 @@ CONTAINS
 
     USE ticomm
     USE tirecord
+    USE tiregress, ONLY : ti_regress_dump_if_enabled
     USE libmtx
     IMPLICIT NONE
     INTEGER,INTENT(OUT):: IERR
@@ -41,6 +42,7 @@ CONTAINS
     END DO
 
     IF(ALLOCATED(v)) DEALLOCATE(v)
+    CALL ti_regress_dump_if_enabled   ! Phase L-0 regression dump (env-guarded)
     RETURN
   END SUBROUTINE ti_exec
 
