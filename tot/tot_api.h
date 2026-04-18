@@ -63,7 +63,25 @@ typedef struct {
 
 int tot_init(void);
 int tot_run(int ntmax);
+/*
+ * tot_set_param / tot_set_param_str : namespaced parameter dispatch.
+ *
+ * Names MUST include a namespace prefix separated by ':' because the
+ * tot parameter space is the union of eq / tr / fp / ti / wr / wrx.
+ * Examples:
+ *   tot_set_param("eq:RR",  6.2);
+ *   tot_set_param("tr:DT",  0.01);
+ *   tot_set_param("fp:NSMAX", 2);
+ *   tot_set_param("wrx:RF", 170.0);
+ * A name without ':' is rejected with TOT_ERR_INVALID.
+ *
+ * tot_set_param_str handles CHARACTER variables (e.g. KNAMEQ). Only
+ * the `tr:` namespace is backed by a string setter in L-3; the other
+ * namespaces return TOT_ERR_INVALID for string calls until their
+ * per-module registries add a symmetric `_str` entry point.
+ */
 int tot_set_param(const char* name, double value);
+int tot_set_param_str(const char* name, const char* value);
 int tot_get_state(tot_state_t* state);
 int tot_finalize(void);
 
