@@ -49,6 +49,11 @@ C
       CALL EQSETS_RHO(IERR)
       CALL EQSETS(IERR)
 C
+C     ----- Phase L-0 regression dump (env-guarded, no-op unless
+C           EQ_REGRESS_DUMP=1). Hook here so every successful R/RUN
+C           or C/CONT path produces eq_regress.dat in cwd. -----
+      CALL EQ_REGRESS_DUMP_IF_ENABLED
+C
       RETURN
       END
 C
