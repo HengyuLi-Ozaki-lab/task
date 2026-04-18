@@ -1,0 +1,73 @@
+# TASK/TR ITER01 reference configuration.
+#
+# Mirrors test_run/inputs/tr_iter01.in so the Python runner reproduces
+# the same physics case without the namelist CLI. Run with:
+#
+#     python -m trlib python/trlib/samples/iter01.toml
+#
+# Add --dry-run to inspect the parsed config without loading
+# libtrapi.so.
+
+[module]
+name = "tr"
+ntmax = 100
+
+[scalars]
+MODELG = 3
+NSMAX  = 4
+PROFN2 = 0.15
+MDLNF  = 1
+PNBR0  = 0.0
+PNBRW  = 1.0
+PNBENG = 1000.0
+PNBRTG = 6.2
+PICCD  = 0.1
+PICR0  = 0.0
+PICRW  = 0.2
+PICNPR = 5.0
+PECCD  = 0.5
+PECR0  = 1.1
+PECRW  = 0.05
+PECNPR = 5.0
+PLHCD  = 1.0
+PLHR0  = 0.8
+PLHRW  = 0.2
+PLHNPR = 2.0
+DT     = 0.02
+NTSTEP = 100
+NTMAX  = 100
+RIPS   = 2.0
+RIPE   = 7.0
+
+[arrays]
+PN  = [0.7,  0.315, 0.315, 0.035]
+PNS = [0.1,  0.045, 0.045, 0.005]
+PT  = [1.0,  1.0,   1.0,   1.0]
+PTS = [0.1,  0.1,   0.1,   0.1]
+
+[strings]
+KNAMEQ = "eqdata.ITER01"
+
+# --- visualization -----------------------------------------------------
+# Each [[plots]] entry is forwarded to trlib.plot.plot(variable, ...).
+
+[[plots]]
+variable = "RNT"
+output   = "file"
+format   = "png"
+path     = "./plots/iter01_rnt.png"
+title    = "ITER01: density profile"
+
+[[plots]]
+variable = "RWT"
+output   = "file"
+format   = "png"
+path     = "./plots/iter01_rwt.png"
+title    = "ITER01: temperature profile"
+
+[[plots]]
+variable = "QP"
+output   = "file"
+format   = "png"
+path     = "./plots/iter01_qp.png"
+title    = "ITER01: safety factor"

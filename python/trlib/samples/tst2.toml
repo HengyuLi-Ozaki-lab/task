@@ -1,0 +1,57 @@
+# TASK/TR TST-2 reference configuration.
+#
+# Mirrors test_run/inputs/tr_tst2.in. Run with:
+#
+#     python -m trlib python/trlib/samples/tst2.toml
+
+[module]
+name = "tr"
+ntmax = 10
+
+[scalars]
+MODELG = 3
+NSMAX  = 2
+PROFN1 = 2.0
+PROFN2 = 1.0
+MDLIMP = 3
+PNC    = 0.00001
+PLHCD  = 0.0
+PLHR0  = 0.15
+PLHRW  = 0.05
+PLHNPR = 4.0
+RIPS   = 0.015
+RIPE   = 0.015
+NTSTEP = 1
+NGTSTP = 1
+NGRSTP = 10
+DT     = 1.0e-5
+NTMAX  = 10
+PLHTOT = 0.0
+
+[arrays]
+# PA(2) = 1.0, PZ(2) = 1.0 — sparse dict form so PA(1)/PZ(1) inherit
+# the tr_init defaults (matches fixtures/tr_tst2_params.py).
+PA  = { 2 = 1.0 }
+PZ  = { 2 = 1.0 }
+PN  = [0.010, 0.010]
+PNS = [0.001, 0.001]
+PT  = [0.010, 0.0010]
+PTS = [0.001, 0.0001]
+
+[strings]
+KNAMEQ = "eqdata.TST-2"
+
+# --- visualization ---------------------------------------------------
+[[plots]]
+variable = "RNT"
+output   = "file"
+format   = "png"
+path     = "./plots/tst2_rnt.png"
+title    = "TST-2: density profile"
+
+[[plots]]
+variable = "RWT"
+output   = "file"
+format   = "png"
+path     = "./plots/tst2_rwt.png"
+title    = "TST-2: temperature profile"
