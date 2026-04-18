@@ -26,11 +26,18 @@ MODINCLUDE= -I./$(MOD) -I../open-adas/adf11/adf11-lib/$(MOD) \
             -I../adpost/$(MOD) -I../eq/$(MOD) -I../pl/$(MOD) \
             -I../mtxp/$(MOD) -I../lib/$(MOD) -I../../bpsd/$(MOD) 
 
-SRCS=   ticomm.f90 tiadas.f90 \
+# Core sources: included in both `ti` binary and (later) libtiapi.so.
+# Graphics and menu are split out so libtiapi.so can be built without them.
+SRCS_CORE=   ticomm.f90 tiadas.f90 \
 	tiinit.f90 tiparm.f90 \
 	ticoef.f90 tisource.f90 ticalc.f90 tirecord.f90 \
-        tiprep.f90 tiregress.f90 tiexec.f90 \
-        tigout.f90 timenu.f90
+        tiprep.f90 tiregress.f90 tiexec.f90
+
+SRCS_GRAPHICS= tigout.f90
+
+SRCS_MENU=     timenu.f90
+
+SRCS=$(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
 #      trprof.f90 trufsub.f90 trufile.f90 trfile.f90 trhelp.f90 \
 #      trexec.f90 trcalc.f90 \
@@ -80,7 +87,18 @@ libs:
 ti: libs libti.a timain.o 
 	$(FLINKER) timain.o $(LIBS) -o $@ $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
-clean : 
+.PHONY: srcs-core-list srcs-graphics-list srcs-menu-list
+
+srcs-core-list:
+	@echo $(SRCS_CORE)
+
+srcs-graphics-list:
+	@echo $(SRCS_GRAPHICS)
+
+srcs-menu-list:
+	@echo $(SRCS_MENU)
+
+clean :
 	rm -f ./#* ./*~ *.o nclass/*.o itg/*.o glf/*.o cytran/*.o mmm95/*.o mbgb/*.o a.out core *.a *.mod $(MOD)/*.mod
 
 veryclean : clean
