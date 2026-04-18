@@ -81,8 +81,13 @@ MODULE eqcom3_mod
   ! --- ripple grids ---
   REAL(8) :: Rrp(NRrpM), Zrp(NZrpM), RpplRZ(NRrpM, NZrpM)
   REAL(8) :: URpplRZ(4, 4, NRrpM, NZrpM)
-  REAL(8) :: GRal(NRM, NTVM), GZal(NRM, NTVM)
-  REAL(8) :: GAlpRP(NRM, NTVM)
+  ! NOTE: G-starting variables fall OUTSIDE the shim IMPLICIT REAL*8
+  ! rule (A,B,D-F,H,O-Z), so the original COMMON-based code treated
+  ! them as default REAL (REAL*4). Declaring REAL(8) here would change
+  ! storage size and break binary layout for downstream consumers
+  ! reading via the eqcomq/eqcomm shim.
+  REAL :: GRal(NRM, NTVM), GZal(NRM, NTVM)
+  REAL :: GAlpRP(NRM, NTVM)
   INTEGER :: NtrcMAX(NRM)
 
 END MODULE eqcom3_mod
