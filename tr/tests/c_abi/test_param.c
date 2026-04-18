@@ -47,6 +47,24 @@ int main(void) {
         return 15;
     }
 
+    /* L-6 registry extension: new scalars land in the table. */
+    rc = tr_set_param("PNBENG", 1000.0);
+    if (rc != 0) { fprintf(stderr, "set PNBENG -> %d\n", rc); return 19; }
+
+    rc = tr_set_param("MODELG", 3.0);
+    if (rc != 0) { fprintf(stderr, "set MODELG -> %d\n", rc); return 20; }
+
+    /* L-6 string setter: KNAMEQ through tr_set_param_str. */
+    rc = tr_set_param_str("KNAMEQ", "eqdata.ITER01");
+    if (rc != 0) { fprintf(stderr, "set_str KNAMEQ -> %d\n", rc); return 21; }
+
+    /* Unknown string-name must be rejected. */
+    rc = tr_set_param_str("NOT_A_STRING_PARAM", "anything");
+    if (rc == 0) {
+        fprintf(stderr, "unknown string name should have been rejected\n");
+        return 22;
+    }
+
     /* get_state must succeed after init. */
     rc = tr_get_state(&s);
     if (rc != 0) { fprintf(stderr, "tr_get_state -> %d\n", rc); return 16; }

@@ -188,6 +188,7 @@ clean:
 	-rm -f $(WR_API_RUN_O)   $(WR_API_RUN_BIN)
 	-rm -f $(WR_API_REINIT_O) $(WR_API_REINIT_BIN)
 	-rm -f $(WR_API_SO_O)    $(WR_API_SO_BIN)
+	-rm -f $(WR_API_NEG_O)   $(WR_API_NEG_BIN)
 
 veryclean: clean
 	-rm -f wr
@@ -195,6 +196,7 @@ veryclean: clean
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libwrapi.so
 	-rm -f $(WR_API_SO_O) $(WR_API_SO_BIN)
+	-rm -f $(WR_API_NEG_O) $(WR_API_NEG_BIN)
 
 # =====================================================================
 # Phase L-4: libwrapi.so shared library build
@@ -412,6 +414,39 @@ wr_api_check_so: libwrapi.so $(WR_API_SO_BIN)
 	@echo "Phase L-4 wr_api_check_so: dlopen libwrapi.so + full cycle ..."
 	@WRLIB_PATH=$(CURDIR)/libwrapi.so $(WR_API_SO_BIN)
 	@echo "Phase L-4 wr_api_check_so OK"
+
+# ---------------------------------------------------------------------
+# Phase L-6: Layer 2 (C ABI) negative test + all-in-one entry point.
+#
+# Builds + runs the full C ABI test set in one shot so CI (via
+# test_run/run_tests.sh) can invoke a single target. Consists of:
+#
+#   test_smoke    - 4 entry points return WR_OK           (L-2)
+#   test_param    - set_param + get_state dispatch       (L-3)
+#   test_run      - wr_run executes setup + exec         (L-3)
+#   test_reinit   - 3x init->run->finalize cycles        (L-3 PR #36)
+#   test_run_so   - dlopen libwrapi.so + full cycle      (L-4)
+#   test_negative - rejection / post-finalize contracts  (L-6, new)
+#
+# The L-2/L-3 tests + reinit + negative link against OBJ_API + libwr.a;
+# the dlopen driver uses libdl and loads libwrapi.so at runtime.
+# ---------------------------------------------------------------------
+WR_API_NEG_C=$(WR_API_SMOKE_DIR)/test_negative.c
+WR_API_NEG_O=$(WR_API_SMOKE_DIR)/test_negative.o
+WR_API_NEG_BIN=$(WR_API_SMOKE_DIR)/test_negative
+
+$(WR_API_NEG_O): $(WR_API_NEG_C) wr_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(WR_API_NEG_O) $(WR_API_NEG_C)
+
+$(WR_API_NEG_BIN): $(WR_API_NEG_O) $(OBJ_API) $(LIBS) $(LIB_MTX)
+	$(FLINKER) -o $(WR_API_NEG_BIN) $(WR_API_NEG_O) $(OBJ_API) \
+	    $(WR_API_DEPS) $(FFLAGS) $(FLIBS)
+
+.PHONY: wr_api_check_all
+wr_api_check_all: wr_api_check wr_api_check_so $(WR_API_NEG_BIN)
+	@echo "Phase L-6 wr_api_check_all: running negative tests ..."
+	@$(WR_API_NEG_BIN)
+	@echo "Phase L-6 wr_api_check_all OK: smoke/param/run/reinit/run_so/negative"
 
 WRCOMM=wrcomm.f90 ../dp/dpcomm.f90 ../pl/plcomm.f90
 $(OBJDIR)/wrcomm.o: $(WRCOMM)

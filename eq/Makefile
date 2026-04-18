@@ -15,19 +15,35 @@ FFLAGS=-g $(OFLAGS)
 
 MODINCLUDE=-I$(MOD) -I../../bpsd/$(MOD) -I../mtxp/$(MOD) -I../pl/$(MOD) -I../lib/$(MOD)
 
-# SRCS_CORE: Phase F-1 (eq F90 modernization) -- new F90 MODULEs
-# mirroring the eqcom{0..3}.inc COMMON bundles. These must compile
-# before any file that USEs them (directly or via the shim headers
-# eqcom{c,m,q,x}.inc). Keep them at the head of $(OBJS) so the make
-# dependency walker emits their .mod files early.
-SRCS_CORE = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90
+# Phase L-1 + F-1: SRCS split into CORE / GRAPHICS / MENU groups.
+# SRCS_CORE leads with the Phase F-1 F90 MODULEs (eqcom{0,1,2,3}_mod.f90)
+# that mirror the eqcom{0..3}.inc COMMON bundles; they must compile first
+# so their .mod files are available to every file that USEs them (directly
+# or via the shim headers eqcom{c,m,q,x}.inc).
+#
+# libeq_pic.a / libeqapi.so link SRCS_CORE only (no graphics / no menu).
+# The eq / pl / ak binaries still build from the full union.
 
+# --- core: F-1 MODULEs + equilibrium physics + file I/O + regression hook ---
+SRCS_CORE = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90 \
+            equcom.f90 equread.f90 eqlib.f90 \
+            eqbpsd.f eqinit.f eqcalc.f eqcalq.f eqcalv.f \
+            eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
+            eq-eqdsk.f eq-qst.f eqgetp.f eqregress.f \
+            newton.f invematrix.f equnit.f eqrppl.f
+
+# --- graphics (GSAF plotting, contour; eqfile uses GUCLIP) ---
+# Note: eqg2d.f / eqg3d.f remain in SRC2D / SRC3D below.
+SRCS_GRAPHICS = eqgout.f eqgsub.f eqfile.f
+
+# --- interactive menu driver (depends on graphics) ---
+SRCS_MENU = eqmenu.f
+
+# --- final SRCS for the existing eq / pl / ak binaries (unchanged behaviour) ---
+SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
+
+# Legacy alias for the module group (kept for any ad-hoc references).
 SRCX = equcom.f90 equread.f90 eqlib.f90
-SRCS = eqbpsd.f eqinit.f eqmenu.f eqcalc.f eqcalq.f eqcalv.f \
-       eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
-       eq-eqdsk.f eq-qst.f eqfile.f \
-       eqgout.f eqgsub.f eqgetp.f eqregress.f \
-       newton.f invematrix.f equnit.f eqrppl.f
 
 SRCT = trtest.f treqin.f
 SRCP = pltest.f
@@ -35,7 +51,7 @@ SRCA = aktest.f akeqin.f
 SRC2D= eqg2d.f
 SRC3D= eqg3d.f
 
-OBJS = $(SRCS_CORE:.f90=.o) $(SRCX:.f90=.o) $(SRCS:.f=.o)
+OBJS = $(patsubst %.f,%.o,$(patsubst %.f90,%.o,$(SRCS)))
 OBJT = $(SRCT:.f=.o)
 OBJP = $(SRCP:.f=.o)
 OBJA = $(SRCA:.f=.o)
@@ -112,23 +128,18 @@ MODDIR_PIC=mod_pic
 PIC_FLAGS=-fPIC -J$(MODDIR_PIC) -I$(MODDIR_PIC)
 MODINCLUDE_PIC=-I$(MODDIR_PIC) -I../../bpsd/$(MOD) -I../mtxp/mod_pic -I../pl/mod_pic -I../lib/mod_pic
 
-# libtrapi.so excludes all graphics, so libeq_pic.a drops:
-#   - eqgout / eqgsub / eqg2d : direct GSAF (PAGES/PAGEE/GRD1D/etc.)
-#   - equread                 : module with embedded gsaf calls (pagee)
+# libtrapi.so / libeqapi.so exclude all graphics and the interactive menu,
+# so libeq_pic.a is built from $(SRCS_CORE) only. After the L-1 split,
+# SRCS_CORE already excludes SRCS_GRAPHICS (eqgout/eqgsub/eqfile) and
+# SRCS_MENU (eqmenu). With F-1, SRCS_CORE leads with the F90 MODULEs so
+# their .mod files are emitted before any consumer is compiled.
 #
-# We KEEP eqfile/equnit/eq-eqdsk/eq-qst etc. even though they reference
-# equread::eqdsk; the resulting .so has those symbols undefined but they
-# are unreachable from the tr_init -> tr_run happy path (only invoked on
-# explicit EQDSK file load, which the C ABI does not expose). Linking the
-# shared object with -Wl,--unresolved-symbols=ignore-in-shared-libs lets
-# the .so load while still failing loudly if a graphics path is ever
-# reached at run-time.
-SRCS_EQ_NOGR = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90
-SRCS_EQ_NOGR += equcom.f90 equread.f90 eqlib.f90
-SRCS_EQ_NOGR += eqbpsd.f eqinit.f eqmenu.f eqcalc.f eqcalq.f eqcalv.f \
-                eqsub.f eqfunc.f eqintf.f eqsplf.f equintf.f \
-                eq-eqdsk.f eq-qst.f eqfile.f eqgetp.f eqregress.f \
-                newton.f invematrix.f equnit.f eqrppl.f
+# Symbols still referenced from CORE that resolve into GRAPHICS
+# (e.g. equread::eqdsk via eq-eqdsk/eq-qst) remain undefined in the
+# resulting .so and must be linked with
+# -Wl,--unresolved-symbols=ignore-in-shared-libs, failing loudly if a
+# graphics path is ever reached at run-time.
+SRCS_EQ_NOGR = $(SRCS_CORE)
 OBJS_PIC = $(addprefix $(OBJDIR_PIC)/, $(patsubst %.f90,%.o,$(patsubst %.f,%.o,$(SRCS_EQ_NOGR))))
 
 $(OBJDIR_PIC)/%.o: %.f

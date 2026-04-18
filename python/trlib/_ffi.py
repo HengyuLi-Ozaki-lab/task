@@ -110,7 +110,14 @@ def _default_lib_path() -> Path:
 
 
 def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
-    """Attach argtypes / restype to the 5 exported C ABI symbols."""
+    """Attach argtypes / restype to the 6 exported C ABI symbols.
+
+    ``tr_set_param_str`` (L-6 follow-up) is attached best-effort: older
+    libtrapi.so builds from the L-3..L-5 series do not export it, and
+    we do not want to break wrapper import in that case. Callers that
+    need the string setter will get a clean ``AttributeError`` on first
+    use instead.
+    """
     lib.tr_init.restype = ctypes.c_int
     lib.tr_init.argtypes = []
 
@@ -119,6 +126,14 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
 
     lib.tr_set_param.restype = ctypes.c_int
     lib.tr_set_param.argtypes = [ctypes.c_char_p, ctypes.c_double]
+
+    try:
+        lib.tr_set_param_str.restype = ctypes.c_int
+        lib.tr_set_param_str.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    except AttributeError:
+        # Older .so without the string setter. Leave the attribute
+        # missing; Trlib.set_param_str will raise on use.
+        pass
 
     lib.tr_get_state.restype = ctypes.c_int
     lib.tr_get_state.argtypes = [ctypes.POINTER(TrStateC)]

@@ -86,6 +86,27 @@ class Trlib:
         )
         raise_for_ierr(f"tr_set_param('{name}', {value})", ierr)
 
+    def set_param_str(self, name: str, value: str) -> None:
+        """Set one string-valued parameter (e.g. ``KNAMEQ``).
+
+        ``libtrapi.so`` exposes ``tr_set_param_str`` as of the L-6
+        registry-extension PR. Older builds will raise :class:`TrlibError`
+        because :mod:`trlib._ffi` leaves the attribute missing; update
+        the .so via ``make -C tr libtrapi.so`` to recover.
+        """
+        if self._closed:
+            raise TrlibError("set_param_str on closed Trlib")
+        try:
+            fn = self._lib.tr_set_param_str
+        except AttributeError as exc:
+            raise TrlibError(
+                "libtrapi.so does not export tr_set_param_str; "
+                "rebuild the shared library after the L-6 registry "
+                "extension PR."
+            ) from exc
+        ierr = fn(name.encode("ascii"), value.encode("ascii"))
+        raise_for_ierr(f"tr_set_param_str('{name}', '{value}')", ierr)
+
     def set_params(self, **kwargs: float) -> None:
         """Bulk-set **scalar** parameters by keyword.
 

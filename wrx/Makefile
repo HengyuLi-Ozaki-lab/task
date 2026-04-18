@@ -137,6 +137,11 @@ WRX_API_RUN_C     = $(WRX_API_SMOKE_DIR)/test_run.c
 WRX_API_RUN_O     = $(WRX_API_SMOKE_DIR)/test_run.o
 WRX_API_RUN_BIN   = $(WRX_API_SMOKE_DIR)/test_run
 
+# Phase L-6: negative-path C ABI driver (rejection contracts).
+WRX_API_NEG_C     = $(WRX_API_SMOKE_DIR)/test_negative.c
+WRX_API_NEG_O     = $(WRX_API_SMOKE_DIR)/test_negative.o
+WRX_API_NEG_BIN   = $(WRX_API_SMOKE_DIR)/test_negative
+
 # At L-3 the API drivers depend on wrcomm + wr_prep/setup/exec which
 # live in libwr.a, plus the eq/pl/dp/bpsd/mtx stack from $(LIBS).
 WRX_API_DEPS = $(LIBS) $(LIBX_MTX)
@@ -149,6 +154,8 @@ $(WRX_API_PARAM_O): $(WRX_API_PARAM_C) wrx_api.h
 	$(CC) $(CFLAGS_API) -I. -c -o $(WRX_API_PARAM_O) $(WRX_API_PARAM_C)
 $(WRX_API_RUN_O):   $(WRX_API_RUN_C)   wrx_api.h
 	$(CC) $(CFLAGS_API) -I. -c -o $(WRX_API_RUN_O)   $(WRX_API_RUN_C)
+$(WRX_API_NEG_O):   $(WRX_API_NEG_C)   wrx_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(WRX_API_NEG_O)   $(WRX_API_NEG_C)
 
 # Step 2: link against API objects + libwr.a + eq/pl/dp/bpsd/mtx.
 # gfortran drives the link so libgfortran is pulled in automatically.
@@ -160,6 +167,9 @@ $(WRX_API_PARAM_BIN): $(WRX_API_PARAM_O) $(OBJ_API) $(LIBS)
 	   $(WRX_API_DEPS) $(FFLAGS) $(FLIBS)
 $(WRX_API_RUN_BIN):   $(WRX_API_RUN_O)   $(OBJ_API) $(LIBS)
 	$(FLINKER) -o $(WRX_API_RUN_BIN)   $(WRX_API_RUN_O)   $(OBJ_API) \
+	   $(WRX_API_DEPS) $(FFLAGS) $(FLIBS)
+$(WRX_API_NEG_BIN):   $(WRX_API_NEG_O)   $(OBJ_API) $(LIBS)
+	$(FLINKER) -o $(WRX_API_NEG_BIN)   $(WRX_API_NEG_O)   $(OBJ_API) \
 	   $(WRX_API_DEPS) $(FFLAGS) $(FLIBS)
 
 .PHONY: wrx_api_check
@@ -204,7 +214,9 @@ clean:
 	-rm -f $(WRX_API_PARAM_O) $(WRX_API_PARAM_BIN)
 	-rm -f $(WRX_API_RUN_O)   $(WRX_API_RUN_BIN)
 	-rm -f $(WRX_API_SO_O)    $(WRX_API_SO_BIN)
+	-rm -f $(WRX_API_NEG_O)   $(WRX_API_NEG_BIN)
 	-rm -f tests/c_abi/out_smoke.log tests/c_abi/out_param.log tests/c_abi/out_run.log
+	-rm -f tests/c_abi/out_negative.log
 
 veryclean: clean
 	-rm -f wr
@@ -429,6 +441,27 @@ wrx_api_check_so: libwrxapi.so $(WRX_API_SO_BIN)
 	@echo "Phase L-4 wrx_api_check_so: dlopen libwrxapi.so + full cycle ..."
 	@WRXLIB_PATH=$(CURDIR)/libwrxapi.so $(WRX_API_SO_BIN)
 	@echo "Phase L-4 wrx_api_check_so OK"
+
+# ---------------------------------------------------------------------
+# Phase L-6: wrx_api_check_all
+#
+# Aggregate driver that runs smoke + param + run (static link via
+# wrx_api_check) + run_so (dlopen via wrx_api_check_so) + negative
+# (new, rejection contracts). Used by
+# test_run/test_definitions.conf's ``wrxlib_c_abi`` row.
+#
+# test_negative deliberately does NOT invoke wrx_run -- see the header
+# comment of tests/c_abi/test_negative.c.
+# ---------------------------------------------------------------------
+.PHONY: wrx_api_check_all
+wrx_api_check_all: wrx_api_check wrx_api_check_so $(WRX_API_NEG_BIN)
+	@echo "Phase L-6 wrx_api_check_all: running negative tests ..."
+	@printf '0\nc\n' | $(WRX_API_NEG_BIN) > tests/c_abi/out_negative.log 2>&1 ; \
+	  rc=$$? ; \
+	  if [ $$rc -ne 0 ] || ! grep -q "OK: Layer 2 negative tests" tests/c_abi/out_negative.log ; then \
+	    echo "FAIL test_negative (rc=$$rc):" ; tail tests/c_abi/out_negative.log ; exit 1 ; \
+	  fi ; echo "PASS test_negative"
+	@echo "Phase L-6 wrx_api_check_all OK: smoke/param/run/run_so/negative"
 
 WRCOMM=wrcomm.f90 ../dp/dpcomm.f90 ../pl/plcomm.f90
 $(OBJDIR)/wrcomm.o: $(WRCOMM)

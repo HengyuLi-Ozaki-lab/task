@@ -117,6 +117,23 @@ wrx/obj/pic/
 wrx/mod_pic/
 wrx/tests/c_abi/test_run_so
 
+# ti L-4: libtiapi.so build artefacts
+ti/libtiapi.so
+ti/obj/pic/
+ti/mod_pic/
+ti/tests/c_abi/test_smoke
+ti/tests/c_abi/test_param
+ti/tests/c_abi/test_run
+ti/tests/c_abi/test_run_so
+ti/tests/c_abi/test_negative
+ti/tests/c_abi/*.o
+adpost/obj/pic/
+adpost/mod_pic/
+adpost/lib-adpost_pic.a
+open-adas/adf11/adf11-lib/obj/pic/
+open-adas/adf11/adf11-lib/mod_pic/
+open-adas/adf11/adf11-lib/lib-adf11_pic.a
+
 # Python
 __pycache__/
 *.pyc
