@@ -1,0 +1,10 @@
+ &ti
+   NSMAX=1
+   NRMAX=10
+   NTSTEP=1
+   NGTSTEP=1
+   NGRSTEP=1
+   NTMAX=2
+ &end
+R
+Q

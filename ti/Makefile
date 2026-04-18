@@ -29,7 +29,7 @@ MODINCLUDE= -I./$(MOD) -I../open-adas/adf11/adf11-lib/$(MOD) \
 SRCS=   ticomm.f90 tiadas.f90 \
 	tiinit.f90 tiparm.f90 \
 	ticoef.f90 tisource.f90 ticalc.f90 tirecord.f90 \
-        tiprep.f90 tiexec.f90 \
+        tiprep.f90 tiregress.f90 tiexec.f90 \
         tigout.f90 timenu.f90
 
 #      trprof.f90 trufsub.f90 trufile.f90 trfile.f90 trhelp.f90 \
@@ -100,7 +100,8 @@ tiparm.o : tiparm.f90 ticomm.f90
 tiprep.o : tiprep.f90 ticomm.f90 ../adpost/lib-adpost.f90 \
            ../open-adas/adf11/adf11-lib/lib-adf11.f90
 tigout.o : tigout.f90 ticomm.f90
-tiexec.o : tiexec.f90 ticomm.f90
+tiregress.o : tiregress.f90 ticomm.f90
+tiexec.o : tiexec.f90 ticomm.f90 tiregress.f90
 ticoef.o : ticoef.f90 ticomm.f90
 tisource.o : tisource.f90 ticomm.f90
 ticalc.o : ticalc.f90 ticomm.f90
