@@ -4,7 +4,7 @@
 
 **Goal:** L-2 で空シェルだった `tr_param_registry.f90` に、namelist (`trparm.f90`) パラメータの setter テーブルを実装する。同時に `tr_api.f90` の `tr_get_state` を実体化し、`tr_run` を「N ステップだけ既存 `tr_loop` を回す」最小ラッパに昇格させる。**`tr2` バイナリは引き続き未変更（API は別オブジェクト群）**。
 
-**Architecture:** 設計書 §5 の手書き SELECT CASE 方式を採用。スカラー / 整数 / 1 次元配列の 3 種類を扱う `parse_array_subscript` ヘルパで `"PN[1]"` → (`PN`, 1) を分解。`tr_get_state` は Phase 0 の `trregress.f90` が dump している同じスカラー集合 (§4.2 の構造体) を `TRCOMM` から取り出してコピーする。`tr_run(ntmax)` は `NTMAX = ntmax` を一時セットして既存 `tr_loop` を 1 回呼ぶラッパで、内部ロジックは触らない。
+**Architecture:** 設計書 §5 の手書き SELECT CASE 方式を採用。スカラー / 整数 / 1 次元配列の 3 種類を扱う `parse_array_subscript` ヘルパで `"PN[1]"` → (`PN`, 1) を分解。`tr_get_state` は Phase 0 の `trregress.f90` が dump している同じスカラー集合 (§4.2 の構造体) を `TRCOMM` から取り出してコピーする。`tr_run(ntmax_in)` は `NTMAX = ntmax_in` を一時セットして既存 `tr_loop` を 1 回呼ぶラッパで、内部ロジックは触らない（dummy 引数名は TRCOMM の `NTMAX` とのケース非依存衝突を避けるため `ntmax_in`）。
 
 **Tech Stack:** Fortran 2003 (SELECT CASE, ISO_C_BINDING), 既存 TRCOMM 変数群、既存 `tr_loop`（`trloop.f90`）, gfortran。
 
@@ -145,13 +145,15 @@ CONTAINS
     CASE ("PHIA");  PHIA  = value
     ! --- plasma scalars
     CASE ("NSMAX"); NSMAX = INT(value)
-    ! --- plasma arrays (1..NSM, 1-origin)
-    CASE ("PA");    IF (idx < 1) THEN; ierr = 1; ELSE; PA(idx)  = value; END IF
-    CASE ("PZ");    IF (idx < 1) THEN; ierr = 1; ELSE; PZ(idx)  = value; END IF
-    CASE ("PN");    IF (idx < 1) THEN; ierr = 1; ELSE; PN(idx)  = value; END IF
-    CASE ("PNS");   IF (idx < 1) THEN; ierr = 1; ELSE; PNS(idx) = value; END IF
-    CASE ("PT");    IF (idx < 1) THEN; ierr = 1; ELSE; PT(idx)  = value; END IF
-    CASE ("PTS");   IF (idx < 1) THEN; ierr = 1; ELSE; PTS(idx) = value; END IF
+    ! --- plasma arrays (1..NSMM, 1-origin; NSMM=100 per tr/trcom0.f90)
+    !     Use SIZE(arr) for the upper bound so the check stays correct even
+    !     if the array's declared dimension constant is renamed.
+    CASE ("PA");    IF (idx < 1 .OR. idx > SIZE(PA))  THEN; ierr = 1; ELSE; PA(idx)  = value; END IF
+    CASE ("PZ");    IF (idx < 1 .OR. idx > SIZE(PZ))  THEN; ierr = 1; ELSE; PZ(idx)  = value; END IF
+    CASE ("PN");    IF (idx < 1 .OR. idx > SIZE(PN))  THEN; ierr = 1; ELSE; PN(idx)  = value; END IF
+    CASE ("PNS");   IF (idx < 1 .OR. idx > SIZE(PNS)) THEN; ierr = 1; ELSE; PNS(idx) = value; END IF
+    CASE ("PT");    IF (idx < 1 .OR. idx > SIZE(PT))  THEN; ierr = 1; ELSE; PT(idx)  = value; END IF
+    CASE ("PTS");   IF (idx < 1 .OR. idx > SIZE(PTS)) THEN; ierr = 1; ELSE; PTS(idx) = value; END IF
     ! --- current
     CASE ("RIPS");  RIPS  = value
     CASE ("RIPE");  RIPE  = value
@@ -166,7 +168,7 @@ CONTAINS
     CASE ("MDLETA"); MDLETA = INT(value)
     CASE ("MDLAD");  MDLAD  = INT(value)
     CASE ("MDLAVK"); MDLAVK = INT(value)
-    CASE ("CDW");    IF (idx < 1) THEN; ierr = 1; ELSE; CDW(idx) = value; END IF
+    CASE ("CDW");    IF (idx < 1 .OR. idx > SIZE(CDW)) THEN; ierr = 1; ELSE; CDW(idx) = value; END IF
     CASE ("CHP");    CHP   = value
     CASE ("CK0");    CK0   = value
     CASE ("CK1");    CK1   = value
@@ -329,18 +331,21 @@ Expected: `SUBROUTINE tr_loop` あるいは `SUBROUTINE TR_LOOP` の宣言行が
 `tr_api_run` の本体を以下で置換:
 
 ```fortran
-  FUNCTION tr_api_run(ntmax) RESULT(ierr) BIND(C, NAME="tr_run")
-    INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax
+  FUNCTION tr_api_run(ntmax_in) RESULT(ierr) BIND(C, NAME="tr_run")
+    ! NOTE: dummy arg is `ntmax_in` (not `ntmax`) to avoid case-insensitive
+    ! collision with `NTMAX` brought in via `USE trcomm`. The C-side name is
+    ! still `tr_run` thanks to BIND(C, NAME=...).
+    INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax_in
     INTEGER(C_INT) :: ierr
     INTEGER :: ntmax_save, calc_ierr
     IF (.NOT. g_initialized) THEN
        ierr = 2; RETURN
     END IF
-    IF (ntmax < 0) THEN
+    IF (ntmax_in < 0) THEN
        ierr = 1; RETURN
     END IF
     ntmax_save = NTMAX
-    NTMAX = ntmax
+    NTMAX = ntmax_in
     CALL tr_loop(calc_ierr)   ! tr_loop has INTENT(OUT):: ierr — must be passed
     NTMAX = ntmax_save
     IF (calc_ierr /= 0) THEN
@@ -352,6 +357,8 @@ Expected: `SUBROUTINE tr_loop` あるいは `SUBROUTINE TR_LOOP` の宣言行が
 ```
 
 注: `NTMAX` は TRCOMM のグローバル整数。`tr_loop` はこれを「今回ステップ数」として消費する（Phase 0 確認済みの挙動）。完了後に元値を戻すことで二度目の `tr_run` が累積動作する。`tr_loop(ierr)` は `INTEGER, INTENT(OUT) :: IERR` を持つ（`tr/trloop.f90:16`）ので引数なしの呼び出しは compile error。
+
+注: dummy 引数を `ntmax_in` にしている理由は、`USE trcomm, ONLY: ... NTMAX` で取り込む `NTMAX` と Fortran のケース非依存ルールで衝突するため。`BIND(C, NAME="tr_run")` により C 側名は `tr_run` のまま維持される。
 
 ---
 
