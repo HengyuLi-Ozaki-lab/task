@@ -44,8 +44,12 @@ def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> No
         out.append(f"{label}: baseline={bv!r} actual={av!r} rel_err={e:.3e} > tol={tol:.3e}")
 
 
-_INDEX_KEYS = ("NR", "NSA", "NS")
-_DIMENSION_KEYS = ("NT", "NRMAX", "NSMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2")
+_INDEX_KEYS = ("NR", "NSA", "NS", "NRS", "NRL", "NRAY")
+_DIMENSION_KEYS = ("NT", "NRMAX", "NSMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2",
+                   "NRAYMAX", "NSTPMAX", "NRSMAX", "NRLMAX",
+                   "MODELG", "MDLWRI", "MDLWRQ", "mode_beam")
+# Additional list-of-dict sections beyond the default "profile" (used by WR).
+_PROFILE_SECTIONS = ("profile", "profile_rs", "profile_rl", "rays")
 
 
 def compare(baseline: dict, actual: dict, tol: float) -> list:
@@ -82,51 +86,53 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
         if b_int.get(k) != a_int.get(k):
             errors.append(f"scalars_int.{k}: baseline={b_int.get(k)} actual={a_int.get(k)}")
 
-    # Profiles: dispatch list-vs-float per dict key at runtime.
-    b_prof = baseline.get("profile", [])
-    a_prof = actual.get("profile", [])
-    if len(b_prof) != len(a_prof):
-        errors.append(f"profile length: baseline={len(b_prof)} actual={len(a_prof)}")
-        return errors
-    for i, (br, ar) in enumerate(zip(b_prof, a_prof)):
-        # Index keys (NR, NSA, ...) must match exactly when present on either side.
-        index_mismatch = False
-        for ikey in _INDEX_KEYS:
-            if ikey in br or ikey in ar:
-                if br.get(ikey) != ar.get(ikey):
-                    errors.append(
-                        f"profile[{i}].{ikey}: baseline={br.get(ikey)} actual={ar.get(ikey)}"
-                    )
-                    index_mismatch = True
-        if index_mismatch:
-            # Rows are not the same data point; skip field-level comparison.
+    # Profiles: iterate all known list-of-dict sections; dispatch list-vs-float at runtime.
+    for section in _PROFILE_SECTIONS:
+        b_prof = baseline.get(section)
+        a_prof = actual.get(section)
+        if b_prof is None and a_prof is None:
             continue
-        # Compare any remaining numeric/list-valued field present in baseline or actual.
-        all_keys = set(br) | set(ar)
-        for field in sorted(all_keys - set(_INDEX_KEYS)):
-            bv = br.get(field)
-            av = ar.get(field)
-            if bv is None or av is None:
-                errors.append(f"profile[{i}].{field}: missing")
+        if b_prof is None or a_prof is None:
+            errors.append(f"{section}: missing on one side")
+            continue
+        if len(b_prof) != len(a_prof):
+            errors.append(f"{section} length: baseline={len(b_prof)} actual={len(a_prof)}")
+            continue
+        for i, (br, ar) in enumerate(zip(b_prof, a_prof)):
+            index_mismatch = False
+            for ikey in _INDEX_KEYS:
+                if ikey in br or ikey in ar:
+                    if br.get(ikey) != ar.get(ikey):
+                        errors.append(
+                            f"{section}[{i}].{ikey}: baseline={br.get(ikey)} actual={ar.get(ikey)}"
+                        )
+                        index_mismatch = True
+            if index_mismatch:
                 continue
-            if isinstance(bv, list) or isinstance(av, list):
-                # legacy TR shape with list-valued fields (RN, RT)
-                if not isinstance(bv, list) or not isinstance(av, list):
-                    errors.append(f"profile[{i}].{field}: type mismatch")
+            all_keys = set(br) | set(ar)
+            for field in sorted(all_keys - set(_INDEX_KEYS)):
+                bv = br.get(field)
+                av = ar.get(field)
+                if bv is None or av is None:
+                    errors.append(f"{section}[{i}].{field}: missing")
                     continue
-                if len(bv) != len(av):
-                    errors.append(
-                        f"profile[{i}].{field}: length differ ({len(bv)} vs {len(av)})"
-                    )
-                    continue
-                for j, (bvj, avj) in enumerate(zip(bv, av)):
+                if isinstance(bv, list) or isinstance(av, list):
+                    if not isinstance(bv, list) or not isinstance(av, list):
+                        errors.append(f"{section}[{i}].{field}: type mismatch")
+                        continue
+                    if len(bv) != len(av):
+                        errors.append(
+                            f"{section}[{i}].{field}: length differ ({len(bv)} vs {len(av)})"
+                        )
+                        continue
+                    for j, (bvj, avj) in enumerate(zip(bv, av)):
+                        _check_scalar(
+                            f"{section}[{i}].{field}[{j}]", float(bvj), float(avj), tol, errors
+                        )
+                else:
                     _check_scalar(
-                        f"profile[{i}].{field}[{j}]", float(bvj), float(avj), tol, errors
+                        f"{section}[{i}].{field}", float(bv), float(av), tol, errors
                     )
-            else:
-                _check_scalar(
-                    f"profile[{i}].{field}", float(bv), float(av), tol, errors
-                )
     return errors
 
 
