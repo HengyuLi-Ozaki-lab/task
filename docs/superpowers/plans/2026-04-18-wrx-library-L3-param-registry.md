@@ -95,6 +95,12 @@ CONTAINS
 
     ierr = 0
     CALL parse_array_subscript(name, base, idx)
+    IF (idx < 1) THEN
+       ! Malformed bracket (`PN[]`, `PN[0]`, non-integer subscript).
+       ! Reject before any 1-origin array access can underflow.
+       ierr = 1
+       RETURN
+    END IF
 
     SELECT CASE (TRIM(base))
     ! --- Geometry ---
@@ -190,20 +196,29 @@ CONTAINS
   END FUNCTION wrx_param_set
 
   SUBROUTINE parse_array_subscript(full_name, base, idx)
+    !! Parse "NAME[i]" -> base="NAME", idx=i (1-origin Fortran convention).
+    !! When no "[i]" suffix is present, idx defaults to 1 so that scalar
+    !! callers can ignore idx safely while array params get the dominant
+    !! (first) element. Malformed brackets (`NAME[]`, `NAME[0]`,
+    !! non-integer content) yield idx=0 so that array CASE branches trip
+    !! out-of-bounds detection / explicit ierr=1 returns upstream.
     CHARACTER(LEN=*), INTENT(IN)  :: full_name
     CHARACTER(LEN=*), INTENT(OUT) :: base
     INTEGER,          INTENT(OUT) :: idx
     INTEGER :: lb, rb, ios
 
     base = full_name
-    idx = 0
+    idx = 1                       ! 1-origin default for array params
     lb = INDEX(full_name, '[')
-    IF (lb == 0) RETURN
+    IF (lb == 0) RETURN           ! no subscript -> keep idx=1 (Fortran 1-origin)
     rb = INDEX(full_name, ']')
-    IF (rb <= lb) RETURN
+    IF (rb <= lb) THEN
+       idx = 0                    ! malformed -> sentinel (caller may reject)
+       RETURN
+    END IF
     base = full_name(1:lb-1)
     READ(full_name(lb+1:rb-1), *, IOSTAT=ios) idx
-    IF (ios /= 0) idx = 0
+    IF (ios /= 0) idx = 0         ! unparsable subscript -> sentinel
   END SUBROUTINE parse_array_subscript
 
 END MODULE wrx_param_registry
@@ -296,6 +311,13 @@ END MODULE wrx_param_registry
     INTEGER(C_INT) :: ierr
     INTEGER :: nray, nsa, n_r, n_s
     IF (.NOT. g_initialized) THEN
+       ierr = 2
+       RETURN
+    END IF
+    IF (.NOT. g_run_called) THEN
+       ! pwr_nray, pwr_nsa, NSTPMAX_NRAY, ... are populated by wr_exec.
+       ! Without wrx_run these are unallocated/garbage -> reject explicitly
+       ! using the same NOT_INITIALIZED code as the finalize-guard pattern.
        ierr = 2
        RETURN
     END IF
@@ -485,7 +507,10 @@ git commit -m "feat(wrx): implement wrx_run/set_param/get_state with param regis
 - [ ] `wrx/wrx_param_registry.f90` に `wrx_param_set` が実装されている
 - [ ] 30 個以上のパラメータが `SELECT CASE` に登録されている
 - [ ] `parse_array_subscript` が `"PN[1]"` を `base="PN", idx=1` に分解する
+- [ ] `parse_array_subscript` が `"PN"`（subscript なし）を `idx=1` にデフォルトする（1-origin Fortran convention）
+- [ ] `wrx_param_set("PN[0]", ...)` / `"PN[]"` / `"PN[abc]"` が `ierr=1` を返す（1-origin 配列の underflow 防止）
 - [ ] `wrx_api.f90` の 5 関数すべて実装完了（stub なし）
+- [ ] `wrx_get_state` が `wrx_run` 未呼出時に `ierr=2` を返す（NOT_INITIALIZED と同コード、`g_run_called` ガード）
 - [ ] `wrx_get_state` が `NRAYMAX > WRX_MAX_NRAYMAX` のとき ierr=1 を返す
 - [ ] `wrx_finalize` が `wr_deallocate` を呼ぶ（`g_run_called` + `ALLOCATED(pwr_nray)` ガード経由のみ）
 - [ ] `wrx_init` → `wrx_finalize`（`wrx_run` を呼ばないパス）が seg-fault せず ierr=0 で復帰
