@@ -42,6 +42,13 @@ SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 # Legacy alias for the module group (kept for any ad-hoc references).
 SRCX = equcom.f90 equread.f90 eqlib.f90
 
+# Phase L-2: C ABI sources. Compiled via the eq_api_compile_check /
+# eq_api_check targets only; NOT part of $(SRCS) and NOT linked into
+# libeq.a or the eq / pl / ak binaries so their behavior is unchanged.
+# The full libeqapi.so build arrives in Phase L-4.
+SRCS_API = eq_state.f90 eq_param_registry.f90 eq_api.f90
+OBJ_API  = $(SRCS_API:.f90=.o) eq_api_common.o
+
 SRCT = trtest.f treqin.f
 SRCP = pltest.f
 SRCA = aktest.f akeqin.f
@@ -187,3 +194,51 @@ aktest.o: aktest.f
 akeqin.o: akeqin.f $(EQCOMM) eqcom3.inc
 newton.o: newton.f
 invematrix.o: invematrix.f
+
+# ---------------------------------------------------------------------
+# Phase L-2 C ABI scaffold
+#
+# `make eq_api_compile_check` compiles the new API objects
+# (eq_state.o / eq_param_registry.o / eq_api.o / eq_api_common.o)
+# without linking. It does NOT touch libeq.a, the eq / pl / ak
+# binaries, or any existing objects, so the L-0/L-1 behavior is
+# bit-identical.
+#
+# `make eq_api_check` additionally builds a minimal C driver
+# (tests/c_abi/test_smoke.c) that links libeq.a + OBJ_API and
+# calls eq_init -> eq_get_state -> eq_finalize. The driver prints
+# the grid dimensions returned by eq_get_state.
+#
+# Both targets require libeq.a to be up-to-date because eq_api_common.f
+# uses INCLUDE 'eqcomm.inc' which pulls in USE plcomm from pl/ (same
+# dependency chain as libeq.a itself).
+# ---------------------------------------------------------------------
+CC ?= gcc
+CFLAGS_API ?= -Wall -Wextra -O2
+
+EQ_API_SMOKE_DIR = tests/c_abi
+EQ_API_SMOKE_C   = $(EQ_API_SMOKE_DIR)/test_smoke.c
+EQ_API_SMOKE_O   = $(EQ_API_SMOKE_DIR)/test_smoke.o
+EQ_API_SMOKE_BIN = $(EQ_API_SMOKE_DIR)/test_smoke
+
+eq_state.o          : eq_state.f90
+eq_param_registry.o : eq_param_registry.f90
+eq_api.o            : eq_api.f90 eq_state.f90 eq_param_registry.f90 equnit.f
+eq_api_common.o     : eq_api_common.f $(EQCOMM)
+
+.PHONY: eq_api_compile_check
+eq_api_compile_check: libs libeq.a $(OBJ_API)
+	@echo "Phase L-2 eq_api_compile_check OK: $(OBJ_API)"
+
+$(EQ_API_SMOKE_O): $(EQ_API_SMOKE_C) eq_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(EQ_API_SMOKE_O) $(EQ_API_SMOKE_C)
+
+$(EQ_API_SMOKE_BIN): $(EQ_API_SMOKE_O) $(OBJ_API) libeq.a
+	$(FLINKER) -o $(EQ_API_SMOKE_BIN) $(EQ_API_SMOKE_O) $(OBJ_API) \
+	    $(LIBS2) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
+
+.PHONY: eq_api_check
+eq_api_check: libs libeq.a $(EQ_API_SMOKE_BIN)
+	@echo "Phase L-2 eq_api_check: running $(EQ_API_SMOKE_BIN) ..."
+	@LD_LIBRARY_PATH=.:$${LD_LIBRARY_PATH} $(EQ_API_SMOKE_BIN)
+	@echo "Phase L-2 eq_api_check OK"
