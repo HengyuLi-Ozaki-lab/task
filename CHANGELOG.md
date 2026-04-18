@@ -123,3 +123,72 @@ architecture, parameter registry, and 4-layer test structure. The
   `DN0_NS[i]` are not yet in the registry.
 - Single instance per process only — TI globals are COMMON-block
   state.
+
+## FP Phase L — library-ization (2026-04-18)
+
+Phase L mirrors the TR library-ization for the TASK/FP Fokker-Planck
+module: the same 5 C ABI functions, the same wrapper architecture,
+parameter registry, and 4-layer test structure. The `fp` CLI binary
+and its menu/graphics are unchanged.
+
+### Added
+
+- **L-0 (2026-04-18, PR #13)** — Phase 0 regression-test
+  infrastructure for FP: `test_run/baselines/fp_{iter01,jt60,dt1}/`,
+  `fpregress.f90` (env-guarded high-precision dump),
+  `test_run/scripts/extract_fp_metrics.py`, and the three baseline
+  test cases `fp_iter01`, `fp_jt60`, `fp_dt1` wired into
+  `test_definitions.conf`.
+- **L-1 (2026-04-18, PR #26)** — `fp/Makefile` split into
+  CORE / GRAPHICS / MENU `SRCS` groups so graphics-free Fortran
+  compilations can be staged without touching the `fp` binary
+  build.
+- **L-2 (2026-04-18, PR #29)** — C ABI foundation: `fp/fp_api.h`,
+  `fp/fp_api.f90`, `fp/fp_state.f90`; 5 entry-point stubs returning
+  `FP_ERR_NOT_IMPL` (ierr=4), plus first C-side compile-only smoke
+  tests under `fp/tests/c_abi/`.
+- **L-3 (2026-04-18, PR #37)** — Parameter registry
+  (`fp/fp_param_registry.f90`, ~40 unique `SELECT CASE` entries
+  covering ~55 settable variables across geometry, mesh, species,
+  time, wave heating, and model switches) and real bodies for
+  `fp_init` / `fp_run` / `fp_get_state` / `fp_finalize`.
+  `fp_set_param` accepts `"NAME"` and `"NAME[idx]"` (1-origin).
+- **L-4 (2026-04-18, PR #43)** — `make -C fp libs_pic && make -C fp
+  libfpapi.so` builds the shared library. PIC variants (`*_pic.a`)
+  of `lib`, `pl`, `eq`, `ob`, `dp`, `mtxp`, `bpsd` added to
+  participating Makefiles; `fp_graphics_stubs.f90` provides the
+  dangling-symbol shims that keep the graphics-free link clean.
+  Non-PIC archives and the `fp` binary are unchanged.
+- **L-5 (2026-04-18, PR #55)** — Python wrapper `python/fplib/`:
+  `Fplib` context manager, `FpState` dataclass, exception hierarchy
+  mirroring `enum fp_error`, `_ffi` ctypes layer with `FPLIB_PATH`
+  override and `RTLD_LAZY` loading. `set_params` accepts scalars,
+  `dict{idx: v}`, and `list/tuple` values for array parameters.
+- **L-6 (2026-04-18, PR #56)** — 4-layer test suite wired into
+  `test_run/test_definitions.conf`:
+  `fplib_equivalence` (Layer 1 vs Phase 0 baselines at tol `1e-10`),
+  `fplib_c_abi` (Layer 2 `make -C fp fp_api_check_all`),
+  `fplib_ffi` + `fplib_wrapper` (Layer 3 Python),
+  `fplib_sweep` (Layer 4 3×3 RR×BB smoke). `fp_iter01` fixture pins
+  `MODELG=3` so Layer 1 runs against a consistent geometry.
+- **L-7 (2026-04-18, this PR)** — User-facing documentation:
+  rewritten `python/fplib/README.md`, example scripts
+  (`quickstart.py`, `parameter_sweep.py`, `state_dump.py`),
+  architecture doc (`docs/fp-library/architecture.md`), and this
+  changelog entry.
+
+### Known issues
+
+- `fp_finalize` does not deallocate FPCOMM arrays (asymmetry between
+  `fp_allocate` and `fp_deallocate`); a single
+  `fp_init`/`fp_run`/`fp_finalize` per process is the supported
+  lifecycle at L-3. Repeated cycles work because `fp_init` resets
+  the necessary SAVE state, but long-running drivers can leak
+  allocations.
+- String parameters (`KNAMFP`, ...) are not wired through
+  `fp_set_param`; the float-only C ABI cannot carry strings.
+- Mesh caps `FP_MAX_NRMAX=100` and `FP_MAX_NSAMAX=8` are baked into
+  the exported `fp_state_t`; larger runs require bumping constants
+  and rebuilding.
+- Single instance per process only — FP globals are module-level
+  state.
