@@ -332,7 +332,7 @@ Expected: `SUBROUTINE tr_loop` あるいは `SUBROUTINE TR_LOOP` の宣言行が
   FUNCTION tr_api_run(ntmax) RESULT(ierr) BIND(C, NAME="tr_run")
     INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax
     INTEGER(C_INT) :: ierr
-    INTEGER :: ntmax_save
+    INTEGER :: ntmax_save, calc_ierr
     IF (.NOT. g_initialized) THEN
        ierr = 2; RETURN
     END IF
@@ -341,13 +341,17 @@ Expected: `SUBROUTINE tr_loop` あるいは `SUBROUTINE TR_LOOP` の宣言行が
     END IF
     ntmax_save = NTMAX
     NTMAX = ntmax
-    CALL tr_loop
+    CALL tr_loop(calc_ierr)   ! tr_loop has INTENT(OUT):: ierr — must be passed
     NTMAX = ntmax_save
+    IF (calc_ierr /= 0) THEN
+       ierr = 3   ! propagate computation failure
+       RETURN
+    END IF
     ierr = 0
   END FUNCTION tr_api_run
 ```
 
-注: `NTMAX` は TRCOMM のグローバル整数。`tr_loop` はこれを「今回ステップ数」として消費する（Phase 0 確認済みの挙動）。完了後に元値を戻すことで二度目の `tr_run` が累積動作する。
+注: `NTMAX` は TRCOMM のグローバル整数。`tr_loop` はこれを「今回ステップ数」として消費する（Phase 0 確認済みの挙動）。完了後に元値を戻すことで二度目の `tr_run` が累積動作する。`tr_loop(ierr)` は `INTEGER, INTENT(OUT) :: IERR` を持つ（`tr/trloop.f90:16`）ので引数なしの呼び出しは compile error。
 
 ---
 

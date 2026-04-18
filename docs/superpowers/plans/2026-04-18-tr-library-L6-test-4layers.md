@@ -427,36 +427,114 @@ Expected: 1 test OK。所要 60〜120 秒程度。
 - Modify: `test_run/test_definitions.conf`
 - Modify: `test_run/run_tests.sh`
 
-- [ ] **Step 1: 定義追加**
+### 既存仕様の確認（review #9 反映）
 
-`test_run/test_definitions.conf` の末尾に追加:
-
-```
-trlib_c_abi:python:tr/tests/c_abi/run_layer2:none:120:Layer 2 C ABI tests
-trlib_ffi:python:python -m unittest python.trlib.tests.test_ffi:none:60:Layer 3 Python wrapper
-trlib_equivalence:python:python -m unittest python.trlib.tests.test_equivalence:none:300:Layer 1 equivalence (tol 1e-10)
-trlib_sweep:python:python -m unittest python.trlib.tests.test_sweep:none:180:Layer 4 sweep smoke
-```
-
-注: `type` 列を `python` とする。`run_tests.sh` 側で dispatch を実装。
-
-- [ ] **Step 2: dispatch ロジック追加**
-
-`test_run/run_tests.sh` の中で、case の `type` を見て分岐している箇所（既存 `tr` / `eq` / `pl` 等）に **`python` 分岐を追加**:
+現行 `test_run/run_tests.sh` の dispatch 仕様:
 
 ```bash
-# inside the per-case loop, after existing type matching
-if [ "$type" = "python" ]; then
-    cd "$REPO_ROOT"   # so PYTHONPATH=python works
-    PYTHONPATH=python timeout "$timeout_sec" sh -c "$cmd" > "$outdir/output.log" 2>&1
-    rc=$?
-    if [ $rc -eq 0 ]; then echo "PASS"; else echo "FAIL"; fi
-    cd - >/dev/null
-    continue
-fi
+# run_tests.sh:104-114
+get_binary() {
+    local module="$1"
+    case "$module" in
+        eq) echo "$TASK_DIR/eq/eq" ;;
+        tr) echo "$TASK_DIR/tr/tr2" ;;
+        fp) echo "$TASK_DIR/fp/fp" ;;
+        tx) echo "$TASK_DIR/tx/tx2" ;;
+        *) echo "" ;;   # ←  python は空文字 → "module not built" 扱いになり SKIP
+    esac
+}
 ```
 
-注: `$cmd` は test_definitions.conf の `command` 列 (`python -m unittest …` または `tr/tests/c_abi/run_layer2`)。後者は make ターゲットなので `make -C tr/tests/c_abi run_layer2` に置き換える形に整える。
+`test_definitions.conf` の **第 3 列 (`INPUT_FILE`) は本来「namelist 入力ファイルへの相対パス」** として解釈され、`run_single_test()` 内では `$module_dir/$input_file` または `$TEST_RUN_DIR/inputs/$input_file` に展開される。よって本 plan が新導入する `MODULE=python` ＋「第 3 列にシェル/make コマンド文字列」という運用は、**現行コードでは確実に SKIP または ENOENT で落ちる**。
+
+そのため Step 1（conf 追加）と Step 2（run_tests.sh 拡張）は **同一コミットでアトミックに投入** する。**もし片方しか入っていないリビジョンが develop に存在するとリグレッションが発生する**ので、リビジョン順序の入れ替えは禁止（必ず Step 2 のスクリプト変更を先に書き、Step 1 の conf 追加と一緒に commit する）。
+
+dispatch のあいまいさ解消方針:
+
+- `MODULE=python` のとき、第 3 列を **shell command** として解釈する（既存 `tr`/`eq`/`fp`/`tx` のときは従来どおり INPUT_FILE）。
+- 区別の起点は `MODULE` 列の値のみ。コロン区切りはそのまま 6 列を維持し、構造変更は行わない（既存パーサ `IFS=':' read -r TEST_NAME MODULE INPUT_FILE DEPENDS TIMEOUT DESCRIPTION` を変えない）。
+- `python` ケースでは `INPUT_FILE` 変数を「シェルコマンド文字列」として再利用するため、コメントで明示する。
+
+- [ ] **Step 1 + Step 2: アトミックコミットでの conf 追加 + dispatch 拡張**
+
+両方の変更を **同一コミット** で入れる（順序逆転禁止）。
+
+(a) `test_run/test_definitions.conf` の末尾に追加:
+
+```
+# Phase L-6: Python/C-ABI test integration.
+# For MODULE=python, the 3rd column (normally INPUT_FILE) is reinterpreted
+# as a shell command line executed via "sh -c" with PYTHONPATH=python.
+trlib_c_abi:python:make -C tr/tests/c_abi run_layer2:none:120:Layer 2 C ABI tests
+trlib_ffi:python:python3 -m unittest python.trlib.tests.test_ffi:none:60:Layer 3 Python wrapper
+trlib_equivalence:python:python3 -m unittest python.trlib.tests.test_equivalence:none:300:Layer 1 equivalence (tol 1e-10)
+trlib_sweep:python:python3 -m unittest python.trlib.tests.test_sweep:none:180:Layer 4 sweep smoke
+```
+
+注: 第 3 列の `make -C tr/tests/c_abi run_layer2` のような空白を含むコマンドはそのまま「シェルに渡す 1 トークン」として扱われる。ただし `:` をコマンド中に書くと `IFS=':' read` で分割されるため、**コマンド文字列内に `:` を入れない**こと（必要なら `sh -c` で `\$(...)` にラップして回避）。
+
+(b) `test_run/run_tests.sh` の `get_binary()` を拡張し、`run_single_test()` の入口で `python` モジュールを先取り分岐させる。具体的差分:
+
+```diff
+--- a/test_run/run_tests.sh
++++ b/test_run/run_tests.sh
+@@ -104,6 +104,8 @@ get_binary() {
+     local module="$1"
+     case "$module" in
+         eq) echo "$TASK_DIR/eq/eq" ;;
+         tr) echo "$TASK_DIR/tr/tr2" ;;
+         fp) echo "$TASK_DIR/fp/fp" ;;
+         tx) echo "$TASK_DIR/tx/tx2" ;;
++        python) echo "PYTHON_DISPATCH" ;;   # marker; not a real path
+         *) echo "" ;;
+     esac
+ }
+@@ -210,6 +212,21 @@ run_single_test() {
+     local test_name="$1"
+     local module="$2"
+-    local input_file="$3"
++    local input_file="$3"   # for MODULE=python this is reinterpreted as a shell command
+     local depends="$4"
+     local timeout="$5"
+     local description="$6"
+
+     # Skip if already completed
+     if [[ "${COMPLETED_TESTS[$test_name]}" == "1" ]]; then
+         return 0
+     fi
+
+     TOTAL=$((TOTAL + 1))
+
++    # Phase L-6: python / c-abi dispatch. The 3rd column is treated as a shell
++    # command line, executed from $TASK_DIR with PYTHONPATH=python.
++    if [[ "$module" == "python" ]]; then
++        local cmd="$input_file"
++        local outdir="$RESULT_DIR/$test_name"
++        mkdir -p "$outdir"
++        ( cd "$TASK_DIR" && PYTHONPATH=python timeout "$timeout" sh -c "$cmd" ) \
++            > "$outdir/output.log" 2>&1
++        local rc=$?
++        if [[ $rc -eq 0 ]]; then
++            echo -e "${GREEN}PASS${NC}"
++            COMPLETED_TESTS[$test_name]=1
++            PASSED=$((PASSED + 1))
++        else
++            echo -e "${RED}FAIL${NC} (rc=$rc)"
++            FAILED=$((FAILED + 1))
++        fi
++        return 0
++    fi
++
+     # Override timeout if specified
+     if [[ -n "$TIMEOUT_OVERRIDE" ]]; then
+         timeout="$TIMEOUT_OVERRIDE"
+     fi
+```
+
+注:
+- `get_binary()` で `python` に `PYTHON_DISPATCH` というマーカ文字列を返すのは、`list_tests()` の `[[ ! -x "$binary" ]]` チェックで「not built」と誤判定されるのを避けるため（実体ファイルではないのでマーカで OK；実行時には使わない）。
+- 既存の `tr`/`eq`/`fp`/`tx` の処理パスは一切変更していない。`python` 分岐は早期 return するので副作用なし。
+- `RESULT_DIR` 変数名は実物 `run_tests.sh` のローカル名に合わせて差分を整える（実装時に `grep -n RESULT_DIR test_run/run_tests.sh` で確認）。
 
 - [ ] **Step 3: ローカル実行**
 
@@ -502,6 +580,8 @@ git add test_run/test_definitions.conf test_run/run_tests.sh
 git commit -m "ci(test_run): integrate trlib_* cases (python dispatch mode)"
 ```
 
+注（review #9 反映）: 上記の最後のコミットは `test_definitions.conf` への新エントリ追加と `run_tests.sh` の `python` dispatch 拡張を **必ず同一コミットに含める**。順序を入れ替えて conf だけ先に merge すると `MODULE=python` が `get_binary()` で空文字となり既存ケースが SKIP される（regression）。
+
 - [ ] **Step 2: PR**
 
 Run:
@@ -519,6 +599,7 @@ gh pr create --base develop --title "test(tr): Phase L-6 four-layer test integra
 | Layer 1 が baseline と一致せず収束しない | `f90nml` 採用 (§11)。`pip install f90nml` を README に明示。 |
 | Layer 4 が timeout (>180s) | 2x2 グリッドに縮小、もしくは `NTMAX` をさらに縮める |
 | `run_tests.sh` の python dispatch が既存ケースを壊す | dispatch を別スクリプト `run_python_tests.sh` に分け、`run_tests.sh` からはそれを呼ぶだけにする |
+| conf だけ先に入って `run_tests.sh` 拡張が遅れる | 撤退ではなく **予防策**: Task 6 の Step 1+2 を必ず同一コミットで投入（順序逆転禁止）。CI で trlib_ffi が SKIP になっていたら conf/script の片側 merge を疑う |
 
 ## 受け入れ基準
 

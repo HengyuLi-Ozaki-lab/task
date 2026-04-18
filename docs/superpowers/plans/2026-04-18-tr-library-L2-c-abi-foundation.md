@@ -371,6 +371,18 @@ SRCS_API=tr_state.f90 tr_param_registry.f90 tr_api.f90
 OBJ_API=$(addprefix $(OBJDIR)/, $(SRCS_API:.f90=.o))
 ```
 
+注（review #9 反映）: `tr/Makefile` の **`SRCM=trcom0.f90 trcom1.f90 trcomm.f90 trbpsd.f90`** （4 ファイル）は L-2 では一切触らない。これらは TRCOMM 中核モジュール群で `tr_api` モジュールが `USE trcomm` 経由で参照する。新設の `SRCS_API` も `SRCM` には混ぜない（モジュール責務分離のため、API モジュールは独立変数で管理）。
+
+**`tr/trbpsd-mod.f90` について:** リポジトリには `tr/trbpsd.f90`（`SRCM` に含まれる）と `tr/trbpsd-mod.f90`（`SRCM` 等いずれの make 変数にも含まれない）が併存する。確認:
+```bash
+grep "^SRCM=" tr/Makefile
+ls tr/trbpsd*.f90
+grep -lE "trbpsd_mod|trbpsd-mod" tr/*.f90 | head
+```
+Expected: `SRCM` には `trbpsd.f90` のみ。`trbpsd-mod.f90` は孤立ファイル（既存 `tr2` ビルドにも使われていない可能性が高い）。
+
+**方針:** L-2 では `trbpsd-mod.f90` を `SRCS_API` にも `SRCM` にも追加しない。L-4 で `libtrapi.so` リンク時に `tr_api` から未解決シンボルが出たら（あるいは Phase 0 で `tr2` に必要だったことが判明したら）、そのとき初めて `SRCM` への追加を別タスクで議論する。本 L-2 サブフェーズの観察結論として「`trbpsd-mod.f90` は現行ビルド未使用、`libtrapi.so` でも除外」を本 plan に明記。
+
 - [ ] **Step 2: `all` ターゲットに API オブジェクトのビルドを追加（リンクは行わない）**
 
 既存:

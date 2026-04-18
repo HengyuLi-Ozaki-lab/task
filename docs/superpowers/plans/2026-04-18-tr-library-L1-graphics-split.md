@@ -110,6 +110,23 @@ SRCS=$(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 - `trloop.f90` は `trregress` を `USE` する核計算ループなので CORE。
 - `OBJS=$(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))` 行は変更不要（再合成された `SRCS` を見れば従来と同じ並び）。
 
+### `SRC2D` / `SRC3S` についての注記（review #9 反映）
+
+`tr/Makefile` には `SRCS` とは別に **`SRC2D=trg2d.f90` と `SRC3S=trg3d.f90`**（変数名は `SRC3D` ではなく **`SRC3S`**）が独立して定義されており、それぞれ `OBJ2D`, `OBJ3D` を生成して `tr2` 以外の補助ターゲット（2D/3D グラフィクス変種）にリンクされる。本 L-1 の `SRCS` 三分割では `SRC2D`/`SRC3S` には**一切手を加えない**（既存定義のまま残す）。
+
+確認コマンド:
+```bash
+grep -nE "^SRC2D|^SRC3S|^OBJ2D|^OBJ3D" tr/Makefile
+```
+Expected: `SRC2D=trg2d.f90`、`SRC3S=trg3d.f90`、および `OBJ2D=$(addprefix $(OBJDIR)/, $(SRC2D:.f90=.o))`、`OBJ3D=$(addprefix $(OBJDIR)/, $(SRC3D:.f90=.o))` がそのまま見えること（`OBJ3D` 側は `SRC3D` を参照しているが現状の Makefile 通り — 既存の挙動に合わせて touch しない）。
+
+**Phase L-4 への引き継ぎ（PIC 取り扱い方針）:**
+
+- `trg2d.f90` / `trg3d.f90` は graphics 専用なので **`libtrapi.so` には含めない**（`SRCS_GRAPHICS` 同様の扱い）。L-4 の `SRCS_LIB = $(SRCM) $(SRCS_CORE) $(SRCS_API)` に `SRC2D` / `SRC3S` は加えない。
+- ただしこの 2 ファイルの PIC ビルドが `tr2`（および 2D/3D 補助ターゲット）の挙動に副作用を与えてはならない。`obj/` (非 PIC) と `obj/pic/` (PIC) は L-4 で別ディレクトリに分けるため衝突しない。
+- L-4 で graphics 系を PIC 対応するかどうかは **保留**：libtrapi.so のエンドユーザは Python から graphics を叩かないため、`SRC2D`/`SRC3S` の PIC 化は不要。将来 graphics も .so 化する場合は別 PR で `SRCS_GRAPHICS` および `SRC2D`/`SRC3S` をまとめて `libtrgrf_pic.a` にする方針を採る（設計書 §A.4）。
+- L-4 の hand-off チェックリストに「`SRC2D` / `SRC3S` は libtrapi.so に含めない」を明記すること（L-4 plan の Task 3 注記に追記済み）。
+
 - [ ] **Step 2: 並び順保存の確認**
 
 Run:

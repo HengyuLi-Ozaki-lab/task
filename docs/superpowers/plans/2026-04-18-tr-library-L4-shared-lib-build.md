@@ -207,6 +207,8 @@ clean_pic:
 - `SRCS_LIB = $(SRCM) $(SRCS_CORE) $(SRCS_API)` で graphics/menu を除外。
 - `--start-group / --end-group` で循環依存を解決（gfortran + ld の標準パターン）。
 - `mtxp` の PIC 対応は本サブフェーズでは保留（既存 `LIBX_MTX` で間に合うか L-4 Step 3 で確認）。必要なら mtxp 用の `*_pic.a` を別タスクで追加。
+- **`SRC2D=trg2d.f90` / `SRC3S=trg3d.f90` は `SRCS_LIB` に含めない**（review #9 反映）。これらは `tr/Makefile` で `SRCS` とは別の独立変数として定義され、補助バイナリ（2D/3D graphics 変種）に使われる。Python ラッパは graphics を叩かないため libtrapi.so には不要。将来 .so から graphics を呼ぶ要求が出た場合は別 PR で `libtrgrf_pic.a` を追加する（設計書 §A.4）。
+- **`SRCM` の取り扱い（review #9 反映）**: `tr/Makefile` の `SRCM=trcom0.f90 trcom1.f90 trcomm.f90 trbpsd.f90` 4 ファイルがそのまま `SRCS_LIB` に入る。これらは TRCOMM の中核モジュール群で libtrapi.so から `USE` されるため除外不可。一方、ファイルとして同居している **`tr/trbpsd-mod.f90` は `SRCM` には含まれていない**（`tr/Makefile:27` 参照）。`trbpsd-mod.f90` の取り扱い方針については L-2 plan の Task 6 注記を参照（既存 `tr2` でも未リンクの可能性が高く、本 L-4 では同様に `SRCS_LIB` から除外する）。
 
 - [ ] **Step 2: ビルド試行**
 
