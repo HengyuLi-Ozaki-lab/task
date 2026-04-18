@@ -325,13 +325,14 @@ def plot_sweep(
     param: str,
     y: str,
     *,
-    range: Tuple[float, float, int],
+    sweep_range: Tuple[float, float, int] = None,
     output: str = "window",
     format: str = "png",
     path: Optional[Union[str, Path]] = None,
     title: Optional[str] = None,
     ntmax: int = 0,
     base_params: Optional[Dict[str, Any]] = None,
+    range: Tuple[float, float, int] = None,  # backward-compat alias
     **kwargs: Any,
 ) -> Union["Figure", Path, None]:
     """Run a 1D scan over ``param`` and plot the scalar ``y`` on the y-axis.
@@ -342,7 +343,7 @@ def plot_sweep(
         Scalar parameter name passed to :meth:`Trlib.set_param`.
     y:
         Scalar key into :attr:`TrState.scalars`.
-    range:
+    sweep_range (or ``range`` for backward compat):
         ``(start, stop, n_samples)`` triple (inclusive endpoints).
     output / format / path / title:
         Same semantics as :func:`plot`.
@@ -355,14 +356,21 @@ def plot_sweep(
     """
     from .trlib import Trlib  # local import to avoid cycle
 
+    # Accept the legacy keyword name `range` but prefer `sweep_range`.
+    rng = sweep_range if sweep_range is not None else range
+    if rng is None:
+        raise TypeError("plot_sweep requires sweep_range=(start, stop, n)")
+
     if y not in VARIABLE_INFO:
         raise KeyError(
             f"y variable {y!r} has no plot support. See plot_available()."
         )
-    start, stop, n = range
+    start, stop, n = rng
     if n < 2:
         raise ValueError("plot_sweep needs at least 2 samples")
-    xs = [start + (stop - start) * i / (n - 1) for i in range(n)]
+    # Use the builtin via __builtins__ since `range` parameter shadows it.
+    import builtins as _builtins
+    xs = [start + (stop - start) * i / (n - 1) for i in _builtins.range(n)]
     ys: List[float] = []
 
     with Trlib() as tr:
