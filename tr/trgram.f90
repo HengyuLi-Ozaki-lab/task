@@ -40,6 +40,7 @@
            & RHOM, RJCB, RKEV, RN, RQFLS, RT, rkind
       USE libitp
       USE trcoef_neoclassical, ONLY: TRCFNC
+      USE trcoef_resistivity,  ONLY: TRCFET
       IMPLICIT NONE
       INTEGER,INTENT(IN):: INQ
       INTEGER                  :: IERR, MDLETASTCK, MDLKNCSTCK, MDNCLSSTCK, MODE, NR, NS
