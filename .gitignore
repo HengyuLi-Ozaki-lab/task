@@ -111,6 +111,10 @@ fp/tests/c_abi/test_run_so
 ob/libob_pic.a
 ob/obj/pic/
 ob/mod_pic/
+wrx/libwrxapi.so
+wrx/obj/pic/
+wrx/mod_pic/
+wrx/tests/c_abi/test_run_so
 
 # Python
 __pycache__/
