@@ -2,6 +2,11 @@
 !            interface program of "TASK-EQ"
 !                                                         07/05/15
 !=======================================================================
+!
+! Phase F-3 (MED tier): free-form F90 conversion of equnit.f.
+! Thin wrapper module exposing eq_* entry points to external callers.
+! Preserves exact numerical semantics of the original fixed-form source.
+!
       module equnit
       use eqbpsd
       public eq_init,eq_parm,eq_prof,eq_calc,eq_load,eq_gout
@@ -22,8 +27,9 @@
       subroutine eq_parm(mode,kin,ierr)
 
       implicit none
-      character kin*(*)
-      integer mode,ierr
+      integer,          intent(in)    :: mode
+      character(len=*), intent(in)    :: kin
+      integer,          intent(out)   :: ierr
       call eqparm(mode,kin,ierr)
       return
       end subroutine eq_parm
