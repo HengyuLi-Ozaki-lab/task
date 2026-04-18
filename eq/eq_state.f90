@@ -25,14 +25,14 @@ MODULE eq_state
             EQ_MAX_NRGM, EQ_MAX_NZGM, EQ_MAX_NPSM, &
             EQ_MAX_NRM,  EQ_MAX_NTHM, EQ_MAX_NSUM
 
-  ! Upper bounds for the C-visible arrays. Chosen small enough to keep
-  ! eq_state_t a reasonable size (~MB range) while still covering the
-  ! default grids used by eq / pl / ak drivers.
-  INTEGER(C_INT), PARAMETER :: EQ_MAX_NRGM = 257
-  INTEGER(C_INT), PARAMETER :: EQ_MAX_NZGM = 257
-  INTEGER(C_INT), PARAMETER :: EQ_MAX_NPSM = 257
-  INTEGER(C_INT), PARAMETER :: EQ_MAX_NRM  = 257
-  INTEGER(C_INT), PARAMETER :: EQ_MAX_NTHM = 513
+  ! Upper bounds for the C-visible arrays. Match the eqcom0.inc compile-time
+  ! maxima (NRGM=513, NZGM=513, NPSM=513, NRM=1001, NTHM=2049, NSUM=513) so
+  ! eq_get_state never truncates the full-size grids used by eq / pl / ak.
+  INTEGER(C_INT), PARAMETER :: EQ_MAX_NRGM = 513
+  INTEGER(C_INT), PARAMETER :: EQ_MAX_NZGM = 513
+  INTEGER(C_INT), PARAMETER :: EQ_MAX_NPSM = 513
+  INTEGER(C_INT), PARAMETER :: EQ_MAX_NRM  = 1001
+  INTEGER(C_INT), PARAMETER :: EQ_MAX_NTHM = 2049
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NSUM = 513
 
   TYPE, BIND(C) :: eq_state_c

@@ -85,15 +85,15 @@ CONTAINS
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
     INTEGER(C_INT), VALUE, INTENT(IN) :: mode
     INTEGER(C_INT) :: ierr
-    ! Keep the arg meaningful: any non-negative mode is accepted by
-    ! the stub so callers can exercise the path; negative modes are
-    ! flagged as invalid so the enum contract is already visible.
-    IF (mode < 0) THEN
-       ierr = EQ_ERR_INVALID
-       RETURN
-    END IF
+    ! Contract: NOT_INIT takes precedence over INVALID (mirrors tr_api_run).
+    ! So callers that hit an uninitialised library always see the same
+    ! NOT_INIT error regardless of what other arguments they passed.
     IF (.NOT. g_initialized) THEN
        ierr = EQ_ERR_NOT_INIT
+       RETURN
+    END IF
+    IF (mode < 0) THEN
+       ierr = EQ_ERR_INVALID
        RETURN
     END IF
     ierr = EQ_ERR_NOT_IMPL

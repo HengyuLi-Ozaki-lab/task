@@ -19,11 +19,11 @@ extern "C" {
  * the remainder is zero-padded by eq_get_state before return.
  */
 
-#define EQ_MAX_NRGM 257
-#define EQ_MAX_NZGM 257
-#define EQ_MAX_NPSM 257
-#define EQ_MAX_NRM  257
-#define EQ_MAX_NTHM 513
+#define EQ_MAX_NRGM 513
+#define EQ_MAX_NZGM 513
+#define EQ_MAX_NPSM 513
+#define EQ_MAX_NRM  1001
+#define EQ_MAX_NTHM 2049
 #define EQ_MAX_NSUM 513
 
 /* Error codes returned by every eq_* entry point. */
