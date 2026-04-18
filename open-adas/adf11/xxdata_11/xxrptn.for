@@ -1,0 +1,5 @@
+C STUB xxrptn
+      SUBROUTINE XXRPTN(DUMMY)
+      INTEGER DUMMY
+      RETURN
+      END

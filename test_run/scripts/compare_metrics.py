@@ -17,6 +17,13 @@ compared row-by-row; integer index keys (NR, NSA) must match exactly,
 all remaining numeric fields are compared within the relative tolerance.
 List-valued fields (e.g. TR's RN, RT) are compared element-wise.
 
+Also supports the extract_tot_metrics.py schema, which adds a top-level
+``modules`` dict whose keys (TR_PRESENT, TI_PRESENT, FP_PRESENT,
+WR_PRESENT) flag which TASK modules contributed to the dump. A drift in
+those flags (e.g. tot stops calling wr_init) is treated as a structural
+regression and fails the check, matching the docstring contract in
+extract_tot_metrics.py.
+
 Exit code 0 on match, 1 on mismatch.
 """
 import argparse
@@ -24,6 +31,12 @@ import json
 import math
 import sys
 from pathlib import Path
+
+
+# Module presence flags emitted by extract_tot_metrics.py. Comparing these
+# guards against silent structural drift (e.g. tot stops dumping a module
+# it used to, or starts dumping one it did not before).
+MODULE_KEYS = ("TR_PRESENT", "TI_PRESENT", "FP_PRESENT", "WR_PRESENT")
 
 
 def _rel_err(a: float, b: float) -> float:
@@ -69,6 +82,24 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
             )
     if errors:
         return errors  # dimensions differ; further comparison meaningless
+
+    # Module presence flags (tot schema). Absent on the tr-only schema, in
+    # which case both sides report {} and this loop is a no-op.
+    b_mods = baseline.get("modules", {})
+    a_mods = actual.get("modules", {})
+    if b_mods or a_mods:
+        for k in MODULE_KEYS:
+            bv = b_mods.get(k)
+            av = a_mods.get(k)
+            if bv != av:
+                errors.append(
+                    f"modules.{k}: baseline={bv} actual={av} "
+                    "(structural drift — module presence changed)"
+                )
+        # Surface any unexpected module key on either side so additions to
+        # MODULE_KEYS aren't silently ignored.
+        for k in sorted((set(b_mods) | set(a_mods)) - set(MODULE_KEYS)):
+            errors.append(f"modules.{k}: unknown module key (baseline={b_mods.get(k)} actual={a_mods.get(k)})")
 
     # Float scalars (relative-tolerance comparison).
     b_scalars = baseline.get("scalars", {})

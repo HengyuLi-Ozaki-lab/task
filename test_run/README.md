@@ -191,3 +191,65 @@ FP 本体 (`fp/fpregress.f90`) は、環境変数 `FP_REGRESS_DUMP=1` が設定�
 - 単位番号 87 を使用（TR は 77）。`fpregress.f90` 以外で 87 を使う処理に注意。
 - `nrank /= 0` のランクは何も書かない。シングルプロセス・MPI 両方で安全。
 - `FP_REGRESS_DUMP` は厳密文字列 `1` で判定される。
+
+## TOT 統合系回帰テスト (Phase L-0)
+
+`tot` モジュールは `pl/eq/tr/ti/fp/dp/wr/wm` をオーケストレートする統合
+シミュレータ。回帰テストは TR Phase 0 と同じ dump+compare 機構を再利用:
+
+- `tot/totregress.f90` が `TOT_REGRESS_DUMP=1` のときのみ `tot_regress.dat`
+  を書き出す。通常実行は完全に挙動不変（環境変数未設定時は何もしない）。
+- `run_tests.sh` は `tot` モジュールに対して自動で `TOT_REGRESS_DUMP=1` を
+  エクスポートし、`inputs/eqdata.*` / `inputs/eqdata-*` / `inputs/<test>.eqparm`
+  / `inputs/<test>.trparm` を test ディレクトリにコピーする。
+- `scripts/check_regression.sh` は test 名のプレフィックス
+  (`tr_*` / `tot_*`) で dispatcher として動作し、`tot_*` ケースでは
+  `extract_tot_metrics.py` を使って `tot_regress.dat` を JSON に変換、
+  `compare_metrics.py` で `baselines/<test>/metrics.json` と比較する
+  (許容誤差 1e-10)。
+
+### dump のスキーマ
+
+`extract_tot_metrics.py` の出力 JSON:
+
+```jsonc
+{
+  "NT": <int>, "NRMAX": <int>, "NSMAX": <int>,
+  "modules": {                        // L-2 以降のモジュール presence
+    "TR_PRESENT": 0|1,
+    "TI_PRESENT": 0|1,
+    "FP_PRESENT": 0|1,
+    "WR_PRESENT": 0|1
+  },
+  "scalars": { "T": ..., "WPT": ..., ... },  // TR_PRESENT=1 のとき
+  "profile": [                         // TR_PRESENT=1 のとき NRMAX 行
+    {"NR": ..., "RN": [...], "RT": [...], "AJ": ..., "QP": ...},
+    ...
+  ]
+}
+```
+
+`modules` フラグは ALLOCATABLE 配列の `ALLOCATED(...)` で判定。L-0 では
+TR scalars/profile を実値ダンプし、TI/FP/WR は presence のみ。L-6 で
+それぞれ richer な値を追加する。
+
+### TOT テストの追加手順
+
+1. `test_run/inputs/tot_<name>.in` に短縮入力を作成（`q` x 2 で抜ける、
+   グラフィクス系 (`g`, `gN`, `t6` など) は除く）。
+2. eq などが必要とするデータファイル (`eqdata.<case>`, `eqdata-<case>`,
+   `eqparm`, `trparm` 等) を `test_run/inputs/` に置く。
+   `eqparm` / `trparm` は `inputs/tot_<name>.eqparm` / `.trparm` の名前で
+   置けば run_tests.sh が自動で stage する。
+3. `./run_tests.sh tot_<name>` を 1 回流して
+   `test_output/tot_<name>/tot_regress.dat` を生成。
+4. ベースラインを生成:
+   `./scripts/check_regression.sh tot_<name> test_output/tot_<name> baselines 1e-10 --generate-baseline`
+5. `test_definitions.conf` にエントリを追加し、baseline JSON を commit。
+
+### 現時点で登録済みの TOT 回帰テスト
+
+| TEST_NAME | 依存 | 用途 |
+|---|---|---|
+| `tot_demo2014_short` | なし | DEMO2014 統合（eq → tr の最短経路、グラフィクス無し） |
+| `tot_ht6m_short`     | なし | HT6M 小型トカマク統合（同上） |
