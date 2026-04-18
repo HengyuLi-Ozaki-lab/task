@@ -1,25 +1,39 @@
-C     $Id$
-C
-C     ****** DRAW COUNTOUR IN MAGNETIC SURFACE COORDINATES ******
-C
+!     $Id$
+!
+! Phase F-2 (LOW tier): free-form F90 conversion of eqgsub.f.
+! Graphics auxiliary routines. Preserves exact numerical semantics
+! of the original fixed-form source.
+!
+!     ****** DRAW COUNTOUR IN MAGNETIC SURFACE COORDINATES ******
+!
       SUBROUTINE EQGR2D(GF,GR,GZ,GRS,GZS,NRM,NRMAX,NTHMAX,KA,TXT)
-C
-      DIMENSION GF(NRM,NTHMAX),GR(NRM,NTHMAX),GZ(NRM,NTHMAX)
-      DIMENSION GRS(NTHMAX+1),GZS(NTHMAX+1)
-      DIMENSION KA(8,NRM,NTHMAX+1)
-      CHARACTER(len=*) TXT
-C
+!
+      IMPLICIT NONE
+      INTEGER,          INTENT(IN)    :: NRM, NRMAX, NTHMAX
+      REAL,             INTENT(IN)    :: GF(NRM,NTHMAX)
+      REAL,             INTENT(IN)    :: GR(NRM,NTHMAX), GZ(NRM,NTHMAX)
+      REAL,             INTENT(IN)    :: GRS(NTHMAX+1), GZS(NTHMAX+1)
+      INTEGER,          INTENT(INOUT) :: KA(8,NRM,NTHMAX+1)
+      CHARACTER(len=*), INTENT(IN)    :: TXT
+
+      REAL    :: GFMIN, GFMAX, GGFMIN, GGFMAX, GGFSTP
+      REAL    :: GRMIN, GRMAX, GZMIN, GZMAX
+      REAL    :: GGRMIN, GGRMAX, GGRSTP, GGZMIN, GGZMAX, GGZSTP
+      REAL    :: GRLEN, GZLEN, GPR, GPZ
+      INTEGER :: NSTEP
+      INTEGER, EXTERNAL :: NGULEN
+!
       CALL SETCHS(0.3,0.0)
       CALL SETLIN(0,2,7)
-C
+!
       CALL GMNMX2(GF,NRM,1,NRMAX,1,1,NTHMAX,1,GFMIN,GFMAX)
       CALL GQSCAL(GFMIN,GFMAX,GGFMIN,GGFMAX,GGFSTP)
       GGFSTP=0.5*GGFSTP
       NSTEP=INT((GGFMAX-GGFMIN)/GGFSTP)+1
-C
+!
       CALL GMNMX1(GRS,1,NTHMAX+1,1,GRMIN,GRMAX)
       CALL GMNMX1(GZS,1,NTHMAX+1,1,GZMIN,GZMAX)
-C
+!
       GRLEN=GRMAX-GRMIN
       GZLEN=GZMAX-GZMIN
       IF(GRLEN.GT.GZLEN) THEN
@@ -31,7 +45,7 @@ C
       ENDIF
       CALL GQSCAL(GRMIN,GRMAX,GGRMIN,GGRMAX,GGRSTP)
       CALL GQSCAL(GZMIN,GZMAX,GGZMIN,GGZMAX,GGZSTP)
-C
+!
       CALL GDEFIN(2.0,2.0+GPR,2.0,2.0+GPZ,GRMIN,GRMAX,GZMIN,GZMAX)
       CALL SETLIN(0,2,7)
       CALL GFRAME
@@ -39,7 +53,7 @@ C
       CALL GVALUE(GGRMIN+GGRSTP,GGRSTP*2,0.0,0.0,NGULEN(GGRSTP))
       CALL GSCALE(0.0,0.0,0.0,GGZSTP,0.1,9)
       CALL GVALUE(0.0,0.0,0.0,GGZSTP*2,NGULEN(GGZSTP*2))
-C
+!
       CALL SETCLP(2.0,2.0+GPR,2.0,2.0+GPZ)
       CALL SETLIN(0,-1,7)
       IF(GFMIN*GFMAX.GT.0.) THEN
@@ -48,21 +62,21 @@ C
          ELSE
             CALL SETRGB(0.0,0.0,1.0)
          END IF
-         CALL CONTQ5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &               GGFMIN,GGFSTP,NSTEP,2,0,KA)
+         CALL CONTQ5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                     GGFMIN,GGFSTP,NSTEP,2,0,KA)
       ELSE
          CALL SETRGB(1.0,0.0,0.0)
-         CALL CONTQ5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &                0.5*GGFSTP, GGFSTP,NSTEP,2,0,KA)
+         CALL CONTQ5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                      0.5*GGFSTP, GGFSTP,NSTEP,2,0,KA)
          CALL SETRGB(0.0,0.0,1.0)
-         CALL CONTQ5(GF,GR,GZ,NRM,NRMAX,NTHMAX,
-     &               -0.5*GGFSTP,-GGFSTP,NSTEP,2,2,KA)
+         CALL CONTQ5(GF,GR,GZ,NRM,NRMAX,NTHMAX, &
+                     -0.5*GGFSTP,-GGFSTP,NSTEP,2,2,KA)
       ENDIF
       CALL OFFCLP
-C
+!
       CALL SETLIN(0,-1,5)
       CALL GPLOTP(GRS,GZS,1,NTHMAX+1,1,0,0,0)
-C
+!
       CALL SETLIN(0,-1,7)
       CALL MOVE(20.0,17.0)
       CALL TEXT('MAX :',5)
@@ -75,31 +89,35 @@ C
       CALL NUMBR(GGFSTP,'(1PE12.4)',12)
       CALL MOVE(2.0,17.3)
       CALL TEXTX(TXT)
-C
+!
       RETURN
-      END
-C
-C     ***********************************************************
-C
-C           SUBPROGRAM FOR 1D PROFILE
-C
-C                   MODE =  0  : Y=0 INCLUDED
-C                          +1  : USING YMIN/YMAX
-C                          +2  : LINE PATTERN CHANGE
-C                          +4  : INPUT YMIN/YMAX
-C                          +8  : LOG SCALE
-C
-C     ***********************************************************
-C
+      END SUBROUTINE EQGR2D
+!
+!     ***********************************************************
+!
+!           SUBPROGRAM FOR 1D PROFILE
+!
+!                   MODE =  0  : Y=0 INCLUDED
+!                          +1  : USING YMIN/YMAX
+!                          +2  : LINE PATTERN CHANGE
+!                          +4  : INPUT YMIN/YMAX
+!                          +8  : LOG SCALE
+!
+!     ***********************************************************
+!
       SUBROUTINE EQGR1D(GX1,GX2,GY1,GY2,GX,GY,NXM,NXMAX,NGMAX,STR,MODE)
-C
+!
       IMPLICIT REAL*8 (A-F,H,O-Z)
-C
-      DIMENSION GX(NXM),GY(NXM,NGMAX),IPAT(5)
-      CHARACTER(len=*) STR
-      CHARACTER KT*80,KDL*1
+!
+      INTEGER,          INTENT(IN) :: NXM, NXMAX, NGMAX, MODE
+      REAL,             INTENT(IN) :: GX1, GX2, GY1, GY2
+      REAL,             INTENT(IN) :: GX(NXM), GY(NXM,NGMAX)
+      CHARACTER(len=*), INTENT(IN) :: STR
+
+      INTEGER :: IPAT(5)
+      CHARACTER KT*80, KDL*1
       DATA IPAT/0,2,3,4,6/
-C
+!
       CALL SETCHS(0.3,0.0)
       CALL SETLIN(0,2,7)
       KDL=STR(1:1)
@@ -108,16 +126,16 @@ C
          KT(I-1:I-1)=STR(I:I)
          I=I+1
       GOTO 1
-C
+!
     2 CALL MOVE(GX1,GY2+0.1)
       CALL TEXT(KT,I-2)
-C
+!
       CALL GMNMX2(GY,NXM,1,NXMAX,1,1,NGMAX,1,GYMIN,GYMAX)
       IF(ABS(GYMAX-GYMIN).LT.1.E-6) THEN
          GYMIN=GYMIN-0.999E-6
          GYMAX=GYMAX+1.000E-6
       ENDIF
-C
+!
       IF(MOD(MODE,2).EQ.0) THEN
          IF(GYMIN.GE.0.0) THEN
             GYMIN=0.0
@@ -125,19 +143,19 @@ C
             GYMAX=0.0
          ENDIF
       ENDIF
-C
+!
       CALL GMNMX1(GX,1,NXMAX,1,GXMIN,GXMAX)
       IF(ABS(GXMAX-GXMIN).LT.1.E-6) THEN
          GXMIN=GXMIN-0.999E-6
          GXMAX=GXMAX+1.000E-6
       ENDIF
-C
-C      GXMIN=GX(1)
-C      GXMAX=GX(NXMAX)
-C
+!
+!      GXMIN=GX(1)
+!      GXMAX=GX(NXMAX)
+!
       CALL GQSCAL(GXMIN,GXMAX,GSXMIN,GSXMAX,GSTEPX)
       CALL GQSCAL(GYMIN,GYMAX,GSYMIN,GSYMAX,GSTEPY)
-C
+!
       IF(MOD(MODE,2).EQ.0) THEN
          IF(GYMIN.GE.0.0) THEN
             GSYMIN=0.0
@@ -149,14 +167,14 @@ C
       GYMAX=GSYMAX
       IF(MOD(MODE/4,2).EQ.1) THEN
          CALL CHMODE
-         WRITE(6,*) '## WMGR : XMIN,XMAX,YMIN,YMAX = ',
-     &              GXMIN,GXMAX,GYMIN,GYMAX
+         WRITE(6,*) '## WMGR : XMIN,XMAX,YMIN,YMAX = ', &
+                    GXMIN,GXMAX,GYMIN,GYMAX
          READ(5,*) GXMIN,GXMAX,GYMIN,GYMAX
          CALL GRMODE
       ENDIF
       CALL GQSCAL(GXMIN,GXMAX,GSXMIN,GSXMAX,GSTEPX)
       CALL GQSCAL(GYMIN,GYMAX,GSYMIN,GSYMAX,GSTEPY)
-C
+!
       IF(GXMIN*GXMAX.LE.0.0) THEN
          GXORG=0.0
       ELSE
@@ -167,9 +185,9 @@ C
       ELSE
          GYORG=GSYMIN
       ENDIF
-C
-      CALL GDEFIN(GX1,GX2,GY1,GY2,
-     &            GSXMIN,GSXMAX,GSYMIN,GSYMAX)
+!
+      CALL GDEFIN(GX1,GX2,GY1,GY2, &
+                  GSXMIN,GSXMAX,GSYMIN,GSYMAX)
       CALL SETCHS(0.3,0.0)
       CALL SETLIN(0,2,7)
       CALL GFRAME
@@ -183,7 +201,7 @@ C
          CALL GSCALE(0.0,0.0,GYORG,GSTEPY,0.1,9)
          CALL GVALUE(0.0,0.0,GYORG,2*GSTEPY,NGULEN(2*GSTEPY))
       ENDIF
-C
+!
       DO 10 NG=1,NGMAX
          CALL SETLIN(0,-1,7-MOD(NG-1,5))
          IF(MOD(MODE/2,2).EQ.0) THEN
@@ -192,40 +210,7 @@ C
             CALL GPLOTP(GX,GY(1,NG),1,NXMAX,1,0,0,IPAT(MOD(NG-1,5)+1))
          ENDIF
    10 CONTINUE
-C
+!
       CALL SETLIN(0,-1,7)
       RETURN
-      END
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+      END SUBROUTINE EQGR1D
