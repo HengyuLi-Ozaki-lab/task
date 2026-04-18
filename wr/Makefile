@@ -34,12 +34,26 @@ ${OBJDIR}/%.o:%.f
 MODINCLUDE= -I./$(MOD) -I../pl/$(MOD) -I../dp/$(MOD) -I../eq/$(MOD) \
             -I../lib/$(MOD) -I../mtxp/$(MOD) -I../../bpsd/$(MOD)
 
-SRCS = wrcomm.f90 wrinit.f90 wrparm.f90 wrview.f90 \
-       wrsub.f90 \
-       wrsetupr.f90 wrexecr.f90 wrsetupb.f90 wrexecb.f90 \
-       wrsetup.f90 wrregress.f90 wrexec.f90 \
-       wrgout.f90 wrfile.f90 \
-       wrmenu.f90
+# --- Source groups (Phase L-1 split) ---
+# SRCS_CORE: pure computation; will be reused for libwrapi.so in Phase L-4.
+# SRCS_GRAPHICS: GSAF-based plot output; excluded from libwrapi.so.
+# SRCS_MENU: interactive stdin menu; excluded from libwrapi.so.
+#
+# When Phase L-4 lands, libwrapi.so will be built from:
+#   SRCS_LIB = $(SRCS_CORE) $(SRCS_API)
+# where SRCS_API = wr_state.f90 wr_param_registry.f90 wr_api.f90
+# (no graphics, no menu).
+SRCS_CORE = wrcomm.f90 wrinit.f90 wrparm.f90 wrview.f90 \
+            wrsub.f90 \
+            wrsetupr.f90 wrexecr.f90 wrsetupb.f90 wrexecb.f90 \
+            wrsetup.f90 wrregress.f90 wrexec.f90 \
+            wrfile.f90
+
+SRCS_GRAPHICS = wrgout.f90
+
+SRCS_MENU = wrmenu.f90
+
+SRCS = $(SRCS_CORE) $(SRCS_GRAPHICS) $(SRCS_MENU)
 
 OBJS = $(addprefix $(OBJDIR)/, $(SRCS:.f90=.o))
 
