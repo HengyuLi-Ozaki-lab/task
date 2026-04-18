@@ -8,11 +8,25 @@ extern "C" {
 /*
  * TASK/FP C ABI public header.
  *
- * Phase L-2 status: function symbols are present in libfpapi (built from
- * fp_api.f90); each entry point is a stub returning FP_ERR_NOT_IMPL (=4).
- * Real bodies arrive in Phase L-3 / L-4.
+ * Phase L-3 status: function symbols are present in libfpapi (built from
+ * fp_api.f90) and wired to the real FPCOMM state:
+ *   fp_init       -> mtx_initialize + pl_init + eq_init + ob_init +
+ *                    fp_init (Fortran). Returns FP_OK.
+ *   fp_set_param  -> dispatches through fp_param_registry to the
+ *                    matching FPCOMM variable. ~40 namelist names
+ *                    supported (see fp_param_registry.f90 for the
+ *                    SELECT CASE list); unknown names return
+ *                    FP_ERR_INVALID.
+ *   fp_run        -> fp_prep on first call + fp_loop with NTMAX set to
+ *                    the requested step count.
+ *   fp_get_state  -> populates scalars + profile arrays (RNT/RWT/RTT/
+ *                    RJT/RPCT/RPWT) from FPCOMM.
+ *   fp_finalize   -> clears lifecycle flags. Note: FPCOMM arrays are
+ *                    NOT deallocated (fp_allocate / fp_deallocate
+ *                    asymmetry) so a single fp_init/fp_run/fp_finalize
+ *                    per process is the supported lifecycle at L-3.
  *
- * See docs/superpowers/plans/2026-04-18-fp-library-L2-c-abi-foundation.md.
+ * See docs/superpowers/plans/2026-04-18-fp-library-L3-param-registry.md.
  *
  * Memory note: in C, RNT[NSAMAX][NRMAX] is row-major; in Fortran the
  * matching declaration is RNT(NRMAX, NSAMAX) (column-major). Layouts agree
@@ -29,7 +43,7 @@ enum fp_error {
     FP_ERR_INVALID     = 1,  /* invalid parameter name or value     */
     FP_ERR_NOT_INIT    = 2,  /* fp_init has not been called yet     */
     FP_ERR_CALC_FAILED = 3,  /* calculation / initialization failed */
-    FP_ERR_NOT_IMPL    = 4   /* L-2 stub return: not implemented    */
+    FP_ERR_NOT_IMPL    = 4   /* reserved (was L-2 stub return)      */
 };
 
 typedef struct {

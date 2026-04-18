@@ -39,6 +39,10 @@ eq/eqparm
 exec
 fp/fp
 fp/fpparm
+fp/tests/c_abi/test_smoke
+fp/tests/c_abi/test_param
+fp/tests/c_abi/test_run
+fp/tests/c_abi/*.o
 mtxp/make.mtxp
 mtxp/testbnd
 mtxp/testbndc
