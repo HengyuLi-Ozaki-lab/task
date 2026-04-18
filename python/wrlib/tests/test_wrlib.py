@@ -224,5 +224,68 @@ class TestWrlibLifecycle(unittest.TestCase):
                 pass
 
 
+# =====================================================================
+# Phase L-6 reinforcements: post-finalize / re-open / state shape.
+# =====================================================================
+@unittest.skipUnless(
+    DEFAULT_SO.exists(),
+    f"libwrapi.so not built at {DEFAULT_SO}; run `make -C wr libwrapi.so`",
+)
+class TestWrlibReinitAndShape(unittest.TestCase):
+    """L-6 reinforcements covering the PR #36 reset-SAVE-on-deallocate
+    invariant at the Python layer, plus post-run state shape checks."""
+
+    def test_reopen_after_close(self):
+        """Close then construct a fresh Wrlib must succeed.
+
+        This is the Python-layer counterpart to ``test_reinit.c``: the
+        second Wrlib() triggers another ``wr_init`` on the singleton
+        library, which must not crash or return an error even though
+        the first instance already called ``wr_finalize`` on it.
+        """
+        wr1 = Wrlib()
+        wr1.close()
+        wr2 = Wrlib()
+        try:
+            # A freshly-reopened handle must accept set_param and
+            # expose get_state without error.
+            wr2.set_param("RR", 6.2)
+            state = wr2.get_state()
+            self.assertIsInstance(state, WrState)
+        finally:
+            wr2.close()
+
+    def test_get_state_shapes_match_runtime_dims(self):
+        """After a run, per-ray and profile list lengths must equal
+        the runtime nraymax/nrsmax/nrlmax (not WR_MAX_*)."""
+        with Wrlib() as wr:
+            wr.run()
+            state = wr.get_state()
+            self.assertEqual(len(state.nstp_end), state.nraymax)
+            self.assertEqual(len(state.pos_pwrmax_rs_nray), state.nraymax)
+            self.assertEqual(len(state.pwrmax_rs_nray), state.nraymax)
+            self.assertEqual(len(state.rays_end), state.nraymax)
+            self.assertEqual(len(state.pos_nrs), state.nrsmax)
+            self.assertEqual(len(state.pwr_nrs), state.nrsmax)
+            self.assertEqual(len(state.pos_nrl), state.nrlmax)
+            self.assertEqual(len(state.pwr_nrl), state.nrlmax)
+
+    def test_set_param_array_subscript_rejects_oob(self):
+        """Out-of-range array index must raise WrlibParamError."""
+        with Wrlib() as wr:
+            with self.assertRaises((WrlibParamError, WrlibError)):
+                wr.set_param("PN[0]", 1.0)
+            with self.assertRaises((WrlibParamError, WrlibError)):
+                wr.set_param("PN[99999]", 1.0)
+
+    def test_set_param_malformed_subscript_rejected(self):
+        """Malformed subscript syntax must raise WrlibParamError."""
+        with Wrlib() as wr:
+            for bogus in ("PN[", "PN]", "PN[abc]"):
+                with self.subTest(name=bogus):
+                    with self.assertRaises((WrlibParamError, WrlibError)):
+                        wr.set_param(bogus, 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
