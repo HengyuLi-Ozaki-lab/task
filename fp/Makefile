@@ -171,9 +171,196 @@ clean :
 	-rm -f $(FP_API_SMOKE_O) $(FP_API_SMOKE_BIN)
 	-rm -f $(FP_API_PARAM_O) $(FP_API_PARAM_BIN)
 	-rm -f $(FP_API_RUN_O) $(FP_API_RUN_BIN)
+	-rm -f $(FP_API_SO_O) $(FP_API_SO_BIN)
 
 veryclean: clean
 	-rm -f fp
+
+clean_pic:
+	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libfpapi.so
+	-rm -f $(FP_API_SO_O) $(FP_API_SO_BIN)
+
+# =====================================================================
+# Phase L-4: libfpapi.so shared library build
+#
+# Builds a position-independent shared object that exposes the 5 C ABI
+# entry points (fp_init, fp_run, fp_set_param, fp_get_state, fp_finalize)
+# and links in SRCS_CORE + SRCS_API. The PIC build is a *separate* tree
+# at obj/pic/ + mod_pic/ so the existing non-PIC fp build is unaffected.
+#
+# Dependent libraries are PIC-rebuilt via opt-in targets added in
+# eq/pl/lib/mtxp/dp/ob Makefiles (libeq_pic.a, libpl_pic.a,
+# libtask_pic.a, libdp_pic.a, libob_pic.a, libmtxnompi_pic.o,
+# libmtxbnd_pic.o).
+#
+# The bpsd sources live in the parent ../../bpsd/ repo which is outside
+# our worktree; we PIC-rebuild bpsd objects in-tree (obj/pic/bpsd/) so
+# we don't need to modify bpsd/Makefile.
+# =====================================================================
+
+OBJDIR_PIC=obj/pic
+MODDIR_PIC=mod_pic
+PIC_FLAGS=-fPIC -J$(MODDIR_PIC) -I$(MODDIR_PIC)
+MODINCLUDE_PIC= -I./$(MODDIR_PIC) -I../ob/mod_pic -I../dp/mod_pic \
+                -I../pl/mod_pic -I../eq/mod_pic \
+                -I../lib/mod_pic -I../mtxp/mod_pic
+
+# Pattern rules for PIC compilation. Each rule creates its output dir
+# on demand so we don't need an explicit mkdir phase.
+$(OBJDIR_PIC)/%.o: %.f90
+	@mkdir -p $(@D) $(MODDIR_PIC)
+	$(FCFREE) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+$(OBJDIR_PIC)/%.o: %.f
+	@mkdir -p $(@D) $(MODDIR_PIC)
+	$(FCFIXED) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+
+# BPSD PIC rebuild (out-of-tree source, in-tree object/mod).
+# We replicate bpsd/Makefile's build order here. The order matches the
+# non-PIC libbpsd.a layout (see bpsd/Makefile's SRCS).
+BPSD_SRC=../../bpsd
+OBJBPSD_PIC=$(OBJDIR_PIC)/bpsd/bpsd_kinds.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_constants.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_flags.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libchar.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libfio.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libspl.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_types.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_types_internal.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_subs.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_shot.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_device.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_species.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_equ1D.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_metric1D.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_trsource.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_base.o
+
+$(OBJDIR_PIC)/bpsd/%.o: $(BPSD_SRC)/%.f90
+	@mkdir -p $(@D) $(MODDIR_PIC)
+	$(FCFREE) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+
+# Enforce the dependency order so -j builds don't race.
+$(OBJDIR_PIC)/bpsd/bpsd_constants.o:       $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_flags.o:            $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libchar.o:          $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libfio.o:           $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libspl.o:           $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_types.o:            $(OBJDIR_PIC)/bpsd/bpsd_kinds.o $(OBJDIR_PIC)/bpsd/bpsd_constants.o
+$(OBJDIR_PIC)/bpsd/bpsd_types_internal.o:   $(OBJDIR_PIC)/bpsd/bpsd_types.o
+$(OBJDIR_PIC)/bpsd/bpsd_subs.o:             $(OBJDIR_PIC)/bpsd/bpsd_types_internal.o $(OBJDIR_PIC)/bpsd/bpsd_libchar.o $(OBJDIR_PIC)/bpsd/bpsd_libfio.o $(OBJDIR_PIC)/bpsd/bpsd_libspl.o $(OBJDIR_PIC)/bpsd/bpsd_flags.o
+$(OBJDIR_PIC)/bpsd/bpsd_shot.o:             $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_device.o:           $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_species.o:          $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_equ1D.o:            $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_metric1D.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o:          $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_trsource.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_base.o:             $(OBJDIR_PIC)/bpsd/bpsd_shot.o $(OBJDIR_PIC)/bpsd/bpsd_device.o $(OBJDIR_PIC)/bpsd/bpsd_species.o $(OBJDIR_PIC)/bpsd/bpsd_equ1D.o $(OBJDIR_PIC)/bpsd/bpsd_metric1D.o $(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o $(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o $(OBJDIR_PIC)/bpsd/bpsd_trsource.o
+
+.PHONY: bpsd_pic
+bpsd_pic: $(OBJBPSD_PIC)
+
+# Object sets for libfpapi.so. Mirror SRCS_CORE + SRCS_API; SRCS_GRAPHICS
+# and SRCS_MENU are NOT included.
+OBJ_CORE_PIC = $(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
+OBJ_API_PIC  = $(addprefix $(OBJDIR_PIC)/, $(SRCS_API:.f90=.o))
+
+# Graphics stubs that satisfy GUTIME / PAGES / GRD1D / etc. without
+# dragging in non-PIC libgsp/libg3d. Built only as PIC so it is
+# libfpapi.so-only.
+SRCS_GR_STUBS    = fp_graphics_stubs.f90
+OBJ_GR_STUBS_PIC = $(addprefix $(OBJDIR_PIC)/, $(SRCS_GR_STUBS:.f90=.o))
+
+OBJ_LIBFPAPI = $(OBJ_CORE_PIC) $(OBJ_API_PIC) $(OBJ_GR_STUBS_PIC)
+
+# Dependent PIC archives / objects (order: bpsd -> lib (mds/task) ->
+# mtxp -> pl -> eq -> dp -> ob, same as the non-PIC fp link order).
+LIBS_PIC = ../ob/libob_pic.a ../dp/libdp_pic.a \
+           ../eq/libeq_pic.a ../pl/libpl_pic.a \
+           ../lib/libtask_pic.a
+LIBMTX_PIC = ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o
+
+# Build dependent PIC libs on demand. Note pl/Makefile splits PIC build
+# into two phony targets so we can interleave the eq build to break the
+# pl <-> eq circular dependency (mirrors the non-PIC libpl.a recipe).
+../eq/libeq_pic.a:
+	(cd ../pl; make libpl_noeq_pic)
+	(cd ../eq; make libeq_pic.a)
+../pl/libpl_pic.a: ../eq/libeq_pic.a
+	(cd ../pl; make libpl_pic.a)
+../lib/libtask_pic.a:
+	(cd ../lib; make libtask_pic.a)
+../dp/libdp_pic.a: ../pl/libpl_pic.a ../eq/libeq_pic.a
+	(cd ../dp; make libdp_pic.a)
+../ob/libob_pic.a: ../pl/libpl_pic.a ../eq/libeq_pic.a
+	(cd ../ob; make libob_pic.a)
+../mtxp/libmtxnompi_pic.o:
+	(cd ../mtxp; make libmtxnompi_pic.o)
+../mtxp/libmtxbnd_pic.o:
+	(cd ../mtxp; make libmtxbnd_pic.o)
+
+.PHONY: libs_pic
+libs_pic: ../lib/libtask_pic.a ../mtxp/libmtxnompi_pic.o \
+          ../mtxp/libmtxbnd_pic.o $(OBJBPSD_PIC) \
+          ../eq/libeq_pic.a ../pl/libpl_pic.a \
+          ../dp/libdp_pic.a ../ob/libob_pic.a
+
+# The shared library itself. gfortran drives the link so libgfortran is
+# pulled in automatically. --start-group/--end-group resolves the cyclic
+# references between eq / pl / bpsd / dp / ob.
+#
+# We deliberately drop $(FLIBS) from the link: those resolve to
+# `-lg3d-gfc64 -lgsp-gfc64 -lgdp-gfc64 -lX11`, none of which are PIC,
+# so keeping them would trigger R_X86_64_PC32 relocation errors when ld
+# tries to copy non-PIC .text into the .so. libfpapi.so excludes
+# SRCS_GRAPHICS / SRCS_MENU so none of the gsaf calls are reachable;
+# the small set of GUTIME/PAGES/GRD1D refs left in core code are
+# satisfied by fp_graphics_stubs.f90.
+libfpapi.so: $(OBJ_LIBFPAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC)
+	$(FCFREE) -shared -fPIC -Wl,-soname,libfpapi.so \
+	    $(OBJ_LIBFPAPI) $(OBJBPSD_PIC) $(LIBMTX_PIC) \
+	    -Wl,--start-group $(LIBS_PIC) -Wl,--end-group \
+	    -o libfpapi.so
+
+# ---------------------------------------------------------------------
+# Phase L-4: fp_api_check_so
+#
+# Dynamically loads libfpapi.so via dlopen(), resolves the 5 symbols,
+# runs the full init -> set_param -> run -> get_state -> finalize
+# cycle, and asserts each return is FP_OK. This exercises the .so
+# exactly like a Python ctypes wrapper will at L-5.
+# ---------------------------------------------------------------------
+FP_API_SO_C=$(FP_API_SMOKE_DIR)/test_run_so.c
+FP_API_SO_O=$(FP_API_SMOKE_DIR)/test_run_so.o
+FP_API_SO_BIN=$(FP_API_SMOKE_DIR)/test_run_so
+
+$(FP_API_SO_O): $(FP_API_SO_C) fp_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(FP_API_SO_O) $(FP_API_SO_C)
+
+$(FP_API_SO_BIN): $(FP_API_SO_O)
+	$(CC) -o $(FP_API_SO_BIN) $(FP_API_SO_O) -ldl
+
+.PHONY: libfpapi_inspect
+libfpapi_inspect: libfpapi.so
+	@echo "=== file ==="
+	@file libfpapi.so
+	@echo "=== ldd ==="
+	@ldd libfpapi.so
+	@echo "=== exported fp_* symbols ==="
+	@nm -D libfpapi.so | grep ' T fp_' || true
+	@echo "=== undefined symbols (count) ==="
+	@nm -D libfpapi.so | grep ' U ' | wc -l
+	@echo "=== first 40 undefined ==="
+	@nm -D libfpapi.so | grep ' U ' | head -40
+
+.PHONY: fp_api_check_so
+fp_api_check_so: libfpapi.so $(FP_API_SO_BIN)
+	@echo "Phase L-4 fp_api_check_so: dlopen libfpapi.so + full cycle ..."
+	@FPLIB_PATH=$(CURDIR)/libfpapi.so $(FP_API_SO_BIN)
+	@echo "Phase L-4 fp_api_check_so OK"
 
 # Phase L-3 C ABI sources. fp_param_registry depends on fpcomm; fp_api
 # depends on fpcomm + fpinit + fpprep + fploop + plinit + equnit +
