@@ -19,6 +19,8 @@ CONTAINS
       USE trfile
       USE trgout
       USE trfout
+      USE trrslt_files, ONLY : TRXOUT
+      USE trrslt_print, ONLY : TRPRNT
       USE libfio
       USE libkio
       USE libchar
