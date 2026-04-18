@@ -1,6 +1,6 @@
 # test_run — TASK モジュール 回帰テスト
 
-`eq`, `tr`, `tx`, `fp` など TASK の各モジュールを、あらかじめ用意した入力で実行し、CLOSED メッセージと数値指標の両方でパス/フェイルを判定する仕組み。
+`eq`, `tr`, `tx`, `ti`, `fp` など TASK の各モジュールを、あらかじめ用意した入力で実行し、CLOSED メッセージと数値指標の両方でパス/フェイルを判定する仕組み。
 
 ## ディレクトリ構成
 
@@ -12,8 +12,9 @@
 - `scripts/`
   - `extract_tr_metrics.py` — `tr_regress.dat` を JSON に変換
   - `extract_ti_metrics.py` — `ti_regress.dat` を JSON に変換
-  - `compare_metrics.py`    — 2 指標 JSON を相対誤差で比較（tr/ti 共用、デフォルト 1e-10）
-  - `check_regression.sh`   — 抽出＋比較（または baseline 生成）。`--module ti` で ti 用に切替
+  - `extract_fp_metrics.py` — `fp_regress.dat` を JSON に変換
+  - `compare_metrics.py`    — 2 指標 JSON を相対誤差で比較（tr/ti/fp 共用、デフォルト 1e-10）
+  - `check_regression.sh`   — 抽出＋比較（または baseline 生成）。テスト名接頭辞 (`tr_*` / `ti_*` / `fp_*`) でモジュール自動判定
   - `tests/`                — 上記スクリプトの unittest ベースの単体テスト
 
 ## 基本使用例
@@ -133,6 +134,60 @@ dump 内容:
 
     ./run_tests.sh ti_min ti_ar ti_w   # produces test_output/ti_*/ti_regress.dat
     for c in ti_min ti_ar ti_w; do
-        ./scripts/check_regression.sh --module ti "$c" \
+        ./scripts/check_regression.sh "$c" \
             "$(pwd)/test_output/$c" "$(pwd)/baselines" 1e-10 --generate-baseline
     done
+
+## FP モジュールの回帰判定の仕組み
+
+TR と完全に同じ「環境変数ガード付き高精度 dump + Python 比較」方式。
+
+### 1. 高精度 dump
+
+FP 本体 (`fp/fpregress.f90`) は、環境変数 `FP_REGRESS_DUMP=1` が設定されているときに限り、
+`fp_loop` 終了時点の主要グローバル量を `fp_regress.dat` (`1PE24.16` 書式) に書き出す。
+**MPI 並列を考慮し、`nrank == 0` のランクのみ書き出す。**
+通常実行（環境変数未設定）では何も生成されず、挙動は完全に従来通り。
+
+### 2. dump に含まれる値
+
+- スカラー: `NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2, TIMEFP`
+- プロファイル: 最終 `NTG = NTG2` における
+  `RNT, RWT, RTT, RJT, RPCT, RPWT` を `(NR=1..NRMAX, NSA=1..NSAMAX)` の 2 次元として書き出す
+  (1 行に `NR NSA RNT RWT RTT RJT RPCT RPWT` の 8 列)。
+
+### 3. 比較フロー
+
+1. `run_tests.sh` は FP モジュールに対して `FP_REGRESS_DUMP=1` をエクスポートして `fp/fp` を実行。
+2. stdout に `CLOSED` が出れば計算は成功。
+3. 成功時、`scripts/check_regression.sh` がモジュール接頭辞 (`fp_*`) から
+   `fp_regress.dat` と `extract_fp_metrics.py` を選び、
+   `compare_metrics.py` が `baselines/<test>/metrics.json` と相対誤差 `1e-10` で比較。
+
+### 4. 現時点で登録済みの FP 回帰テスト
+
+| TEST_NAME | 用途 |
+|---|---|
+| `fp_iter01` | ITER 風入力（`NSAMAX=1, NRMAX=40, NTMAX=2`） |
+| `fp_jt60`   | JT-60 風入力（`NRMAX=11, NTMAX=1, NPMAX=NTHMAX=100`） |
+| `fp_dt1`    | DT1 namelist 直渡し最小ケース（`NRMAX=1, NTMAX=1`） |
+
+### 5. ベースラインの更新方法
+
+    ./run_tests.sh fp_dt1
+    ./scripts/check_regression.sh fp_dt1 \
+        "$(pwd)/test_output/fp_dt1" \
+        "$(pwd)/baselines" \
+        "1e-10" "--generate-baseline"
+
+### 6. 手動 dump
+
+    cd test_output/fp_dt1
+    FP_REGRESS_DUMP=1 ../../fp/fp < ../../inputs/fp_dt1.in > out.log 2>&1
+    cat fp_regress.dat
+
+### 7. 注意事項
+
+- 単位番号 87 を使用（TR は 77）。`fpregress.f90` 以外で 87 を使う処理に注意。
+- `nrank /= 0` のランクは何も書かない。シングルプロセス・MPI 両方で安全。
+- `FP_REGRESS_DUMP` は厳密文字列 `1` で判定される。
