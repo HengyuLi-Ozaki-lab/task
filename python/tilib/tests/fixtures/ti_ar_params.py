@@ -42,7 +42,8 @@ MATRIX_ARRAYS = {
 # {index: value} dicts rather than full lists.
 ARRAYS = {
     "NPA":      {3: 18},
-    "PM":       {3: 39.95},   # Not yet in registry; see UNREGISTERED_KEYS.
+    "PA":       {3: 39.95},   # Argon atomic mass; namelist key is PM but
+                              # ticomm exposes it as PA in the registry.
     "ID_NS":    {3: 10},
     "NZMIN_NS": {3: 15},
     "NZMAX_NS": {3: 18},
@@ -51,11 +52,11 @@ ARRAYS = {
 
 # Namelist keys NOT in ti_param_registry.f90 (L-3 state).
 # `KID_NS` is char-valued -> not settable via float ABI.
-# `PM` renames `PA` internally in ticomm; registry only exposes PA,
-# so the Ar fixture applies PM via the PA key instead.
+# `PM` is the namelist form of `PA` (different name in ticomm); PA is in
+# ARRAYS above, so PM stays here only to document the namelist mapping.
 UNREGISTERED_KEYS = (
     "KID_NS",
-    "PM",  # exposed as PA in the registry; see docstring.
+    "PM",  # namelist alias for PA; value is applied via PA in ARRAYS.
     "DN0",
     "DN0_NS",
     "DT0",
