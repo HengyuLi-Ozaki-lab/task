@@ -91,7 +91,7 @@ class Fplib:
         rc = self._lib.fp_set_param(
             name.encode("ascii"), ctypes.c_double(float(value))
         )
-        raise_for_rc(rc, f"fp_set_param('{name}', {value})")
+        raise_for_rc(f"fp_set_param('{name}', {value})", rc)
 
     def set_params(self, **kwargs) -> None:
         """Bulk-set parameters by keyword.
