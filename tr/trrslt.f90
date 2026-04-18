@@ -18,7 +18,7 @@
            AJ, AJBS, AJBST, AJNB, AJNBT, AJOH, AJOHT, AJRF, AJRFT, AJRFV, &
            AJRFVT, AJT, AJTOR, AJTTOR, &
            ANS0, ANSAV, ANF0, ANFAV, ANLAV, &
-           Q0, QF, QP, RQ1, RKEV, &
+           Q0, QF, QP, RQ1, &
            PBM, PBCL, PBCLT, PBIN, PBINT, PCX, PCXT, PEX, PEXST, PEXT, &
            PFCL, PFCLT, PFIN, PFINT, PIE, PIET, PINT, PLT, &
            PNB, PNBT, PNF, PNFT, POH, POHT, POUT, &
@@ -1704,28 +1704,7 @@
 
       SUBROUTINE tr_setup_kv
 
-      USE TRCOMM, ONLY: rkind, &
-           NRMAX, RA, RR, RKAP, BB, RIP, &
-           AJ, AJBS, AJBST, AJNB, AJNBT, AJOH, AJOHT, AJRF, AJRFT, AJRFV, &
-           AJT, AJTTOR, &
-           AK, AKDW, ALI, ALPHA, &
-           ANC, ANFE, ANF0, ANFAV, ANLAV, ANS0, ANSAV, &
-           AR1RHO, AR2RHO, &
-           BETA, BETA0, BETAA, BETAP, BETAP0, BETAPA, &
-           BP, ER, ETA, EZOH, &
-           H98Y2, KVRT, KVT, &
-           PBCLT, PBINT, PCX, PCXT, PEX, PEXT, &
-           PFCLT, PFINT, PIE, PIET, PINT, PLT, &
-           PNB, PNBT, PNF, PNFT, POH, POHT, POUT, &
-           PRBT, PRCT, PRF, PRFT, PRFV, PRFVT, PRL, PRLT, PRSUMT, &
-           Q0, QF, QP, RQ1, &
-           RKPRHO, RMJRHO, RMNRHO, &
-           RN, RPSI, RT, RW, &
-           S, SIET, SINT, SLT, SNBT, SNFT, SOUT, &
-           TAUE1, TAUE2, TAUE89, TAUE98, TF0, TFAV, TS0, TSAV, &
-           VLOOP, VPOL, VTOR, &
-           WBULKT, WFT, WPDOT, WPT, WST, WTAILT, &
-           ZEFF, ZEFF0
+      USE TRCOMM, ONLY: KVT, KVRT
       IMPLICIT NONE
 
       KVT( 1) = 'ANS0(1)   '
