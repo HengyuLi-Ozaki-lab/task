@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Compare two metric JSONs within a relative tolerance.
 
-Supported schemas (auto-detected; defaults to TR for back-compat):
+Schema-agnostic enough to handle TR, TI, and FP regression dumps:
 - TR (extract_tr_metrics.py): NT, NRMAX, NSMAX,
-    scalars (dict), profile (list of dicts).
-- WRX (extract_wrx_metrics.py): NRAYMAX, NSTPMAX, NRSMAX, NRLMAX,
-    NSAMAX_WR, NSMAX, MODELG, MDLWRQ,
-    scalars (dict), arrays (dict[str, list]), arrays2 (dict[str, list[list]]).
+    scalars (dict), profile rows with NR, RN(list), RT(list), AJ, QP.
+- TI (extract_ti_metrics.py): NT, NRMAX, NSMAX, nsa_max,
+    scalars (dict), scalars_int (dict, exact match),
+    profile rows with NR, list-typed fields (RNA/RTA/RUA) and
+    float fields (RBP/RQP/RJP/ZEFF/BETA/BETAP).
+- FP (extract_fp_metrics.py): NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2,
+    scalars (dict, e.g. TIMEFP), profile rows with NR, NSA, RNT, RWT, ...
 
-The TR `profile` block is preserved unchanged. The WRX `arrays`/`arrays2`
-blocks are compared additively; either may be absent. Use `--schema wrx`
-to force the WRX dimensional check; auto-detect picks WRX when the
-baseline contains `NRAYMAX` or `arrays2`.
+Top-level integer dimension keys present in either baseline or actual
+must match exactly. The scalars dict is compared key-by-key. Profile is
+compared row-by-row; integer index keys (NR, NSA) must match exactly,
+all remaining numeric fields are compared within the relative tolerance.
+List-valued fields (e.g. TR's RN, RT) are compared element-wise.
 
 Exit code 0 on match, 1 on mismatch.
 """
@@ -40,14 +44,29 @@ def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> No
         out.append(f"{label}: baseline={bv!r} actual={av!r} rel_err={e:.3e} > tol={tol:.3e}")
 
 
+_INDEX_KEYS = ("NR", "NSA", "NS")
+_DIMENSION_KEYS = ("NT", "NRMAX", "NSMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2")
+
+
 def compare(baseline: dict, actual: dict, tol: float) -> list:
     errors = []
-    for k in ("NT", "NRMAX", "NSMAX"):
+    # Compare any top-level integer dimension key present in either side.
+    dim_keys = sorted(
+        (set(baseline) | set(actual)) & set(_DIMENSION_KEYS)
+    )
+    for k in dim_keys:
         if baseline.get(k) != actual.get(k):
             errors.append(f"{k}: baseline={baseline.get(k)} actual={actual.get(k)}")
+    # Also compare 'nsa_max' (TI uses lowercase variant).
+    if "nsa_max" in baseline or "nsa_max" in actual:
+        if baseline.get("nsa_max") != actual.get("nsa_max"):
+            errors.append(
+                f"nsa_max: baseline={baseline.get('nsa_max')} actual={actual.get('nsa_max')}"
+            )
     if errors:
-        return errors  # dimensions differ; further comparison is meaningless
+        return errors  # dimensions differ; further comparison meaningless
 
+    # Float scalars (relative-tolerance comparison).
     b_scalars = baseline.get("scalars", {})
     a_scalars = actual.get("scalars", {})
     for k in sorted(set(b_scalars) | set(a_scalars)):
@@ -56,113 +75,59 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
             continue
         _check_scalar(f"scalars.{k}", float(b_scalars[k]), float(a_scalars[k]), tol, errors)
 
+    # Integer scalars (exact match required).
+    b_int = baseline.get("scalars_int", {})
+    a_int = actual.get("scalars_int", {})
+    for k in sorted(set(b_int) | set(a_int)):
+        if b_int.get(k) != a_int.get(k):
+            errors.append(f"scalars_int.{k}: baseline={b_int.get(k)} actual={a_int.get(k)}")
+
+    # Profiles: dispatch list-vs-float per dict key at runtime.
     b_prof = baseline.get("profile", [])
     a_prof = actual.get("profile", [])
     if len(b_prof) != len(a_prof):
         errors.append(f"profile length: baseline={len(b_prof)} actual={len(a_prof)}")
         return errors
     for i, (br, ar) in enumerate(zip(b_prof, a_prof)):
-        if br.get("NR") != ar.get("NR"):
-            errors.append(f"profile[{i}].NR: baseline={br.get('NR')} actual={ar.get('NR')}")
-            continue
-        for field in ("AJ", "QP"):
-            _check_scalar(f"profile[{i}].{field}", float(br[field]), float(ar[field]), tol, errors)
-        for field in ("RN", "RT"):
-            bv_list = br.get(field, [])
-            av_list = ar.get(field, [])
-            if len(bv_list) != len(av_list):
-                errors.append(f"profile[{i}].{field}: length differ ({len(bv_list)} vs {len(av_list)})")
-                continue
-            for j, (bv, av) in enumerate(zip(bv_list, av_list)):
-                _check_scalar(f"profile[{i}].{field}[{j}]", float(bv), float(av), tol, errors)
-    return errors
-
-
-_WRX_DIM_KEYS = (
-    "NRAYMAX", "NSTPMAX", "NRSMAX", "NRLMAX",
-    "NSAMAX_WR", "NSMAX", "MODELG", "MDLWRQ",
-)
-
-
-def compare_wrx(baseline: dict, actual: dict, tol: float) -> list:
-    """Compare WRX-schema metric dicts with relative tolerance.
-
-    Top-level integer dimension keys must match exactly; any mismatch
-    aborts further comparison. scalars / arrays / arrays2 blocks are
-    compared element-wise within `tol`. Integer arrays (e.g. NSTPMAX_NRAY)
-    require exact equality.
-    """
-    errors = []
-    for k in _WRX_DIM_KEYS:
-        if k in baseline or k in actual:
-            if baseline.get(k) != actual.get(k):
-                errors.append(
-                    f"{k}: baseline={baseline.get(k)} actual={actual.get(k)}"
-                )
-    if errors:
-        return errors
-
-    bs = baseline.get("scalars", {})
-    a_s = actual.get("scalars", {})
-    for k in sorted(set(bs) | set(a_s)):
-        if k not in bs or k not in a_s:
-            errors.append(f"scalars.{k}: missing")
-            continue
-        _check_scalar(f"scalars.{k}", float(bs[k]), float(a_s[k]), tol, errors)
-
-    ba = baseline.get("arrays", {})
-    aa = actual.get("arrays", {})
-    for k in sorted(set(ba) | set(aa)):
-        if k not in ba or k not in aa:
-            errors.append(f"arrays.{k}: missing")
-            continue
-        bv, av = ba[k], aa[k]
-        if len(bv) != len(av):
-            errors.append(
-                f"arrays.{k}: length {len(bv)} vs {len(av)}"
-            )
-            continue
-        for i, (b, a) in enumerate(zip(bv, av)):
-            if isinstance(b, int) and isinstance(a, int):
-                if b != a:
+        # Index keys (NR, NSA, ...) must match exactly when present on either side.
+        index_mismatch = False
+        for ikey in _INDEX_KEYS:
+            if ikey in br or ikey in ar:
+                if br.get(ikey) != ar.get(ikey):
                     errors.append(
-                        f"arrays.{k}[{i}]: baseline={b} actual={a}"
+                        f"profile[{i}].{ikey}: baseline={br.get(ikey)} actual={ar.get(ikey)}"
+                    )
+                    index_mismatch = True
+        if index_mismatch:
+            # Rows are not the same data point; skip field-level comparison.
+            continue
+        # Compare any remaining numeric/list-valued field present in baseline or actual.
+        all_keys = set(br) | set(ar)
+        for field in sorted(all_keys - set(_INDEX_KEYS)):
+            bv = br.get(field)
+            av = ar.get(field)
+            if bv is None or av is None:
+                errors.append(f"profile[{i}].{field}: missing")
+                continue
+            if isinstance(bv, list) or isinstance(av, list):
+                # legacy TR shape with list-valued fields (RN, RT)
+                if not isinstance(bv, list) or not isinstance(av, list):
+                    errors.append(f"profile[{i}].{field}: type mismatch")
+                    continue
+                if len(bv) != len(av):
+                    errors.append(
+                        f"profile[{i}].{field}: length differ ({len(bv)} vs {len(av)})"
+                    )
+                    continue
+                for j, (bvj, avj) in enumerate(zip(bv, av)):
+                    _check_scalar(
+                        f"profile[{i}].{field}[{j}]", float(bvj), float(avj), tol, errors
                     )
             else:
                 _check_scalar(
-                    f"arrays.{k}[{i}]", float(b), float(a), tol, errors
-                )
-
-    b2 = baseline.get("arrays2", {})
-    a2 = actual.get("arrays2", {})
-    for k in sorted(set(b2) | set(a2)):
-        if k not in b2 or k not in a2:
-            errors.append(f"arrays2.{k}: missing")
-            continue
-        bm, am = b2[k], a2[k]
-        if len(bm) != len(am):
-            errors.append(
-                f"arrays2.{k}: rows {len(bm)} vs {len(am)}"
-            )
-            continue
-        for i, (br, ar) in enumerate(zip(bm, am)):
-            if len(br) != len(ar):
-                errors.append(
-                    f"arrays2.{k}[{i}]: cols {len(br)} vs {len(ar)}"
-                )
-                continue
-            for j, (b, a) in enumerate(zip(br, ar)):
-                _check_scalar(
-                    f"arrays2.{k}[{i}][{j}]", float(b), float(a), tol, errors
+                    f"profile[{i}].{field}", float(bv), float(av), tol, errors
                 )
     return errors
-
-
-def _detect_schema(baseline: dict) -> str:
-    """Pick wrx if baseline carries WRX-only markers, else tr."""
-    if "NRAYMAX" in baseline or "arrays2" in baseline or "NSAMAX_WR" in baseline:
-        return "wrx"
-    return "tr"
 
 
 def main() -> int:
@@ -170,19 +135,11 @@ def main() -> int:
     ap.add_argument("--baseline", type=Path, required=True)
     ap.add_argument("--actual", type=Path, required=True)
     ap.add_argument("--tolerance", type=float, default=1e-10)
-    ap.add_argument(
-        "--schema", choices=("auto", "tr", "wrx"), default="auto",
-        help="Comparison schema (default: auto-detect from baseline keys).",
-    )
     args = ap.parse_args()
 
     baseline = json.loads(args.baseline.read_text())
     actual   = json.loads(args.actual.read_text())
-    schema = args.schema if args.schema != "auto" else _detect_schema(baseline)
-    if schema == "wrx":
-        errors = compare_wrx(baseline, actual, args.tolerance)
-    else:
-        errors = compare(baseline, actual, args.tolerance)
+    errors = compare(baseline, actual, args.tolerance)
     if errors:
         print(f"FAIL: {len(errors)} mismatch(es) (tolerance={args.tolerance:g})")
         for e in errors[:50]:
