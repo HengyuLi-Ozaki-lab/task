@@ -24,7 +24,7 @@ extern "C" {
 #define EQ_MAX_NPSM 513
 #define EQ_MAX_NRM  1001
 #define EQ_MAX_NTHM 2049
-#define EQ_MAX_NSUM 513
+#define EQ_MAX_NSUM 1343
 
 /* Error codes returned by every eq_* entry point. */
 enum eq_error {

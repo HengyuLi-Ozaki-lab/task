@@ -26,14 +26,15 @@ MODULE eq_state
             EQ_MAX_NRM,  EQ_MAX_NTHM, EQ_MAX_NSUM
 
   ! Upper bounds for the C-visible arrays. Match the eqcom0.inc compile-time
-  ! maxima (NRGM=513, NZGM=513, NPSM=513, NRM=1001, NTHM=2049, NSUM=513) so
-  ! eq_get_state never truncates the full-size grids used by eq / pl / ak.
+  ! maxima (NRGM=513, NZGM=513, NPSM=513, NRVM=1001, NTVM=1025, NSUM=1343,
+  ! NRM=1001, NTHM=2049) so eq_get_state never truncates the full-size grids
+  ! used by eq / pl / ak.
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NRGM = 513
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NZGM = 513
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NPSM = 513
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NRM  = 1001
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NTHM = 2049
-  INTEGER(C_INT), PARAMETER :: EQ_MAX_NSUM = 513
+  INTEGER(C_INT), PARAMETER :: EQ_MAX_NSUM = 1343
 
   TYPE, BIND(C) :: eq_state_c
      ! Grid dimensions (mirrors NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX
