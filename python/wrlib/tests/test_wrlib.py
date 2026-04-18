@@ -259,6 +259,7 @@ class TestWrlibReinitAndShape(unittest.TestCase):
         """After a run, per-ray and profile list lengths must equal
         the runtime nraymax/nrsmax/nrlmax (not WR_MAX_*)."""
         with Wrlib() as wr:
+            wr.run()
             state = wr.get_state()
             self.assertEqual(len(state.nstp_end), state.nraymax)
             self.assertEqual(len(state.pos_pwrmax_rs_nray), state.nraymax)
