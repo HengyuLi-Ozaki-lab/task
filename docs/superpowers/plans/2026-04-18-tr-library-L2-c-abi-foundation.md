@@ -216,15 +216,20 @@ CONTAINS
     ierr = 0
   END FUNCTION tr_api_init
 
-  FUNCTION tr_api_run(ntmax) RESULT(ierr) BIND(C, NAME="tr_run")
-    INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax
+  FUNCTION tr_api_run(ntmax_in) RESULT(ierr) BIND(C, NAME="tr_run")
+    ! NOTE: dummy arg is `ntmax_in` (not `ntmax`) for consistency with the
+    ! L-3 promotion, which must avoid a case-insensitive collision with
+    ! `NTMAX` brought in via `USE trcomm`. Keeping the same name across
+    ! L-2 and L-3 avoids a needless rename diff. The C-side name is still
+    ! `tr_run` thanks to BIND(C, NAME=...).
+    INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax_in
     INTEGER(C_INT) :: ierr
     IF (.NOT. g_initialized) THEN
        ierr = 2   ! not initialized
        RETURN
     END IF
     ! L-2 stub: do nothing. L-4 will call tr_loop with NTMAX overridden.
-    IF (ntmax < 0) THEN
+    IF (ntmax_in < 0) THEN
        ierr = 1
     ELSE
        ierr = 0

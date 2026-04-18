@@ -348,12 +348,29 @@ class Trlib:
             raise_for_ierr(f"tr_set_param('{name}', {value})", ierr)
 
     def set_params(self, **kwargs) -> None:
+        """Bulk-set scalar parameters by keyword.
+
+        Array elements are NOT supported here because Python keyword
+        arguments cannot contain ``[`` or ``]``. Earlier drafts attempted a
+        ``PN__1`` -> ``PN[1]`` convenience conversion via ``str.replace``
+        but it produced malformed names (e.g. ``"PN[1"`` with no closing
+        bracket) unless the caller appended a magic ``__end__`` sentinel.
+        To set an array element, call :py:meth:`set_param` directly:
+
+            tr.set_param("PN[1]", 0.7)
+
+        The pass name is forwarded verbatim to the C ABI, so any name
+        containing ``__`` is rejected here as a likely array-syntax
+        mistake.
+        """
         for k, v in kwargs.items():
-            # Allow PN_1 -> PN[1] convenience for Python keyword args
-            name = k.replace("__", "[", 1).replace("__end__", "]")
-            if name.endswith("__end__"):
-                name = name[:-7] + "]"
-            self.set_param(name, v)
+            if "__" in k:
+                raise TrlibError(
+                    f"set_params() received '{k}' which contains '__'. "
+                    "set_params is scalar-only; use "
+                    "set_param('NAME[i]', value) for array elements."
+                )
+            self.set_param(k, v)
 
     # --- run / state -----------------------------------------------------
     def run(self, ntmax: int) -> None:
@@ -515,7 +532,7 @@ gh pr create --base develop --title "feat(trlib): Phase L-5 Python ctypes wrappe
 |---|---|
 | `ctypes.CDLL` ロード失敗 | `LD_LIBRARY_PATH` 設定手順を README で案内、または `os.environ` を `_ffi.py` 内で操作 |
 | 構造体サイズが C 側と不一致 | `ctypes.sizeof(TrStateC)` と `sizeof(tr_state_t)` を比較する別 C テストを追加し、原因究明 |
-| `set_params(**kwargs)` で `[]` 不可問題が顕在化 | README に「配列要素は明示 `set_param` 推奨」と記載、エイリアス記法は廃止可 |
+| `set_params(**kwargs)` で `[]` 不可問題が顕在化 | 既に scalar-only に確定済み（`__` を含むキーは即 `TrlibError`）。配列要素は `set_param("PN[1]", v)` を必須化。README にも明記。 |
 
 ## 受け入れ基準
 
