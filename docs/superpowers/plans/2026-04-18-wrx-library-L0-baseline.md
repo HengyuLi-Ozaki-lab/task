@@ -126,6 +126,7 @@ WRX 本体に環境変数 `WRX_REGRESS_DUMP=1` ガード付きの高精度 dump 
 - **dump 対象（配列, 2 次元 → 平坦化）:**
   - `pwr_nsa_nray(1:NSAMAX_WR, 1:NRAYMAX)`
   - `pos_pwrmax_rs_nsa(1:NSAMAX_WR)`, `pwrmax_rs_nsa(1:NSAMAX_WR)`
+  - `pos_pwrmax_rl_nsa(1:NSAMAX_WR)`, `pwrmax_rl_nsa(1:NSAMAX_WR)` (LH absorbed-power peaks; the wrcomm declaration includes both `_rs` and `_rl` variants)
 - **dump 対象外（L-0 では含めない、L-6 で必要なら追加）:**
   - `RAYS(0:NEQ, 0:NSTPMAX, NRAYMAX)` 全ステップ位置・運動量履歴（数百〜数万要素、L-0 では過剰）
   - `CEXS, CEYS, CEZS` 複素電場履歴（同上）
@@ -138,7 +139,7 @@ WRX 本体に環境変数 `WRX_REGRESS_DUMP=1` ガード付きの高精度 dump 
 
 Run:
 ```bash
-grep -nE "pwr_tot|pwr_nray|pwr_nsa\b|pwr_nsa_nray|pos_pwrmax_rs_nsa|NSTPMAX_NRAY" \
+grep -nE "pwr_tot|pwr_nray|pwr_nsa\b|pwr_nsa_nray|pos_pwrmax_r[sl]_nsa|pwrmax_r[sl]_nsa|NSTPMAX_NRAY" \
     /home/k-yoshimi/program/task-private/wrx/wrcomm.f90 | head -20
 ```
 Expected: 上記すべての変数が `wrcomm` モジュール内で宣言されていること。
@@ -204,6 +205,7 @@ CONTAINS
          NRAYMAX, NSTPMAX, NSAMAX_WR, NSMAX, MODELG, MDLWRQ, &
          pwr_tot, pwr_nray, pwr_nsa, pwr_nsa_nray, &
          pos_pwrmax_rs_nsa, pwrmax_rs_nsa, &
+         pos_pwrmax_rl_nsa, pwrmax_rl_nsa, &
          NSTPMAX_NRAY, rkind
     IMPLICIT NONE
     INTEGER, PARAMETER :: UNIT_DUMP = 78
@@ -262,6 +264,16 @@ CONTAINS
     WRITE(UNIT_DUMP,'(A,I0)') '# array pwrmax_rs_nsa n=', NSAMAX_WR
     DO NSA = 1, NSAMAX_WR
        WRITE(UNIT_DUMP,'(1PE24.16)') pwrmax_rs_nsa(NSA)
+    END DO
+
+    WRITE(UNIT_DUMP,'(A,I0)') '# array pos_pwrmax_rl_nsa n=', NSAMAX_WR
+    DO NSA = 1, NSAMAX_WR
+       WRITE(UNIT_DUMP,'(1PE24.16)') pos_pwrmax_rl_nsa(NSA)
+    END DO
+
+    WRITE(UNIT_DUMP,'(A,I0)') '# array pwrmax_rl_nsa n=', NSAMAX_WR
+    DO NSA = 1, NSAMAX_WR
+       WRITE(UNIT_DUMP,'(1PE24.16)') pwrmax_rl_nsa(NSA)
     END DO
 
     CLOSE(UNIT_DUMP)
@@ -424,6 +436,12 @@ pwr_tot=1.0000000000000000E+00
 # array pwrmax_rs_nsa n=2
 1.5000000000000000E-01
 1.2000000000000000E-01
+# array pos_pwrmax_rl_nsa n=2
+5.5000000000000000E-01
+6.5000000000000000E-01
+# array pwrmax_rl_nsa n=2
+1.6000000000000000E-01
+1.3000000000000000E-01
 ```
 
 - [ ] **Step 2: 失敗するテストを書く**
@@ -1233,7 +1251,9 @@ by `scripts/extract_wrx_metrics.py` and compared against the baseline JSON in
 
 WRX baselines compare:
 - scalars: `pwr_tot`
-- 1D arrays: `NSTPMAX_NRAY`, `pwr_nray`, `pwr_nsa`, `pos_pwrmax_rs_nsa`, `pwrmax_rs_nsa`
+- 1D arrays: `NSTPMAX_NRAY`, `pwr_nray`, `pwr_nsa`,
+  `pos_pwrmax_rs_nsa`, `pwrmax_rs_nsa`,
+  `pos_pwrmax_rl_nsa`, `pwrmax_rl_nsa`
 - 2D arrays: `pwr_nsa_nray`
 
 Full step-by-step ray history (`RAYS`, `CEXS`, etc.) is intentionally excluded

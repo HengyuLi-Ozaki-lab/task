@@ -289,7 +289,8 @@ END MODULE wrx_param_registry
   FUNCTION wrx_get_state(state) BIND(C, NAME="wrx_get_state") RESULT(ierr)
     USE wrcomm, ONLY: NRAYMAX, NSTPMAX, NSAMAX_WR, NSMAX, MODELG, MDLWRQ, &
                        pwr_tot, pwr_nray, pwr_nsa, pwr_nsa_nray, &
-                       pos_pwrmax_rs_nsa, pwrmax_rs_nsa, NSTPMAX_NRAY
+                       pos_pwrmax_rs_nsa, pwrmax_rs_nsa, &
+                       pos_pwrmax_rl_nsa, pwrmax_rl_nsa, NSTPMAX_NRAY
     USE wrx_state, ONLY: WRX_MAX_NRAYMAX, WRX_MAX_NSAMAX
     TYPE(wrx_state_c), INTENT(OUT) :: state
     INTEGER(C_INT) :: ierr
@@ -320,6 +321,8 @@ END MODULE wrx_param_registry
     state%pwr_nsa_nray = 0.0_C_DOUBLE
     state%pos_pwrmax_rs_nsa = 0.0_C_DOUBLE
     state%pwrmax_rs_nsa     = 0.0_C_DOUBLE
+    state%pos_pwrmax_rl_nsa = 0.0_C_DOUBLE
+    state%pwrmax_rl_nsa     = 0.0_C_DOUBLE
 
     DO nray = 1, n_r
        state%nstpmax_nray(nray) = NSTPMAX_NRAY(nray)
@@ -329,6 +332,8 @@ END MODULE wrx_param_registry
        state%pwr_nsa(nsa)            = pwr_nsa(nsa)
        state%pos_pwrmax_rs_nsa(nsa)  = pos_pwrmax_rs_nsa(nsa)
        state%pwrmax_rs_nsa(nsa)      = pwrmax_rs_nsa(nsa)
+       state%pos_pwrmax_rl_nsa(nsa)  = pos_pwrmax_rl_nsa(nsa)
+       state%pwrmax_rl_nsa(nsa)      = pwrmax_rl_nsa(nsa)
     END DO
     DO nray = 1, n_r
        DO nsa = 1, n_s
@@ -340,21 +345,47 @@ END MODULE wrx_param_registry
   END FUNCTION wrx_get_state
 ```
 
-- [ ] **Step 4: `wrx_finalize` の `wr_deallocate` を有効化**
+- [ ] **Step 4: `wrx_finalize` の `wr_deallocate` を有効化（ALLOCATED ガード付き）**
+
+`wrx_run` を一度も呼ばずに `wrx_finalize` を呼ぶケースが起こり得る（`wrx_init` 直後の `wrx_finalize`、または異常系テストで意図的に skip するケース）。`wr_deallocate` は wrcomm 内部で `DEALLOCATE` を直に並べる素朴実装のため、未 ALLOCATE な配列に対して seg-fault する。`wrx_api` 側で `g_run_called` フラグを導入し、**`wrx_run` が成功した時にだけ `wr_deallocate` を呼ぶ** 形にする（追加で `pwr_nray` の `ALLOCATED` チェックを保険として併用）。
+
+まず module レベル（`g_initialized` の宣言と並べて）:
+```fortran
+  LOGICAL, SAVE :: g_initialized = .FALSE.
+  LOGICAL, SAVE :: g_run_called  = .FALSE.
+```
+
+`wrx_run` 成功パスの末尾で `g_run_called = .TRUE.` をセット:
+```fortran
+    CALL wr_exec(nstat, ierr_local)
+    IF (ierr_local /= 0) THEN
+       ierr = 3
+       RETURN
+    END IF
+    g_run_called = .TRUE.
+    ierr = 0
+  END FUNCTION wrx_run
+```
 
 `wrx_finalize` を以下に置換:
 ```fortran
   FUNCTION wrx_finalize() BIND(C, NAME="wrx_finalize") RESULT(ierr)
-    USE wrcomm, ONLY: wr_deallocate
+    USE wrcomm, ONLY: wr_deallocate, pwr_nray
     INTEGER(C_INT) :: ierr
     ierr = 0
     IF (.NOT. g_initialized) RETURN
-    CALL wr_deallocate
+    ! Only deallocate if wrx_run actually populated the wrcomm allocations.
+    ! Belt-and-braces: also probe one canary allocatable (pwr_nray) in case
+    ! a future code path bypasses wrx_run but still allocates wrcomm.
+    IF (g_run_called .AND. ALLOCATED(pwr_nray)) THEN
+       CALL wr_deallocate
+    END IF
+    g_run_called  = .FALSE.
     g_initialized = .FALSE.
   END FUNCTION wrx_finalize
 ```
 
-注: `wr_deallocate` は internal SAVE による init チェックを持つ。`wrx_run` を 1 度も呼ばずに `wrx_finalize` を呼ぶと未 ALLOCATE な配列を DEALLOCATE しようとして実行時エラーになる可能性。**Task 6 でこのエッジケースを確認**し、必要なら `g_run_called` フラグを追加。
+注: `pwr_nray` を canary に選んだ理由は「`wr_allocate` の冒頭で必ず ALLOCATE される配列」だから。canary が変わる場合は `wrcomm.f90` の `wr_allocate` を確認し、最初に ALLOCATE される配列名に追従させる。
 
 ---
 
@@ -456,7 +487,8 @@ git commit -m "feat(wrx): implement wrx_run/set_param/get_state with param regis
 - [ ] `parse_array_subscript` が `"PN[1]"` を `base="PN", idx=1` に分解する
 - [ ] `wrx_api.f90` の 5 関数すべて実装完了（stub なし）
 - [ ] `wrx_get_state` が `NRAYMAX > WRX_MAX_NRAYMAX` のとき ierr=1 を返す
-- [ ] `wrx_finalize` が `wr_deallocate` を呼ぶ
+- [ ] `wrx_finalize` が `wr_deallocate` を呼ぶ（`g_run_called` + `ALLOCATED(pwr_nray)` ガード経由のみ）
+- [ ] `wrx_init` → `wrx_finalize`（`wrx_run` を呼ばないパス）が seg-fault せず ierr=0 で復帰
 - [ ] 既存 WRX baseline 3 ケースが PASS（数値変化なし、wrx_main 経由は影響なし）
 - [ ] `nm libwr.a` で 5 シンボル可視
 
@@ -469,7 +501,7 @@ git commit -m "feat(wrx): implement wrx_run/set_param/get_state with param regis
 | リスク | 緩和策 |
 |---|---|
 | `USE wrcomm` チェーンで variable not visible | `USE plcomm, ONLY: ...` を `wrx_param_registry.f90` に追加 |
-| `wr_deallocate` が `wr_allocate` 未呼出時にクラッシュ | `wrx_api.f90` 内に `g_run_called` フラグを追加し、`.NOT. g_run_called` のとき deallocate スキップ |
+| `wr_deallocate` が `wr_allocate` 未呼出時にクラッシュ | Task 4 Step 4 で導入済みの `g_run_called` フラグと `ALLOCATED(pwr_nray)` ガードで deallocate をスキップ |
 | `wr_prep` が EQINIT を要求して fail | `wrx_init` で `EQINIT` を呼んでいるが、`wrx_set_param` で MODELG 等を変えた後は `wr_prep` 内で再 EQINIT が必要かも。L-6 Layer 2 test で確認 |
 | 30 個より多くのパラメータが必要 | パラメータ追加は SELECT CASE に 1 行追加するだけ。本フェーズでは 30 個セットで止め、L-5/L-6 で必要に応じ追加 PR |
 

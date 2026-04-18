@@ -87,6 +87,8 @@ MODULE wrx_state
      REAL(C_DOUBLE) :: pwr_nsa_nray(WRX_MAX_NSAMAX, WRX_MAX_NRAYMAX)
      REAL(C_DOUBLE) :: pos_pwrmax_rs_nsa(WRX_MAX_NSAMAX)
      REAL(C_DOUBLE) :: pwrmax_rs_nsa(WRX_MAX_NSAMAX)
+     REAL(C_DOUBLE) :: pos_pwrmax_rl_nsa(WRX_MAX_NSAMAX)
+     REAL(C_DOUBLE) :: pwrmax_rl_nsa(WRX_MAX_NSAMAX)
   END TYPE wrx_state_c
 END MODULE wrx_state
 ```
@@ -190,6 +192,8 @@ CONTAINS
     state%pwr_nsa_nray = 0.0_C_DOUBLE
     state%pos_pwrmax_rs_nsa = 0.0_C_DOUBLE
     state%pwrmax_rs_nsa     = 0.0_C_DOUBLE
+    state%pos_pwrmax_rl_nsa = 0.0_C_DOUBLE
+    state%pwrmax_rl_nsa     = 0.0_C_DOUBLE
     IF (.NOT. g_initialized) THEN
        ierr = 2
        RETURN
@@ -257,6 +261,8 @@ typedef struct {
     double pwr_nsa_nray[WRX_MAX_NRAYMAX][WRX_MAX_NSAMAX]; /* Fortran column-major */
     double pos_pwrmax_rs_nsa[WRX_MAX_NSAMAX];
     double pwrmax_rs_nsa[WRX_MAX_NSAMAX];
+    double pos_pwrmax_rl_nsa[WRX_MAX_NSAMAX];
+    double pwrmax_rl_nsa[WRX_MAX_NSAMAX];
 } wrx_state_t;
 
 /* Error codes:

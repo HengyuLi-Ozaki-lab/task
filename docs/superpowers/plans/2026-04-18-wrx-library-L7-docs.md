@@ -41,16 +41,27 @@ L-5 で作った雛形を拡張。以下を含む:
 C ABI 5 関数（`wrx_init` / `wrx_run` / `wrx_get_state` / `wrx_set_param` / `wrx_finalize`）の：
 - シグネチャ
 - 引数の意味と単位
-- 戻り値（`wrx_error_code` enum）
-- 呼び出し順序の制約（init→run→...→finalize）
+- 戻り値（L-2/L-5 共通エラーコード: `0=OK, 1=INVALID_PARAM, 2=NOT_INITIALIZED, 3=CALC_FAILED, 4=NOT_IMPLEMENTED`）
+- 呼び出し順序の制約（init→(set_param×N)→run→get_state→finalize）
+
+`wrx_state_t` 構造体フィールド一覧（L-2 で確定済み・L-3 で populate）:
+- スカラー: `nraymax, nstpmax, nsamax, nsmax, modelg, mdlwrq, pwr_tot`
+- 1D 配列: `nstpmax_nray[NRAYMAX]`, `pwr_nray[NRAYMAX]`, `pwr_nsa[NSAMAX]`,
+  `pos_pwrmax_rs_nsa[NSAMAX]`, `pwrmax_rs_nsa[NSAMAX]`,
+  `pos_pwrmax_rl_nsa[NSAMAX]`, `pwrmax_rl_nsa[NSAMAX]`
+  （`_rs` は短経路 (resonance/short) 吸収パワー、`_rl` は長経路 / Landau 吸収パワーのピーク。`wrcomm.f90` の declaration と 1:1 対応）
+- 2D 配列: `pwr_nsa_nray[NRAYMAX][NSAMAX]`（C 表記、Fortran column-major と等価）
 
 Python `WrxLib` class の：
-- 各 method のシグネチャ・raise する例外
+- 各 method のシグネチャ・raise する例外（`set_param(name: str, value: float)`,
+  `get_state() -> WrxState`）
 - `__enter__/__exit__` の context manager 利用パターン
+- `WrxState` dataclass のフィールド（C 構造体と 1:1: `pos_pwrmax_rl_nsa`/`pwrmax_rl_nsa` 含む）
 
 完了基準:
 - [ ] 5 関数 + 5 method 全部が記載
-- [ ] L-2 の `wrx_api.h` ヘッダコメントと内容一致
+- [ ] L-2 の `wrx_api.h` ヘッダコメントと内容一致（`_rs` と `_rl` 両系統が掲載）
+- [ ] エラーコード表が L-5 `errors.py` の `ErrorCode` enum と一致
 
 ## Task 3: `docs/parameters.md`
 
@@ -85,10 +96,10 @@ L-3 の `wrx_param_registry.f90` 実装と必ず同期させる（差分検出�
 Jupyter notebook で以下を実行:
 1. `from wrxlib import WrxLib`
 2. `with WrxLib() as wrx:` で初期化
-3. `wrx.set_param('NRAYMAX', 8)`
+3. `wrx.set_param('NRAYMAX', 8)`（必要に応じ複数 `set_param` 呼出 / `set_params(**dict)`）
 4. `wrx.run()`
-5. `wrx.get_state('rays_r', size=...)` 等を取得
-6. matplotlib で ray の R-Z 平面投影をプロット
+5. `state = wrx.get_state()` → `WrxState` dataclass を取得し、`state.pwr_nsa`, `state.pwr_nray`, `state.pwrmax_rl_nsa` 等を参照
+6. matplotlib で ray ごとの吸収パワー (`state.pwr_nray`) をバーチャートで可視化
 
 完了基準:
 - [ ] notebook が clean kernel で end-to-end 実行 PASS
@@ -97,8 +108,8 @@ Jupyter notebook で以下を実行:
 ## Task 6: `examples/02_param_sweep.ipynb`
 
 Layer 4 の sweep をリッチに可視化:
-1. NRAYMAX × PWAVE の 5×5 grid
-2. 各点で `pwr_profile` を取得
+1. `RFIN[1]` × `ANGPHIN[1]` の 5×5 grid（Layer 4 と同じ軸構成、サイズだけ拡張）
+2. 各点で `state.pwr_tot`（合計吸収パワー）または `state.pwrmax_rl_nsa.sum()` を取得
 3. heatmap / 3D surface で表示
 
 完了基準:
