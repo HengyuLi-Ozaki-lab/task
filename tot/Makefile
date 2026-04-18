@@ -20,7 +20,7 @@ FFLAGS=$(OFLAGS)
 .f.o :
 	$(FCFIXED) $(FFLAGS) -c $< -o $@ $(MODDIR) $(MODINCLUDE)
 .f90.o :
-	$(FCFREE) $(FFLAGS) -c $< -o $@ $(MODDIR) $(MODINCLUDE)
+	$(FCFREE) $(FFLAGS) -cpp $(EXTRA_DEFS) -c $< -o $@ $(MODDIR) $(MODINCLUDE)
 
 MODINCLUDE= -I$(MOD) -I../open-adas/adf11/adf11-lib/$(MOD) \
             -I../adpost/$(MOD) -I../eq/$(MOD) -I../pl/$(MOD) \
@@ -30,9 +30,16 @@ MODINCLUDE= -I$(MOD) -I../open-adas/adf11/adf11-lib/$(MOD) \
             -I../mtxp/$(MOD) -I../lib/$(MOD) \
             -I../../bpsd/$(MOD) 
 
-EQLIBS= ../pl/noequlib.o ../eq/libeq.a 
+EQLIBS= ../pl/noequlib.o ../eq/libeq.a
 
-SRCS = totmenu.f90 totregress.f90
+# Source layout (logical groups; SRCS still single list for now):
+#   SRCS_CORE  : files needed by both `tot` binary and future libtotapi.so
+#                (regression dump goes here so library users can also dump).
+#   SRCS_MENU  : interactive dispatcher only used by `tot` binary.
+#   SRCS_API   : added in L-2 (tot_state.f90, tot_api.f90, tot_param_registry.f90).
+SRCS_CORE = totregress.f90
+SRCS_MENU = totmenu.f90
+SRCS      = $(SRCS_CORE) $(SRCS_MENU)
 
 OBJS = $(SRCS:.f90=.o)
 
