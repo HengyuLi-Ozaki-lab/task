@@ -89,6 +89,9 @@ mtxp/mod_pic/
 mtxp/libmtxnompi_pic.o
 mtxp/libmtxbnd_pic.o
 wrx/tests/c_abi/test_smoke
+wrx/tests/c_abi/test_param
+wrx/tests/c_abi/test_run
+wrx/tests/c_abi/*.o
 trn/trn
 trn/trparm
 tx/tx2
