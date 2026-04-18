@@ -225,11 +225,13 @@ def run_plots(tr: Any, cfg: Mapping[str, Any]) -> List[Tuple[str, Any]]:
     for spec in plots:
         if not isinstance(spec, Mapping):
             continue
+        # Sweep plots are deferred to run_sweep_plots() (own Trlib lifecycle).
+        # Skip them here regardless of whether they also carry a `variable`
+        # key, otherwise they would be processed twice.
+        if spec.get("kind") == "sweep":
+            continue
         varname = spec.get("variable")
         if not varname:
-            # Sweep plots are deferred to run_sweep_plots() which executes
-            # AFTER the outer Trlib has been finalized, since each sweep
-            # sample needs its own fresh tr_init/tr_run/tr_finalize cycle.
             continue
         kw = _plot_kwargs(spec)
         descriptor = _plot_mod.plot(varname, state=state, **kw)
@@ -254,7 +256,7 @@ def run_sweep_plots(cfg: Mapping[str, Any]) -> List[Tuple[str, Any]]:
             continue
         kind = spec.get("kind")
         if kind == "sweep":
-            results.append(_run_sweep_spec(None, spec, _plot_mod))
+            results.append(_run_sweep_spec(spec, _plot_mod))
     return results
 
 
@@ -267,8 +269,12 @@ def _plot_kwargs(spec: Mapping[str, Any]) -> Dict[str, Any]:
     return kw
 
 
-def _run_sweep_spec(tr: Any, spec: Mapping[str, Any], plot_mod: Any) -> Tuple[str, Any]:
-    """Helper for ``kind = "sweep"`` entries."""
+def _run_sweep_spec(spec: Mapping[str, Any], plot_mod: Any) -> Tuple[str, Any]:
+    """Helper for ``kind = "sweep"`` entries.
+
+    No `tr` argument: plot_mod.plot_sweep manages its own per-sample
+    Trlib lifecycle internally.
+    """
     param = spec["param"]
     y = spec["y"]
     rng = tuple(spec["range"])

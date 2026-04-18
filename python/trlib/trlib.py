@@ -166,7 +166,9 @@ class Trlib:
         the :class:`ImportError` from :mod:`trlib.plot` will propagate.
         """
         from . import plot as _plot_mod
-        state = kwargs.pop("state", None) or self.get_state()
+        state = kwargs.pop("state", None)
+        if state is None:
+            state = self.get_state()
         return _plot_mod.plot(varname, state=state, **kwargs)
 
     @staticmethod
