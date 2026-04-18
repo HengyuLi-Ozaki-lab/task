@@ -150,5 +150,36 @@ class Trlib:
         raise_for_ierr("tr_get_state", ierr)
         return TrState.from_c(c)
 
+    # --- visualization --------------------------------------------------
+    def plot(self, varname: str, **kwargs):
+        """Plot a state variable from the current simulation snapshot.
+
+        Thin wrapper around :func:`trlib.plot.plot` that captures the
+        current :class:`TrState` via :meth:`get_state` and forwards
+        keyword arguments verbatim (``output``, ``format``, ``path``,
+        ``title``, ``overlay``, etc.). See :mod:`trlib.plot` for the
+        full argument reference.
+
+        ``matplotlib`` is an optional dependency; importing the plot
+        module lazily lets ``trlib`` stay usable when matplotlib is
+        absent. If you call this method without matplotlib installed
+        the :class:`ImportError` from :mod:`trlib.plot` will propagate.
+        """
+        from . import plot as _plot_mod
+        state = kwargs.pop("state", None) or self.get_state()
+        return _plot_mod.plot(varname, state=state, **kwargs)
+
+    @staticmethod
+    def plot_available():
+        """Return the variable names that :meth:`plot` can draw.
+
+        Thin wrapper around :func:`trlib.plot.plot_available`. Kept as a
+        static method so callers can probe the plot backend without
+        instantiating ``Trlib()`` (and therefore without loading
+        libtrapi.so).
+        """
+        from . import plot as _plot_mod
+        return _plot_mod.plot_available()
+
 
 __all__ = ["Trlib"]
