@@ -110,6 +110,7 @@ get_binary() {
         ti) echo "$TASK_DIR/ti/ti" ;;
         fp) echo "$TASK_DIR/fp/fp" ;;
         tx) echo "$TASK_DIR/tx/tx2" ;;
+        tot) echo "$TASK_DIR/tot/tot" ;;
         *) echo "" ;;
     esac
 }
@@ -295,12 +296,23 @@ run_single_test() {
     cd "$test_dir"
     local log_file="$test_dir/output.log"
 
-    # For TR/FP/TI modules, enable regression dump (env-guarded inside the dumper).
+    # For TR/FP/TI/TOT modules, enable regression dump (env-guarded inside the dumper).
     local mod_env=()
     case "$module" in
         tr) mod_env=(env TR_REGRESS_DUMP=1) ;;
         fp) mod_env=(env FP_REGRESS_DUMP=1) ;;
         ti) mod_env=(env TI_REGRESS_DUMP=1) ;;
+        tot)
+            mod_env=(env TOT_REGRESS_DUMP=1)
+            # Stage shared data files referenced by tot inputs (eq/wr/wm menu
+            # sub-runs read these from CWD). All of eqdata.*, eqdata-*, eqparm,
+            # trparm are optional; -- || true keeps the test from failing when
+            # a particular case does not need them.
+            cp "$SCRIPT_DIR/inputs/eqdata."* "$test_dir/" 2>/dev/null || true
+            cp "$SCRIPT_DIR/inputs/eqdata-"* "$test_dir/" 2>/dev/null || true
+            cp "$SCRIPT_DIR/inputs/${test_name}.eqparm" "$test_dir/eqparm" 2>/dev/null || true
+            cp "$SCRIPT_DIR/inputs/${test_name}.trparm" "$test_dir/trparm" 2>/dev/null || true
+            ;;
     esac
 
     if [[ $VERBOSE -eq 1 ]]; then
@@ -322,7 +334,7 @@ run_single_test() {
         # CLOSED message found - calculation completed successfully.
         # For TR module, also verify numerical metrics against baseline.
         local reg_ok=1
-        if [[ "$module" == "tr" || "$module" == "fp" || "$module" == "ti" ]]; then
+        if [[ "$module" == "tr" || "$module" == "fp" || "$module" == "ti" || "$module" == "tot" ]]; then
             if ! "$SCRIPT_DIR/scripts/check_regression.sh" \
                     "$test_name" "$test_dir" "$SCRIPT_DIR/baselines" "1e-10" \
                     > "$test_dir/regression.log" 2>&1; then

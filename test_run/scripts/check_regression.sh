@@ -9,9 +9,10 @@
 #             3 = missing baseline, 4 = unsupported test name prefix.
 #
 # Module dispatch is by the test_name prefix:
-#   tr_*  -> tr_regress.dat / extract_tr_metrics.py
-#   fp_*  -> fp_regress.dat / extract_fp_metrics.py
-#   ti_*  -> ti_regress.dat / extract_ti_metrics.py
+#   tr_*  -> tr_regress.dat  / extract_tr_metrics.py
+#   fp_*  -> fp_regress.dat  / extract_fp_metrics.py
+#   ti_*  -> ti_regress.dat  / extract_ti_metrics.py
+#   tot_* -> tot_regress.dat / extract_tot_metrics.py
 #
 # With --generate-baseline as the 5th arg, the extracted JSON is written
 # as the baseline instead of being compared.
@@ -27,12 +28,13 @@ TOL="${4:-1e-10}"
 MODE="${5:-compare}"
 
 case "$TEST_NAME" in
-  tr_*) DUMP_BASENAME="tr_regress.dat"; EXTRACTOR="extract_tr_metrics.py" ;;
-  fp_*) DUMP_BASENAME="fp_regress.dat"; EXTRACTOR="extract_fp_metrics.py" ;;
-  ti_*) DUMP_BASENAME="ti_regress.dat"; EXTRACTOR="extract_ti_metrics.py" ;;
+  tr_*)  DUMP_BASENAME="tr_regress.dat";  EXTRACTOR="extract_tr_metrics.py" ;;
+  fp_*)  DUMP_BASENAME="fp_regress.dat";  EXTRACTOR="extract_fp_metrics.py" ;;
+  ti_*)  DUMP_BASENAME="ti_regress.dat";  EXTRACTOR="extract_ti_metrics.py" ;;
+  tot_*) DUMP_BASENAME="tot_regress.dat"; EXTRACTOR="extract_tot_metrics.py" ;;
   *)
     echo "check_regression: unsupported test name prefix: $TEST_NAME" >&2
-    echo "  expected one of: tr_*, fp_*, ti_*" >&2
+    echo "  expected one of: tr_*, fp_*, ti_*, tot_*" >&2
     exit 4
     ;;
 esac
