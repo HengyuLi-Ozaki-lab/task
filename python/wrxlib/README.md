@@ -1,167 +1,308 @@
-# wrxlib - Python wrapper for TASK/WRX
+# wrxlib — Python wrapper for TASK/WRX
 
-`wrxlib` is a ctypes-based Python binding for `wrx/libwrxapi.so`
-(Phase L-4 product). It uses only the Python standard library
-(`ctypes`, `dataclasses`, `pathlib`, `os`). `numpy` is optional and
-not required.
+`wrxlib` is a thin `ctypes`-based Python wrapper around
+`wrx/libwrxapi.so`, the in-process shared-library version of the
+TASK/WRX extended ray-tracing code. It lets scripts drive WRX
+simulations from Python without shelling out to the standalone `wrx`
+binary or going through namelist files.
 
-Sister package to [`wrlib`](../wrlib/). They share the same two-layer
-architecture but bind to different shared libraries (`wrx_*` vs
-`wr_*` C symbols). Both can coexist in the same Python process.
+Sister package to [`wrlib`](../wrlib/) (TASK/WR ray-tracing). They
+share the same two-layer architecture but bind to different shared
+libraries (`wrx_*` vs `wr_*` C symbols) and can coexist in the same
+Python process.
 
-See `docs/superpowers/plans/2026-04-18-wrx-library-L5-python-wrapper.md`
-for the design.
+## Overview
 
-## Architecture
+TASK/WRX has two user-facing deliverables:
 
-Two layers:
+| | Traditional CLI | Library (Phase L) |
+|---|---|---|
+| Binary | `wrx/wrx` | `wrx/libwrxapi.so` |
+| Entry | interactive menu | 5 C ABI functions |
+| I/O | namelist + ASCII output | in-memory state struct |
+| Graphics | PGPlot / Fortran 90 graphics | excluded |
+| Python | — | `python/wrxlib` |
 
-* `wrxlib._ffi` - low-level ctypes binding. Exposes `WrxStateC`
-  (mirror of `wrx_state_t`) and `load_library()` which resolves and
-  `CDLL`-loads `libwrxapi.so` with function prototypes attached.
-* `wrxlib.Wrxlib` - high-level context manager with `init / run /
-  set_param / get_state / finalize` methods and `WrxState` dataclass
-  output.
+The C ABI is defined in `wrx/wrx_api.h`; the Fortran backend
+(`wrx/wrx_api.f90`, `wrx/wrx_param_registry.f90`) is unchanged Fortran
+that is also linked into the `wrx` binary. `python/wrxlib` only wraps
+the 5 C entry points and marshals a `wrx_state_t` struct into the
+pure-Python `WrxState` dataclass.
 
-## Install / Build prerequisites
+No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
+`dataclasses`, `pathlib`, `os`). `numpy` is optional.
 
-1. Build the shared library:
+## Installation
 
-   ```bash
-   cd wrx && make libwrxapi.so
-   ```
+Build the shared library once:
 
-   This produces `wrx/libwrxapi.so` and its 5 exported C symbols
-   (`wrx_init`, `wrx_run`, `wrx_set_param`, `wrx_get_state`,
-   `wrx_finalize`).
+```bash
+cd /path/to/task
+make -C wrx libwrxapi.so
+```
 
-2. Add the `python/` directory to `PYTHONPATH`:
+This produces `wrx/libwrxapi.so` with 5 exported symbols (`wrx_init`,
+`wrx_run`, `wrx_set_param`, `wrx_get_state`, `wrx_finalize`) plus PIC
+variants of the dependent libraries (`lib*_pic.a`). The pre-existing
+non-PIC `*.a` archives and the `wrx` binary are unchanged.
 
-   ```bash
-   export PYTHONPATH=$(pwd)/python:$PYTHONPATH
-   ```
+Put the wrapper on `PYTHONPATH`:
 
-## Library-path lookup
+```bash
+export PYTHONPATH=/path/to/task/python:$PYTHONPATH
+```
 
-When you do `Wrxlib()` (no arguments) the loader searches in order:
+Optionally point at a library file outside the repository:
 
-1. `WRXLIB_PATH` environment variable, if set
-2. `<repo>/wrx/libwrxapi.so` (default build location)
-3. `<repo>/lib/libwrxapi.so` (install-style location)
+```bash
+export WRXLIB_PATH=/custom/path/libwrxapi.so
+```
 
-Override by passing `Wrxlib(lib_path="/custom/path/libwrxapi.so")`.
+Library lookup order (first match wins): `WRXLIB_PATH` env var,
+`<repo>/wrx/libwrxapi.so`, `<repo>/lib/libwrxapi.so`.
 
-## Quick example
+## WRX_RUN_OK gate (read this before calling `.run()`)
+
+**The L-4 build of `libwrxapi.so` retains a reference to
+`libgrf::grd1d` through `wrcalpwr.f90`** that cannot be fully resolved
+through the regular shared-library symbol graph. As a result calling
+`Wrxlib.run()` from the `.so` may segfault inside `wrcalpwr → grd1d`.
+
+To make the failure mode loud rather than silent, the test suite gates
+every `wrx_run`-dependent test class behind the `WRX_RUN_OK=1`
+environment variable:
+
+```bash
+WRX_RUN_OK=1 python3 -m unittest discover python/wrxlib/tests -v
+```
+
+Without `WRX_RUN_OK=1`, `TestWrxlibRun` (in `test_wrxlib.py`),
+`test_equivalence.py`, and `test_sweep.py` are all marked skipped.
+The C-side smoke test (`wrx/tests/c_abi/test_run_so.c`) follows the
+same convention and skips `wrx_run` entirely.
+
+What works without the gate: `wrx_init`, `wrx_set_param`,
+`wrx_get_state` (returns ierr=2 before run), and `wrx_finalize`
+exercise reliably from the `.so`. What requires the gate: any actual
+`.run()` call. If you need the full `wrx_run` pipeline today, use the
+Layer-1 driver (`wrx/wrxregress`) or the Layer-2 C harness that
+statically links `libgrf.a`. See
+[`docs/wrx-library/architecture.md`](../../docs/wrx-library/architecture.md)
+"libgrf::grd1d limitation" section for the full diagnosis and
+remediation roadmap.
+
+## Quick start
 
 ```python
 from wrxlib import Wrxlib
 
+# WARNING: .run() requires WRX_RUN_OK=1 build (see above).
 with Wrxlib() as wrx:
-    wrx.set_params(MODELG=2, RR=6.2, BB=5.3, NSMAX=2, NRAYMAX=1)
-    wrx.set_param("RFIN[1]", 170.0e3)      # array element by name
-    wrx.run(nray_request=0)                # WARNING: see Known limitation
+    wrx.set_params(MODELG=2, RR=6.2, RA=2.0, BB=5.3,
+                   NSMAX=2, NRAYMAX=1, NSTPMAX=2000,
+                   MDLWRI=2, MDLWRQ=1, SMAX=2.0, DELS=1e-3)
+    wrx.set_param("PA[1]", 2.0);    wrx.set_param("PA[2]", 5.4462e-4)
+    wrx.set_param("PZ[1]", 1.0);    wrx.set_param("PZ[2]", -1.0)
+    wrx.set_param("PN[1]", 1.0);    wrx.set_param("PN[2]", 1.0)
+    wrx.set_param("PTPR[1]", 10.0); wrx.set_param("PTPP[1]", 10.0)
+    wrx.set_param("PTPR[2]", 10.0); wrx.set_param("PTPP[2]", 10.0)
+    wrx.set_param("RFIN[1]", 170.0e3)   # 170 GHz EC
+    wrx.set_param("RPIN[1]", 8.0)
+    wrx.set_param("ANGTIN[1]", 10.0)
+    wrx.set_param("UUIN[1]", 1.0)
+    wrx.set_param("MODEWIN[1]", 1)
+
+    wrx.run(nray_request=0)         # 0 keeps namelist NRAYMAX
     state = wrx.get_state()
 
-print("pwr_tot =", state.scalars["pwr_tot"])
-print("nray, nsa =", state.nraymax, state.nsamax)
-print("rs pwrmax per species =", state.pwrmax_rs_nsa)
-
-# JSON-serialisable dict for L-6 regression diffs:
-import json
-print(json.dumps(state.to_dict())[:200])
+print(f"pwr_tot = {state.scalars['pwr_tot']:.4g}")
+print(f"per-species peak (rs) = {state.pwrmax_rs_nsa}")
 ```
 
-## Errors
+See `examples/` for runnable scripts:
 
-All exceptions derive from `wrxlib.WrxlibError`. Specific subclasses
-match the C ABI `enum wrx_error` in `wrx/wrx_api.h`:
+- `examples/quickstart.py` — smallest complete run (mirrors
+  `wrx_iter01`); requires `WRX_RUN_OK=1` for the actual `.run()` call.
+- `examples/parameter_sweep.py` — 3×3 RFIN × ANGPIN grid; each cell
+  re-opens a fresh `Wrxlib` context so the init/finalize cycle is
+  exercised 9 times. Requires `WRX_RUN_OK=1`.
+- `examples/state_dump.py` — single run, full `WrxState.to_dict()` as
+  JSON. Requires `WRX_RUN_OK=1` for the run path; `--dry-run` works
+  without the gate.
 
-| `ierr` | exception | meaning |
+All three accept `--dry-run` to validate argument parsing and import
+wiring without invoking the FFI (useful for CI on builds that have
+not yet patched the `grd1d` linkage).
+
+## API reference
+
+### `Wrxlib(lib_path: str | None = None)`
+
+Context manager. `__init__` calls `wrx_init`; `__exit__` / `close()`
+calls `wrx_finalize`. Only one live instance per process is
+meaningful (WRX backend holds global COMMON-block state).
+
+### `Wrxlib.set_param(name, value) -> None`
+
+Set a single parameter. Use `"NAME[i]"` (1-origin) for array elements
+(e.g. `"RFIN[1]"`, `"PN[2]"`); Python keyword arguments cannot
+contain brackets so array elements must use `set_param`, not
+`set_params`.
+
+### `Wrxlib.set_params(**kwargs) -> None`
+
+Bulk-set **scalar** parameters. Raises `WrxlibError` on keys
+containing `__` (common array-syntax mistake).
+
+### `Wrxlib.run(nray_request: int = 0) -> None`
+
+Execute `wrx_setup → wrx_exec`. `nray_request > 0` overrides the
+namelist `NRAYMAX` before allocation; `nray_request <= 0` keeps
+whatever NRAYMAX is currently set.
+
+**Warning:** may segfault inside `wrcalpwr → libgrf::grd1d` on the
+shared-library build; see "WRX_RUN_OK gate" above. Tests gating
+behind `WRX_RUN_OK=1` is the recommended practice.
+
+### `Wrxlib.get_state() -> WrxState`
+
+Snapshot current WRCOMM dimensions, the `pwr_tot` scalar, per-ray
+and per-species absorbed-power arrays, and per-species peak-power
+positions for both `rs` (short-path) and `rl` (long-path) axes into a
+`WrxState` dataclass. Trailing padding (up to `WRX_MAX_NRAYMAX=100`,
+`WRX_MAX_NSAMAX=8`) is ignored.
+
+### `Wrxlib.close() -> None`
+
+Idempotent. The context manager calls this automatically.
+
+## Supported parameters
+
+The registry below reflects `wrx/wrx_param_registry.f90` at Phase L-3
+(~70 names covering ~120 settable variables once subscripts are
+counted). Add to it by extending that Fortran `SELECT CASE`; no
+Python change is required — the wrapper forwards names verbatim.
+
+| Group | Names | Notes |
 |---|---|---|
-| 0 | - | success |
-| 1 | `WrxlibParamError` | invalid parameter name / value |
-| 2 | `WrxlibStateError` | library not initialised |
-| 3 | `WrxlibRunError` | calculation / get_state failed |
-| 4 | `WrxlibNotImplementedError` | stub; not implemented yet |
+| Geometry / device (plcomm) | `RR`, `RA`, `RB`, `RKAP`, `RDLT`, `BB`, `Q0`, `QA`, `RIP` | scalar doubles |
+| Plasma scalars (plcomm) | `NSMAX`, `PROFJ` | INT cast for NSMAX |
+| Plasma per-species (1..NSM) | `PA[i]`, `PZ[i]`, `PN[i]`, `PNS[i]`, `PTPR[i]`, `PTPP[i]`, `PTS[i]`, `PROFN1[i]`, `PROFN2[i]`, `PROFT1[i]`, `PROFT2[i]` | doubles, 1-origin |
+| pl/dp integration | `MODELG`, `MODELQ`, `NSAMAX_WR`, `MODELP[i]`, `MODELV[i]`, `NCMIN[i]`, `NCMAX[i]` | INT cast |
+| WRX control scalars (wrcomm) | `NRAYMAX`, `NSTPMAX`, `NRSMAX`, `NRLMAX`, `LMAXNW`, `MDLWRI`, `MDLWRG`, `MDLWRP`, `MDLWRQ`, `MDLWRW` | INT cast |
+| WRX per-ray initial conditions (NRAYM=100) | `RFIN[i]`, `RPIN[i]`, `ZPIN[i]`, `PHIIN[i]`, `ANGTIN[i]`, `ANGPIN[i]`, `RNPHIN[i]`, `RNZIN[i]`, `MODEWIN[i]`, `UUIN[i]`, `RBRADAIN[i]`, `RBRADBIN[i]`, `RCURVAIN[i]`, `RCURVBIN[i]`, `RNKIN[i]` | 1-origin; MODEWIN INT cast |
+| Ray control scalars (wrcomm) | `SMAX`, `DELS`, `UUMIN`, `EPSRAY`, `DELRAY`, `DELDER`, `DELKR`, `EPSNW`, `EPSD0`, `pne_threshold`, `bdr_threshold` | doubles |
+| Mode switches | `mode_beam`, `mode_wline`, `mode_fig`, `model_fdrv`, `model_fdrv_ds` | INT cast |
 
-Aliases with the `WrxLib...` capitalisation (`WrxLibInvalidParam`,
-`WrxLibNotInitialized`, `WrxLibCalculationFailed`,
-`WrxLibNotImplemented`) are also exported for callers that prefer the
-spec naming. `raise_for_rc` is an alias of `raise_for_ierr` matching
-the `fplib` / `trlib` naming.
+Unknown names return ierr=1 (raised as `WrxlibParamError`).
+Out-of-range indices (`PA[0]` or `PN[NSM+1]`) also return ierr=1.
 
-## `set_params` vs `set_param`
+## `WrxState` fields
 
-`set_params(**kwargs)` is **scalar-only** because Python keyword
-argument names cannot contain `[` or `]`. For array elements call
-`set_param()` directly:
+Matches `wrx_state_t` in `wrx/wrx_api.h`. Full dict layout is
+available via `state.to_dict()` (JSON-serialisable; the
+`rays` / `profile_rs` / `profile_rl` shape mirrors `wrlib.state` so
+`compare_metrics.py` can diff WRX wrapper output against `wrlib`
+output for cases where both apply).
 
-```python
-wrx.set_params(RR=6.2, BB=5.3)
-wrx.set_param("RFIN[1]", 170.0e3)   # array element
-```
+| Attribute | Type | Meaning |
+|---|---|---|
+| `nraymax` | int | rays actually in use |
+| `nstpmax` | int | NSTPMAX used for this run |
+| `nsamax` | int | plasma species actually in use |
+| `nsmax` | int | NSMAX (plasma species count) |
+| `modelg` | int | MODELG model switch |
+| `mdlwrq` | int | MDLWRQ power-deposition switch |
+| `scalars` | dict[str, float] | `{"pwr_tot": <total absorbed power>}` |
+| `nstp_end` | list[int] | `[nraymax]` end-step index for each ray |
+| `pwr_nray` | list[float] | `[nraymax]` per-ray absorbed power |
+| `pwr_nsa` | list[float] | `[nsamax]` per-species absorbed power |
+| `pwr_nsa_nray` | list[list[float]] | `[nraymax][nsamax]` per-ray per-species power |
+| `pos_pwrmax_rs_nsa` | list[float] | `[nsamax]` peak-power position (rs / short path) by species |
+| `pwrmax_rs_nsa` | list[float] | `[nsamax]` peak-power value (rs / short path) by species |
+| `pos_pwrmax_rl_nsa` | list[float] | `[nsamax]` peak-power position (rl / long path) by species |
+| `pwrmax_rl_nsa` | list[float] | `[nsamax]` peak-power value (rl / long path) by species |
 
-Keys containing `__` are rejected in `set_params` as a common
-array-syntax mistake.
+The 2-D `pwr_nsa_nray` matrix is sliced to the active `[0:nraymax]
+[0:nsamax]` corner; zero-padded struct tails are dropped.
 
-## State shape
+## Exceptions
 
-`WrxState` carries two runtime dimensions plus per-species and
-per-ray arrays:
+Every `wrx_*` return code maps to a concrete subclass of
+`WrxlibError`:
 
-* `nraymax` - number of rays actually in use
-  (`nstp_end`, `pwr_nray`, `pwr_nsa_nray[i]`)
-* `nsamax`  - number of plasma species in use
-  (`pwr_nsa`, `pos_pwrmax_rs_nsa`, `pwrmax_rs_nsa`,
-  `pos_pwrmax_rl_nsa`, `pwrmax_rl_nsa`)
-* scalars: `pwr_tot` (total absorbed power)
+| ierr | class | meaning |
+|---|---|---|
+| 0 | — | success |
+| 1 | `WrxlibParamError` | invalid parameter name / index / value |
+| 2 | `WrxlibStateError` | API call before `wrx_init` or after `close` |
+| 3 | `WrxlibRunError` | calculation (`wrx_setup`/`wrx_exec`) or `wrx_get_state` failed |
+| 4 | `WrxlibNotImplementedError` | retained for backward compatibility; no longer returned by L-3+ |
 
-`pwr_nsa_nray[i]` always has `nsamax` elements; `to_dict()` slices
-both axes to the active runtime size so zero-padded struct tails
-never leak into the Python view.
+Spec-style aliases (`WrxLibInvalidParam`, `WrxLibNotInitialized`,
+`WrxLibCalculationFailed`, `WrxLibNotImplemented`) are also exported.
+`raise_for_rc` is an alias of `raise_for_ierr` matching the `fplib` /
+`trlib` naming.
 
-## Known limitation: `wrx_run` in the shared build
+## Migration: `wrx` CLI → `wrxlib.Wrxlib`
 
-The L-4 build of `libwrxapi.so` retains a reference to
-`libgrf::grd1d` through `wrcalpwr.f90` that cannot be fully satisfied
-at load time through the regular `.so` symbol graph. As a result:
+| CLI step | `wrxlib` equivalent |
+|---|---|
+| edit `wrxparm` namelist | `wrx.set_param(...)` / `wrx.set_params(...)` |
+| menu option `R` (run) | `wrx.run(nray_request=...)` (gated on `WRX_RUN_OK`) |
+| inspect output file | `wrx.get_state()` / `state.to_dict()` |
+| menu `Q` (quit) | exit context manager / `wrx.close()` |
+| batch parameter sweep | Python `for` loop (see `examples/parameter_sweep.py`) |
 
-* `wrx_init`, `wrx_set_param`, `wrx_get_state` (before run),
-  `wrx_finalize` - work reliably from the `.so`.
-* **`wrx_run`** may segfault inside the shared library when
-  `wrcalpwr` dispatches to `grd1d`.
+The wrapper does **not** wrap graphics, file output, or the
+interactive menu — those live in `wrx/wrx` only.
 
-The C dlopen smoke test (`wrx/tests/c_abi/test_run_so.c`) skips
-`wrx_run` for the same reason. `python/wrxlib/tests/test_wrxlib.py`
-follows that convention: the `wrx_run`-dependent test (
-`TestWrxlibRun`) is gated behind the `WRX_RUN_OK=1` environment
-variable. Set it only if your build has patched the `grd1d`
-dependency:
+## Known limitations
 
-```bash
-WRX_RUN_OK=1 python3 -m unittest python.wrxlib.tests.test_wrxlib -v
-```
+- **`wrx_run` may segfault on the shared build.** The L-4
+  `libwrxapi.so` retains a reference to `libgrf::grd1d` through
+  `wrcalpwr.f90` that cannot be fully resolved through the regular
+  `.so` symbol graph. Tests gate `.run()` behind `WRX_RUN_OK=1`. See
+  the prominent "WRX_RUN_OK gate" section above and
+  [`docs/wrx-library/architecture.md`](../../docs/wrx-library/architecture.md).
+- **Single instance per process.** WRX backend uses COMMON blocks
+  plus module-scope allocation flags. Two concurrent `Wrxlib()`
+  instances share state; the second `wrx_init` resets globals. For
+  parallel sweeps use `multiprocessing` — each worker gets its own
+  `libwrxapi.so` state.
+- **Beam-tracing (`mode_beam /= 0`) outputs are not exposed through
+  `wrx_get_state`.** The ray-tracing solver runs, but only
+  ray-tracing per-species power-deposition outputs are surfaced
+  (`pwr_nsa`, `pwr_nray`, etc.).
+- **Input scalars (`RFIN`, `RPIN`, ...) are not echoed in
+  `wrx_get_state`.** Set them via `set_param` and use the round-trip
+  for confirmation; reading them back is a future-phase extension.
+- **String parameters not yet wired.** Currently-deferred; see
+  `docs/superpowers/specs/2026-04-17-tr-library-design.md` §4.3.
 
-If you need the full `wrx_run` pipeline today, use the Layer-1 driver
-(`wrx/wrxregress`) or the Layer-2 C harness that statically links
-against `libgrf.a`.
-
-## Running the tests
+## Testing
 
 ```bash
 cd python/wrxlib/tests
 python3 -m unittest discover -v
 ```
 
-Or from the repo root:
+Tests that require `libwrxapi.so` are skipped when the shared library
+is absent; pure-Python tests (ctypes layout, error wiring,
+`WrxState.from_c`, `to_dict` shape) always run. Tests that require
+`.run()` are skipped unless `WRX_RUN_OK=1` is set.
 
-```bash
-python3 -m unittest discover python/wrxlib/tests -v
-```
+The Phase L-6 4-layer suite is wired into
+`test_run/test_definitions.conf`:
 
-Tests that require `libwrxapi.so` are skipped automatically when it
-hasn't been built yet; the remaining tests (ctypes layout, error
-wiring, `WrxState.from_c`, `to_dict` shape) always run.
+- `wrxlib_c_abi` — Layer 2 C ABI (`make -C wrx wrx_api_check_all`;
+  includes `test_smoke`, `test_param`, `test_run`, `test_run_so`,
+  `test_negative`)
+- `wrxlib_ffi`, `wrxlib_wrapper` — Layer 3 Python wrapper
+- `wrxlib_equivalence` — Layer 1 vs Phase 0 baselines (tol `1e-10`,
+  `WRX_RUN_OK` gated) for `wrx_iter01`
+- `wrxlib_sweep` — Layer 4 3×3 RFIN × ANGPIN smoke (`WRX_RUN_OK`
+  gated)
 
 ## Independence from `wrlib`
 
@@ -175,3 +316,21 @@ from wrlib import Wrlib
 from wrxlib import Wrxlib
 # both can be loaded simultaneously
 ```
+
+## License / contributions
+
+`wrxlib` is part of the TASK code and distributed under the
+repository's top-level license. Bug reports and PRs are welcome;
+please keep wrapper changes minimal — the C ABI is the stable layer,
+so new parameters should be added to the Fortran registry first.
+
+## See also
+
+- `docs/superpowers/specs/2026-04-17-tr-library-design.md` — shared
+  TR/TI/WR/WRX Phase L design (WRX follows the same pattern)
+- `docs/wrx-library/architecture.md` — system diagram, Phase
+  completion matrix, and full `libgrf::grd1d` limitation analysis
+- `python/wrlib/README.md` — WR sister package
+- `wrx/wrx_api.h` — C ABI header
+- `wrx/wrx_param_registry.f90` — parameter-name dispatch table
+- `CHANGELOG.md` — per-phase history
