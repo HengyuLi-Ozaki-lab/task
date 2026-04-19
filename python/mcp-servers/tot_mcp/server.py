@@ -391,7 +391,7 @@ def handle_init() -> str:
         raise _wrap_totlib_error(exc) from exc
 
 
-def handle_set_param(name: str, value: float) -> str:
+def handle_set_param(name: str, value: SupportedValue) -> str:
     try:
         tot = STATE.ensure_open()
         if isinstance(value, str):
@@ -520,7 +520,7 @@ def build_server() -> Any:
         return handle_init()
 
     @mcp.tool()
-    def set_param(name: str, value: float) -> str:
+    def set_param(name: str, value: Union[float, int, str]) -> str:
         """Set a tot parameter by **namespaced** name.
 
         ``name`` MUST be of the form ``"<ns>:<bare>"`` where ``<ns>``
@@ -528,8 +528,10 @@ def build_server() -> Any:
         example ``"eq:RR"``, ``"tr:DT"``, ``"fp:NSMAX"``,
         ``"ti:RR"``, ``"wr:RFIN"`` or ``"wrx:RFIN"``. Use
         ``"<ns>:NAME[i]"`` (1-origin) for array elements, e.g.
-        ``"tr:PN[1]"``. See `describe_parameters` for the full
-        registry.
+        ``"tr:PN[1]"``. ``value`` may be a number or a string —
+        string values route to the ``tr:`` / ``eq:`` string setters
+        (other namespaces will reject strings). See
+        `describe_parameters` for the full registry.
         """
         return handle_set_param(name, value)
 
