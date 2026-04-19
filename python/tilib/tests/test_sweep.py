@@ -33,6 +33,8 @@ DEFAULT_SO = REPO / "ti" / "libtiapi.so"
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
+from tilib.tests._data_cwd import TiDataCwdMixin  # noqa: E402
+
 
 def _tilib_importable() -> bool:
     try:
@@ -47,7 +49,7 @@ def _tilib_importable() -> bool:
     f"libtiapi.so not built at {DEFAULT_SO}; run `make -C ti libtiapi.so`",
 )
 @unittest.skipUnless(_tilib_importable(), "python/tilib not importable")
-class TestSweep(unittest.TestCase):
+class TestSweep(TiDataCwdMixin, unittest.TestCase):
     """3x3 DT x NRMAX grid; smoke-only (no numerical regression)."""
 
     #: Keep NTMAX tiny so the whole sweep completes well under the

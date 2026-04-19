@@ -44,6 +44,8 @@ DEFAULT_SO = REPO / "ti" / "libtiapi.so"
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
+from tilib.tests._data_cwd import TiDataCwdMixin  # noqa: E402
+
 
 def _run_case(apply_fn, ntmax: int) -> dict:
     """Drive a single libtiapi.so cycle and return the metrics dict.
@@ -117,7 +119,7 @@ def _tilib_importable() -> bool:
 )
 @unittest.skipUnless(_tilib_importable(), "python/tilib not importable")
 @unittest.skipUnless(COMPARE_SCRIPT.exists(), f"{COMPARE_SCRIPT} missing")
-class TestEquivalence(unittest.TestCase):
+class TestEquivalence(TiDataCwdMixin, unittest.TestCase):
     """Layer 1: match Phase 0 Fortran baseline at 1e-10."""
 
     # The tolerance is deliberately exposed as a class attribute so a

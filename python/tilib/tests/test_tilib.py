@@ -39,6 +39,7 @@ from tilib import (  # noqa: E402
     raise_for_ierr,
 )
 from tilib import _ffi  # noqa: E402
+from tilib.tests._data_cwd import TiDataCwdMixin  # noqa: E402
 
 
 REPO = HERE.parents[3]
@@ -165,7 +166,7 @@ class TestTiStateFromC(unittest.TestCase):
     DEFAULT_SO.exists(),
     f"libtiapi.so not built at {DEFAULT_SO}; run `make -C ti libtiapi.so`",
 )
-class TestTiLibLifecycle(unittest.TestCase):
+class TestTiLibLifecycle(TiDataCwdMixin, unittest.TestCase):
     def test_context_manager(self):
         with TiLib() as ti:
             self.assertFalse(ti.closed)
@@ -226,7 +227,7 @@ class TestTiLibLifecycle(unittest.TestCase):
     DEFAULT_SO.exists(),
     f"libtiapi.so not built at {DEFAULT_SO}; run `make -C ti libtiapi.so`",
 )
-class TestTiLibLayer3Reinforce(unittest.TestCase):
+class TestTiLibLayer3Reinforce(TiDataCwdMixin, unittest.TestCase):
     """L-6 Layer 3: extend the basic lifecycle tests with array-element
     round-trip and multi-step-run state accumulation checks.
     """
