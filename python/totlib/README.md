@@ -1,287 +1,301 @@
-# totlib — TASK/TOT 統合シミュレータの Python ラッパ
+# totlib — Python wrapper for TASK/TOT (integrated simulator)
 
-`totlib` は TASK の統合輸送シミュレータ `tot/libtotapi.so`（Phase L-4
-で生成される共有ライブラリ）を `ctypes` で呼び出す Python パッケージ
-です。スタンドアロンの `tot` バイナリを起動せず、Python スクリプト
-から TOT 計算を駆動するための薄いラッパ層を提供します。
+`totlib` is a thin `ctypes`-based Python wrapper around
+`tot/libtotapi.so`, the in-process shared-library version of the
+TASK/TOT integrated transport simulator. It lets scripts drive TOT
+calculations from Python without shelling out to the standalone `tot`
+binary or going through namelist files.
 
-## 概要
+## Overview
 
-TOT は TASK の **統合（オーケストレータ）モジュール**です。`eq`、
-`tr`、`fp`、`ti`、`wr`、`wrx` の各モジュールを束ねて 1 本の物理計算
-を回す立場にあります。そのため `tot` のパラメータ空間は、6 個の
-モジュールのパラメータレジストリの **和集合**になっています。
+TOT is the **orchestrator (integrated) module** of TASK. It composes
+`eq`, `tr`, `fp`, `ti`, `wr`, and `wrx` into a single physics solver,
+so its parameter space is the **union** of those six per-module
+registries. Same-named parameters across sub-modules (e.g. `RR` lives
+in `eq`/`tr`/`ti`/`wrx`; `DT` lives in both `tr` and `ti`) are
+disambiguated by a mandatory namespace prefix:
 
-|  | 従来の CLI | ライブラリ（Phase L） |
+| | Traditional CLI | Library (Phase L) |
 |---|---|---|
-| バイナリ | `tot/tot` | `tot/libtotapi.so` |
-| エントリ | 対話メニュー | 6 個の C ABI 関数 |
-| 入出力 | namelist + ASCII 出力 | メモリ上の状態構造体 |
-| グラフィクス | PGPlot / Fortran graphics | 含まない（スタブで置換） |
+| Binary | `tot/tot` | `tot/libtotapi.so` |
+| Entry | interactive menu | 6 C ABI functions |
+| I/O | namelist + ASCII output | in-memory state struct |
+| Graphics | PGPlot / Fortran graphics | excluded (graphics stubs) |
 | Python | — | `python/totlib` |
 
-C ABI は `tot/tot_api.h` で定義されており、Fortran バックエンド
-（`tot/tot_api.f90`、`tot/tot_param_registry.f90`、
-`tot/tot_state.f90`）はそのまま `tot` バイナリにもリンクされる純粋な
-Fortran です。`python/totlib` は 6 個の C エントリをラップして、
-`tot_state_t` 構造体を純 Python の `TotState` データクラスに詰め直す
-だけの役割を担います。
+The C ABI is defined in `tot/tot_api.h`; the Fortran backend
+(`tot/tot_api.f90`, `tot/tot_param_registry.f90`, `tot/tot_state.f90`)
+is unchanged Fortran shared with the `tot` binary. `python/totlib`
+only wraps the 6 C entry points and marshals a `tot_state_t` struct
+into the pure-Python `TotState` dataclass.
 
-サードパーティ依存はありません。Python 3.8+ の標準ライブラリのみ
-（`ctypes`、`dataclasses`、`pathlib`、`os`）で動作します。`numpy` は
-任意です（あれば検知しますが必須ではありません）。
+No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
+`dataclasses`, `pathlib`, `os`). `numpy` is optional (detected if
+present, never required).
 
-## ビルド
+## Installation
 
-共有ライブラリを 1 度だけビルドします。
+Build the shared library once:
 
 ```bash
 cd /path/to/task
 make -C tot libtotapi.so
 ```
 
-これで `tot/libtotapi.so` と、依存ライブラリの PIC 版（`lib*_pic.a`、
-`lib*.so`）が生成されます。既存の非 PIC `*.a` アーカイブと `tot`
-バイナリは影響を受けません。
+This produces `tot/libtotapi.so` plus PIC variants of the dependent
+libraries (`lib*_pic.a`, `lib*.so`). The pre-existing non-PIC `*.a`
+archives and the `tot` binary are unchanged.
 
-ラッパを `PYTHONPATH` に置きます。
+Put the wrapper on `PYTHONPATH`:
 
 ```bash
 export PYTHONPATH=/path/to/task/python:$PYTHONPATH
 ```
 
-リポジトリ外に配置されたライブラリを使う場合は `TOTLIB_PATH` で
-指定できます。
+Optionally point at a library file outside the repository:
 
 ```bash
 export TOTLIB_PATH=/custom/path/libtotapi.so
 ```
 
-ライブラリ探索順（最初に存在したものを採用）:
-`TOTLIB_PATH` 環境変数 → `<repo>/tot/libtotapi.so` →
-`<repo>/lib/libtotapi.so`。
+Library lookup order (first match wins): `TOTLIB_PATH` env var,
+`<repo>/tot/libtotapi.so`, `<repo>/lib/libtotapi.so`.
 
-## クイックスタート
+## Quick start
 
 ```python
 from totlib import Tot
 
 with Tot() as tot:
-    # 名前空間プレフィックスを必ず付けます。
-    tot.set_param("eq:RR", 6.2)        # equilibrium 主半径 [m]
-    tot.set_param("tr:DT", 0.01)       # transport 時間刻み [s]
-    tot.set_param("fp:NSMAX", 2)       # FP 種類数
-    tot.set_param("ti:RR", 6.2)        # TI 主半径 [m]
-    tot.set_param("wrx:RFIN", 170.0)   # WRX RF 周波数 [GHz]
+    # Every name MUST carry a "<ns>:" prefix.
+    tot.set_param("eq:RR", 6.5)        # equilibrium major radius [m]
+    tot.set_param("tr:DT", 0.01)       # transport time step [s]
+    tot.set_param("fp:NSMAX", 2)       # FP species count
+    tot.set_param("ti:RR", 6.5)        # TI major radius [m]
+    tot.set_param("wrx:RFIN", 170.0)   # WRX RF frequency [GHz]
 
-    # まとめ設定（dict 形式が必須。kwargs にはコロンを書けません）。
+    # Bulk-set: pass a dict (kwargs cannot contain ':').
     tot.set_params({
         "tr:RA": 2.0,
         "tr:BB": 5.3,
         "eq:RIP": 1.5,
     })
 
-    # L-6 で fan-out が完了したら有効になります（現状はスタブ）。
+    # Once L-6 fan-out lands these become real; today they raise
+    # TotlibNotImplementedError.
     # tot.run(ntmax=10)
     # state = tot.get_state()
 ```
 
-## 名前空間プレフィックス（重要）
+See `examples/` for runnable scripts (all support `--dry-run`):
 
-TOT では同じ名前のパラメータが複数モジュールに存在します
-（例: `RR` は `eq` / `tr` / `ti` / `wrx` のいずれにも存在し、
-`DT` は `tr` と `ti` の両方に存在します）。そのため、`Tot.set_param`
-に渡す名前は **必ず** `<ns>:<bare>` 形式にしてください。
+- `examples/quickstart.py` — smallest complete invocation
+- `examples/parameter_sweep.py` — `eq:RR` × `eq:BB` grid
+- `examples/state_dump.py` — single run, `TotState.to_dict()` as JSON
 
-| プレフィックス | 振り分け先レジストリ | 代表例 |
-|---|---|---|
-| `eq:` | `eq_param_set` | `eq:RR`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` |
-| `tr:` | `tr_param_set` | `tr:DT`, `tr:NTMAX`, `tr:RR`, `tr:PN[1]` |
-| `fp:` | `fp_param_set` | `fp:NSMAX`, `fp:DELT` |
-| `ti:` | `ti_param_set` | `ti:RR`, `ti:DT` |
-| `wr:` | `wrx_param_set`（エイリアス） | `wr:RFIN` |
-| `wrx:` | `wrx_param_set` | `wrx:RFIN`, `wrx:NRAY` |
+## API reference
 
-> **`wr:` は `wrx:` の別名です。** TOT は `wrx/libwr.a` をリンク
-> するため、`wr:` プレフィックスも内部的に `wrx_param_set` に振り
-> 分けられます。詳細は `tot/tot_param_registry.f90` の冒頭コメント
-> を参照してください。
+### `Tot(lib_path: str | None = None)`
 
-未対応のプレフィックスや、プレフィックスを付け忘れた名前は、Python
-側のガードが先に検出して `TotlibInvalidParamError` を送出します。
-誤って Fortran 側まで到達した場合も `rc=1` で同じ例外になります。
+Context manager. `__enter__` calls `tot_init`; `__exit__` / `close()`
+calls `tot_finalize`. Only one live instance per process is meaningful
+(TOT backend holds global COMMON-block plus per-module module-variable
+state).
+
+> **L-3/L-4 stub note:** `tot_init` and `tot_finalize` currently return
+> `TOT_ERR_NOT_IMPL`. The wrapper accepts both `OK` and `NOT_IMPL` as
+> "library opened" so `set_param` testing works today; once L-6 wires
+> real fan-out, the `OK` path takes over automatically.
+
+### `Tot.set_param(name, value) -> None`
+
+Set one numeric parameter. `name` MUST be `"<ns>:<bare>"`. Validation
+runs Python-side first, so missing/unknown prefixes raise
+`TotlibInvalidParamError` before any FFI call.
+
+### `Tot.set_param_str(name, value) -> None`
+
+Set one string parameter. At L-3, only the `tr:` and `eq:` namespaces
+back string setters (`tr:KNAMEQ`, `eq:KNAMEQ`, etc.). Other namespaces
+return `rc=1` and raise `TotlibInvalidParamError`.
+
+### `Tot.set_params(*args, **kwargs) -> None`
+
+Bulk set. **Pass a dict (or iterable of `(name, value)` pairs) as a
+positional argument** — Python keyword identifiers cannot contain a
+colon, so pure-kwargs cannot express namespaced names:
 
 ```python
-tot.set_param("RR", 6.2)
+tot.set_params({"eq:RR": 6.5, "tr:DT": 0.01})
+tot.set_params([("fp:NSMAX", 2), ("ti:RR", 6.5)])
+```
+
+Each key passes through the same guard as `set_param`.
+
+### `Tot.run(ntmax: int) -> None`
+
+Advance the integrated simulation by `ntmax` steps. At L-3/L-4 this is
+a stub returning `rc=4`; the wrapper raises
+`TotlibNotImplementedError`. L-6 fan-out will make it succeed.
+
+### `Tot.get_state() -> TotState`
+
+Snapshot current TOT state into a `TotState` dataclass. Profile arrays
+are trimmed to the active runtime slice (`[0:nrmax]` / `[0:nsmax]`),
+so trailing zero padding (up to `TOT_MAX_*`) never reaches callers. At
+L-3/L-4 this raises `TotlibNotImplementedError`; L-6 fan-out wires it
+up.
+
+### `Tot.close() -> None`
+
+Idempotent. The context manager calls this automatically.
+
+## Namespace prefix rules (mandatory)
+
+Because TOT unions six per-module registries, every parameter name
+passed through `Tot.set_param` / `Tot.set_param_str` / `Tot.set_params`
+**must** carry one of the following prefixes:
+
+| Prefix | Backing registry | Examples |
+|---|---|---|
+| `eq:`  | `eq_param_set`        | `eq:RR`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` |
+| `tr:`  | `tr_param_set`        | `tr:DT`, `tr:NTMAX`, `tr:RR`, `tr:PN[1]` |
+| `fp:`  | `fp_param_set`        | `fp:NSMAX`, `fp:DELT` |
+| `ti:`  | `ti_param_set`        | `ti:RR`, `ti:DT` |
+| `wr:`  | `wrx_param_set` (alias) | `wr:RFIN` |
+| `wrx:` | `wrx_param_set`       | `wrx:RFIN`, `wrx:NRAY` |
+
+> **`wr:` is an alias for `wrx:`.** TOT links `wrx/libwr.a` (note: the
+> archive lives under `wrx/` despite the name), so the only loadable
+> `wr_param_set` symbol in this build is `wrx`'s. `wr:` is therefore
+> routed to `wrx_param_set`. To use the real `wr/wr_param_registry`,
+> drive `wr/libwrapi.so` directly via `python/wrlib`. See the comment
+> header in `tot/tot_param_registry.f90`.
+
+Missing or unknown prefixes are caught Python-side first:
+
+```python
+tot.set_param("RR", 6.5)
 # -> TotlibInvalidParamError: tot parameter name 'RR' is missing a
 #    namespace prefix. tot is the orchestrator: every name must be
 #    of the form '<ns>:<name>' where <ns> is one of
 #    ('eq', 'tr', 'fp', 'ti', 'wr', 'wrx'). ...
 ```
 
-配列要素は per-module レジストリの構文をそのまま使えます
-（例: `tot.set_param("tr:PN[1]", 0.7)`、`tot.set_param("eq:PSIB[0]", 0.0)`）。
+Array element syntax follows the per-module convention (e.g.
+`tot.set_param("tr:PN[1]", 0.7)`, `tot.set_param("eq:PSIB[0]", 0.0)`).
 
-## API リファレンス
+## `TotState` fields
 
-### `Tot(lib_path: str | None = None)`
+Matches `tot_state_t` in `tot/tot_api.h`. Full dict layout is
+available via `state.to_dict()` (JSON-serialisable; matches the trlib
+baseline so cross-comparison tooling works).
 
-コンテキストマネージャです。`__enter__` で `tot_init` が呼ばれ、
-`__exit__` / `close()` で `tot_finalize` が呼ばれます。プロセス内に
-意味のあるインスタンスは 1 つだけです（TOT バックエンドは COMMON
-ブロックと per-module モジュール変数で大域状態を保持しています）。
-
-> **L-3/L-4 時点の注意事項**: `tot_init` と `tot_finalize` は
-> `TOT_ERR_NOT_IMPL` を返すスタブです。ラッパは `OK` と `NOT_IMPL`
-> の両方を「ライブラリは開いた」とみなして処理を続けるので、
-> `set_param` のテストや動作確認は今すぐ可能です。L-6 で fan-out
-> 実装が入ると自動的に `OK` 経路に切り替わります。
-
-### `Tot.set_param(name, value) -> None`
-
-数値パラメータを 1 つ設定します。`name` には必ず `<ns>:<bare>`
-形式の名前を渡してください。バリデーションは Python 側で先に行い
-ます（不正な場合は FFI 呼び出し前に `TotlibInvalidParamError`）。
-
-### `Tot.set_param_str(name, value) -> None`
-
-文字列パラメータを設定します。L-3 時点で文字列レジストリを持って
-いるのは `tr:` と `eq:` だけです（`tr:KNAMEQ`、`eq:KNAMEQ` ほか）。
-他の名前空間は `rc=1` で `TotlibInvalidParamError` になります。
-
-### `Tot.set_params(*args, **kwargs) -> None`
-
-複数のパラメータをまとめて設定します。Python のキーワード引数には
-コロンを書けないため、**必ず dict もしくは `(name, value)` のイテ
-ラブルを位置引数として渡してください**。
-
-```python
-tot.set_params({"eq:RR": 6.2, "tr:DT": 0.01})
-tot.set_params([("fp:NSMAX", 2), ("ti:RR", 6.2)])
-```
-
-各キーは `set_param` と同じガードを通ります。
-
-### `Tot.run(ntmax: int) -> None`
-
-統合シミュレーションを `ntmax` ステップ進めます。L-3/L-4 では
-`tot_run` がスタブ（`rc=4`）のため、現状は
-`TotlibNotImplementedError` が必ず送出されます。L-6 で per-module
-の `*_run` 連結が入ると正常終了するようになります。
-
-### `Tot.get_state() -> TotState`
-
-現在の TOT 状態をスナップショットして `TotState` データクラスに
-詰めて返します。各配列はランタイムの実サイズ（`[0:nrmax]` /
-`[0:nsmax]`）で切り詰めるため、末尾のゼロパディング（`TOT_MAX_*`
-までの分）が利用側に漏れることはありません。L-3/L-4 では
-`tot_get_state` がスタブのため、現状は
-`TotlibNotImplementedError` が必ず送出されます。
-
-### `Tot.close() -> None`
-
-冪等です。コンテキストマネージャから抜けるときに自動で呼ばれます。
-
-## `TotState` フィールド
-
-`tot_state_t`（`tot/tot_api.h`）と 1:1 対応します。`state.to_dict()`
-は JSON シリアライズ可能な辞書を返します。
-
-| 属性 | 型 | 意味 |
+| Attribute | Type | Meaning |
 |---|---|---|
-| `tr_present` | int | TR モジュールの初期化済みフラグ（0/1） |
-| `ti_present` | int | TI モジュールの初期化済みフラグ |
-| `fp_present` | int | FP モジュールの初期化済みフラグ |
-| `wr_present` | int | WR モジュールの初期化済みフラグ |
-| `nt` | int | 時間ステップカウンタ（TR 由来） |
-| `nrmax` | int | 動的な radial 格子点数 |
-| `nsmax` | int | 動的な species 数 |
-| `scalars` | `dict[str, float]` | 統合スカラー 13 個 |
-| `RN` | `list[list[float]]` | `[nrmax][nsmax]` 密度プロファイル |
-| `RT` | `list[list[float]]` | `[nrmax][nsmax]` 温度プロファイル |
-| `AJ` | `list[float]` | `[nrmax]` 電流プロファイル |
-| `QP` | `list[float]` | `[nrmax]` 安全係数プロファイル |
+| `tr_present` | int | 1 if TR sub-module initialized, else 0 |
+| `ti_present` | int | 1 if TI sub-module initialized, else 0 |
+| `fp_present` | int | 1 if FP sub-module initialized, else 0 |
+| `wr_present` | int | 1 if WR sub-module initialized, else 0 |
+| `nt`         | int | time-step counter (TR-authoritative) |
+| `nrmax`      | int | radial points actually in use |
+| `nsmax`      | int | species actually in use |
+| `scalars`    | dict[str, float] | 13 integrated plasma scalars |
+| `RN`         | list[list[float]] | `[nrmax][nsmax]` density profile |
+| `RT`         | list[list[float]] | `[nrmax][nsmax]` temperature profile |
+| `AJ`         | list[float]      | `[nrmax]` current density profile |
+| `QP`         | list[float]      | `[nrmax]` safety-factor profile |
 
-スカラー（標準順序）: `T`, `WPT`, `AJT`, `Q0`, `BETA0`, `BETAP0`,
-`BETAA`, `BETAN`, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`。
+Scalars (canonical order): `T`, `WPT`, `AJT`, `Q0`, `BETA0`, `BETAP0`,
+`BETAA`, `BETAN`, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`.
 
-## 例外階層
+## Exceptions
 
-すべての `tot_*` リターンコードは `TotlibError` のサブクラスに
-マッピングされます。
+Every `tot_*` return code maps to a concrete subclass of `TotlibError`:
 
-| rc | クラス | 意味 |
+| rc | class | meaning |
 |---|---|---|
-| 0 | — | 成功 |
-| 1 | `TotlibInvalidParamError` | 不正なパラメータ名（プレフィックス無し / 不明な名前空間 / 不明なベア名） |
-| 2 | `TotlibNotInitializedError` | `tot_init` 前の呼び出し |
-| 3 | `TotlibCalculationFailedError` | `tot_run` / `tot_get_state` の計算失敗 |
-| 4 | `TotlibNotImplementedError` | 実装待ちのスタブ（L-3/L-4 時点の `init` / `run` / `get_state` / `finalize`） |
+| 0 | — | success |
+| 1 | `TotlibInvalidParamError` | invalid name (missing prefix / unknown namespace / unknown bare name) |
+| 2 | `TotlibNotInitializedError` | API call before `tot_init` |
+| 3 | `TotlibCalculationFailedError` | `tot_run` / `tot_get_state` failed |
+| 4 | `TotlibNotImplementedError` | stub return (L-3/L-4 `init` / `run` / `get_state` / `finalize`) |
 
-スペック準拠のエイリアス（`TotLibError`、`TotLibInvalidParam`、
-`TotLibNotInitialized`、`TotLibCalculationFailed`、
-`TotLibNotImplemented`）も同時にエクスポートしています。
+Spec-style aliases (`TotLibError`, `TotLibInvalidParam`,
+`TotLibNotInitialized`, `TotLibCalculationFailed`,
+`TotLibNotImplemented`) are also exported.
 
-## CLI からの移行ガイド
+## Migration: `tot` CLI → `totlib.Tot`
 
-| `tot` CLI 操作 | `totlib.Tot` 相当 |
+| CLI step | `totlib` equivalent |
 |---|---|
-| `eqparm` / `trparm` namelist を編集 | `tot.set_param("eq:...", ...)` / `tot.set_param("tr:...", ...)` |
-| EQDSK ファイル指定 | `tot.set_param_str("eq:KNAMEQ", path)` |
-| メニュー（実行） | `tot.run(ntmax)`（L-6 以降で利用可能） |
-| 出力ファイルを確認 | `tot.get_state()`（L-6 以降で利用可能） |
-| メニュー `Q`（終了） | `with` を抜ける / `tot.close()` |
-| バッチパラメータ走査 | Python の `for` ループで `tot.set_params(...)` |
+| edit `eqparm` / `trparm` namelist | `tot.set_param("eq:...", ...)` / `tot.set_param("tr:...", ...)` |
+| specify EQDSK file | `tot.set_param_str("eq:KNAMEQ", path)` |
+| menu option (run) | `tot.run(ntmax=...)` (L-6+) |
+| inspect output file | `tot.get_state()` (L-6+) |
+| menu `Q` (quit) | exit context manager / `tot.close()` |
+| batch parameter sweep | Python `for` loop with `tot.set_params(...)` |
 
-ラッパは **graphics、ファイル出力、対話メニューをラップしません**
-（それらは `tot/tot` バイナリ専用です）。
+The wrapper does **not** wrap graphics, file output, or the
+interactive menu — those live in `tot/tot` only.
 
-## 既知の制限
+## Known limitations
 
-- **プロセスあたり 1 インスタンス**: TOT バックエンドは COMMON
-  ブロックを使うため、同一プロセス内に 2 つの `Tot()` を立てると
-  お互いの状態を破壊します。
-- **`run` / `get_state` は L-6 待ち**: 現状の `tot_init` /
-  `tot_run` / `tot_get_state` / `tot_finalize` はスタブで
-  `rc=4`（`TotlibNotImplementedError`）を返します。L-6 で per-module
-  fan-out が入ると順次有効になります。
-- **graphics / MPI / OpenMP API なし**: graphics シンボルは
-  スタブで置換済みです。loader は `RTLD_LAZY` を使うため、未到達
-  のシンボルは解決されません。
-- **`wr:` は `wrx:` の別名**: TOT のリンクグラフ上の都合で `wr:`
-  プレフィックスは `wrx_param_set` に振り分けられます。`wr/`
-  ツリーの非 wrx レジストリを使いたい場合は `libwrapi.so` を直接
-  叩くか、`python/wrlib` を使ってください。
-- **未登録の bare 名**: 各 per-module レジストリに未登録の名前は
-  `TotlibInvalidParamError` になります。新規追加は Fortran 側で
-  行ってください。
+- **Single instance per process.** TOT backend uses COMMON blocks plus
+  per-module module variables. Two concurrent `Tot()` handles share
+  state; the second `tot_init` resets globals. Use `multiprocessing`
+  for parallel sweeps — each worker loads its own `libtotapi.so`.
+- **`run` / `get_state` await L-6.** `tot_init`, `tot_run`,
+  `tot_get_state`, `tot_finalize` currently return `rc=4`
+  (`TotlibNotImplementedError`). L-6 fan-out wires the per-module
+  `*_run` / `*_get_state` chain.
+- **No graphics / MPI / OpenMP API.** Graphics symbols are replaced by
+  stubs. The loader uses `RTLD_LAZY`, so unreachable symbols never
+  resolve.
+- **`wr:` is aliased to `wrx:`.** TOT links `wrx/libwr.a`, so the
+  `wr:` prefix is routed through `wrx_param_set`. Use `python/wrlib`
+  (not `totlib`) when you need `wr/wr_param_registry` semantics.
+- **Unregistered bare names.** Names not in the matching per-module
+  registry raise `TotlibInvalidParamError`. New parameters must be
+  added on the Fortran side.
+- **String parameters** are wired only for `tr:` and `eq:` at L-3.
+  Other namespaces will return `rc=1` until they grow a `*_param_set_str`
+  entry point.
 
-## テスト
+## Testing
 
 ```bash
 cd python/totlib/tests
 python3 -m unittest discover -v
 ```
 
-`libtotapi.so` を必要とするテストは、共有ライブラリが存在しない
-場合は自動的に SKIP されます。純 Python テスト（ctypes レイアウ
-ト、エラー配線、namespace ガード、`TotState.from_c` / `to_dict`
-の形状）は常に実行されます。
+Tests requiring `libtotapi.so` skip automatically when the shared
+library is absent. Pure-Python tests (ctypes layout, error wiring,
+namespace guard, `TotState.from_c` / `to_dict` shape) always run.
 
-## ライセンス・コントリビュート
+The Phase L-6 4-layer regression suite (`totlib_equivalence`,
+`totlib_c_abi`, `totlib_ffi`, `totlib_wrapper`, `totlib_sweep`) is
+staged on the L-6 feature branch and will land via its own PR.
 
-`totlib` は TASK コードの一部であり、リポジトリトップのライセンス
-に従います。バグ報告と PR を歓迎します。ラッパの変更は最小限に
-保ってください（C ABI が安定レイヤなので、新規パラメータはまず
-per-module Fortran レジストリに追加するのが基本方針です）。
+## License / contributions
 
-## 関連ドキュメント
+`totlib` is part of the TASK code and follows the repository's
+top-level license. Bug reports and PRs are welcome; please keep
+wrapper changes minimal — the C ABI is the stable layer, so new
+parameters should be added to the matching per-module Fortran registry
+first (then they show up automatically through TOT's namespaced
+dispatch).
 
-- `docs/superpowers/specs/2026-04-17-tr-library-design.md` — 全体
-  設計仕様
-- `docs/superpowers/plans/2026-04-18-tot-library-L5-python-wrapper.md`
-  — 本フェーズの計画
-- `tot/tot_api.h` — C ABI ヘッダ
-- `tot/tot_param_registry.f90` — namespaced パラメータディスパッチャ
-- `python/trlib/README.md`、`python/eqlib/README.md` — 同型のラッパ
-  実装（参考）
+## See also
+
+- `docs/tot-library/architecture.md` — system diagram + Phase L
+  completion matrix
+- `docs/superpowers/specs/2026-04-17-tr-library-design.md` — Phase L
+  design spec (TR template; TOT mirrors it with namespaced dispatch)
+- `docs/superpowers/plans/2026-04-18-tot-library-L*.md` — per-phase
+  plans
+- `tot/tot_api.h` — C ABI header
+- `tot/tot_param_registry.f90` — namespaced parameter dispatcher
+- `python/trlib/README.md`, `python/eqlib/README.md` — sibling wrapper
+  references
+- `CHANGELOG.md` — per-phase history

@@ -356,3 +356,87 @@ one EQ-specific addition: a **6th C ABI entry point**
   `set_params(**kwargs)` or `set_param`.
 - Single instance per process only — EQ globals are COMMON-block
   plus `eqcom*_mod` module variables.
+
+## TOT Phase L — library-ization (2026-04-19)
+
+Phase L turned TASK/TOT (the integrated transport orchestrator) from a
+CLI-only Fortran program into an additionally-loadable composite
+shared library with a Python wrapper. TOT is the orchestrator: its
+parameter space is the **union** of the six per-module registries
+(`eq`, `tr`, `fp`, `ti`, `wr`, `wrx`), so the TOT-specific addition
+vs the sibling tr/eq/ti/fp/wr/wrx libraries is **namespaced parameter
+dispatch** — every parameter name passed through `tot_set_param`
+must carry an `eq:` / `tr:` / `fp:` / `ti:` / `wr:` / `wrx:` prefix.
+The `tot` CLI binary and its menu/graphics are unchanged.
+
+### Added
+
+- **L-0 (2026-04-18, PR #17)** — Phase L-0 regression-test
+  infrastructure for TOT: `test_run/baselines/tot_*/`,
+  `totregress.f90` (env-guarded high-precision dump), Phase-0 baseline
+  cases wired into `test_definitions.conf`.
+- **L-1 (2026-04-18, PR #23)** — `tot/Makefile` graphics split via
+  `TOT_NO_GRAPHICS` preprocessor guard around `GSOPEN` / `GSCLOS`
+  call sites; standalone `tot` binary still links graphics, the
+  upcoming `libtotapi.so` build path is graphics-free.
+- **L-2 (2026-04-18, PR #32)** — C ABI foundation: `tot/tot_api.h`,
+  `tot/tot_api.f90`, `tot/tot_state.f90`; 6 entry-point stubs
+  returning `TOT_ERR_NOT_IMPL` (ierr=4), plus first C-side smoke
+  tests under `tot/tests/c_abi/`.
+- **L-3 (2026-04-18, PR #82)** — Namespaced parameter dispatcher
+  (`tot/tot_param_registry.f90`) routing `<ns>:<bare>` names to the
+  six per-module registries (`eq_param_set`, `tr_param_set`,
+  `fp_param_set`, `ti_param_set`, `wrx_param_set`). `wr:` is aliased
+  to `wrx:` because TOT links `wrx/libwr.a` (the `wr_param_set`
+  symbol resolvable inside `libtotapi.so` is wrx's). String setter
+  (`tot_set_param_str`) supports the `tr:` and `eq:` namespaces.
+- **L-4 (2026-04-18, PR #85)** — `make -C tot libtotapi.so` builds
+  the **composite** shared library: links the six per-module PIC
+  archives plus the shared dependency PIC libraries (`lib`, `pl`,
+  `bpsd`, `mtxp`, `ob`, `adpost`, `open-adas/adf11`). Non-PIC
+  archives and the `tot` binary are unchanged.
+- **L-5 (2026-04-18, PR #91)** — Python wrapper `python/totlib/`:
+  `Tot` context manager, `TotState` dataclass with `presence`
+  sub-dict, exception hierarchy mirroring `enum tot_error`, `_ffi`
+  ctypes layer with `TOTLIB_PATH` override and `RTLD_LAZY` loading,
+  Python-side namespace guard (`Tot._validate_namespaced_name`)
+  catching missing/empty/unknown prefixes before any FFI call.
+- **L-7 (2026-04-19, this PR)** — User-facing documentation:
+  rewritten `python/totlib/README.md` with full 6-fn API table,
+  namespace-prefix rules (with `wr:`→`wrx:` alias), `TotState` field
+  table, exception hierarchy, CLI→library migration notes, and known
+  limitations; example scripts (`quickstart.py`,
+  `parameter_sweep.py`, `state_dump.py` — all with `--dry-run` and
+  graceful `TotlibNotImplementedError` handling for the L-3/L-4 stub
+  state); architecture doc (`docs/tot-library/architecture.md`) with
+  ASCII diagram showing TOT orchestrating the 6 backing modules and
+  Phase L completion matrix; this changelog entry.
+
+### Known issues
+
+- **L-6 (4-layer test integration) is not yet merged.** Wrapper-only
+  tests run via `python3 -m unittest discover python/totlib/tests`;
+  the `totlib_*` cases in `test_run/test_definitions.conf` will land
+  with the L-6 PR.
+- **`tot.run()` / `tot.get_state()` are stubs.** `tot_init`,
+  `tot_run`, `tot_get_state`, `tot_finalize` currently return
+  `TOT_ERR_NOT_IMPL` (rc=4); the wrapper accepts both `OK` and
+  `NOT_IMPL` from `tot_init` / `tot_finalize` so `set_param` testing
+  works today, but `run` / `get_state` raise
+  `TotlibNotImplementedError` until L-6 wires the per-module fan-out.
+- **`wr:` is aliased to `wrx:`.** TOT links `wrx/libwr.a`, so the
+  `wr/wr_param_registry` is not reachable through `libtotapi.so`.
+  Use `python/wrlib` (against `wr/libwrapi.so`) to drive the real
+  `wr` registry.
+- **String parameters wired only for `tr:` and `eq:`.** Other
+  namespaces (`fp:`, `ti:`, `wr:`/`wrx:`) reject `tot_set_param_str`
+  with `rc=1` until their per-module registries grow a symmetric
+  `*_param_set_str` entry point.
+- **Single instance per process** — TOT pulls in COMMON blocks from
+  six backing modules; two concurrent `Tot()` handles share state.
+- **Optimization driver deferred.** The original L-7 plan
+  (`docs/superpowers/plans/2026-04-18-tot-library-L7-optimization.md`)
+  scoped a parameter-optimization workflow (`optimize.py`,
+  `objectives.py`, `results.py`, scipy/optuna/grid backends, three
+  notebooks). This PR delivers the documentation subset only;
+  the optimization driver is deferred to a follow-up PR.
