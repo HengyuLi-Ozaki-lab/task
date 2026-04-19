@@ -391,7 +391,15 @@ def handle_init() -> str:
         raise _wrap_totlib_error(exc) from exc
 
 
-def handle_set_param(name: str, value: SupportedValue) -> str:
+def handle_set_param(name: str, value: Union[float, int, str]) -> str:
+    # Bulk types (List/Dict) are intentionally rejected here — use
+    # `set_params` for those. Validating up front gives a clearer
+    # error than letting `float(value)` raise a generic TypeError.
+    if isinstance(value, (list, tuple, dict)):
+        raise ToolError(  # type: ignore[call-arg]
+            f"set_param does not accept array/dict values for {name}; "
+            f"use set_params with a {{name: array|dict}} mapping instead"
+        )
     try:
         tot = STATE.ensure_open()
         if isinstance(value, str):
