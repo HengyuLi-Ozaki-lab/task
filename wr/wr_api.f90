@@ -376,26 +376,24 @@ CONTAINS
   ! WR_PARM). The C ABI set_param path bypasses WR_PARM entirely so
   ! these post-read fixups never run unless we call them here.
   !
-  ! ierr aggregates the three sub-calls: 0 on success, otherwise the
-  ! first non-zero return wins. Mirrors the wrparm.f90 contract that
-  ! treats any chek failure as fatal for the run.
+  ! Semantics mirror WR_PARM exactly: all three checks are invoked
+  ! unconditionally (no early return on non-zero), and each call
+  ! overwrites IERR. The final ierr propagated to the caller is
+  ! therefore the last (WR_CHEK) return value -- "last write wins" --
+  ! matching the original Fortran contract at wrparm.f90:42-44.
   !-------------------------------------------------------------------
   SUBROUTINE wr_apply_namelist_checks(ierr)
     INTEGER, INTENT(OUT) :: ierr
     INTEGER :: ic_ierr
-    ierr = 0
+    ! Call all three unconditionally (no short-circuit) so side effects
+    ! that the Fortran namelist path relies on still occur even if an
+    ! earlier check signals an error -- matches WR_PARM in wrparm.f90.
     CALL EQCHEK(ic_ierr)
-    IF (ic_ierr /= 0) THEN
-       ierr = ic_ierr
-       RETURN
-    END IF
     CALL dp_chek(ic_ierr)
-    IF (ic_ierr /= 0) THEN
-       ierr = ic_ierr
-       RETURN
-    END IF
     CALL wr_chek(ic_ierr)
-    IF (ic_ierr /= 0) ierr = ic_ierr
+    ! Propagate the LAST ic_ierr value (matches Fortran's "last write
+    ! wins" behaviour where each call overwrites the shared IERR).
+    ierr = ic_ierr
   END SUBROUTINE wr_apply_namelist_checks
 
 END MODULE wr_api
