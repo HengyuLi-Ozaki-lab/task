@@ -238,6 +238,7 @@ clean:
 	-rm -f $(TOT_API_SMOKE_O) $(TOT_API_SMOKE_BIN)
 	-rm -f $(TOT_API_PARAM_O) $(TOT_API_PARAM_BIN)
 	-rm -f $(TOT_API_SO_O) $(TOT_API_SO_BIN)
+	-rm -f $(TOT_API_NEG_O) $(TOT_API_NEG_BIN)
 
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libtotapi.so
@@ -452,4 +453,45 @@ tot_api_check_so: libtotapi.so $(TOT_API_SO_BIN)
 	@LD_LIBRARY_PATH=$(TOT_LD_LIBRARY_PATH):$${LD_LIBRARY_PATH} \
 	    TOTLIB_PATH=$(CURDIR)/libtotapi.so $(TOT_API_SO_BIN)
 	@echo "Phase L-4 tot_api_check_so OK"
+
+# ---------------------------------------------------------------------
+# Phase L-6: Layer 2 (C ABI) test suite
+#
+# Adds a `test_negative` driver that pins the rejection contracts
+# (pre-init stubs, unknown namespace, missing prefix, double-finalize,
+# post-finalize) on top of the L-3 happy-path coverage in
+# test_smoke / test_param. Mirrors eq/tests/c_abi/test_negative.c and
+# tr/tests/c_abi/test_negative.c so the orchestrator-level negative
+# contracts stay aligned with the per-module L-6 tests.
+#
+# `tot_api_check_all` wraps tot_api_check + tot_api_check_so + the new
+# negative driver in a single CI-friendly target so
+# test_run/run_tests.sh can invoke `make -C tot tot_api_check_all` and
+# get the full Layer 2 picture from one command.
+# ---------------------------------------------------------------------
+TOT_API_NEG_C   = $(TOT_API_SMOKE_DIR)/test_negative.c
+TOT_API_NEG_O   = $(TOT_API_SMOKE_DIR)/test_negative.o
+TOT_API_NEG_BIN = $(TOT_API_SMOKE_DIR)/test_negative
+
+$(TOT_API_NEG_O): $(TOT_API_NEG_C) tot_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(TOT_API_NEG_O) $(TOT_API_NEG_C)
+
+# The negative driver shares the smoke link path -- it talks to the
+# L-3 dispatcher directly via OBJ_API + per-module *_param_registry.o
+# + backing libs. No dlopen, no libdl.
+$(TOT_API_NEG_BIN): $(TOT_API_NEG_O) $(OBJ_API) $(TOT_L3_DEPS_OBJ) $(TOT_L3_DEPS_LIB)
+	$(FLINKER) -o $(TOT_API_NEG_BIN) $(TOT_API_NEG_O) $(OBJ_API) \
+	    $(TOT_L3_DEPS_OBJ) $(TOT_L3_DEPS_LIB) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
+
+.PHONY: tot_api_check_all
+# Composite Layer 2 entry point used by test_run/run_tests.sh. Builds
+# and runs every C ABI driver in topological order:
+#   tot_api_check    -> test_smoke + test_param  (L-3)
+#   tot_api_check_so -> test_run_so via dlopen   (L-4)
+#   <new>            -> test_negative            (L-6)
+tot_api_check_all: tot_api_check tot_api_check_so $(TOT_API_NEG_BIN)
+	@echo "Phase L-6 tot_api_check_all: running negative tests ..."
+	@LD_LIBRARY_PATH=$(TOT_LD_LIBRARY_PATH):$${LD_LIBRARY_PATH} \
+	    $(TOT_API_NEG_BIN)
+	@echo "Phase L-6 tot_api_check_all OK: smoke / param / run_so / negative"
 
