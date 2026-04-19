@@ -465,6 +465,15 @@
       CALL RARRAY_ZERO(3*mx_mi*3*m_i,ab)
       CALL RARRAY_ZERO(5*m_s,gfl_s)
       CALL RARRAY_ZERO(5*m_s,qfl_s)
+!  rhatp/rhatt: only the diagonal (k,i,i) is filled by U_LU_BACKSUB
+!  at lines 524-527; off-diagonal entries are READ at lines 628-629
+!  to copy into uaip/uait. Without explicit zeroing the off-diagonals
+!  return uninitialized stack contents -- machine-dependent garbage
+!  that compounds over timesteps and produces ~1e-2 drift in TAUE.
+!  Physically the off-diagonals should be zero (species responses are
+!  independent in this decomposition step).
+      CALL RARRAY_ZERO(3*mx_ms*mx_ms,rhatp)
+      CALL RARRAY_ZERO(3*mx_ms*mx_ms,rhatt)
       p_etap=0.D0
       p_bsjb=0.D0
       p_exjb=0.D0
