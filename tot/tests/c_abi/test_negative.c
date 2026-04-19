@@ -40,17 +40,6 @@
 #include <stdio.h>
 #include "tot_api.h"
 
-/* Accept any non-zero code for "rejected"; we don't pin
- * TOT_ERR_INVALID vs TOT_ERR_NOT_INIT because different dispatch
- * paths may map a negative path to either code legitimately. The
- * happy-path tests already pin TOT_OK (=0). */
-#define EXPECT_ERR(rc, step) do { \
-    if ((rc) == 0) { \
-        fprintf(stderr, "FAIL " step ": expected non-zero rc, got 0\n"); \
-        return (__LINE__); \
-    } \
-} while (0)
-
 #define EXPECT_OK(rc, step) do { \
     if ((rc) != 0) { \
         fprintf(stderr, "FAIL " step ": expected 0, got %d\n", (rc)); \
