@@ -1469,12 +1469,23 @@
       call fp_allocate_ntg2
 
       CALL mtx_set_communicator(comm_nr)
+      ! Deallocate-then-allocate so a second fp_prep call (e.g. the test_sweep
+      ! 3x3 RR/BB grid) does not abort with
+      !   "Attempting to allocate already allocated variable 'mtxlen'".
+      ! fp_allocate short-circuits when sizes are unchanged, which means
+      ! fp_deallocate (the only other release point) is skipped — yet these
+      ! arrays are allocated unconditionally on every fp_prep entry.
+      IF (ALLOCATED(MTXLEN))              deallocate(MTXLEN)
+      IF (ALLOCATED(MTXPOS))              deallocate(MTXPOS)
       allocate(MTXLEN(nsize),MTXPOS(nsize))
 
       CALL mtx_set_communicator(comm_nsanr)
-      allocate(SAVLEN(nsize)) 
-      allocate(SAVPOS(nsize,NSAEND-NSASTART+1)) 
+      IF (ALLOCATED(SAVLEN))              deallocate(SAVLEN)
+      IF (ALLOCATED(SAVPOS))              deallocate(SAVPOS)
+      allocate(SAVLEN(nsize))
+      allocate(SAVPOS(nsize,NSAEND-NSASTART+1))
       CALL mtx_reset_communicator
+      IF (ALLOCATED(Rank_Partition_Data)) deallocate(Rank_Partition_Data)
       allocate(Rank_Partition_Data(6,0:nsize-1))
 
       idata(1)=NPSTARTW
