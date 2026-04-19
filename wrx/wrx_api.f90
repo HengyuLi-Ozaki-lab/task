@@ -356,24 +356,21 @@ CONTAINS
   ! wrparm.f90 does NOT call WR_CHEK (unlike wr/wrparm.f90), so we
   ! mirror that by calling only EQCHEK + DP_CHEK + the NSAMAX_WR cap.
   !
-  ! ierr aggregates the two sub-calls (first non-zero wins). The
-  ! NSAMAX_WR cap and nsamax_dp propagation only run if EQCHEK
-  ! succeeded, so on failure we don't half-mutate state.
+  ! Mirror the Fortran non-interactive WR_PARM path (wrparm.f90:43-47):
+  ! both EQCHEK and DP_CHEK are called unconditionally, the NSAMAX_WR
+  ! cap runs between them, and only the final (DP_CHEK) ierr is
+  ! returned ("last write wins", matching WR_PARM which only goes to
+  ! the retry branch when MODE==0, i.e., interactive).
   !-------------------------------------------------------------------
   SUBROUTINE wrx_apply_namelist_checks(ierr)
     USE dpcomm, ONLY: nsamax_dp
     INTEGER, INTENT(OUT) :: ierr
     INTEGER :: ic_ierr
-    ierr = 0
     CALL EQCHEK(ic_ierr)
-    IF (ic_ierr /= 0) THEN
-       ierr = ic_ierr
-       RETURN
-    END IF
     IF (NSAMAX_WR > NSMAX) NSAMAX_WR = NSMAX
     nsamax_dp = NSAMAX_WR
     CALL dp_chek(ic_ierr)
-    IF (ic_ierr /= 0) ierr = ic_ierr
+    ierr = ic_ierr
   END SUBROUTINE wrx_apply_namelist_checks
 
 END MODULE wrx_api
