@@ -29,6 +29,11 @@ ${OBJDIR}/%.o:%.f90
 	$(FCFREE) $(FFLAGS) -c $< -o $@ $(MODDIR) $(MODINCLUDE)
 
 # --- core (Fokker-Planck physics + I/O, no graphics, no menu) ---
+# Ordering: fpregress is placed BEFORE fploop because fploop USEs the
+# fpregress module. The OBJDIR (non-PIC) intra-fp dep declarations at
+# the bottom of this Makefile fix this for `fploop.o : fpregress.o`,
+# but the OBJDIR_PIC pattern rule does not pick up those declarations.
+# Building in source-order is the simplest portable fix.
 SRCS_CORE = fpcomm.f90 fpinit.f90 fpparm.f90 \
 	fpmpi.f90 fpbroadcast.f90 fplib.f90 \
 	fpexec.f90 fpreadeg.f90 fpsave.f90 fpwrite.f90 \
@@ -37,9 +42,10 @@ SRCS_CORE = fpcomm.f90 fpinit.f90 fpparm.f90 \
 	fpcalcn.f90 fpcalcnr.f90 fpcalc.f90 fpnfrr.f90 fpnflg.f90  \
 	cdbmfp.f90 \
 	fpcalr.f90 fpreadsv.f90 fpoutdata.f90 fpcoef.f90 fpcale.f90 \
-	fpbounce.f90 fpcalj.f90 fpdisrupt.f90 fpprep.f90 fploop.f90 \
-	fpfile.f90 \
-	fpregress.f90
+	fpbounce.f90 fpcalj.f90 fpdisrupt.f90 \
+	fpregress.f90 \
+	fpprep.f90 fploop.f90 \
+	fpfile.f90
 
 # --- graphics (plotting, contour, plot-oriented file output) ---
 SRCS_GRAPHICS = fpcont.f90 fpfout.f90 fpgsub.f90 fpgout.f90
