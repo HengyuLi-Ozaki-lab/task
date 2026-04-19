@@ -48,7 +48,9 @@ MODULE wr_api
   USE wr_param_registry, ONLY: wr_param_set
   USE plinit,            ONLY: pl_init
   USE dpinit,            ONLY: dp_init
+  USE dpparm,            ONLY: dp_chek
   USE wrinit,            ONLY: wrinit_fortran => wr_init
+  USE wrparm,            ONLY: wr_chek
   USE wrsetup,           ONLY: wr_setup
   USE wrexec,            ONLY: wr_exec
   IMPLICIT NONE
@@ -71,7 +73,7 @@ MODULE wr_api
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_allocated   = .FALSE.
 
-  EXTERNAL :: EQINIT
+  EXTERNAL :: EQINIT, EQCHEK
 
 CONTAINS
 
@@ -156,6 +158,28 @@ CONTAINS
     END IF
 
     IF (nray_request > 0) NRAYMAX = nray_request
+
+    ! Mirror WRNLIN namelist semantics (wrparm.f90:87-96): when
+    ! MODEL_PROF==0, an unsubscripted scalar PROFN1/PROFN2/PROFT1/
+    ! PROFT2/PROFU1/PROFU2 fans out to all NSMAX species. The C ABI
+    ! set_param path writes only element (1), so without this fan-out
+    ! NS>=2 keeps the pl_init defaults (e.g. PROFN2(2)=0.5 instead of
+    ! the namelist's 2.0), perturbing the cold dispersion solution
+    ! along ray trajectories. See PR with this fix for the Layer-1
+    ! 1e-10 reproducer (wr_tst2_ec rays[0].RAYS_END[4]).
+    CALL wr_propagate_namelist_profiles
+
+    ! Run the post-namelist consistency checks that the Fortran path
+    ! invokes via wrparm.f90:42-44 (CALL EQCHEK / DP_CHEK / WR_CHEK
+    ! inside WR_PARM). EQCHEK contains the critical RB=RA fixup
+    ! (eq/eqinit.f90:536-540): without it, fixtures using ITER-scale
+    ! RA leave RB at the pl_init default (1.2 m), so RB/RA<1 and the
+    ! ray-step boundary check (wrexecr.f90:430) trips at NSTP=1.
+    CALL wr_apply_namelist_checks(setup_ierr)
+    IF (setup_ierr /= 0) THEN
+       ierr = WR_ERR_CALC_FAILED
+       RETURN
+    END IF
 
     CALL wr_allocate
     g_allocated = .TRUE.
@@ -321,5 +345,55 @@ CONTAINS
     g_initialized = .FALSE.
     ierr = WR_OK
   END FUNCTION wr_api_finalize
+
+  !-------------------------------------------------------------------
+  ! wr_propagate_namelist_profiles : fan out unsubscripted scalar
+  ! PROFN1/PROFN2/PROFT1/PROFT2/PROFU1/PROFU2 to all NS=1..NSMAX
+  ! when MODEL_PROF==0. Mirrors wrparm.f90::WRNLIN lines 87-96.
+  !
+  ! Required because the C ABI set_param path writes only PROFN?(1)
+  ! when called without an [idx] subscript, whereas Fortran namelist
+  ! READ semantics propagate the scalar to every species.
+  !-------------------------------------------------------------------
+  SUBROUTINE wr_propagate_namelist_profiles
+    USE plcomm, ONLY: NSMAX, MODEL_PROF, &
+                      PROFN1, PROFN2, PROFT1, PROFT2, PROFU1, PROFU2
+    INTEGER :: ns
+    IF (MODEL_PROF /= 0) RETURN
+    DO ns = 2, NSMAX
+       PROFN1(ns) = PROFN1(1)
+       PROFN2(ns) = PROFN2(1)
+       PROFT1(ns) = PROFT1(1)
+       PROFT2(ns) = PROFT2(1)
+       PROFU1(ns) = PROFU1(1)
+       PROFU2(ns) = PROFU2(1)
+    END DO
+  END SUBROUTINE wr_propagate_namelist_profiles
+
+  !-------------------------------------------------------------------
+  ! wr_apply_namelist_checks : run EQCHEK / DP_CHEK / WR_CHEK that
+  ! the Fortran namelist path invokes via wrparm.f90:42-44 (inside
+  ! WR_PARM). The C ABI set_param path bypasses WR_PARM entirely so
+  ! these post-read fixups never run unless we call them here.
+  !
+  ! Semantics mirror WR_PARM exactly: all three checks are invoked
+  ! unconditionally (no early return on non-zero), and each call
+  ! overwrites IERR. The final ierr propagated to the caller is
+  ! therefore the last (WR_CHEK) return value -- "last write wins" --
+  ! matching the original Fortran contract at wrparm.f90:42-44.
+  !-------------------------------------------------------------------
+  SUBROUTINE wr_apply_namelist_checks(ierr)
+    INTEGER, INTENT(OUT) :: ierr
+    INTEGER :: ic_ierr
+    ! Call all three unconditionally (no short-circuit) so side effects
+    ! that the Fortran namelist path relies on still occur even if an
+    ! earlier check signals an error -- matches WR_PARM in wrparm.f90.
+    CALL EQCHEK(ic_ierr)
+    CALL dp_chek(ic_ierr)
+    CALL wr_chek(ic_ierr)
+    ! Propagate the LAST ic_ierr value (matches Fortran's "last write
+    ! wins" behaviour where each call overwrites the shared IERR).
+    ierr = ic_ierr
+  END SUBROUTINE wr_apply_namelist_checks
 
 END MODULE wr_api
