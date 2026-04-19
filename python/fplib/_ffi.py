@@ -115,6 +115,10 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.fp_set_param.restype = ctypes.c_int
     lib.fp_set_param.argtypes = [ctypes.c_char_p, ctypes.c_double]
 
+    if hasattr(lib, "fp_set_param_str"):
+        lib.fp_set_param_str.restype = ctypes.c_int
+        lib.fp_set_param_str.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+
     lib.fp_get_state.restype = ctypes.c_int
     lib.fp_get_state.argtypes = [ctypes.POINTER(FpStateC)]
 

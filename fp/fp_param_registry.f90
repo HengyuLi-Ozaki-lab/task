@@ -34,9 +34,11 @@
 
 MODULE fp_param_registry
   USE fpcomm_parm
+  USE plcomm, ONLY: KNAMEQ
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: fp_param_set
+  PUBLIC :: fp_param_set_str
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
 CONTAINS
@@ -144,6 +146,30 @@ CONTAINS
        ierr = 1   ! unknown name
     END SELECT
   END FUNCTION fp_param_set
+
+  !-------------------------------------------------------------------
+  ! fp_param_set_str : string-valued parameter setter.
+  !
+  ! Mirrors tr/tr_param_registry.f90::tr_param_set_str (PR #103).
+  ! Required because the FP namelist /FP/ inherits KNAMEQ from
+  ! plcomm (the equilibrium-data file name used by the MODELG=3
+  ! eq_load path on fp_iter01). Without this entry point the
+  ! Layer 1 fixture cannot point at a real EQDSK; the default
+  ! KNAMEQ='eqdata' (from pl_init) is missing in cwd, so eq_load
+  ! fails silently and downstream BESEKNX trips with NCALC=-2.
+  !-------------------------------------------------------------------
+  FUNCTION fp_param_set_str(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    CHARACTER(LEN=*), INTENT(IN) :: value
+    INTEGER :: ierr
+
+    ierr = 0
+    SELECT CASE (TRIM(ADJUSTL(name)))
+    CASE ("KNAMEQ"); KNAMEQ = TRIM(value)
+    CASE DEFAULT
+       ierr = 1   ! unknown string-valued name
+    END SELECT
+  END FUNCTION fp_param_set_str
 
   !-------------------------------------------------------------------
   ! Split "NAME" or "NAME[N]" into (base, idx).

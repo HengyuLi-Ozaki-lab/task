@@ -1517,6 +1517,14 @@
 !      WRITE(6,*) "START MESH"
       CALL fp_mesh(ierr)
       IF(NRANK.eq.0) WRITE(6,*) "END MESH"
+!     ----- Defensive: propagate fp_mesh failure (typically eq_load
+!     ----- failed because KNAMEQ file was missing). Without this,
+!     ----- downstream fp_set_normalize_param runs on garbage
+!     ----- geometry -> BESEKNX NCALC=-2 -> NaN cascade.
+      IF (ierr /= 0) THEN
+         IF (NRANK.eq.0) WRITE(6,*) 'XX fp_prep: fp_mesh failed; ierr=', ierr
+         RETURN
+      END IF
 !     ----- Initialize diffusion coef. -----
       call FPCINI
 !     ----- set parameters for target species -----

@@ -25,7 +25,11 @@ SCALARS = {
     "NTMAX":  2,
     "NPMAX":  50,
     "NTHMAX": 50,
-    "MODELG": 3,
+    # MODELG omitted — fp_iter01.in does not set it, so the original
+    # Phase 0 baseline ran with the pl_init default (MODELG=2,
+    # analytical equilibrium). Setting MODELG=3 here triggered the
+    # eq_load file path with a missing KNAMEQ default (='eqdata') and
+    # produced silent-NaN cascades through BESEKNX.
     "MODELR": 1,
     "DELT":   1.0e-3,
     "NSAMAX": 1,
