@@ -143,20 +143,9 @@ jobs:
         # Actions bash) ensures that.
         run: |
           set -e
-          # fp has an intra-module PIC dep gap: several PIC obj rules
-          # don't declare the same intra-fp deps that the OBJDIR (non-
-          # PIC) rules do. Pre-build the dep chain explicitly:
-          # fpcomm -> fpregress -> fploop. Worth fixing in fp/Makefile
-          # in a follow-up so this workaround can be removed.
           for mod in tr fp ti wr wrx eq tot; do
             echo "::group::Building $mod/lib${mod}api.so"
             make -C "$mod" bpsd_pic
-            if [[ "$mod" == "fp" ]]; then
-              make -C fp obj/pic/fpcomm.o
-              make -C fp obj/pic/fpregress.o
-              make -C fp obj/pic/fpprep.o
-              make -C fp obj/pic/fploop.o
-            fi
             make -C "$mod" "lib${mod}api.so"
             echo "::endgroup::"
           done
