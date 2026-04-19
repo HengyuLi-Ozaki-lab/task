@@ -1,15 +1,34 @@
-C     $Id$
-C
-C     ***** SAVE TASK/EQ DATA *****
-C
+!     $Id$
+!
+! Phase F-4 (HIGH tier): free-form F90 conversion of eqfile.f.
+! TASK/EQ file I/O dispatcher (EQSAVE / EQLOAD / EQ_READ / EQRTSK /
+! EQMETRIC / read_rppl / draw_cross). Preserves exact numerical /
+! file-format semantics of the original fixed-form source.
+!
+! NOTE on EXTERNAL: EQRTSK passes the local EQFBND function to FBRENT.
+!   FBRENT (libbrent) provides an explicit INTERFACE for its callback
+!   argument, so the existing EXTERNAL EQFBND declaration is sufficient
+!   to satisfy the interface check. Migrating to PROCEDURE POINTER would
+!   require restructuring how EQFBND shares state through the EQ shim
+!   (it relies on the COMMON-derived ZBRF, RDLT, RKAP); we keep EXTERNAL
+!   here to avoid the refactor and any numerical drift. (Documented for
+!   Phase F-5 cleanup.)
+!
+! NOTE: IMPLICIT NONE is NOT added at file level because the INCLUDEd
+!       shims '../eq/eqcomc.inc' / '../eq/eqcomq.inc' supply an IMPLICIT
+!       statement (IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)) and USE
+!       the F-1 MODULEs for COMMON symbols.
+!
+!     ***** SAVE TASK/EQ DATA *****
+!
       SUBROUTINE EQSAVE
-C
+
       USE libfio
       INCLUDE '../eq/eqcomc.inc'
-C
+
       CALL FWOPEN(21,KNAMEQ,0,MODEFW,'EQ',IERR)
       IF(IERR.NE.0) RETURN
-C
+
       REWIND(21)
       WRITE(21) RR,BB,RIP
       WRITE(21) NRGMAX,NZGMAX
@@ -22,7 +41,7 @@ C
       WRITE(21) (TTPS(NPS),NPS=1,NPSMAX)
       WRITE(21) (TEPS(NPS),NPS=1,NPSMAX)
       WRITE(21) (OMPS(NPS),NPS=1,NPSMAX)
-C
+
       WRITE(21) NSGMAX,NTGMAX,NUGMAX,NRMAX,NTHMAX,NSUMAX,NRVMAX,NTVMAX
       WRITE(21) ((PSI(NSG,NTG),NSG=1,NSGMAX),NTG=1,NTGMAX)
       WRITE(21) ((DELPSI(NSG,NTG),NSG=1,NSGMAX),NTG=1,NTGMAX)
@@ -39,39 +58,41 @@ C
       WRITE(21) PT0,PT1,PT2,PROFTP0,PROFTP1,PROFTP2
       WRITE(21) PV0,PV1,PV2,PROFV0,PROFV1,PROFV2
       WRITE(21) PROFR0,PROFR1,PROFR2
-C      WRITE(21) PTS,PN0,HM
+!      WRITE(21) PTS,PN0,HM
       WRITE(21) ((HJTRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
       CLOSE(21)
-C
-C      WRITE(6,*) 'HJTRZ=',HJTRZ(10,10)
-C
+
+!      WRITE(6,*) 'HJTRZ=',HJTRZ(10,10)
+
       WRITE(6,*) '# DATA WAS SUCCESSFULLY SAVED TO THE FILE.'
-C
+
       RETURN
       END
-C
-C     ***** LOAD EQUILIBRIUM DATA *****
-C
+!
+!     ***** LOAD EQUILIBRIUM DATA *****
+!
       SUBROUTINE EQLOAD(MODELG1,KNAMEQ1,IERR)
-C
+
       USE eqbpsd
       INCLUDE '../eq/eqcomc.inc'
-      CHARACTER KNAMEQ1*80
-      INTEGER ierr
-C
+      INTEGER,         INTENT(IN)  :: MODELG1
+      CHARACTER(LEN=80),INTENT(IN) :: KNAMEQ1
+      INTEGER,         INTENT(OUT) :: IERR
+
       MODELG=MODELG1
       KNAMEQ=KNAMEQ1
       CALL EQ_READ(IERR)
       RETURN
       END
-C
-C     ***** LOAD EQUILIBRIUM DATA *****
-C
+!
+!     ***** LOAD EQUILIBRIUM DATA *****
+!
       SUBROUTINE EQ_READ(IERR)
-C
+
       USE equread,ONLY: eqdsk
       INCLUDE '../eq/eqcomc.inc'
-C
+      INTEGER, INTENT(OUT) :: IERR
+
       IF(MODELG.EQ.3.OR.MODELG.EQ.9) THEN
          CALL EQRTSK(IERR)
       ELSEIF(MODELG.EQ.5) THEN
@@ -84,24 +105,25 @@ C
       ELSE
          WRITE(6,*) 'XX EQLOAD: UNKNOWN MODELG: MODELG=',MODELG
       ENDIF
-C
+
       RETURN
       END
-C
-C     ***** LOAD TASK/EQ DATA *****
-C
+!
+!     ***** LOAD TASK/EQ DATA *****
+!
       SUBROUTINE EQRTSK(IERR)
-C
+
       USE libfio
       USE libbrent
       USE libspl1d
       INCLUDE '../eq/eqcomc.inc'
+      INTEGER, INTENT(OUT) :: IERR
       DIMENSION DERIV(NRVM)
       EXTERNAL EQFBND
-C
+
       CALL FROPEN(21,KNAMEQ,0,MODEFR,'EQ',IERR)
       IF(IERR.NE.0) RETURN
-C
+
       READ(21) RR,BB,RIP
       READ(21) NRGMAX,NZGMAX
       READ(21) (RG(NRG),NRG=1,NRGMAX)
@@ -113,7 +135,7 @@ C
       READ(21) (TTPS(NPS),NPS=1,NPSMAX)
       READ(21) (TEPS(NPS),NPS=1,NPSMAX)
       READ(21) (OMPS(NPS),NPS=1,NPSMAX)
-C
+
       READ(21) NSGMAX,NTGMAX,NUGMAX,NRMAX,NTHMAX,NSUMAX,NRVMAX,NTVMAX
       READ(21) ((PSI(NTG,NSG),NTG=1,NTGMAX),NSG=1,NSGMAX)
       READ(21) ((DELPSI(NTG,NSG),NTG=1,NTGMAX),NSG=1,NSGMAX)
@@ -130,7 +152,7 @@ C
       READ(21) PT0,PT1,PT2,PROFTP0,PROFTP1,PROFTP2
       READ(21) PV0,PV1,PV2,PROFV0,PROFV1,PROFV2
       READ(21) PROFR0,PROFR1,PROFR2
-C      READ(21) PTS,PN0,HM
+!      READ(21) PTS,PN0,HM
       READ(21,ERR=1000) ((HJTRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
 
       CALL EQMESH
@@ -138,16 +160,16 @@ C      READ(21) PTS,PN0,HM
       DO NTG=1,NTGMAX
          ZBRF=TAN(THGM(NTG))
          THDASH=FBRENT(EQFBND,THGM(NTG)-1.0D0,THGM(NTG)+1.0D0,EPSZ)
-         RHOM(NTG)=RA*SQRT(COS(THDASH+RDLT*SIN(THDASH))**2
-     &                    +RKAP**2*SIN(THDASH)**2)
-C
+         RHOM(NTG)=RA*SQRT(COS(THDASH+RDLT*SIN(THDASH))**2 &
+                          +RKAP**2*SIN(THDASH)**2)
+
          ZBRF=TAN(THGG(NTG))
          THDASH=FBRENT(EQFBND,THGG(NTG)-1.0D0,THGG(NTG)+1.0D0,EPSZ)
-         RHOG(NTG)=RA*SQRT(COS(THDASH+RDLT*SIN(THDASH))**2
-     &                    +RKAP**2*SIN(THDASH)**2)
+         RHOG(NTG)=RA*SQRT(COS(THDASH+RDLT*SIN(THDASH))**2 &
+                          +RKAP**2*SIN(THDASH)**2)
       ENDDO
       RHOG(NTGMAX+1)=RHOG(1)
-      
+
       GOTO 1001
  1000 CONTINUE
          DO NZG=1,NZGMAX
@@ -156,10 +178,10 @@ C
          ENDDO
          ENDDO
  1001 CONTINUE
-C      
+!
       CLOSE(21)
       RIPX=RIP
-C
+
       IF(MODELG.EQ.9) THEN
          CALL EQMESH
          CALL SPL1D(PSIPNV,PSITV,DERIV,UPSITV,NRVMAX,0,IERR)
@@ -169,78 +191,80 @@ C
          CALL SPL1D(PSIPNV,TTV,DERIV,UTTV,NRVMAX,0,IERR)
          IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for TTV: IERR=',IERR
          CALL EQDEFB
-C         DO NSG=1,NSGMAX
-C            WRITE(6,'(A,I5)') 'PSI NSG=',NSG
-C            WRITE(6,'(1P5E12.4)') (PSI(NTG,NSG),NTG=1,NTGMAX)
-C         ENDDO
-C         DO NSG=1,NSGMAX
-C            WRITE(6,'(A,I5)') 'HJT NSG=',NSG
-C            WRITE(6,'(1P5E12.4)') (HJT(NTG,NSG),NTG=1,NTGMAX)
-C         ENDDO
-C         WRITE(6,'(A,I5,1P4E12.4)')
-C     &        ('NV:',NV,PSIPNV(NV),PSITV(NV),QPV(NV),TTV(NV),
-C     &         NV=1,NRVMAX)
+!         DO NSG=1,NSGMAX
+!            WRITE(6,'(A,I5)') 'PSI NSG=',NSG
+!            WRITE(6,'(1P5E12.4)') (PSI(NTG,NSG),NTG=1,NTGMAX)
+!         ENDDO
+!         DO NSG=1,NSGMAX
+!            WRITE(6,'(A,I5)') 'HJT NSG=',NSG
+!            WRITE(6,'(1P5E12.4)') (HJT(NTG,NSG),NTG=1,NTGMAX)
+!         ENDDO
+!         WRITE(6,'(A,I5,1P4E12.4)')
+!     &        ('NV:',NV,PSIPNV(NV),PSITV(NV),QPV(NV),TTV(NV),
+!     &         NV=1,NRVMAX)
       ENDIF
-C     
-C     WRITE(6,*) 'HJTRZ=',HJTRZ(10,10)
-C
+!
+!     WRITE(6,*) 'HJTRZ=',HJTRZ(10,10)
+
       RETURN
       END
-C
-C     ***** SAVE METRICS *****
-C
+!
+!     ***** SAVE METRICS *****
+!
       SUBROUTINE EQMETRIC(IERR)
-C
+
       USE libspl1d
       USE libfio
       INCLUDE '../eq/eqcomq.inc'
-C
+      INTEGER, INTENT(OUT) :: IERR
+
       character KNAMET*80
-      data KNAMET /'eq_metric.dat'/ 
-C
+      data KNAMET /'eq_metric.dat'/
+
       nmetric=21
       CALL FWOPEN(nmetric,KNAMET,1,MODEFW,'EQ',IERR)
       IF(IERR.NE.0) RETURN
-C
+
       REWIND(nmetric)
-      WRITE(nmetric,'(A,2X,A,6X,A,8X,A,3X,A)') '#','rho_tor','dV/drho',
-     &     '<1/R^2>',"<|grad rho|^2/R^2>"
+      WRITE(nmetric,'(A,2X,A,6X,A,8X,A,3X,A)') '#','rho_tor','dV/drho', &
+           '<1/R^2>',"<|grad rho|^2/R^2>"
       DO NR = 1, NRPMAX
          CALL SPL1DF(FNPSIP(RHOT(NR)),DAT1,PSIP,UDVDRHO ,NRMAX,IERR)
-         WRITE(nmetric,'(1X,F10.7,1P3E15.7)') RHOT(NR),DAT1,
-     &        fnavir2(rhot(nr)),fnavgrr2(nr)
+         WRITE(nmetric,'(1X,F10.7,1P3E15.7)') RHOT(NR),DAT1, &
+              fnavir2(rhot(nr)),fnavgrr2(nr)
       ENDDO
       WRITE(nmetric,'(80X)')
-      WRITE(nmetric,'(A,2X,A,3X,A,3X,A,5X,A,9X,A)') '#','rho_tor',
-     &     "<|grad rho|>","<|grad rho|^2>","<B^2>","<1/B^2>"
-      WRITE(nmetric,'(1X,0PF10.7,1P4E15.7)') (RHOT(NR),
-     &     fnavgr(rhot(nr)),fnavgr2(rhot(nr)),
-     &     fnavbb2(rhot(nr)),fnavib2(rhot(nr)),NR=1,NRPMAX)
+      WRITE(nmetric,'(A,2X,A,3X,A,3X,A,5X,A,9X,A)') '#','rho_tor', &
+           "<|grad rho|>","<|grad rho|^2>","<B^2>","<1/B^2>"
+      WRITE(nmetric,'(1X,0PF10.7,1P4E15.7)') (RHOT(NR), &
+           fnavgr(rhot(nr)),fnavgr2(rhot(nr)), &
+           fnavbb2(rhot(nr)),fnavib2(rhot(nr)),NR=1,NRPMAX)
       CLOSE(nmetric)
-C
-      WRITE(6,*) '# METRIC DATA WAS SUCCESSFULLY SAVED TO "',
-     &           KNAMET(1:13),'".'
-C
+
+      WRITE(6,*) '# METRIC DATA WAS SUCCESSFULLY SAVED TO "', &
+                 KNAMET(1:13),'".'
+
       RETURN
       END
-C
-C     ***** READ RIPPLE CONTOUR DATA FROM OFMC ****
-C
+!
+!     ***** READ RIPPLE CONTOUR DATA FROM OFMC ****
+!
       subroutine read_rppl(ierr)
-C
+
       USE libfio
       INCLUDE '../eq/eqcomq.inc'
-C
+      INTEGER, INTENT(OUT) :: ierr
+
       character kfile*20, kline*130
-C
+
       kfile='ripple.profile'
       nrppl=21
       CALL FROPEN(nrppl,kfile,1,MODEFR,'EQ',IERR)
       IF(IERR.NE.0) RETURN
-c
+!
       rewind(nrppl)
-c
-c     *** R-coordinates ***
+!
+!     *** R-coordinates ***
       idx = 0
       do
          if(idx == 0) then
@@ -250,12 +274,12 @@ c     *** R-coordinates ***
             end if
             cycle
          end if
-c
+!
          read(nrppl,'(1x,10e13.5)') (Rrp(i),i=1,NRrpM)
          exit
       end do
-c
-c     *** Z-coordinates ***
+!
+!     *** Z-coordinates ***
       idx = 0
       do
          if(idx == 0) then
@@ -265,12 +289,12 @@ c     *** Z-coordinates ***
             end if
             cycle
          end if
-c
+!
          read(nrppl,'(1x,10e13.5)') (Zrp(i),i=1,NZrpM)
          exit
       end do
-c
-c     *** Ripple contour ***
+!
+!     *** Ripple contour ***
       idx = 0
       j   = 0
       do
@@ -282,7 +306,7 @@ c     *** Ripple contour ***
             end if
             cycle
          end if
-c
+!
          read(nrppl,'(1x,10e13.5)') (RpplRZ(i,j),i=1,NRrpM)
          idx = 0
          if(j == NZrpM) then
@@ -291,9 +315,9 @@ c
             cycle
          end if
       end do
-c
+!
       close(nrppl)
-c
+!
       return
       end
 
