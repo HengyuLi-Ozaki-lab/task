@@ -790,6 +790,8 @@ module fpcomm
              deallocate(E_drei0,E_crit0)
              deallocate(POST_tau_ta0_f)
              deallocate(POST_tau_ta)
+             ! Symmetry: Rconnor/RFP_ava are allocated only when MODEL_DISRUPT/=0 (see fp_allocate)
+             deallocate(Rconnor, RFP_ava)
           END IF
           deallocate(tau_ta0)
 
@@ -821,7 +823,7 @@ module fpcomm
           deallocate(RPSSL, RPLSL)
           deallocate(RNSL_DELF,RWSL_PARA,RWSL_PERP)
 
-          deallocate(RNS,RJS,RJS_M,RFP,RJSR,Rconnor,RFP_ava,RJES)
+          deallocate(RNS,RJS,RJS_M,RFP,RJSR,RJES)
           deallocate(RNS_DELF_NSA,RWS_DELF_PARA,RWS_DELF_PERP)
           deallocate(RNS_DELF,RWS_PARA,RWS_PERP)
           deallocate(RNS_S2)
