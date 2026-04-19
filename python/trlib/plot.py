@@ -384,9 +384,21 @@ def plot_sweep(
             f"output must be one of 'window' / 'file' / 'return', got {output!r}"
         )
 
+    # plot_sweep currently only handles scalar y (state.scalars[y]). Profile
+    # variables like RN/RNT/AJ exist in VARIABLE_INFO but are not scalars,
+    # so accepting them would silently produce a flat-zero plot. Reject
+    # explicitly with a helpful message.
     if y not in VARIABLE_INFO:
         raise KeyError(
             f"y variable {y!r} has no plot support. See plot_available()."
+        )
+    y_info = VARIABLE_INFO[y]
+    if y_info.get("kind") != "scalar":
+        scalars = sorted(k for k, v in VARIABLE_INFO.items()
+                         if v.get("kind") == "scalar")
+        raise ValueError(
+            f"plot_sweep y={y!r} is a {y_info.get('kind','?')} variable; "
+            f"only scalars are supported. Choose one of: {scalars}"
         )
     start, stop, n = rng
     n = int(n)              # TOML may pass float; range() requires int
