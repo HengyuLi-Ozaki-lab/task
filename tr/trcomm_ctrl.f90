@@ -58,6 +58,17 @@ CONTAINS
 
     ALLOCATE(PNSS(NSTM),STAT=ierr)
       IF(ierr /= 0) RETURN
+    ! Zero-init PNSS: when NSMAX < NSM (e.g. tst2 has NSMAX=2 but the
+    ! turbulence/adhoc coefficient code hard-codes the species loop bound
+    ! NSM=4 in tr/trcom0.f90:11), tr_prof_impurity (trprof.f90:314) only
+    ! sets PNSS(1), PNSS(2:NSMAX), PNSS(7), PNSS(8) -- leaving the slots
+    ! PNSS(NSMAX+1 .. NSM) untouched. trcoef_turbulence.f90:170-171
+    ! then reads PNSS(3) / PNSS(4), getting machine-dependent garbage
+    ! that cascades to NaN in ALPHA -> AKDWEL -> AK -> RT. The Phase-0
+    ! tr2 binary masks this because its fresh-process heap is zero;
+    ! libtrapi.so loaded after Python+numpy mallocs sees non-zero
+    ! patterns and produces NaN in test_tst2.
+    PNSS(:) = 0.D0
     ALLOCATE(NSS(NEQMAXM),NSV(NEQMAXM),NNS(NEQMAXM),NST(NEQMAXM),STAT=ierr)
       IF(ierr /= 0) RETURN
     ALLOCATE(NEA(0:NSTM,0:3),STAT=ierr)
