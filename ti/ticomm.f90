@@ -214,6 +214,11 @@ CONTAINS
              id=5;IF(IERR.NE.0) GOTO 900
     ALLOCATE(RBP(NRMAX),RQP(NRMAX),RJP(NRMAX),STAT=IERR)
              id=6;IF(IERR.NE.0) GOTO 900
+    ! Initialize to zero so the regression dump (tiregress.f90) does
+    ! not emit subnormal garbage when these arrays are unassigned
+    ! (e.g. NSMAX=1 cases never write to them). Reproducible across
+    ! runs is essential for Layer 1 equivalence comparison.
+    RBP = 0.0_rkind; RQP = 0.0_rkind; RJP = 0.0_rkind
     ALLOCATE(rnatot(nsa_max),rnuatot(nsa_max),rntatot(nsa_max),STAT=IERR)
              id=7;IF(IERR.NE.0) GOTO 900
     ALLOCATE(rnaave(nsa_max),ruaave(nsa_max),rtaave(nsa_max))
@@ -223,6 +228,8 @@ CONTAINS
              id=11;IF(IERR.NE.0) GOTO 900
     ALLOCATE(ZEFF(NRMAX),BETA(NRMAX),BETAP(NRMAX),STAT=IERR)
              id=12;IF(IERR.NE.0) GOTO 900
+    ! Same zero-init rationale as RBP/RQP/RJP above.
+    ZEFF = 0.0_rkind; BETA = 0.0_rkind; BETAP = 0.0_rkind
     ALLOCATE(DNTB(nsa_max,NRMAX),STAT=IERR)
              id=13;IF(IERR.NE.0) GOTO 900
     ALLOCATE(DTTB(nsa_max,NRMAX),STAT=IERR)

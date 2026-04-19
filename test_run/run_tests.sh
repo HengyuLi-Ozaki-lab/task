@@ -325,6 +325,26 @@ run_single_test() {
                 cp "$TASK_DIR/tx/in/txparm.std" "$test_dir/txparm"
             fi
             ;;
+        ti)
+            # TI's adf11 reader hard-codes ../adpost/ADPOST-DATA. The test
+            # cwd is test_output/$test_name, so we expose ../adpost via a
+            # one-shot symlink at test_output/adpost -> $TASK_DIR/adpost.
+            # Same trick lets ./ADF11-bin.data resolve when present.
+            if [[ ! -e "$TEST_OUTPUT_DIR/adpost" ]]; then
+                ln -s "$TASK_DIR/adpost" "$TEST_OUTPUT_DIR/adpost" 2>/dev/null || true
+            fi
+            # Optional: expose ADF11-bin.data if it exists (ADAS data is
+            # licensed and not in the repo). Without it, ti_ar will fail
+            # cleanly via tiprep's IERR guard.
+            for adf11_src in \
+                "$TASK_DIR/adpost/ADF11-bin.data" \
+                "$TASK_DIR/open-adas/adf11/ADF11-bin.data"; do
+                if [[ -f "$adf11_src" ]]; then
+                    ln -sf "$adf11_src" "$test_dir/ADF11-bin.data" 2>/dev/null || true
+                    break
+                fi
+            done
+            ;;
     esac
 
     # Copy dependency outputs if needed
@@ -363,12 +383,35 @@ run_single_test() {
             ;;
     esac
 
+    # For ti, the original .in files (committed in PR #6 / 0927fca1) do
+    # not include the GSAF prologue lines that timain.f90's GSOPEN call
+    # demands at startup. Prepend the prologue at run-time so we can
+    # exercise the unmodified .in file (preserving the canonical
+    # reference data the user expects). Other modules pass through
+    # unchanged.
+    local stdin_provider=""
+    case "$module" in
+        ti)
+            stdin_provider="$test_dir/.ti_stdin_with_prologue"
+            {
+                echo "0"
+                echo "f"
+                echo "${test_name}.gs"
+                echo "c"
+                cat "$full_input_path"
+            } > "$stdin_provider"
+            ;;
+        *)
+            stdin_provider="$full_input_path"
+            ;;
+    esac
+
     if [[ $VERBOSE -eq 1 ]]; then
         echo ""
-        "${mod_env[@]}" timeout "$timeout" "$binary" < "$full_input_path" 2>&1 | tee "$log_file"
+        "${mod_env[@]}" timeout "$timeout" "$binary" < "$stdin_provider" 2>&1 | tee "$log_file"
         local exit_code=${PIPESTATUS[0]}
     else
-        "${mod_env[@]}" timeout "$timeout" "$binary" < "$full_input_path" > "$log_file" 2>&1
+        "${mod_env[@]}" timeout "$timeout" "$binary" < "$stdin_provider" > "$log_file" 2>&1
         local exit_code=$?
     fi
 
