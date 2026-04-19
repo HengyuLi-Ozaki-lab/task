@@ -198,15 +198,23 @@ def _draw_profile(
     *,
     overlay: bool,
     title: Optional[str],
+    display_name: Optional[str] = None,
 ) -> None:
-    """Populate ``fig`` with a 1D or 2D profile plot."""
+    """Populate ``fig`` with a 1D or 2D profile plot.
+
+    `varname` is the canonical TrState attribute (e.g. RN). `display_name`
+    is the user-requested name (e.g. RNT) which may differ when an alias
+    was resolved; it's used in legend labels so users see the name they
+    asked for.
+    """
     ax = fig.gca()
     kind = info.get("kind")
+    label_name = display_name or varname
 
     if kind == "profile_1d":
         data: List[float] = list(getattr(state, varname))
         x = _profile_xaxis(len(data))
-        ax.plot(x, data, marker=".", linewidth=1.0, label=varname)
+        ax.plot(x, data, marker=".", linewidth=1.0, label=label_name)
     elif kind == "profile_2d":
         data2d: List[List[float]] = list(getattr(state, varname))
         x = _profile_xaxis(len(data2d))
@@ -214,22 +222,26 @@ def _draw_profile(
         for j in range(nsmax):
             series = [row[j] for row in data2d]
             ax.plot(x, series, marker=".", linewidth=1.0,
-                    label=f"{varname}[*,{j + 1}]")
+                    label=f"{label_name}[*,{j + 1}]")
         ax.legend(loc="best", fontsize="small")
     elif kind == "scalar":
         # A scalar cannot be plotted from a single snapshot. Instead we
         # draw a trivial bar so the caller still gets a figure — this
         # also exercises the same code path the sweep plot will use.
         value = state.scalars.get(varname, 0.0)
-        ax.bar([varname], [value])
-        ax.set_ylabel(info.get("ylabel", varname))
+        ax.bar([label_name], [value])
+        ax.set_ylabel(info.get("ylabel", label_name))
     else:  # pragma: no cover - exhaustive guard
         raise ValueError(f"unknown plot kind: {kind!r} for {varname}")
 
-    ax.set_xlabel(info.get("xaxis", "rg"))
+    # Profile plots default to "rg" x-axis; scalar bar charts have no
+    # meaningful x-axis category so leave it blank.
     if kind in ("profile_1d", "profile_2d"):
-        ax.set_ylabel(info.get("ylabel", varname))
-    ax.set_title(title or info.get("label", varname))
+        ax.set_xlabel(info.get("xaxis", "rg"))
+        ax.set_ylabel(info.get("ylabel", label_name))
+    else:
+        ax.set_xlabel(info.get("xaxis", ""))
+    ax.set_title(title or info.get("label", label_name))
     ax.grid(True, alpha=0.3)
     # overlay=True means "caller will add more curves"; leave the axes alone.
     if not overlay:
@@ -298,6 +310,7 @@ def plot(
         _draw_profile(
             fig, canonical, info, state,
             overlay=overlay, title=title,
+            display_name=varname,   # preserve user-facing alias (e.g. "RNT")
         )
 
     if output == "return":
