@@ -4,7 +4,11 @@ C     ****** DRAW SPLINED EQ3D GRAPH ******
 C
       SUBROUTINE EQGS3D
 C
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 C
       REAL(4),DIMENSION(:),ALLOCATABLE:: GRG,GZG
       REAL(4),DIMENSION(:,:),ALLOCATABLE:: GPSIRZ

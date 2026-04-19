@@ -22,7 +22,11 @@
 !
       SUBROUTINE EQCALC(IERR)
 
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       IERR=0
@@ -46,7 +50,11 @@
 !
       SUBROUTINE EQMESH
 
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       DSG=1.D0/NSGMAX
       DTG=2.D0*PI/NTGMAX
@@ -73,7 +81,11 @@
       SUBROUTINE EQPSIN
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION DERIV(NRVM)
 
       RAXIS=RR
@@ -130,7 +142,11 @@
       SUBROUTINE EQPSIR
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION DERIV(NRVM)
 
       RAXIS=RR
@@ -187,7 +203,11 @@
       SUBROUTINE EQDEFB
 
       USE libbrent
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       EXTERNAL EQFBND
 
       DIMENSION DRHOM(NTGM),DRHOG(NTGMP)
@@ -281,7 +301,11 @@
 !
       FUNCTION EQFBND(X)
 
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind):: EQFBND
       REAL(rkind), INTENT(IN) :: X
 
@@ -295,7 +319,11 @@
 !
       SUBROUTINE EQLOOP(IERR)
 
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       IERR=0
@@ -347,7 +375,11 @@
 !
       SUBROUTINE EQBAND
 
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 !
 !     ------ Define matrix length MMAX and matrix half width NBND ------
 !
@@ -443,7 +475,11 @@
       SUBROUTINE EQRHSV(IERR)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
       DIMENSION DERIV(NRVM)
 
@@ -747,7 +783,11 @@
       SUBROUTINE EQSOLV
 
       USE libbnd
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       REAL(rkind),ALLOCATABLE:: FJT(:),PSIOLD(:,:)
 
@@ -811,7 +851,11 @@
       SUBROUTINE EQTORZ
 
       USE libbrent
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       EXTERNAL EQFBND
 
       RMIN= RR-RB
@@ -872,7 +916,11 @@
       SUBROUTINE EQSETF
 
       USE libspl2d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       REAL(rkind),ALLOCATABLE:: PSISX(:,:),PSITX(:,:)
       REAL(rkind),ALLOCATABLE:: PSISTX(:,:)
@@ -948,7 +996,11 @@
       FUNCTION PSIF(RSIG,RTHG)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN) :: RSIG, RTHG
 
       CALL SPL2DF(RTHG,RSIG,PSIL,THGMX,SIGMX,UPSIST, &
@@ -965,7 +1017,11 @@
       FUNCTION HJTF(RSIG,RTHG)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN) :: RSIG, RTHG
 
       CALL SPL2DF(RTHG,RSIG,HJTL,THGMX,SIGMX,UHJTST, &
@@ -981,7 +1037,11 @@
 !
       SUBROUTINE EQCALP
 
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       IMDLEQF=MOD(MDLEQF,5)
       DPS=PSIPA/(NPSMAX-1)

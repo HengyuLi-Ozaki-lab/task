@@ -24,7 +24,11 @@
       SUBROUTINE EQAXIS(IERR)
 
       USE libbrent
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE::  PSIRG,PSIZG,PSIRZG
@@ -97,7 +101,11 @@
 !       IERR  : Error indicator
 !
       USE eqlib
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN)  :: RINIT, ZINIT
       INTEGER,     INTENT(IN)  :: NMAX
       INTEGER,     INTENT(OUT) :: N, IERR
@@ -190,7 +198,11 @@
 !
       SUBROUTINE EQDERV(X,Y,DYDX)
 
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN)  :: X
       REAL(rkind), INTENT(IN)  :: Y(2)
       REAL(rkind), INTENT(OUT) :: DYDX(2)
@@ -210,7 +222,11 @@
       SUBROUTINE setup_psig
 
       USE libspl2d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE:: PSIRG,PSIZG,PSIRZG
 !
@@ -233,7 +249,11 @@
       SUBROUTINE find_axis
 
       USE eqlib
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       EXTERNAL PSIGD
 
       DELT=1.D-8
@@ -261,7 +281,11 @@
       SUBROUTINE find_xpoint1
 
       USE eqlib
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       EXTERNAL PSIGD
 
       DELT=1.D-8
@@ -289,7 +313,11 @@
       SUBROUTINE find_xpoint2
 
       USE eqlib
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       EXTERNAL PSIGD
 
       DELT=1.D-8
@@ -432,7 +460,11 @@
       FUNCTION PSIG(R,Z)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN) :: R, Z
 
       CALL SPL2DF(R,Z,PSIL,RG,ZG,UPSIRZ,NRGM,NRGMAX,NZGMAX,IERR)
@@ -449,7 +481,11 @@
       SUBROUTINE PSIGD(R,Z,DPSIDR,DPSIDZ)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN)  :: R, Z
       REAL(rkind), INTENT(OUT) :: DPSIDR, DPSIDZ
 
@@ -465,7 +501,11 @@
 !     ***** INTERPOLATE FUNCTION OF PSI on ZAXIS *****
 !
       FUNCTION PSIGZ0(R)
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind) R,PSIGZ0
       PSIGZ0=PSIG(R,ZAXIS)
       RETURN

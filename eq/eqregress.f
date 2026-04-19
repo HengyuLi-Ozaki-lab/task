@@ -20,7 +20,11 @@ C   ***********************************************************
 C
       SUBROUTINE EQ_REGRESS_DUMP_IF_ENABLED
 C
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 C
       CHARACTER*16 ENV_VAL
       INTEGER STAT, IOERR, NR, UNIT_DUMP

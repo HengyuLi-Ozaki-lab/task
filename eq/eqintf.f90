@@ -32,7 +32,11 @@
 !       RHON   : normalized radial coordinate corresponding to (R,Z)
 !
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: RP, ZP, PHIP
       REAL*8, INTENT(OUT) :: BR, BZ, BT, RHON
 
@@ -73,7 +77,11 @@
 !
       SUBROUTINE EQGETB(BB1,RR1,RIP1,RA1,RKAP1,RDEL1,RB1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(OUT) :: BB1, RR1, RIP1, RA1, RKAP1, RDEL1, RB1
 
       BB1  =BB
@@ -90,7 +98,11 @@
 !
       SUBROUTINE GETPP(RHON,PP)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: RHON
       REAL*8, INTENT(OUT) :: PP
 
@@ -102,7 +114,11 @@
 !
       SUBROUTINE GETQP(RHON,QP)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: RHON
       REAL*8, INTENT(OUT) :: QP
 
@@ -114,7 +130,11 @@
 !
       SUBROUTINE eq_get_vps(RHON,VPSL)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: RHON
       REAL*8, INTENT(OUT) :: VPSL
 
@@ -126,7 +146,11 @@
 !
       SUBROUTINE eq_get_sps(RHON,SPSL)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: RHON
       REAL*8, INTENT(OUT) :: SPSL
 
@@ -138,7 +162,11 @@
 !
       SUBROUTINE GETRMN(RHON,RRMINL)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: RHON
       REAL*8, INTENT(OUT) :: RRMINL
 
@@ -150,7 +178,11 @@
 !
       SUBROUTINE GETRMX(RHON,RRMAXL)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: RHON
       REAL*8, INTENT(OUT) :: RRMAXL
 
@@ -162,7 +194,11 @@
 !
       SUBROUTINE GETAXS(RAXIS1,ZAXIS1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(OUT) :: RAXIS1, ZAXIS1
 
       RAXIS1=RAXIS
@@ -174,7 +210,11 @@
 !
       SUBROUTINE GETRSU(RSU1,ZSU1,NSUMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind),ALLOCATABLE,INTENT(OUT) :: RSU1(:),ZSU1(:)
       INTEGER,                INTENT(OUT) :: NSUMAX1
 
@@ -195,7 +235,11 @@
       SUBROUTINE GET_RZ(rhon_,rchip_,R_,Z_)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN)  :: rhon_, rchip_
       REAL(rkind), INTENT(OUT) :: R_, Z_
       REAL(rkind):: chip_
@@ -245,7 +289,11 @@
 
       USE bpsd,ONLY: rkind
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind),INTENT(IN):: rhon_
       REAL(rkind),INTENT(OUT):: BBMIN_,BBMAX_
 
@@ -260,7 +308,11 @@
 
       USE bpsd,ONLY: rkind
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind),INTENT(IN):: rhon_
       REAL(rkind),INTENT(OUT):: DVDRHO_
 

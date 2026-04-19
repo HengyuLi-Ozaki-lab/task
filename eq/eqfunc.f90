@@ -18,7 +18,11 @@
 !
       SUBROUTINE EQCNVA(PSIPNL,PSINL)
 
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: PSIPNL
       REAL*8, INTENT(OUT) :: PSINL
 
@@ -77,7 +81,11 @@
 !
       SUBROUTINE EQFDPP(PSIPNL,FDN)
 
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: PSIPNL
       REAL*8, INTENT(OUT) :: FDN
 
@@ -98,7 +106,11 @@
       SUBROUTINE EQPPSI(PSIPNL,PPSI,DPPSI)
 
       USE libspl1d
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
       REAL*8, INTENT(INOUT) :: PSIPNL
       REAL*8, INTENT(OUT)   :: PPSI, DPPSI
@@ -133,7 +145,11 @@
       SUBROUTINE EQFPSI(PSIPNL,FPSI,DFPSI)
 
       USE libspl1d
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
       REAL*8, INTENT(IN)  :: PSIPNL
       REAL*8, INTENT(OUT) :: FPSI, DFPSI
@@ -166,7 +182,11 @@
       SUBROUTINE EQQPSI(PSIPNL,QPSI)
 
       USE libspl1d
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
       REAL*8, INTENT(IN)  :: PSIPNL
       REAL*8, INTENT(OUT) :: QPSI
@@ -193,7 +213,11 @@
 
       USE eqlib
       USE libspl1d
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
       REAL*8, INTENT(IN)  :: PSIPNL
       REAL*8, INTENT(OUT) :: HJPSID, HJPSI
@@ -243,7 +267,11 @@
       SUBROUTINE EQTPSI(PSIPNL,TPSI,DTPSI)
 
       USE libspl1d
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
       REAL*8, INTENT(IN)  :: PSIPNL
       REAL*8, INTENT(OUT) :: TPSI, DTPSI
@@ -275,7 +303,11 @@
       SUBROUTINE EQOPSI(PSIPNL,OMGPSI,DOMGPSI)
 
       USE libspl1d
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
       REAL*8, INTENT(IN)  :: PSIPNL
       REAL*8, INTENT(OUT) :: OMGPSI, DOMGPSI

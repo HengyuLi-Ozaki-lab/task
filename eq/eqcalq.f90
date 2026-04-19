@@ -21,7 +21,11 @@
 !
       SUBROUTINE EQCALQ(IERR)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       IERR=0
@@ -81,7 +85,11 @@
 
       USE libspl1d
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE:: PSIRG,PSIZG,PSIRZG
@@ -162,7 +170,11 @@
 
       USE libspl1d
       USE libitp
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       EXTERNAL EQDERV
@@ -550,7 +562,11 @@
       SUBROUTINE EQCALQV(IERR)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
       EXTERNAL EQDERV
       DIMENSION XA(NTVM),YA(2,NTVM)
@@ -912,7 +928,11 @@
 
       USE libspl1d
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       DIMENSION DERIV(NRM)
@@ -1161,7 +1181,11 @@
 
       USE libspl1d
       USE libitp
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       dimension DERIV(NRM)
@@ -1196,7 +1220,11 @@
       SUBROUTINE EQCALF(RINIT,ZINIT,NTHUMAX,RU,ZU,IERR)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN)  :: RINIT, ZINIT
       INTEGER,     INTENT(IN)  :: NTHUMAX
       REAL(rkind), INTENT(OUT) :: RU(NTHUMAX+1), ZU(NTHUMAX+1)
@@ -1256,7 +1284,11 @@
       FUNCTION PPFUNC(PSIPL)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN) :: PSIPL
 
       IF(PSIPL.GT.PSIPS(NPSMAX)) THEN
@@ -1277,7 +1309,11 @@
       FUNCTION TTFUNC(PSIPL)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN) :: PSIPL
 
       IF(PSIPL.GT.PSIPS(NPSMAX)) THEN
@@ -1296,7 +1332,11 @@
       FUNCTION DPPFUNC(PSIPL)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN) :: PSIPL
 
       IF(PSIPL.GT.PSIPS(NPSMAX)) THEN
@@ -1328,7 +1368,11 @@
       FUNCTION DTTFUNC(PSIPL)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL(rkind), INTENT(IN) :: PSIPL
 
       IF(PSIPL.GT.PSIPS(NPSMAX)) THEN

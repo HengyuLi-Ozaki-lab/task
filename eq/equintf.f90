@@ -11,7 +11,11 @@
 !       F-1 MODULEs (eqcom0/1/3_mod) for the COMMON symbols.
 !
       SUBROUTINE equ_set_var1(nsr,nsz,nv,nsu,ilimt,btv,saxis,ell,trg)
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN) :: nsr,nsz,nv,nsu,ilimt
       REAL*8,  INTENT(IN) :: btv,saxis,ell,trg
 
@@ -30,7 +34,11 @@
 
       SUBROUTINE equ_set_psi(rg_,zg_,psi_)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: rg_(NRGMAX),zg_(NZGMAX),psi_(NRGMAX*NZGMAX)
       INTEGER NZG,NRG
 
@@ -52,7 +60,11 @@
 
       SUBROUTINE equ_set_fluxfn(pds,fds,vlv,qqv,prv,xxx)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: pds(NPSMAX),fds(NPSMAX),vlv(NPSMAX)
       REAL*8, INTENT(IN) :: qqv(NPSMAX),prv(NPSMAX),xxx(NPSMAX)
       INTEGER NPS

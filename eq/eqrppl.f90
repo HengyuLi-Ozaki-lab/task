@@ -16,7 +16,11 @@
 
       USE libspl2d
       USE libfio
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       EXTERNAL EQDERV
@@ -206,7 +210,11 @@
       subroutine eq_set_rppl(IERR)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       DIMENSION RpplRG(NRrpM,NZrpM),RpplZG(NRrpM,NZrpM), &

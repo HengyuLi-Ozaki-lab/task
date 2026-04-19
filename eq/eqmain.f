@@ -15,7 +15,11 @@ C   ************************************************
 C
       USE plinit,ONLY: pl_init
       USE plparm,ONLY: pl_parm
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 C
       WRITE(6,*) '## TASK/EQ 2025/01/24'
       CALL GSOPEN

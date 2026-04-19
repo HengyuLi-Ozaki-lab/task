@@ -13,7 +13,11 @@
 
       SUBROUTINE EQGETP(RHOT1,PSIP1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION RHOT1(NRMAX1),PSIP1(NRMAX1)
 
       DO NR=1,NRMAX1
@@ -25,7 +29,11 @@
 
       SUBROUTINE EQGETR(RPS1,DRPSI1,DRCHI1,NTHM1,NTHMAX1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION RPS1(NTHM1,NRMAX1)
       DIMENSION DRPSI1(NTHM1,NRMAX1),DRCHI1(NTHM1,NRMAX1)
 
@@ -41,7 +49,11 @@
 
       SUBROUTINE EQGETZ(ZPS1,DZPSI1,DZCHI1,NTHM1,NTHMAX1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION ZPS1(NTHM1,NRMAX1)
       DIMENSION DZPSI1(NTHM1,NRMAX1),DZCHI1(NTHM1,NRMAX1)
 
@@ -57,7 +69,11 @@
 
       SUBROUTINE EQGETQ(PPS1,QPS1,RBPS1,VPS1,RLEN1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION PPS1(NRMAX1),QPS1(NRMAX1),RBPS1(NRMAX1)
       DIMENSION VPS1(NRMAX1),RLEN1(NRMAX1)
 
@@ -73,7 +89,11 @@
 
       SUBROUTINE EQGETQN(PPS1,QPS1,RBPS1,VPS1,RLEN1,RITOR1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION PPS1(NRMAX1),QPS1(NRMAX1),RBPS1(NRMAX1)
       DIMENSION VPS1(NRMAX1),RLEN1(NRMAX1),RITOR1(NRMAX1)
 
@@ -90,7 +110,11 @@
 
       SUBROUTINE EQGETU(RSU1,ZSU1,RSW1,ZSW1,NSUMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION RSU1(NSUMAX1),ZSU1(NSUMAX1)
       DIMENSION RSW1(NSUMAX1),ZSW1(NSUMAX1)
     
@@ -105,7 +129,11 @@
       
       SUBROUTINE EQGETF(RGMIN1,RGMAX1,ZGMIN1,ZGMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       RGMIN1=RGMIN
       RGMAX1=RGMAX
@@ -116,7 +144,11 @@
 
       SUBROUTINE EQGETA(RAXIS1,ZAXIS1,PSIPA1,PSITA1,Q01,QA1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       RAXIS1=RAXIS
       ZAXIS1=ZAXIS
@@ -129,7 +161,11 @@
 
       SUBROUTINE EQGETG(RPS1,ZPS1,NTHM1,NTHMAX1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION RPS1(NTHM1,NRMAX1)
       DIMENSION ZPS1(NTHM1,NRMAX1)
 
@@ -144,7 +180,11 @@
 
       SUBROUTINE EQGETBB(BPR1,BPZ1,BPT1,BTP1,NTHM1,NTHMAX1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION BPR1(NTHM1,NRMAX1)
       DIMENSION BPZ1(NTHM1,NRMAX1)
       DIMENSION BPT1(NTHM1,NRMAX1)

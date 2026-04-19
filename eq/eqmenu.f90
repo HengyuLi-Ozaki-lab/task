@@ -14,7 +14,11 @@
       SUBROUTINE EQMENU
 
       USE libkio
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       EXTERNAL EQPARM
       CHARACTER KNAM*80,KPNAME*80

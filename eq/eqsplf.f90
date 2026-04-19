@@ -19,7 +19,11 @@
       FUNCTION FNPSIN(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       PSITL=PSITA*RHON*RHON
@@ -35,7 +39,11 @@
       FUNCTION FNRHON(PSIN)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: PSIN
 
       IF(PSIN.LT.0.D0) THEN
@@ -60,7 +68,11 @@
       FUNCTION FNPSIPT(PSITL1)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: PSITL1
 
       PSITL=PSITL1
@@ -77,7 +89,11 @@
       FUNCTION FNPSIP(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       PSITL=PSITA*RHON*RHON
@@ -98,7 +114,11 @@
       FUNCTION FNDPSIP(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       PSITL=PSITA*RHON*RHON
@@ -114,7 +134,11 @@
 !
       FUNCTION FNPSIT(RHON)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       FNPSIT=PSITA*RHON*RHON
@@ -128,7 +152,11 @@
       FUNCTION FNPPS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),PPL,PSIP,UPPS,NRMAX,IERR)
@@ -142,7 +170,11 @@
       FUNCTION FNTTS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       IF(RHON.LT.1.D0) THEN
@@ -160,7 +192,11 @@
       FUNCTION FNQPS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       PSIPL=FNPSIP(RHON)
@@ -179,7 +215,11 @@
       FUNCTION FNVPS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),VPL,PSIP,UVPS,NRMAX,IERR)
@@ -193,7 +233,11 @@
       FUNCTION FNSPS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),SPL,PSIP,USPS,NRMAX,IERR)
@@ -207,7 +251,11 @@
       FUNCTION FNRLEN(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),RLENL,PSIP,URLEN,NRMAX,IERR)
@@ -221,7 +269,11 @@
       FUNCTION FNRRMN(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),RRMINL,PSIP,URRMIN,NRMAX,IERR)
@@ -235,7 +287,11 @@
       FUNCTION FNRRMX(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),RRMAXL,PSIP,URRMAX,NRMAX,IERR)
@@ -249,7 +305,11 @@
       FUNCTION FNZZMN(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),ZZMINL,PSIP,UZZMIN,NRMAX,IERR)
@@ -263,7 +323,11 @@
       FUNCTION FNZZMX(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),ZZMAXL,PSIP,UZZMAX,NRMAX,IERR)
@@ -277,7 +341,11 @@
       FUNCTION FNBBMN(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),BBMINL,PSIP,UBBMIN,NRMAX,IERR)
@@ -291,7 +359,11 @@
       FUNCTION FNBBMX(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),BBMAXL,PSIP,UBBMAX,NRMAX,IERR)
@@ -305,7 +377,11 @@
       FUNCTION FNAVRR2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVERR2,NRMAX,IERR)
@@ -319,7 +395,11 @@
       FUNCTION FNAVIR2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEIR2,NRMAX,IERR)
@@ -333,7 +413,11 @@
       FUNCTION FNAVBB2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEBB2,NRMAX,IERR)
@@ -347,7 +431,11 @@
       FUNCTION FNAVIB2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEIB2,NRMAX,IERR)
@@ -361,7 +449,11 @@
       FUNCTION FNAVBB(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEBB,NRMAX,IERR)
@@ -375,7 +467,11 @@
       FUNCTION FNAVGV(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEGV,NRMAX,IERR)
@@ -389,7 +485,11 @@
       FUNCTION FNAVGV2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEGV2,NRMAX,IERR)
@@ -403,7 +503,11 @@
       FUNCTION FNAVGVR2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEGVR2,NRMAX,IERR)
@@ -417,7 +521,11 @@
       FUNCTION FNAVGP2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEGP2,NRMAX,IERR)
@@ -431,7 +539,11 @@
       FUNCTION FNRRPS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,URRPSI,NRMAX,IERR)
@@ -445,7 +557,11 @@
       FUNCTION FNRSPS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,URSPSI,NRMAX,IERR)
@@ -459,7 +575,11 @@
       FUNCTION FNELPPS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UELIPPSI,NRMAX,IERR)
@@ -473,7 +593,11 @@
       FUNCTION FNTRGPS(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UTRIGPSI,NRMAX,IERR)
@@ -487,7 +611,11 @@
       FUNCTION FNDVDPSP(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UDVDPSIP,NRMAX,IERR)
@@ -501,7 +629,11 @@
       FUNCTION FNDVDPST(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UDVDPSIT,NRMAX,IERR)
@@ -515,7 +647,11 @@
       FUNCTION FNAVGR(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEGR,NRMAX,IERR)
@@ -529,7 +665,11 @@
       FUNCTION FNAVGR2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEGR2,NRMAX,IERR)
@@ -543,7 +683,11 @@
       FUNCTION FNAVGRR2(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEGRR2,NRMAX,IERR)
@@ -557,7 +701,11 @@
       FUNCTION FNAVIR(RHON)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: RHON
 
       CALL SPL1DF(FNPSIP(RHON),DAT,PSIP,UAVEIR,NRMAX,IERR)

@@ -12,7 +12,11 @@
       SUBROUTINE EQDSKR(IERR)
 
       USE libfio
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       character case(6)*10

@@ -10,7 +10,11 @@ CONTAINS
 
       USE libmpi
       USE libmtx
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER,DIMENSION(3):: idata
       REAL(rkind),DIMENSION(11):: ddata
       REAL(rkind),DIMENSION(:),POINTER:: temp
