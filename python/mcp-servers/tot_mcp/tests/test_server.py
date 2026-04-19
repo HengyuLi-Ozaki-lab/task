@@ -300,6 +300,19 @@ class TestHandlersWithMockedState(unittest.TestCase):
             ("eq:KNAMEQ", "eqdata.ITER01"),
         )
 
+    def test_handle_set_param_rejects_list_value(self) -> None:
+        # set_param is the scalar/string entry point; bulk array values
+        # must go through set_params. The reject path is tested here so
+        # the contract does not regress to a generic float() TypeError.
+        with self.assertRaises(Exception) as ctx:
+            srv.handle_set_param("eq:RIPFC", [1.0, 2.0])  # type: ignore[arg-type]
+        self.assertIn("set_params", str(ctx.exception))
+
+    def test_handle_set_param_rejects_dict_value(self) -> None:
+        with self.assertRaises(Exception) as ctx:
+            srv.handle_set_param("eq:RIPFC", {1: 1.0})  # type: ignore[arg-type]
+        self.assertIn("set_params", str(ctx.exception))
+
     def test_handle_set_params(self) -> None:
         msg = srv.handle_set_params({"tr:DT": 0.01})
         self.assertIn("1 parameter", msg)
