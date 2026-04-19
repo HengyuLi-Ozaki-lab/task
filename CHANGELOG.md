@@ -210,3 +210,79 @@ module. The `wr` CLI binary and its menu/graphics are unchanged.
   `wr_get_state`.
 - String parameters are not wired through `wr_set_param`.
 - Single instance per process only.
+
+## EQ Phase L — library-ization (2026-04-19)
+
+Phase L mirrors the TR library-ization for the TASK/EQ MHD-equilibrium
+module. The structure matches the sibling tr/ti/wr/fp libraries with
+one EQ-specific addition: a **6th C ABI entry point**
+`eq_set_param_str` to set the seven `CHARACTER(LEN=80)` namelist keys
+(`KNAMEQ`, `KNAMEQ2`, `KNAMWR`, `KNAMWM`, `KNAMFP`, `KNAMFO`,
+`KNAMPF`). The `eq` CLI binary and its menu/graphics are unchanged.
+
+### Added
+
+- **L-0 (2026-04-18, PR #54)** — Phase L-0 regression-test
+  infrastructure for EQ: `test_run/baselines/eq_iter01/`,
+  `test_run/baselines/eq_tst2/`, `eqregress.f90` (env-guarded
+  high-precision dump), `test_run/scripts/extract_eq_metrics.py`,
+  and the two baseline test cases `eq_iter01`, `eq_tst2` wired into
+  `test_definitions.conf`.
+- **L-1 (2026-04-18, PR #65)** — `eq/Makefile` split into
+  `SRCS_CORE` / `SRCS_GRAPHICS` / `SRCS_MENU` groups so graphics-free
+  Fortran compilations can be staged without touching the `eq`
+  binary build.
+- **L-2 (2026-04-18, PR #70)** — C ABI foundation: `eq/eq_api.h`,
+  `eq/eq_api.f90`, `eq/eq_state.f90`; 5 entry-point stubs returning
+  `EQ_ERR_NOT_IMPL` (ierr=4), plus first C-side compile-only smoke
+  tests under `eq/tests/c_abi/`.
+- **L-3 (2026-04-18, PR #78)** — Parameter registry
+  (`eq/eq_param_registry.f90`, 94 `SELECT CASE` entries covering
+  ~78 numeric scalars/ints, 5 array families with the 0-origin
+  `PSIB[0..5]` and 1-origin `RIPFC/RPFC/ZPFC/WPFC[1..10]`, and 7
+  string keys via `eq_set_param_str`) plus real bodies for `eq_init`
+  / `eq_run(mode=1)` / `eq_get_state` / `eq_finalize`. The 6th C ABI
+  entry `eq_set_param_str` is added here for `CHARACTER(LEN=80)`
+  namelist parameters.
+- **L-4 (2026-04-18, PR #80)** — `make -C eq libeqapi.so` builds the
+  shared library. PIC variants (`*_pic.a`) of `lib`, `pl`, `bpsd`,
+  `mtxp` added to participating Makefiles. Non-PIC archives and the
+  `eq` binary are unchanged. Includes explicit PIC inter-module
+  dependency declarations to prevent parallel-build races.
+- **L-5 (2026-04-18, PR #86)** — Python wrapper `python/eqlib/`:
+  `Eq` context manager, `EqState` dataclass, exception hierarchy
+  mirroring `enum eq_error`, `_ffi` ctypes layer with `EQLIB_PATH`
+  override and `RTLD_LAZY` loading. `Eq.run()` defaults to `mode=1`
+  so `eq.run()` (no arg) performs the canonical EQDSK load.
+- **L-7 (2026-04-19, this PR)** — User-facing documentation:
+  rewritten `python/eqlib/README.md` with full 6-fn API table,
+  60+ registry parameters, `EqState` field table, exception
+  hierarchy, EQ-specific quirks (PSIB 0-origin / `set_param_str`
+  for KNAMEQ / `eq.run(mode=1)` default), and CLI→library migration
+  notes; example scripts (`quickstart.py`, `parameter_sweep.py`,
+  `state_dump.py` — all with `--dry-run`); architecture doc
+  (`docs/eq-library/architecture.md`) with ASCII diagram and Phase L
+  completion matrix; this changelog entry.
+
+### Known issues
+
+- **L-6 (4-layer test integration) is not yet merged.** Wrapper-only
+  tests run via `python3 -m unittest discover python/eqlib/tests`;
+  the `eqlib_*` cases in `test_run/test_definitions.conf` will land
+  with the L-6 PR.
+- `eq_run(mode=0)` (direct EQCALQ entry) returns
+  `EQ_ERR_NOT_IMPL`; only `mode=1` (EQDSK load via
+  `equnit::eq_load`) is currently wired. Other modes raise
+  `EqlibNotImplementedError`.
+- `eq_state_t` exports 1-D psi-surface profiles, R/Z grids, and 12
+  scalars only. 2-D fields (`PSIRZ`, `RPS(NPSM,NTHM)`,
+  `ZPS(NPSM,NTHM)`) require a future C-ABI extension.
+- `PSIB` is 0-origin (Fortran `REAL(8) :: PSIB(0:5)`), unlike all
+  other 1-D array parameters. Bare `"PSIB"` with no subscript is
+  rejected by the registry; always use `set_param("PSIB[i]", v)` for
+  `i ∈ 0..5`.
+- String parameters (`KNAMEQ` and the six siblings) require the
+  dedicated `set_param_str` method — they cannot be passed through
+  `set_params(**kwargs)` or `set_param`.
+- Single instance per process only — EQ globals are COMMON-block
+  plus `eqcom*_mod` module variables.
