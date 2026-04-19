@@ -98,22 +98,23 @@ jobs:
           # tomli is needed only on <3.11; keep installed for safety on 3.11 too.
           pip install tomli
 
-      - name: Build PIC support libraries (lib, mtxp, pl, eq, dp, ob)
+      - name: Build PIC support libraries (bpsd, lib, mtxp, pl, eq, dp, ob)
         # Pre-build all shared support libraries so each module Makefile
-        # finds the .mod files it needs (libitp, equnit, plcomm, etc.)
-        # in their respective mod_pic/ dirs before compiling module
-        # sources. Order matters: pl needs lib first, eq needs pl, dp+ob
-        # need pl/eq.
+        # finds the .mod files it needs (bpsd, libitp, equnit, plcomm,
+        # etc.) before compiling module sources. Order matters: bpsd
+        # first because pl/plvmec USEs bpsd; pl needs lib first; eq
+        # needs pl; dp+ob need pl/eq.
         #
-        # pl/libpl_pic.a target is split into libpl_noeq_pic (no eq dep)
-        # + libpl_pic.a (full); we go through the full target which
-        # internally orchestrates the eq build.
+        # BPSD's static `make libbpsd.a` populates ../../bpsd/mod/ which
+        # PL's PIC build (MODINCLUDE_PIC includes ../../bpsd/mod) needs.
         run: |
           set -e
+          make -C "$GITHUB_WORKSPACE/../bpsd" libbpsd.a
           make -C lib libtask_pic.a libgrf_pic.a libmds_pic.a
           make -C mtxp libmtxnompi_pic.o libmtxbnd_pic.o
           # bpsd_pic must run from a module dir (the rule lives in each
-          # module's Makefile). Use tr as the canonical builder.
+          # module's Makefile, generates obj/pic/bpsd/*.o + mod_pic/bpsd*.mod
+          # local to that module). Use tr as the canonical builder.
           make -C tr bpsd_pic
           make -C pl libpl_noeq_pic
           make -C eq libeq_pic.a
