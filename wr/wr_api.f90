@@ -175,7 +175,11 @@ CONTAINS
     ! (eq/eqinit.f90:536-540): without it, fixtures using ITER-scale
     ! RA leave RB at the pl_init default (1.2 m), so RB/RA<1 and the
     ! ray-step boundary check (wrexecr.f90:430) trips at NSTP=1.
-    CALL wr_apply_namelist_checks
+    CALL wr_apply_namelist_checks(setup_ierr)
+    IF (setup_ierr /= 0) THEN
+       ierr = WR_ERR_CALC_FAILED
+       RETURN
+    END IF
 
     CALL wr_allocate
     g_allocated = .TRUE.
@@ -371,12 +375,27 @@ CONTAINS
   ! the Fortran namelist path invokes via wrparm.f90:42-44 (inside
   ! WR_PARM). The C ABI set_param path bypasses WR_PARM entirely so
   ! these post-read fixups never run unless we call them here.
+  !
+  ! ierr aggregates the three sub-calls: 0 on success, otherwise the
+  ! first non-zero return wins. Mirrors the wrparm.f90 contract that
+  ! treats any chek failure as fatal for the run.
   !-------------------------------------------------------------------
-  SUBROUTINE wr_apply_namelist_checks
+  SUBROUTINE wr_apply_namelist_checks(ierr)
+    INTEGER, INTENT(OUT) :: ierr
     INTEGER :: ic_ierr
+    ierr = 0
     CALL EQCHEK(ic_ierr)
+    IF (ic_ierr /= 0) THEN
+       ierr = ic_ierr
+       RETURN
+    END IF
     CALL dp_chek(ic_ierr)
+    IF (ic_ierr /= 0) THEN
+       ierr = ic_ierr
+       RETURN
+    END IF
     CALL wr_chek(ic_ierr)
+    IF (ic_ierr /= 0) ierr = ic_ierr
   END SUBROUTINE wr_apply_namelist_checks
 
 END MODULE wr_api
