@@ -1,3 +1,16 @@
+! Phase F-4 (HIGH tier): free-form F90 conversion of eqbpsd.f.
+! Module providing BPSD interface for TASK/TR coupling
+! (eq_bpsd_init / eq_bpsd_put / eq_bpsd_get). Preserves the exact
+! external interface signature so all callers (TR, equnit, etc.)
+! remain bit-compatible.
+!
+! NOTE: IMPLICIT NONE is NOT added at file level because the INCLUDEd
+!       shims '../eq/eqcomq.inc' / '../eq/eqcomm.inc' supply an
+!       IMPLICIT statement (IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z))
+!       and USE the F-1 MODULEs for COMMON symbols. The raw INCLUDE of
+!       eqcom4.inc has no IMPLICIT of its own and inherits from the
+!       enclosing routine, exactly as in the fixed-form original.
+!
       module eqbpsd
 ! interface module with TASK/TR new version
       use bpsd
@@ -16,10 +29,11 @@
 !=======================================================================
       INCLUDE '../eq/eqcomq.inc'
 !      implicit none
-      integer :: ierr
+      integer, intent(out) :: ierr
 ! local variables
       integer :: ns
 !=======================================================================
+      ierr = 0
       if(eq_bpsd_init_flag) then
          equ1D%nrmax=0
          metric1D%nrmax=0
@@ -51,12 +65,13 @@
       subroutine eq_bpsd_put(ierr)
 !=======================================================================
 !     interface eqiulibrium => transport
-!          equilibrium grid => transport grid     
+!          equilibrium grid => transport grid
 !=======================================================================
       INCLUDE '../eq/eqcomq.inc'
       INCLUDE '../eq/eqcom4.inc'
-      integer :: nr, ierr
-      
+      integer, intent(out) :: ierr
+      integer :: nr
+
 ! local variables
 !=======================================================================
 
@@ -100,7 +115,7 @@
          metric1D%data(nr)%avegvr2 = fnavgvr2(rhot(nr)) ! avegvr2 on rhot
          metric1D%data(nr)%avegr   = fnavgr  (rhot(nr)) ! avegr   on rhot
          metric1D%data(nr)%avegr2  = fnavgr2 (rhot(nr)) ! avegr2  on rhot
-         metric1D%data(nr)%avegrr2 = fnavgrr2(rhot(nr)) ! avegrr2 on rhot
+         metric1D%data(nr)%avegrr2 = fnavgrr2(nr)       ! avegrr2 on rhot
          metric1D%data(nr)%avegpp2 = fnavgp2 (rhot(nr)) ! avegp2  on rhot
          metric1D%data(nr)%rr      = fnrrps  (rhot(nr)) ! rrpsi   on rhot
          metric1D%data(nr)%rs      = fnrsps  (rhot(nr)) ! rspsi   on rhot
@@ -120,8 +135,9 @@
       USE libspl1d
       INCLUDE '../eq/eqcomm.inc'
       INCLUDE '../eq/eqcom4.inc'
+      integer, intent(out) :: ierr
       real(rkind),DIMENSION(NTRM):: ptrrho,qtrrho,deriv
-      integer :: ierr,ntr
+      integer :: ntr
 
       ! --- device data ---
       CALL bpsd_get_data(device,ierr)
@@ -141,26 +157,26 @@
          psitrx(ntr) = rhotr(ntr)**2
          ptot = 0.d0
          DO ns = 1, plasmaf%nsmax
-            ptot = ptot
-     &           + plasmaf%data(ntr,ns)%density 
-     &           * plasmaf%data(ntr,ns)%temperature
-     &           * aee
+            ptot = ptot &
+                 + plasmaf%data(ntr,ns)%density &
+                 * plasmaf%data(ntr,ns)%temperature &
+                 * aee
          END DO
          ptrrho(ntr) = ptot*1.D-6
          qtrrho(ntr) = 1.d0/plasmaf%qinv(ntr)
-C         write(6,'(A,I5,1P4E12.4)') 'eq_bpsd_get:',ntr,rhotr(ntr),
-C     &        psitrx(ntr),ptrrho(ntr),qtrrho(ntr)
+!         write(6,'(A,I5,1P4E12.4)') 'eq_bpsd_get:',ntr,rhotr(ntr), &
+!     &        psitrx(ntr),ptrrho(ntr),qtrrho(ntr)
       END DO
 
       deriv=0.d0
       CALL spl1d(psitrx,ptrrho,deriv,uppsi,ntrmax,1,ierr)
-      IF(ierr.NE.0) 
-     &     WRITE(6,*) 'XX eq_bpsd_get: spl1d ptrrho: ierr=',ierr
+      IF(ierr.NE.0) &
+           WRITE(6,*) 'XX eq_bpsd_get: spl1d ptrrho: ierr=',ierr
 
       deriv=0.d0
       CALL spl1d(psitrx,qtrrho,deriv,uqpsi,ntrmax,1,ierr)
-      IF(ierr.NE.0) 
-     &     WRITE(6,*) 'XX eq_bpsd_get: spl1d qtrrho: ierr=',ierr
+      IF(ierr.NE.0) &
+           WRITE(6,*) 'XX eq_bpsd_get: spl1d qtrrho: ierr=',ierr
 
       mdleqf=9
 

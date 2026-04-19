@@ -30,15 +30,15 @@ MODINCLUDE=-I$(MOD) -I../../bpsd/$(MOD) -I../mtxp/$(MOD) -I../pl/$(MOD) -I../lib
 #   eqfunc / eqintf / eqmenu / eqgout converted to free-form .f90.
 SRCS_CORE = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90 \
             equcom.f90 equread.f90 eqlib.f90 \
-            eqbpsd.f eqinit.f90 eqcalc.f eqcalq.f eqcalv.f90 \
-            eqsub.f eqfunc.f90 eqintf.f90 eqsplf.f equintf.f90 \
-            eq-eqdsk.f eq-qst.f eqgetp.f90 eqregress.f \
+            eqbpsd.f90 eqinit.f90 eqcalc.f90 eqcalq.f90 eqcalv.f90 \
+            eqsub.f90 eqfunc.f90 eqintf.f90 eqsplf.f90 equintf.f90 \
+            eq-eqdsk.f90 eq-qst.f90 eqgetp.f90 eqregress.f \
             newton.f90 invematrix.f90 equnit.f90 eqrppl.f90
 
 # --- graphics (GSAF plotting, contour; eqfile uses GUCLIP) ---
 # Note: eqg2d.f / eqg3d.f remain in SRC2D / SRC3D below.
 # Phase F-2: eqgsub converted to free-form .f90.
-SRCS_GRAPHICS = eqgout.f90 eqgsub.f90 eqfile.f
+SRCS_GRAPHICS = eqgout.f90 eqgsub.f90 eqfile.f90
 
 # --- interactive menu driver (depends on graphics) ---
 SRCS_MENU = eqmenu.f90
@@ -191,24 +191,24 @@ eqcom3_mod.o: eqcom3_mod.f90 eqcom0_mod.o
 # therefore depends on those .mod files in addition to the raw .inc.
 eqmain.o: eqmain.f $(EQCOMM) $(EQCOM_MODS)
 eqinit.o: eqinit.f90 $(EQCOMM) $(EQCOM_MODS)
-eqcalc.o: eqcalc.f $(EQCOMM) $(EQCOM_MODS)
+eqcalc.o: eqcalc.f90 $(EQCOMM) $(EQCOM_MODS)
 eqcalx.o: eqcalx.f $(EQCOMM) eqcom5.inc $(EQCOM_MODS)
-eqcalq.o: eqcalq.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqcalq.o: eqcalq.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqcalv.o: eqcalv.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eqsub.o : eqsub.f  $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eqsub.o : eqsub.f90  $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
 eqfunc.o: eqfunc.f90 $(EQCOMM) eqcom2.inc eqcom4.inc $(EQCOM_MODS)
-eqsplf.o: eqsplf.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqfile.o: eqfile.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eq-eqdsk.o: eq-eqdsk.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eq-qst.o: eq-qst.f $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eqsplf.o: eqsplf.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqfile.o: eqfile.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eq-eqdsk.o: eq-eqdsk.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
+eq-qst.o: eq-qst.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
 eqintf.o: eqintf.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
 eqgout.o: eqgout.f90 $(EQCOMM) eqcom2.inc eqcom3.inc $(EQCOM_MODS)
-eqbpsd.o: eqbpsd.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqbpsd.o: eqbpsd.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 #eqtrbpsd.o: eqtrbpsd.f $(EQCOMM)
 #eqtrbpsdlib.o: eqtrbpsdlib.f90
 eqjft2m.o: eqjft2m.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqlib.o : eqlib.f90
-equnit.o: equnit.f90 eqbpsd.f $(EQCOM_MODS)
+equnit.o: equnit.f90 eqbpsd.f90 $(EQCOM_MODS)
 eqgsub.o: eqgsub.f90
 eqg2d.o: eqg2d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
 eqg3d.o: eqg3d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)

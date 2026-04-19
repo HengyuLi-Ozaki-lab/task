@@ -1,14 +1,24 @@
-C
-C     ***** READ QST (A>K>A> JAREA) EQ FORMAT FILE *****
-C
+! Phase F-4 (HIGH tier): free-form F90 conversion of eq-qst.f.
+! QST/JAEA equilibrium file reader (subroutines EQJAEAR, RBB) with
+! axis / X-point detection and separatrix tracing. Preserves exact
+! numerical semantics of the original fixed-form source.
+!
+! NOTE: IMPLICIT NONE is NOT added at file level because the INCLUDEd
+!       shim '../eq/eqcomq.inc' already supplies an IMPLICIT statement
+!       (IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)) and USEs the
+!       F-1 MODULEs (eqcom0/1/3_mod) for the COMMON symbols.
+!
+!     ***** READ QST (A>K>A> JAREA) EQ FORMAT FILE *****
+!
       SUBROUTINE EQJAEAR(IERR)
-C
+
       USE libfio
       USE libbrent
       USE libspl1d
       USE libgrf
       INCLUDE '../eq/eqcomq.inc'
-C
+      INTEGER, INTENT(OUT) :: IERR
+
       integer:: ir,iz
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE:: psi_temp
       DIMENSION PSIRG(NRGM,NZGM),PSIZG(NRGM,NZGM),PSIRZG(NRGM,NZGM)
@@ -22,11 +32,11 @@ C
       INTEGER:: ic_min1,ic_min2,ic_min3
       REAL(rkind):: psic_max,psic_min
       EXTERNAL RBB,PSIGZ0
-C
+
       neqdsk=21
       CALL FROPEN(neqdsk,KNAMEQ,0,MODEFR,'EQ',IERR)
       IF(IERR.NE.0) RETURN
-c
+!
       REWIND(neqdsk)
       READ (neqdsk) NRGMAX,NZGMAX
       write(6,*) 'nrgmax,nzgmax=',nrgmax,nzgmax
@@ -69,10 +79,10 @@ c
       psix1(1:nrgmax,1:nzgmax)=0.0
       DO nz=2,nzgmax-1
          DO nr=2,nrgmax-1
-            psix1(nr,nz)=(psirz(nr+1,nz)-psirz(nr-1,nz))**2 
-     &                  /(rg(nr+1)-rg(nr-1))**2 
-     &                  +(psirz(nr,nz+1)-psirz(nr,nz-1))**2 
-     &                  /(zg(nz+1)-zg(nz-1))**2
+            psix1(nr,nz)=(psirz(nr+1,nz)-psirz(nr-1,nz))**2 &
+                        /(rg(nr+1)-rg(nr-1))**2 &
+                        +(psirz(nr,nz+1)-psirz(nr,nz-1))**2 &
+                        /(zg(nz+1)-zg(nz-1))**2
          END DO
       END DO
 
@@ -81,10 +91,10 @@ c
       icount=0
       DO nz=3,nzgmax-2
          DO nr=3,nrgmax-2
-            IF((psix1(nr,nz) < psix1(nr-1,nz)) .AND. 
-     &         (psix1(nr,nz) < psix1(nr+1,nz)) .AND.
-     &         (psix1(nr,nz) < psix1(nr,nz-1)) .AND.
-     &         (psix1(nr,nz) < psix1(nr,nz+1))) THEN
+            IF((psix1(nr,nz) < psix1(nr-1,nz)) .AND. &
+               (psix1(nr,nz) < psix1(nr+1,nz)) .AND. &
+               (psix1(nr,nz) < psix1(nr,nz-1)) .AND. &
+               (psix1(nr,nz) < psix1(nr,nz+1))) THEN
                icount=icount+1
                rc_xp(icount)=rg(nr)
                zc_xp(icount)=zg(nz)
@@ -125,8 +135,8 @@ c
          psic_min=psic_max
          ic_min2=0
          DO icount=1,icountmax
-            IF((icount /= ic_min1).AND.
-     &         (psic_xp(icount) < psic_min)) THEN
+            IF((icount /= ic_min1).AND. &
+               (psic_xp(icount) < psic_min)) THEN
                ic_min2=icount
                psic_min=psic_xp(icount)
             END IF
@@ -134,9 +144,9 @@ c
          psic_min=psic_max
          ic_min3=0
          DO icount=1,icountmax
-            IF((icount /= ic_min1).AND.
-     &         (icount /= ic_min2).AND.
-     &         (psic_xp(icount) < psic_min)) THEN
+            IF((icount /= ic_min1).AND. &
+               (icount /= ic_min2).AND. &
+               (psic_xp(icount) < psic_min)) THEN
                ic_min3=icount
                psic_min=psic_xp(icount)
             END IF
@@ -168,27 +178,27 @@ c
 ! -----
       CALL setup_psig
       CALL find_axis
-      WRITE(6,'(A,1P3E12.4)') 'RAXIS,ZAXIS,PSI_AXIS=',
-     &                         RAXIS,ZAXIS,PSIG(RAXIS,ZAXIS)
+      WRITE(6,'(A,1P3E12.4)') 'RAXIS,ZAXIS,PSI_AXIS=', &
+                               RAXIS,ZAXIS,PSIG(RAXIS,ZAXIS)
       IF(NXPOINT >= 1) THEN
          CALL find_xpoint1
-         WRITE(6,'(A,1P3E12.4)') 'RXPNT1,ZXPNT1,PSI_XPNT1=',
-     &                            RXPNT1,ZXPNT1,PSIG(RXPNT1,ZXPNT1)
+         WRITE(6,'(A,1P3E12.4)') 'RXPNT1,ZXPNT1,PSI_XPNT1=', &
+                                  RXPNT1,ZXPNT1,PSIG(RXPNT1,ZXPNT1)
       END IF
       IF(NXPOINT >= 2) THEN
          CALL find_xpoint2
-         WRITE(6,'(A,1P3E12.4)') 'RXPNT2,ZXPNT2,PSI_XPNT2=',
-     &                            RXPNT2,ZXPNT2,PSIG(RXPNT2,ZXPNT2)
+         WRITE(6,'(A,1P3E12.4)') 'RXPNT2,ZXPNT2,PSI_XPNT2=', &
+                                  RXPNT2,ZXPNT2,PSIG(RXPNT2,ZXPNT2)
       END IF
 
       REDGE=FBRENT(PSIGZ0,RAXIS+0.1D0,2*RAXIS,1.D-8)
-      WRITE(6,'(A,1P3E12.4)') 'REDGE,ZAXIS,PSI_EDGE=',
-     &                         REDGE,ZAXIS,PSIG(REDGE,ZAXIS)
+      WRITE(6,'(A,1P3E12.4)') 'REDGE,ZAXIS,PSI_EDGE=', &
+                               REDGE,ZAXIS,PSIG(REDGE,ZAXIS)
 
       NMAX=400
       H=16.D0*(REDGE-RAXIS)/NMAX
-      CALL calc_separtrix(REDGE,ZAXIS,RXPNT1,ZXPNT1,H,NMAX,
-     &                    XA,RSU,ZSU,NSUMAX,IERR) 
+      CALL calc_separtrix(REDGE,ZAXIS,RXPNT1,ZXPNT1,H,NMAX, &
+                          XA,RSU,ZSU,NSUMAX,IERR)
 
 !      CALL PAGES
 !      CALL GRD2D(0,rg,zg,psirz,nrgm,nrgmax,nzgmax,'@psirz@',0,0,1,
@@ -228,7 +238,7 @@ c
          END IF
       END DO
 
-C *** The following variable defined in Tokamaks 3rd, Sec. 14.14 ***
+! *** The following variable defined in Tokamaks 3rd, Sec. 14.14 ***
       RR = RAXIS
       RA = REDGE - RAXIS
       !==  RB: wall minor radius  ======================
@@ -274,22 +284,22 @@ C *** The following variable defined in Tokamaks 3rd, Sec. 14.14 ***
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for PPPS: IERR=',IERR
       CALL SPL1D(PSIPS,TTPS,  DERIV,UTTPS, NPSMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for TTPS: IERR=',IERR
-C
-C      DO NPS=1,NPSMAX
-C         X=PPFUNC(PSIPS(NPS))
-C         WRITE(6,'(A,I5,1P5E12.4)') 
-C     &        'NPS:',NPS,PSIPS(NPS),PPPS(NPS),TTPS(NPS),
-C     &        PPFUNC(PSIPS(NPS)),TTFUNC(PSIPS(NPS))
-C      END DO
-C
+!
+!      DO NPS=1,NPSMAX
+!         X=PPFUNC(PSIPS(NPS))
+!         WRITE(6,'(A,I5,1P5E12.4)')
+!     &        'NPS:',NPS,PSIPS(NPS),PPPS(NPS),TTPS(NPS),
+!     &        PPFUNC(PSIPS(NPS)),TTFUNC(PSIPS(NPS))
+!      END DO
+!
       CALL EQCALQP(IERR)
       IF(IERR.NE.0) RETURN
-C
+!
       IF(NSUMAX.GT.0) THEN
          CALL EQCALQV(IERR)
          IF(IERR.NE.0) RETURN
       ENDIF
-C
+!
       CALL EQSETS_RHO(IERR)
       CALL EQSETS(IERR)
 
