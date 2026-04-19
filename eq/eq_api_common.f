@@ -33,7 +33,10 @@ C     ------------------------------------------------------------------
      &                                   NPSM_OUT,
      &                                   NRM_OUT,  NTHM_OUT,
      &                                   NSUM_OUT)
-      INCLUDE '../eq/eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER NRGM_OUT, NZGM_OUT, NPSM_OUT
       INTEGER NRM_OUT,  NTHM_OUT, NSUM_OUT
       NRGM_OUT = NRGM
@@ -52,7 +55,10 @@ C     ------------------------------------------------------------------
      &                                     NPSMAX_OUT,
      &                                     NRMAX_OUT,  NTHMAX_OUT,
      &                                     NSUMAX_OUT)
-      INCLUDE '../eq/eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER NRGMAX_OUT, NZGMAX_OUT, NPSMAX_OUT
       INTEGER NRMAX_OUT,  NTHMAX_OUT, NSUMAX_OUT
       NRGMAX_OUT = NRGMAX
@@ -74,7 +80,10 @@ C     ------------------------------------------------------------------
      &                                 BETAT_OUT, BETAP_OUT,
      &                                 PVOL_OUT,  RAAVE_OUT,
      &                                 RIPX_OUT)
-      INCLUDE '../eq/eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8 RAXIS_OUT, ZAXIS_OUT, PSI0_OUT, PSIPA_OUT, PSITA_OUT
       REAL*8 QAXIS_OUT, QSURF_OUT, BETAT_OUT, BETAP_OUT
       REAL*8 PVOL_OUT,  RAAVE_OUT, RIPX_OUT
@@ -100,7 +109,10 @@ C     ------------------------------------------------------------------
       SUBROUTINE EQ_COMMON_GET_PROFILES_1D(NCOPY,
      &                                     PSIPS_OUT, PPPS_OUT,
      &                                     TTPS_OUT,  QQPS_OUT)
-      INCLUDE '../eq/eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER NCOPY
       REAL*8  PSIPS_OUT(*), PPPS_OUT(*), TTPS_OUT(*), QQPS_OUT(*)
       INTEGER I, LIMIT
@@ -121,7 +133,10 @@ C     sized at least NR_COPY / NZ_COPY. Limited to NRGMAX / NZGMAX.
 C     ------------------------------------------------------------------
       SUBROUTINE EQ_COMMON_GET_RZ_GRID(NR_COPY, NZ_COPY,
      &                                 RG_OUT, ZG_OUT)
-      INCLUDE '../eq/eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER NR_COPY, NZ_COPY
       REAL*8  RG_OUT(*), ZG_OUT(*)
       INTEGER I, LIMR, LIMZ

@@ -24,7 +24,11 @@
       SUBROUTINE EQSAVE
 
       USE libfio
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       CALL FWOPEN(21,KNAMEQ,0,MODEFW,'EQ',IERR)
       IF(IERR.NE.0) RETURN
@@ -74,7 +78,11 @@
       SUBROUTINE EQLOAD(MODELG1,KNAMEQ1,IERR)
 
       USE eqbpsd
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER,         INTENT(IN)  :: MODELG1
       CHARACTER(LEN=80),INTENT(IN) :: KNAMEQ1
       INTEGER,         INTENT(OUT) :: IERR
@@ -90,7 +98,11 @@
       SUBROUTINE EQ_READ(IERR)
 
       USE equread,ONLY: eqdsk
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       IF(MODELG.EQ.3.OR.MODELG.EQ.9) THEN
@@ -116,7 +128,11 @@
       USE libfio
       USE libbrent
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
       DIMENSION DERIV(NRVM)
       EXTERNAL EQFBND
@@ -215,7 +231,11 @@
 
       USE libspl1d
       USE libfio
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       character KNAMET*80
@@ -252,7 +272,11 @@
       subroutine read_rppl(ierr)
 
       USE libfio
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: ierr
 
       character kfile*20, kline*130

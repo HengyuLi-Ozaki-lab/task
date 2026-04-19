@@ -5,7 +5,11 @@ C
       SUBROUTINE AKEQIN(KNAMEQ1,NRMAX1,NTHMAX1,NSUMAX1,
      &                  ALPMAX,RAXIS1,ZAXIS1,IERR)
 C
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       CHARACTER KNAMEQ1*80
       SAVE INIT
       DATA INIT/0/
@@ -45,7 +49,11 @@ C     ***** TEST *****
 C
       SUBROUTINE AKTEST
 C
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 C
       ALPHAMAX=PSIT(NRPMAX)
       DELA=0.2D0*ALPHAMAX
@@ -74,7 +82,11 @@ C
       SUBROUTINE EQCALA(IERR)
 C
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       COMMON /EQAKV1/ SALPHG(NRM),BETAG(NTHMP)
       COMMON /EQAKV2/ UABR(4,4,NTHMP,NRM),UABZ(4,4,NTHMP,NRM)
       DIMENSION RPSA(NTHMP,NRM),RPSB(NTHMP,NRM),RPSAB(NTHMP,NRM)
@@ -111,7 +123,11 @@ C
 C
       USE libbrent
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       COMMON /EQAKF1/ ALPHAF1,RF1,ZF1
       EXTERNAL FNBETA
 C
@@ -135,7 +151,11 @@ C     ----- FNBETA=0 FOR BETA CLOSEST TO (RF1,ZF1) FOR FIXED ALPHA
 C
       FUNCTION FNBETA(BETA)
 C
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       COMMON /EQAKF1/ ALPHAF1,RF1,ZF1
 C
       DBETA=1.D-6
@@ -158,7 +178,11 @@ C
       SUBROUTINE ABTORZ(ALPHA,BETA,R,Z,IERR)
 C
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       COMMON /EQAKV1/ SALPHG(NRM),BETAG(NTHMP)
       COMMON /EQAKV2/ UABR(4,4,NTHMP,NRM),UABZ(4,4,NTHMP,NRM)
 C
@@ -191,7 +215,11 @@ C
       SUBROUTINE DRDAB_EQ (ALPHA, BETA, DRDA, DRDB)
 C
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       COMMON /EQAKV1/ SALPHG(NRM),BETAG(NTHMP)
       COMMON /EQAKV2/ UABR(4,4,NTHMP,NRM),UABZ(4,4,NTHMP,NRM)
 C     
@@ -209,7 +237,11 @@ C
       SUBROUTINE DZDAB_EQ (ALPHA, BETA, DZDA, DZDB)
 C
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       COMMON /EQAKV1/ SALPHG(NRM),BETAG(NTHMP)
       COMMON /EQAKV2/ UABR(4,4,NTHMP,NRM),UABZ(4,4,NTHMP,NRM)
 C     
@@ -228,7 +260,11 @@ C
       FUNCTION PSIP_EQ(ALPHA)
 C
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 C
       PSITL=ALPHA
       CALL SPL1DF(PSITL,PSIPL,PSIT,UPSIT,NRMAX,IERR)
@@ -242,7 +278,11 @@ C
       SUBROUTINE SUBQPA(ALPHA,Q,DQDA,P)
 C
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       real*8 ppl
 C
       RHOTL=SQRT(ALPHA/PSITA)
@@ -274,7 +314,11 @@ C
       SUBROUTINE SUBBMX(ALPHA,BMX,DBMXDA)
 C
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 C
       PSITL=ALPHA
       RHOTL=SQRT(PSITL/PSITA)
@@ -296,7 +340,11 @@ C
       SUBROUTINE SUBBMN(ALPHA,BMN,DBMNDA)
 C
       USE libspl1d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 C
       PSITL=ALPHA
       RHOTL=SQRT(PSITL/PSITA)
@@ -319,7 +367,11 @@ C
 C
       USE libspl1d
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 C
       CALL ABTORZ(ALPHA,BETA,RP,ZP,IERR)
 C      WRITE(6,'(A,1P2E12.4,I5)') 'RP,ZP,IERR=',RP,ZP,IERR

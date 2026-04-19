@@ -17,7 +17,11 @@
       SUBROUTINE EQGOUT(MODE)
 
       USE libchar
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN) :: MODE
 
       CHARACTER KSTR*2,K1*1,K2*1
@@ -104,7 +108,11 @@
 !
       SUBROUTINE EQGC1D
 
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       DIMENSION GX(NXM)
       DIMENSION GYPS(NXM,1),GYJT(NXM,3),GYPP(NXM,1),GYTT(NXM,1)
@@ -251,7 +259,11 @@
 !
       SUBROUTINE EQGC2D
 
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       DIMENSION GF(NSGM,NTGM),GR(NSGM,NTGM),GZ(NSGM,NTGM)
       DIMENSION GRS(NTGMP),GZS(NTGMP)
@@ -358,7 +370,11 @@
       SUBROUTINE EQGS1D(MODE)
 
       USE libspl1d
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN) :: MODE
 
       DIMENSION GX(NRM),GY(NRM,6)
@@ -818,7 +834,11 @@
 !
       SUBROUTINE EQGS2D
 
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       DIMENSION GR(NTHMP),GZ(NTHMP)
       REAL,DIMENSION(:,:),ALLOCATABLE:: GPSIRZ,GDPSIDR,GDPSIDZ
@@ -1118,7 +1138,11 @@
 !
       SUBROUTINE EQGSDD
 
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       DIMENSION GF(NRM,NTHM),GR(NRM,NTHM),GZ(NRM,NTHM)
       DIMENSION GRSU(NSUM),GZSU(NSUM)
@@ -1290,7 +1314,11 @@
 !
       SUBROUTINE EQGSBB
 
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       DIMENSION GF(NRM,NTHM),GR(NRM,NTHM),GZ(NRM,NTHM)
       DIMENSION GRSU(NSUM),GZSU(NSUM)
@@ -1421,7 +1449,11 @@
 !
       SUBROUTINE EQGPRM
 
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       REAL*4 XPOS,YPOS,DELY
 
@@ -1656,7 +1688,11 @@
 !
       SUBROUTINE EQGC1M
 
-      INCLUDE 'eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       DIMENSION GX(NXM),GYPS(NXM,5)
 
@@ -1711,7 +1747,11 @@
 !
       SUBROUTINE EQGSRP
 
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       DIMENSION GR(NTHMP),GZ(NTHMP)
       DIMENSION GRG(NRGM),GZG(NZGM)

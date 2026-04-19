@@ -15,7 +15,11 @@
       SUBROUTINE EQCALV(IERR)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       DIMENSION XA(NTVM),YA(2,NTVM)
@@ -134,7 +138,11 @@
       FUNCTION EQPSITN(PSIPNL)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: PSIPNL
       REAL*8 :: EQPSITN
 
@@ -151,7 +159,11 @@
       FUNCTION EQQPV(PSIPNL)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: PSIPNL
       REAL*8 :: EQQPV
 
@@ -169,7 +181,11 @@
       FUNCTION EQTTV(PSIPNL)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN) :: PSIPNL
       REAL*8 :: EQTTV
 
@@ -186,7 +202,11 @@
       SUBROUTINE EQIPJP
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION DERIV(NRVM)
 
       FIPV(NRVMAX)=2.D0*PI*BB*RR
@@ -235,7 +255,11 @@
       SUBROUTINE EQIPQP
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       DIMENSION DERIV(NRVM)
 
       FIPV(NRVMAX)=2.D0*PI*BB*RR
@@ -292,7 +316,11 @@
       SUBROUTINE EQFIPV(PSIPNL,FIPL,DFIPL)
 
       USE libspl1d
-      INCLUDE '../eq/eqcomc.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom2_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(IN)  :: PSIPNL
       REAL*8, INTENT(OUT) :: FIPL, DFIPL
 

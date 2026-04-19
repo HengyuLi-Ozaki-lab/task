@@ -61,7 +61,10 @@
 !-----------------------------------------------------------------------
       SUBROUTINE eq_load(modelg1,knameq1,ierr)
 
-      INCLUDE '../eq/eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER,INTENT(IN):: modelg1
       CHARACTER(LEN=80),INTENT(IN):: knameq1
       INTEGER,INTENT(OUT):: ierr

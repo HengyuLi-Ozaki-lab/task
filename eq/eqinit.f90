@@ -14,7 +14,10 @@
 !
       SUBROUTINE EQINIT
 
-      INCLUDE '../eq/eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 !      INCLUDE '../pl/plcnst.inc'
 !
 !     ======( DEVICE PARAMETERS )======
@@ -406,7 +409,10 @@
 !
       SUBROUTINE EQNLIN(NID,IST,IERR)
 
-      INCLUDE 'eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NID
       INTEGER, INTENT(OUT) :: IST, IERR
 
@@ -474,7 +480,10 @@
 !     EQCHEK from eqcalc / eqcalq / etc.
       USE eqcom2_mod
       USE eqcom3_mod
-      INCLUDE 'eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
       IERR=0
@@ -537,7 +546,10 @@
 !
       SUBROUTINE EQVIEW
 
-      INCLUDE 'eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       WRITE(6,601) 'RR    ',RR, &
                    'RA    ',RA, &
