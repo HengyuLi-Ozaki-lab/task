@@ -126,6 +126,7 @@ ak : libs libeq.a $(OBJA)
 clean:
 	-rm -f core a.out *.o *.mod ./*~ *.a $(MOD)/*.mod
 	-rm -f doc/*~
+	-rm -f $(EQ_API_NEG_O) $(EQ_API_NEG_BIN)
 
 veryclean: clean
 	rm -f eq pl ak
@@ -170,6 +171,7 @@ libeq_pic.a: $(OBJS_PIC)
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libeq_pic.a libeqapi.so
 	-rm -f $(EQ_API_SO_O) $(EQ_API_SO_BIN)
+	-rm -f $(EQ_API_NEG_O) $(EQ_API_NEG_BIN)
 
 # Phase F-5: shim .inc headers (eqcom{c,m,q,x}.inc) deleted. Every
 # consumer now USEs the F-1 MODULEs (eqcom0/1/2/3_mod) directly. The
@@ -482,3 +484,37 @@ eq_api_check_so: libeqapi.so $(EQ_API_SO_BIN)
 	@echo "Phase L-4 eq_api_check_so: dlopen libeqapi.so + full cycle ..."
 	@EQLIB_PATH=$(CURDIR)/libeqapi.so $(EQ_API_SO_BIN)
 	@echo "Phase L-4 eq_api_check_so OK"
+
+# ---------------------------------------------------------------------
+# Phase L-6: Layer 2 (C ABI) test suite
+#
+# Builds + runs the full C ABI test set in one shot so CI (via
+# test_run/run_tests.sh) can invoke a single target. Consists of:
+#
+#   test_smoke    - 4 entry points + L-3 set_param[_str] dispatch
+#                   (covers smoke + param-dispatch coverage)
+#   test_run_so   - dlopen libeqapi.so + full cycle             (L-4)
+#   test_negative - rejection contracts (pre-init, unknown name,
+#                   malformed PSIB, double-finalize, post-finalize,
+#                   re-init)                                     (L-6, new)
+#
+# The smoke driver links OBJ_API + libeq.a directly; the dlopen driver
+# uses libdl and loads libeqapi.so at runtime. The negative driver
+# shares the smoke link path (so it can call eq_init/etc. directly).
+# ---------------------------------------------------------------------
+EQ_API_NEG_C   = $(EQ_API_SMOKE_DIR)/test_negative.c
+EQ_API_NEG_O   = $(EQ_API_SMOKE_DIR)/test_negative.o
+EQ_API_NEG_BIN = $(EQ_API_SMOKE_DIR)/test_negative
+
+$(EQ_API_NEG_O): $(EQ_API_NEG_C) eq_api.h
+	$(CC) $(CFLAGS_API) -I. -c -o $(EQ_API_NEG_O) $(EQ_API_NEG_C)
+
+$(EQ_API_NEG_BIN): $(EQ_API_NEG_O) $(OBJ_API) libeq.a
+	$(FLINKER) -o $(EQ_API_NEG_BIN) $(EQ_API_NEG_O) $(OBJ_API) \
+	    $(LIBS2) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
+
+.PHONY: eq_api_check_all
+eq_api_check_all: eq_api_check eq_api_check_so $(EQ_API_NEG_BIN)
+	@echo "Phase L-6 eq_api_check_all: running negative tests ..."
+	@LD_LIBRARY_PATH=.:$${LD_LIBRARY_PATH} $(EQ_API_NEG_BIN)
+	@echo "Phase L-6 eq_api_check_all OK: smoke/param/run_so/negative"
