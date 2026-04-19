@@ -121,6 +121,9 @@ jobs:
           make -C pl libpl_pic.a
           make -C dp libdp_pic.a
           make -C ob libob_pic.a
+          # adf11 + adpost are needed by ti (USEs adf11 in tiadas.f90)
+          make -C open-adas/adf11/adf11-lib lib-adf11_pic.a
+          make -C adpost lib-adpost_pic.a
 
       - name: Build module shared libraries (.so)
         # Each libXapi.so excludes graphics so X11 is not linked. Build
