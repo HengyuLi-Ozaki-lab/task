@@ -72,7 +72,7 @@ def main(argv: "list[str] | None" = None) -> int:
     print(f"{'eq:RR':>6} {'eq:BB':>6} {'WPT':>14}")
     for rr, bb, wpt in rows:
         if math.isnan(wpt):
-            print(f"{rr:6.2f} {bb:6.2f} {'(stub: NOT_IMPL)':>14}")
+            print(f"{rr:6.2f} {bb:6.2f} {'NOT_IMPL':>14}")
         else:
             print(f"{rr:6.2f} {bb:6.2f} {wpt:14.6g}")
     return 0
