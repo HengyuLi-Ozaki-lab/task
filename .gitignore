@@ -9,6 +9,10 @@
 *.data
 *.i
 *.in
+
+# Test fixtures are intentionally tracked so equivalence regression
+# tests are reproducible without needing licensed ADAS data files.
+!test_run/fixtures/*.data
 *.optrpt
 *.aux
 *.log
