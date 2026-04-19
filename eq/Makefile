@@ -37,12 +37,17 @@ SRCS_CORE = eqcom0_mod.f90 eqcom1_mod.f90 eqcom2_mod.f90 eqcom3_mod.f90 \
             eqbpsd.f90 eqinit.f90 eqcalc.f90 eqcalq.f90 eqcalv.f90 \
             eqsub.f90 eqfunc.f90 eqintf.f90 eqsplf.f90 equintf.f90 \
             eq-eqdsk.f90 eq-qst.f90 eqgetp.f90 eqregress.f \
-            newton.f90 invematrix.f90 equnit.f90 eqrppl.f90
+            newton.f90 invematrix.f90 equnit.f90 eqrppl.f90 \
+            eqfile.f90
 
-# --- graphics (GSAF plotting, contour; eqfile uses GUCLIP) ---
+# --- graphics (GSAF plotting, contour) ---
 # Note: eqg2d.f / eqg3d.f remain in SRC2D / SRC3D below.
+# eqfile.f90 used to live here because draw_cross calls MOVE2D / DRAW2D,
+# but EQLOAD / EQSAVE / EQ_READ are needed by libeqapi.so (eq_api_run
+# routes MODE=1 through equnit::eq_load -> eqload). draw_cross's two
+# graphics calls are stubbed in eq_graphics_stubs.f90 as no-ops.
 # Phase F-2: eqgsub converted to free-form .f90.
-SRCS_GRAPHICS = eqgout.f90 eqgsub.f90 eqfile.f90
+SRCS_GRAPHICS = eqgout.f90 eqgsub.f90
 
 # --- interactive menu driver (depends on graphics) ---
 SRCS_MENU = eqmenu.f90
@@ -434,16 +439,12 @@ $(OBJDIR_PIC)/eq_api.o:            $(OBJDIR_PIC)/eq_state.o $(OBJDIR_PIC)/eq_par
 # --start-group / --end-group resolves the cyclic eq <-> pl references.
 # We deliberately drop $(FLIBS) from the link: FLIBS pulls in non-PIC
 # graphics archives (libg3d/libgsp/libgdp) via GFLIBS. libeqapi.so
-# excludes SRCS_GRAPHICS/SRCS_MENU so none of the gsaf calls are
-# reachable; leaving GFLIBS in triggers R_X86_64_PC32 relocation errors
-# when ld tries to copy non-PIC .text from libg3d-gfc64.a into the .so.
-# --unresolved-symbols=ignore-all lets any stray references into
-# libpl_pic.a/libeq_pic.a (e.g. plgout-side symbols and the GSAF
-# text_/move_/gdefin_ symbols that libgrf_pic's grfutils.o references
-# but our .so does not reach) stay deferred to dlopen time; the dlopen
-# driver uses RTLD_LAZY so those are only resolved if actually called,
-# which never happens on the eq_init -> eq_run -> eq_get_state ->
-# eq_finalize happy path.
+# excludes SRCS_GRAPHICS (eqgout/eqgsub) and SRCS_MENU so none of the
+# gsaf calls are reachable; leaving GFLIBS in triggers R_X86_64_PC32
+# relocation errors when ld tries to copy non-PIC .text from
+# libg3d-gfc64.a into the .so. eqfile.f90 was moved into SRCS_CORE
+# (only its draw_cross calls MOVE2D / DRAW2D, both stubbed in
+# eq_graphics_stubs.f90) so EQLOAD is now defined in the .so.
 libeqapi.so: $(OBJ_LIBEQAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC)
 	$(FCFREE) -shared -fPIC -Wl,-soname,libeqapi.so \
 	    -Wl,--unresolved-symbols=ignore-all \

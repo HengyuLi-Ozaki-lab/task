@@ -17,6 +17,11 @@ import warnings
 # Scalar parameters that ``eq_param_registry`` accepts via
 # ``eq_set_param``. Values copied verbatim from eq/in/eq.ITER01.in.
 SCALARS = {
+    # MODELG=3 selects EQRTSK (TASK/EQ binary file format) per
+    # eq/eqfile.f90:108 (EQ_READ dispatch). The .in menu-driven flow
+    # implicitly selects this via the 'r' command after typing 'f';
+    # the C ABI bypasses the menu so we set MODELG explicitly here.
+    "MODELG": 3,
     "RR":   6.2,
     "RA":   2.0,
     "RKAP": 1.7,

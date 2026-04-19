@@ -75,6 +75,11 @@ class EqStateC(ctypes.Structure):
         ("nrmax", ctypes.c_int),
         ("nthmax", ctypes.c_int),
         ("nsumax", ctypes.c_int),
+        # NRVMAX = volume-grid count; NSGMAX/NTGMAX = orthogonal
+        # curvilinear PSI(s,t) grid (eqcom1_mod).
+        ("nrvmax", ctypes.c_int),
+        ("nsgmax", ctypes.c_int),
+        ("ntgmax", ctypes.c_int),
         # --- plasma scalars (EQGLB1 / EQGLB2) ---
         ("raxis", ctypes.c_double),
         ("zaxis", ctypes.c_double),
@@ -96,6 +101,15 @@ class EqStateC(ctypes.Structure):
         # --- R / Z grid coordinates ---
         ("rg", ctypes.c_double * EQ_MAX_NRGM),
         ("zg", ctypes.c_double * EQ_MAX_NZGM),
+        # --- per-NR flux-surface profile (1..nrmax). Mirrors the 7
+        # columns the Phase 0 baseline writes via eqregress.f. ---
+        ("profile_psip", ctypes.c_double * EQ_MAX_NRM),
+        ("profile_psit", ctypes.c_double * EQ_MAX_NRM),
+        ("profile_pps",  ctypes.c_double * EQ_MAX_NRM),
+        ("profile_tts",  ctypes.c_double * EQ_MAX_NRM),
+        ("profile_qps",  ctypes.c_double * EQ_MAX_NRM),
+        ("profile_vps",  ctypes.c_double * EQ_MAX_NRM),
+        ("profile_rst",  ctypes.c_double * EQ_MAX_NRM),
     ]
 
 

@@ -78,19 +78,21 @@ class TestEqStateCLayout(unittest.TestCase):
             self.assertIn(n, names, f"missing field {n}")
 
     def test_size_matches_header_math(self):
-        # 6 ints + 12 doubles + 4*NPSM + 2*NRGM doubles.
-        # Compilers may pad the 6 ints (24 bytes) up to 32 to align the
-        # following double; accept either.
+        # 9 ints (6 grid counters + 3 secondary nrvmax/nsgmax/ntgmax) +
+        # 12 doubles + 4*NPSM + NRGM + NZGM + 7*NRM doubles.
+        # 9 ints = 36 bytes; compilers may pad to 40 to align the
+        # following double, accept either.
         nps = _ffi.EQ_MAX_NPSM
         nrg = _ffi.EQ_MAX_NRGM
         nzg = _ffi.EQ_MAX_NZGM
-        exp_doubles = 8 * (12 + 4 * nps + nrg + nzg)
+        nrm = _ffi.EQ_MAX_NRM
+        exp_doubles = 8 * (12 + 4 * nps + nrg + nzg + 7 * nrm)
         sz = ctypes.sizeof(_ffi.EqStateC)
         self.assertIn(
             sz,
-            (24 + exp_doubles, 32 + exp_doubles),
+            (36 + exp_doubles, 40 + exp_doubles),
             f"unexpected EqStateC size {sz}; "
-            f"expected {24 + exp_doubles} or {32 + exp_doubles}",
+            f"expected {36 + exp_doubles} or {40 + exp_doubles}",
         )
 
     def test_array_dimensions(self):
