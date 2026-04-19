@@ -143,9 +143,16 @@ jobs:
         # Actions bash) ensures that.
         run: |
           set -e
+          # fp has an intra-module PIC dep gap: fploop USEs fpregress
+          # but the dep is only declared for OBJDIR (non-PIC), not
+          # OBJDIR_PIC. Pre-build fpregress.o explicitly so fploop.o
+          # finds the mod. Worth fixing in fp/Makefile in a follow-up.
           for mod in tr fp ti wr wrx eq tot; do
             echo "::group::Building $mod/lib${mod}api.so"
             make -C "$mod" bpsd_pic
+            if [[ "$mod" == "fp" ]]; then
+              make -C fp obj/pic/fpregress.o
+            fi
             make -C "$mod" "lib${mod}api.so"
             echo "::endgroup::"
           done
