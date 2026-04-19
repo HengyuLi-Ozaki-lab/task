@@ -73,14 +73,18 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION eq_api_init() RESULT(ierr) BIND(C, NAME="eq_init")
     INTEGER(C_INT) :: ierr
+    ! Populate the eq COMMON defaults (NRMAX=50, NTHMAX=64, NSUMAX=65,
+    ! MODELG=2, KNAMEQ='eqdata', ...). The C-ABI is the SOLE entry
+    ! point in the libeqapi.so context (no eq menu driver runs), so
+    ! these defaults MUST be set here -- otherwise NRMAX/NTHMAX stay 0
+    ! and equnit::eq_load's save/restore of those counters around
+    ! eqload() leaves the post-load grid sized 0, which then corrupts
+    ! the heap inside SPL2D in eqcalq (eqcalq.f90:1041). Callers can
+    ! still override MODELG / KNAMEQ / etc. afterwards via
+    ! eq_set_param / eq_set_param_str.
+    CALL equnit_eq_init
     g_initialized = .TRUE.
     ierr = EQ_OK
-    ! Touch the rename to keep the import "used" under strict checkers
-    ! without actually running equnit::eq_init at L-2 (that would
-    ! clobber COMMON defaults set up by the normal eq driver). The
-    ! expression is a no-op: equnit_eq_init is a SUBROUTINE handle,
-    ! and `.FALSE.` has no side effects.
-    IF (.FALSE.) CALL equnit_eq_init
   END FUNCTION eq_api_init
 
   !-------------------------------------------------------------------
@@ -206,6 +210,7 @@ CONTAINS
     INTEGER(C_INT) :: ierr
     INTEGER :: nrgmax_c, nzgmax_c, npsmax_c
     INTEGER :: nrmax_c,  nthmax_c, nsumax_c
+    INTEGER :: nrvmax_c, nsgmax_c, ntgmax_c
     REAL(C_DOUBLE) :: raxis_v, zaxis_v, psi0_v, psipa_v, psita_v
     REAL(C_DOUBLE) :: qaxis_v, qsurf_v, betat_v, betap_v
     REAL(C_DOUBLE) :: pvol_v,  raave_v, ripx_v
@@ -218,6 +223,9 @@ CONTAINS
     state%nrmax  = 0
     state%nthmax = 0
     state%nsumax = 0
+    state%nrvmax = 0
+    state%nsgmax = 0
+    state%ntgmax = 0
     state%raxis  = 0.0_C_DOUBLE
     state%zaxis  = 0.0_C_DOUBLE
     state%psi0   = 0.0_C_DOUBLE
@@ -254,6 +262,13 @@ CONTAINS
     state%nrmax  = nrmax_c
     state%nthmax = nthmax_c
     state%nsumax = nsumax_c
+
+    ! Secondary counters (NRVMAX/NSGMAX/NTGMAX) needed to mirror the
+    ! Phase 0 baseline metrics for MODELG=3 EQRTSK loads.
+    CALL EQ_COMMON_GET_AUX_GRID_COUNTS(nrvmax_c, nsgmax_c, ntgmax_c)
+    state%nrvmax = nrvmax_c
+    state%nsgmax = nsgmax_c
+    state%ntgmax = ntgmax_c
 
     ! Pull scalar plasma parameters.
     CALL EQ_COMMON_GET_SCALARS(raxis_v, zaxis_v, psi0_v, psipa_v, &

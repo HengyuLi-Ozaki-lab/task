@@ -71,6 +71,25 @@ C     ------------------------------------------------------------------
       END
 
 C     ------------------------------------------------------------------
+C     Return the secondary grid counters: NRVMAX (radial / volume),
+C     NSGMAX (s grid for ortho-curvilinear PSI(s,t)) and NTGMAX
+C     (theta grid). These live in eqcom1_mod alongside NRGMAX etc.
+C     and are needed by the Layer 1 baseline metrics for MODELG=3
+C     (EQRTSK) loads.
+C     ------------------------------------------------------------------
+      SUBROUTINE EQ_COMMON_GET_AUX_GRID_COUNTS(NRVMAX_OUT,
+     &                                         NSGMAX_OUT,
+     &                                         NTGMAX_OUT)
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
+      INTEGER NRVMAX_OUT, NSGMAX_OUT, NTGMAX_OUT
+      NRVMAX_OUT = NRVMAX
+      NSGMAX_OUT = NSGMAX
+      NTGMAX_OUT = NTGMAX
+      RETURN
+      END
+
+C     ------------------------------------------------------------------
 C     Scalar plasma parameters from EQGLB1 / EQGLB2 / EQGLB4.
 C     ------------------------------------------------------------------
       SUBROUTINE EQ_COMMON_GET_SCALARS(RAXIS_OUT, ZAXIS_OUT,

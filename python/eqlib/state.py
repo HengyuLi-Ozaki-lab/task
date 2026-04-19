@@ -51,6 +51,9 @@ class EqState:
     nrmax: int
     nthmax: int
     nsumax: int
+    nrvmax: int = 0
+    nsgmax: int = 0
+    ntgmax: int = 0
     scalars: Dict[str, float] = field(default_factory=dict)
     rg: List[float] = field(default_factory=list)
     zg: List[float] = field(default_factory=list)
@@ -78,6 +81,9 @@ class EqState:
             nrmax=int(s.nrmax),
             nthmax=int(s.nthmax),
             nsumax=int(s.nsumax),
+            nrvmax=int(s.nrvmax),
+            nsgmax=int(s.nsgmax),
+            ntgmax=int(s.ntgmax),
             scalars=scalars,
             rg=[float(s.rg[i]) for i in range(nrg)],
             zg=[float(s.zg[i]) for i in range(nzg)],
@@ -102,6 +108,9 @@ class EqState:
             "NRMAX": self.nrmax,
             "NTHMAX": self.nthmax,
             "NSUMAX": self.nsumax,
+            "NRVMAX": self.nrvmax,
+            "NSGMAX": self.nsgmax,
+            "NTGMAX": self.ntgmax,
             "scalars": {k.upper(): v for k, v in self.scalars.items()},
             "RG": list(self.rg),
             "ZG": list(self.zg),

@@ -75,6 +75,11 @@ class EqStateC(ctypes.Structure):
         ("nrmax", ctypes.c_int),
         ("nthmax", ctypes.c_int),
         ("nsumax", ctypes.c_int),
+        # NRVMAX = volume-grid count; NSGMAX/NTGMAX = orthogonal
+        # curvilinear PSI(s,t) grid (eqcom1_mod).
+        ("nrvmax", ctypes.c_int),
+        ("nsgmax", ctypes.c_int),
+        ("ntgmax", ctypes.c_int),
         # --- plasma scalars (EQGLB1 / EQGLB2) ---
         ("raxis", ctypes.c_double),
         ("zaxis", ctypes.c_double),
