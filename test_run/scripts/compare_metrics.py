@@ -47,6 +47,15 @@ def _rel_err(a: float, b: float) -> float:
     return abs(a - b) / denom
 
 
+# When BOTH values are below this magnitude we treat the comparison as
+# "near-zero" and require only that the absolute difference fits within
+# this same threshold, instead of relative error. Without this, e.g. a
+# ZAXIS that should be exactly 0.0 but converges to -2e-15 vs -2e-13
+# (both essentially zero) FAILS with rel_err ~1.0 even though both are
+# within machine epsilon for the typical magnitude scale.
+_NEAR_ZERO_THRESHOLD = 1e-10
+
+
 def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> None:
     if math.isnan(bv) or math.isnan(av):
         out.append(f"{label}: NaN (baseline={bv} actual={av})")
@@ -54,6 +63,15 @@ def _check_scalar(label: str, bv: float, av: float, tol: float, out: list) -> No
     if math.isinf(bv) or math.isinf(av):
         if bv != av:
             out.append(f"{label}: Inf mismatch (baseline={bv} actual={av})")
+        return
+    # Near-zero short-circuit: when both values are below the near-zero
+    # threshold, fall back to absolute-error comparison (the value is
+    # effectively a representation of mathematical zero and rel_err is
+    # not meaningful).
+    if abs(bv) < _NEAR_ZERO_THRESHOLD and abs(av) < _NEAR_ZERO_THRESHOLD:
+        abs_diff = abs(av - bv)
+        if abs_diff > _NEAR_ZERO_THRESHOLD:
+            out.append(f"{label}: near-zero abs_diff={abs_diff:.3e} > {_NEAR_ZERO_THRESHOLD:.3e} (baseline={bv!r} actual={av!r})")
         return
     e = _rel_err(bv, av)
     if e > tol:
