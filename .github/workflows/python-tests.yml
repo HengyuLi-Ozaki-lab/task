@@ -45,9 +45,22 @@ jobs:
         # All module Makefiles reference BPSD_SRC=../../bpsd; the BPSD
         # source lives at https://github.com/ats-fukuyama/bpsd and is
         # not vendored into this repo.
+        #
+        # We apply docs/external-patches/bpsd/bpsd-species-kid-oob-fix.patch
+        # to the freshly-cloned BPSD because upstream still has a
+        # heap-corruption bug at bpsd_species.f90:38 (off-by-one OOB write
+        # in the kid array). Without the patch the libtrapi.so test
+        # process SIGABRTs as soon as it tries to free the smashed chunk.
+        # Once upstream merges the fix, this `git apply` step can be
+        # dropped (and the docs/external-patches/bpsd/ directory cleaned).
         run: |
           git clone --depth 1 https://github.com/ats-fukuyama/bpsd.git \
             "$GITHUB_WORKSPACE/../bpsd"
+          if [[ -f docs/external-patches/bpsd/bpsd-species-kid-oob-fix.patch ]]; then
+            git -C "$GITHUB_WORKSPACE/../bpsd" apply \
+              "$GITHUB_WORKSPACE/docs/external-patches/bpsd/bpsd-species-kid-oob-fix.patch"
+            echo "BPSD species kid OOB patch applied."
+          fi
           ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
 
       - name: Provision mtxp/make.mtxp from nompi template
