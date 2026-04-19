@@ -98,6 +98,17 @@ jobs:
           # tomli is needed only on <3.11; keep installed for safety on 3.11 too.
           pip install tomli
 
+      - name: Build PIC support libraries (lib + mtxp)
+        # Pre-build the shared support libraries so that module Makefiles
+        # find libitp.mod, libtask_pic.a, libmtxbnd_pic.o etc. in their
+        # respective mod_pic/ dirs before compiling module sources.
+        # Without this, `make -C tr libtrapi.so` aborts at trncls.o with
+        # "Cannot open module file 'libitp.mod'".
+        run: |
+          set -e
+          make -C lib libtask_pic.a libgrf_pic.a libmds_pic.a
+          make -C mtxp libmtxnompi_pic.o libmtxbnd_pic.o
+
       - name: Build module shared libraries (.so)
         # Each libXapi.so excludes graphics so X11 is not linked. Build
         # order is enforced by each Makefile's libs_pic prerequisite
