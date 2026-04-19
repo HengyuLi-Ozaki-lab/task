@@ -104,6 +104,12 @@ jobs:
         # chain (lib_pic -> mtxp_pic -> pl_pic -> eq_pic -> dp_pic /
         # ob_pic -> module .so).
         #
+        # We invoke `bpsd_pic` BEFORE the .so target on each module
+        # because individual objects like obj/pic/trcom0.o use
+        # bpsd_kinds.mod but don't explicitly depend on it; without an
+        # explicit prior bpsd_pic step, sequential make fails with
+        # "Cannot open module file 'bpsd_kinds.mod'".
+        #
         # IMPORTANT: tot MUST come last in this loop. tot/Makefile:378
         # links libtotapi.so against ../eq/libeqapi.so + ../tr/libtrapi.so
         # + ../fp/libfpapi.so, so those .so files must already exist.
@@ -115,6 +121,7 @@ jobs:
           set -e
           for mod in tr fp ti wr wrx eq tot; do
             echo "::group::Building $mod/lib${mod}api.so"
+            make -C "$mod" bpsd_pic
             make -C "$mod" "lib${mod}api.so"
             echo "::endgroup::"
           done
