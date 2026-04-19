@@ -64,6 +64,7 @@ typedef struct {
 int fp_init(void);
 int fp_run(int ntmax);
 int fp_set_param(const char* name, double value);
+int fp_set_param_str(const char* name, const char* value);
 int fp_get_state(fp_state_t* state);
 int fp_finalize(void);
 

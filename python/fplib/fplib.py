@@ -93,6 +93,24 @@ class Fplib:
         )
         raise_for_rc(f"fp_set_param('{name}', {value})", rc)
 
+    def set_param_str(self, name: str, value: str) -> None:
+        """Set a string-valued parameter (e.g. ``KNAMEQ``).
+
+        Required for MODELG=3 fixtures that need to point fp at a
+        specific equilibrium-data file. Mirrors trlib's set_param_str.
+        """
+        if self._closed:
+            raise FplibError("set_param_str on closed Fplib")
+        if not hasattr(self._lib, "fp_set_param_str"):
+            raise FplibError(
+                "fp_set_param_str not available in libfpapi.so "
+                "(rebuild fp/libfpapi.so to pick up the symbol)"
+            )
+        rc = self._lib.fp_set_param_str(
+            name.encode("ascii"), value.encode("ascii")
+        )
+        raise_for_rc(f"fp_set_param_str('{name}', '{value}')", rc)
+
     def set_params(self, **kwargs) -> None:
         """Bulk-set parameters by keyword.
 

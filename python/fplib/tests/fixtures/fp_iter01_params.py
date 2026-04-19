@@ -25,7 +25,11 @@ SCALARS = {
     "NTMAX":  2,
     "NPMAX":  50,
     "NTHMAX": 50,
-    "MODELG": 3,
+    # MODELG omitted — fp_iter01.in does not set it, so the original
+    # Phase 0 baseline ran with the pl_init default (MODELG=2,
+    # analytical equilibrium). Setting MODELG=3 here triggered the
+    # eq_load file path with a missing KNAMEQ default (='eqdata') and
+    # produced silent-NaN cascades through BESEKNX.
     "MODELR": 1,
     "DELT":   1.0e-3,
     "NSAMAX": 1,
@@ -45,12 +49,16 @@ ARRAYS = {
     "PNS":   [0.01, 0.005, 0.005],
     "PTPR":  [20.0, 20.0, 20.0],
     "PTPP":  [20.0, 20.0, 20.0],
-    # PMAX is scalar broadcast in the namelist (PMAX=10.D0) -> apply to
-    # all three species explicitly.
-    "PMAX":  [10.0, 10.0, 10.0],
-    # MODELC is scalar broadcast in the namelist (MODELC=4) -> apply to
-    # all three species explicitly.
-    "MODELC": [4, 4, 4],
+    # Fortran namelist semantics: a bare `PMAX=10.D0` assigns ONLY
+    # PMAX(1)=10; PMAX(2..NSMAX) keep their fp_init defaults (0.0).
+    # Writing [10,10,10] here broadcast to all species and shifted the
+    # NSB=2,3 momentum-mesh DELP (fp/fpprep.f90:181), drifting collision
+    # integrals away from the baseline.
+    "PMAX":   {1: 10.0},
+    # Same Fortran namelist rule: MODELC=4 sets MODELC(1)=4 only;
+    # MODELC(2..NSMAX) stay at default 0 (different collision-operator
+    # branch in fp/fpparm.f90:929).
+    "MODELC": {1: 4},
     # NS_NSA(1)=1
     "NS_NSA": {1: 1},
     # NS_NSB(1)=1, NS_NSB(2)=2, NS_NSB(3)=3

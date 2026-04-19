@@ -35,7 +35,7 @@ MODULE fp_api
        NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2, TIMEFP, &
        NTMAX, &
        RNT, RWT, RTT, RJT, RPCT, RPWT
-  USE fp_param_registry, ONLY: fp_param_set
+  USE fp_param_registry, ONLY: fp_param_set, fp_param_set_str
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE obinit,            ONLY: ob_init
@@ -46,7 +46,7 @@ MODULE fp_api
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: fp_api_init, fp_api_run, fp_api_get_state, &
-            fp_api_set_param, fp_api_finalize
+            fp_api_set_param, fp_api_set_param_str, fp_api_finalize
 
   ! Error codes (must match fp_api.h enum):
   !   0 = OK
@@ -84,6 +84,20 @@ CONTAINS
     END IF
 
     CALL mtx_initialize
+    ! Mirror fpmain.f90:41 — open the scratch unit that lib/libkio.f90
+    ! hard-codes (WRITE(7)/REWIND(7)) for inline-namelist parsing
+    ! used by fp_prep / eq_load chains. Same fix pattern as
+    ! tr/tr_api.f90 (PR #103); without it, MODELG=3 fixtures
+    ! (e.g. fp_iter01) corrupt geometry state silently and produce
+    ! NaN profile.RJT.
+    BLOCK
+       INTEGER :: ios
+       OPEN(7, STATUS='SCRATCH', FORM='FORMATTED', IOSTAT=ios)
+       IF (ios /= 0) THEN
+          ierr = FP_ERR_CALC_FAILED
+          RETURN
+       END IF
+    END BLOCK
     CALL pl_init
     CALL eq_init
     CALL ob_init
@@ -128,6 +142,47 @@ CONTAINS
        ierr = FP_OK
     END IF
   END FUNCTION fp_api_set_param
+
+  !-------------------------------------------------------------------
+  ! fp_set_param_str : string-valued parameter setter (KNAMEQ, ...).
+  !
+  ! Mirrors tr/tr_api.f90::tr_api_set_param_str (PR #103). Required
+  ! for any future MODELG=3 fp fixture so the caller can set the
+  ! equilibrium-data file name; without this the default
+  ! KNAMEQ='eqdata' is missing in cwd, eq_load fails, and downstream
+  ! BESEKNX trips with NCALC=-2.
+  !-------------------------------------------------------------------
+  FUNCTION fp_api_set_param_str(name, value) RESULT(ierr) BIND(C, NAME="fp_set_param_str")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: value
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=64)  :: fname
+    CHARACTER(LEN=128) :: fvalue
+    INTEGER :: i
+
+    IF (.NOT. g_initialized) THEN
+       ierr = FP_ERR_NOT_INIT
+       RETURN
+    END IF
+
+    fname = ' '
+    DO i = 1, LEN(fname)
+       IF (name(i) == C_NULL_CHAR) EXIT
+       fname(i:i) = name(i)
+    END DO
+    fvalue = ' '
+    DO i = 1, LEN(fvalue)
+       IF (value(i) == C_NULL_CHAR) EXIT
+       fvalue(i:i) = value(i)
+    END DO
+
+    IF (fp_param_set_str(TRIM(fname), TRIM(fvalue)) /= 0) THEN
+       ierr = FP_ERR_INVALID
+    ELSE
+       g_prepared = .FALSE.
+       ierr = FP_OK
+    END IF
+  END FUNCTION fp_api_set_param_str
 
   !-------------------------------------------------------------------
   ! fp_run : advance the simulation by ntmax_in steps.
@@ -275,6 +330,9 @@ CONTAINS
     END IF
 
     CALL mtx_finalize
+    ! Pair with the OPEN(7) in fp_api_init so re-init after finalize
+    ! does not try to OPEN an already-open unit.
+    CLOSE(7, IOSTAT=ierr)
 
     g_initialized = .FALSE.
     g_prepared    = .FALSE.
