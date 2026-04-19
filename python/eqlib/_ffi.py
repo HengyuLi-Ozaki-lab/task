@@ -1,0 +1,213 @@
+"""Low-level ctypes FFI for libeqapi.so.
+
+Mirrors ``eq/eq_api.h`` (C ABI). Higher-level helpers live in
+``eqlib.py``; this module intentionally exposes only raw ctypes objects
+so tests can exercise the boundary directly.
+
+Library-path resolution order (first match wins):
+
+1. explicit ``path`` argument to :func:`load_library`
+2. ``EQLIB_PATH`` environment variable
+3. ``<repo>/eq/libeqapi.so`` (standard L-4 build location)
+4. ``<repo>/lib/libeqapi.so`` (install-style location, future-proofing)
+
+The package layout is ``python/eqlib/_ffi.py`` so the repository root is
+two parents above this file (``__file__.parents[2]``).
+"""
+from __future__ import annotations
+
+import ctypes
+import os
+from pathlib import Path
+from typing import Optional
+
+# Optional numpy (we never require it; state.py uses lists).
+try:
+    import numpy as _np  # noqa: F401
+    HAS_NUMPY = True
+except ImportError:  # pragma: no cover - numpy is optional
+    HAS_NUMPY = False
+
+
+# ---------------------------------------------------------------------
+# Layout constants. Must match eq/eq_api.h exactly.
+# Source of truth: eq/eqcom0.inc (NRGM=513, NZGM=513, NPSM=513,
+# NRM=1001, NTHM=2049, NSUM=1343).
+# ---------------------------------------------------------------------
+EQ_MAX_NRGM = 513
+EQ_MAX_NZGM = 513
+EQ_MAX_NPSM = 513
+EQ_MAX_NRM = 1001
+EQ_MAX_NTHM = 2049
+EQ_MAX_NSUM = 1343
+
+
+# ---------------------------------------------------------------------
+# Error codes (kept in sync with eq_api.h::enum eq_error).
+# ---------------------------------------------------------------------
+EQ_OK = 0
+EQ_ERR_INVALID = 1
+EQ_ERR_NOT_INIT = 2
+EQ_ERR_CALC_FAILED = 3
+EQ_ERR_NOT_IMPL = 4
+
+
+# ---------------------------------------------------------------------
+# ctypes mirror of eq_state_t from eq/eq_api.h.
+#
+# Phase L-2/L-3 ABI populates 6 grid counters, 12 plasma scalars, and
+# 6 fixed-size 1D arrays (4 psi-surface profiles + R/Z grid). Larger
+# 2D arrays (PSIRZ, RPS, ZPS) are not part of the C struct as of the
+# L-4 build; if added later, append them here in the same order as
+# the C header.
+#
+# Memory-layout note: Fortran-side declarations use the same C-ABI
+# struct via ``BIND(C)`` in eq/eq_state.f90, so byte layout is
+# guaranteed identical when compiled with the same iso_c_binding
+# kinds (C_INT == c_int, C_DOUBLE == c_double).
+# ---------------------------------------------------------------------
+class EqStateC(ctypes.Structure):
+    _fields_ = [
+        # --- grid counters (active runtime values, not EQ_MAX_*) ---
+        ("nrgmax", ctypes.c_int),
+        ("nzgmax", ctypes.c_int),
+        ("npsmax", ctypes.c_int),
+        ("nrmax", ctypes.c_int),
+        ("nthmax", ctypes.c_int),
+        ("nsumax", ctypes.c_int),
+        # --- plasma scalars (EQGLB1 / EQGLB2) ---
+        ("raxis", ctypes.c_double),
+        ("zaxis", ctypes.c_double),
+        ("psi0", ctypes.c_double),
+        ("psipa", ctypes.c_double),
+        ("psita", ctypes.c_double),
+        ("qaxis", ctypes.c_double),
+        ("qsurf", ctypes.c_double),
+        ("betat", ctypes.c_double),
+        ("betap", ctypes.c_double),
+        ("pvol", ctypes.c_double),
+        ("raave", ctypes.c_double),
+        ("ripx", ctypes.c_double),
+        # --- 1D psi-surface profiles (sampled at 1..npsmax) ---
+        ("psips", ctypes.c_double * EQ_MAX_NPSM),
+        ("ppps", ctypes.c_double * EQ_MAX_NPSM),
+        ("ttps", ctypes.c_double * EQ_MAX_NPSM),
+        ("qqps", ctypes.c_double * EQ_MAX_NPSM),
+        # --- R / Z grid coordinates ---
+        ("rg", ctypes.c_double * EQ_MAX_NRGM),
+        ("zg", ctypes.c_double * EQ_MAX_NZGM),
+    ]
+
+
+# ---------------------------------------------------------------------
+# Library loader.
+# ---------------------------------------------------------------------
+def _repo_root() -> Path:
+    """Return the repository root (two parents up from this file)."""
+    return Path(__file__).resolve().parents[2]
+
+
+def _candidate_paths() -> list:
+    """All library paths that :func:`load_library` will try in order."""
+    root = _repo_root()
+    return [root / "eq" / "libeqapi.so", root / "lib" / "libeqapi.so"]
+
+
+def _default_lib_path() -> Path:
+    """Resolve the default ``libeqapi.so`` path.
+
+    Honours ``EQLIB_PATH`` first; otherwise returns the first existing
+    candidate. If none exists, returns the canonical build location so
+    the error message from :func:`load_library` mentions it directly.
+    """
+    env = os.environ.get("EQLIB_PATH")
+    if env:
+        return Path(env)
+    for cand in _candidate_paths():
+        if cand.exists():
+            return cand
+    return _candidate_paths()[0]
+
+
+def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
+    """Attach argtypes / restype to the 6 exported C ABI symbols.
+
+    EQ exports one more entry than tr / ti: ``eq_set_param_str`` for
+    string-valued parameters such as ``KNAMEQ``. Older builds without
+    the string setter will lack the symbol; we attach it best-effort so
+    import does not fail there. Callers will get a clean
+    ``AttributeError`` on first use instead.
+    """
+    lib.eq_init.restype = ctypes.c_int
+    lib.eq_init.argtypes = []
+
+    lib.eq_run.restype = ctypes.c_int
+    lib.eq_run.argtypes = [ctypes.c_int]
+
+    lib.eq_set_param.restype = ctypes.c_int
+    lib.eq_set_param.argtypes = [ctypes.c_char_p, ctypes.c_double]
+
+    try:
+        lib.eq_set_param_str.restype = ctypes.c_int
+        lib.eq_set_param_str.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    except AttributeError:  # pragma: no cover - only on pre-L-3 builds
+        pass
+
+    lib.eq_get_state.restype = ctypes.c_int
+    lib.eq_get_state.argtypes = [ctypes.POINTER(EqStateC)]
+
+    lib.eq_finalize.restype = ctypes.c_int
+    lib.eq_finalize.argtypes = []
+    return lib
+
+
+# RTLD_LAZY: resolve symbols on first use rather than at dlopen. The
+# L-4 build of libeqapi.so retains a handful of symbols reachable only
+# from graphics-only code paths that the C ABI never calls (replaced
+# by stubs in eq_graphics_stubs.f90 but still possibly referenced from
+# legacy Fortran). Lazy binding defers resolution to first call, so
+# the 6 exported entry points load cleanly.
+_RTLD_LAZY = 1
+
+
+def load_library(path: Optional[str] = None) -> ctypes.CDLL:
+    """Load libeqapi.so and return the CDLL handle with prototypes applied.
+
+    Uses ``RTLD_LAZY`` because libeqapi.so may retain unresolved
+    symbols pointing into graphics-only call paths that the C ABI
+    never reaches.
+
+    Raises :class:`FileNotFoundError` with an actionable message when
+    the library is not where we looked.
+    """
+    p = Path(path) if path else _default_lib_path()
+    if not p.exists():
+        tried = [str(x) for x in _candidate_paths()]
+        raise FileNotFoundError(
+            f"libeqapi.so not found at {p}. "
+            f"Tried EQLIB_PATH and {tried}. "
+            "Build it via `make -C eq libeqapi.so` or set EQLIB_PATH."
+        )
+    # ctypes.RTLD_LAZY may not be defined on all Python builds; fall
+    # back to the numeric constant 1 which matches glibc dlfcn.h.
+    mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
+    lib = ctypes.CDLL(str(p), mode=mode)
+    return _apply_prototypes(lib)
+
+
+__all__ = [
+    "EQ_MAX_NRGM",
+    "EQ_MAX_NZGM",
+    "EQ_MAX_NPSM",
+    "EQ_MAX_NRM",
+    "EQ_MAX_NTHM",
+    "EQ_MAX_NSUM",
+    "EQ_OK",
+    "EQ_ERR_INVALID",
+    "EQ_ERR_NOT_INIT",
+    "EQ_ERR_CALC_FAILED",
+    "EQ_ERR_NOT_IMPL",
+    "EqStateC",
+    "HAS_NUMPY",
+    "load_library",
+]
