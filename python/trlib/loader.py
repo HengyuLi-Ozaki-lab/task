@@ -283,6 +283,12 @@ def _run_sweep_spec(spec: Mapping[str, Any], plot_mod: Any) -> Tuple[str, Any]:
             f"sweep 'range' must be [start, stop, n_samples]; got {rng!r}"
         )
     kw = _plot_kwargs(spec)
+    # Sweep-specific kwargs that _plot_kwargs (shared with regular plots)
+    # does not extract. Forward them only when the user supplied them.
+    if "ntmax" in spec:
+        kw["ntmax"] = spec["ntmax"]
+    if "base_params" in spec:
+        kw["base_params"] = spec["base_params"]
     descriptor = plot_mod.plot_sweep(param, y, range=rng, **kw)
     return (f"sweep:{param}->{y}", descriptor)
 

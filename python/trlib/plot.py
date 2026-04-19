@@ -316,7 +316,10 @@ def plot(
     if output == "return":
         return fig
     if output == "file":
-        out_path = Path(path) if path else Path(f"{canonical}.{format}")
+        # Default filename uses the user-requested varname (preserving
+        # aliases like "RNT") rather than the resolved canonical so the
+        # saved file matches what the caller asked for.
+        out_path = Path(path) if path else Path(f"{varname}.{format}")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path, format=format)
         plt.close(fig)
