@@ -84,6 +84,20 @@ CONTAINS
     END IF
 
     CALL mtx_initialize
+    ! Mirror fpmain.f90:41 — open the scratch unit that lib/libkio.f90
+    ! hard-codes (WRITE(7)/REWIND(7)) for inline-namelist parsing
+    ! used by fp_prep / eq_load chains. Same fix pattern as
+    ! tr/tr_api.f90 (PR #103); without it, MODELG=3 fixtures
+    ! (e.g. fp_iter01) corrupt geometry state silently and produce
+    ! NaN profile.RJT.
+    BLOCK
+       INTEGER :: ios
+       OPEN(7, STATUS='SCRATCH', FORM='FORMATTED', IOSTAT=ios)
+       IF (ios /= 0) THEN
+          ierr = FP_ERR_CALC_FAILED
+          RETURN
+       END IF
+    END BLOCK
     CALL pl_init
     CALL eq_init
     CALL ob_init
@@ -275,6 +289,9 @@ CONTAINS
     END IF
 
     CALL mtx_finalize
+    ! Pair with the OPEN(7) in fp_api_init so re-init after finalize
+    ! does not try to OPEN an already-open unit.
+    CLOSE(7, IOSTAT=ierr)
 
     g_initialized = .FALSE.
     g_prepared    = .FALSE.
