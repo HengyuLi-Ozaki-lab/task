@@ -214,7 +214,7 @@ CONTAINS
     REAL(C_DOUBLE) :: raxis_v, zaxis_v, psi0_v, psipa_v, psita_v
     REAL(C_DOUBLE) :: qaxis_v, qsurf_v, betat_v, betap_v
     REAL(C_DOUBLE) :: pvol_v,  raave_v, ripx_v
-    INTEGER :: ncopy_ps, nr_copy, nz_copy
+    INTEGER :: ncopy_ps, nr_copy, nz_copy, nprof_copy
 
     ! Always zero the struct so callers never see uninitialized memory.
     state%nrgmax = 0
@@ -281,8 +281,17 @@ CONTAINS
     ! columns the Phase 0 baseline writes via eqregress.f. Indexed
     ! 1..NRMAX is the active runtime slice; trailing entries up to
     ! EQ_MAX_NRM stay zero from the initialisation above.
-    IF (nrmax_c > 0) THEN
-       CALL EQ_COMMON_GET_PROFILE(nrmax_c, &
+    !
+    ! Bounds cap: the C-side state%profile_* arrays are sized
+    ! EQ_MAX_NRM (1001) and the Fortran-side NRMAX (== nrmax_c) is
+    ! nominally bounded by the same compile-time NRM=1001. Cap
+    ! defensively with MIN(nrmax_c, EQ_MAX_NRM) anyway so a future
+    ! resize of NRM (or stale eqcom1_mod state) cannot overflow the
+    ! C buffer. Mirrors the same MIN(...) pattern used for the 1D
+    ! profiles (npsmax_c) and the RZ grid (nrgmax_c/nzgmax_c) below.
+    nprof_copy = MIN(nrmax_c, EQ_MAX_NRM)
+    IF (nprof_copy > 0) THEN
+       CALL EQ_COMMON_GET_PROFILE(nprof_copy, &
             state%profile_psip, state%profile_psit, &
             state%profile_pps,  state%profile_tts,  &
             state%profile_qps,  state%profile_vps,  &
