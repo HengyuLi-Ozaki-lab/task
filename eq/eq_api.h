@@ -44,14 +44,27 @@ enum eq_error {
     EQ_ERR_NOT_IMPL    = 4   /* L-2 stub return: not implemented    */
 };
 
+/*
+ * IMPORTANT: This struct must match eq_state.f90::eq_state_c byte-for-byte.
+ * Field names, order, and types must stay in sync — both sides are
+ * INTEGER(C_INT) / int and REAL(C_DOUBLE) / double, so natural alignment
+ * agrees on every supported target. If you add/remove/reorder a field
+ * here, update eq_state.f90 in the same commit (and vice versa).
+ */
 typedef struct eq_state_t {
-    /* grid counters */
+    /* grid counters (NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX) */
     int    nrgmax;
     int    nzgmax;
     int    npsmax;
     int    nrmax;
     int    nthmax;
     int    nsumax;
+    /* secondary grid counters (NRVMAX volume grid; NSGMAX/NTGMAX
+     * orthogonal curvilinear PSI(s,t) grid) needed for MODELG=3
+     * Layer 1 baseline metrics. */
+    int    nrvmax;
+    int    nsgmax;
+    int    ntgmax;
     /* plasma scalars */
     double raxis;
     double zaxis;
@@ -73,6 +86,17 @@ typedef struct eq_state_t {
     /* R / Z grid coordinates */
     double rg[EQ_MAX_NRGM];
     double zg[EQ_MAX_NZGM];
+    /* Per-NR flux-surface profile arrays (1..nrmax). Mirror the 7
+     * columns written by eqregress.f (PSIP/PSIT/PPS/TTS/QPS/VPS/RST)
+     * for Phase 0 baseline regression. Only the first nrmax entries
+     * carry valid runtime data; the rest is zero-padded. */
+    double profile_psip[EQ_MAX_NRM];
+    double profile_psit[EQ_MAX_NRM];
+    double profile_pps[EQ_MAX_NRM];
+    double profile_tts[EQ_MAX_NRM];
+    double profile_qps[EQ_MAX_NRM];
+    double profile_vps[EQ_MAX_NRM];
+    double profile_rst[EQ_MAX_NRM];
 } eq_state_t;
 
 int eq_init(void);
