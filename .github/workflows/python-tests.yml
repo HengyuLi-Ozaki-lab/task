@@ -28,14 +28,57 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install test dependencies
+      - name: Install Fortran/C build deps
+        # gfortran + gcc + make are needed to build the libXapi.so
+        # shared libraries that the Layer 1 equivalence and FFI tests
+        # dlopen at runtime. Without these the tests SKIP and CI gives a
+        # false pass — which previously masked real fp/eq drift.
+        # X11 is intentionally NOT installed: each lib*api.so excludes
+        # graphics archives (see fp/Makefile:318), so X11 is never
+        # linked into the .so files we build here.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran gcc make
+
+      - name: Clone BPSD (sibling repo expected at ../bpsd)
+        # All module Makefiles reference BPSD_SRC=../../bpsd; the BPSD
+        # source lives at https://github.com/ats-fukuyama/bpsd and is
+        # not vendored into this repo.
+        run: |
+          git clone --depth 1 https://github.com/ats-fukuyama/bpsd.git \
+            "$GITHUB_WORKSPACE/../bpsd"
+          ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
+
+      - name: Install Python test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-mock pytest-subtests
           # tomli is needed only on <3.11; keep installed for safety on 3.11 too.
           pip install tomli
 
-      - name: Run pytest
+      - name: Build module shared libraries (.so)
+        # Each libXapi.so excludes graphics so X11 is not linked. Build
+        # order is enforced by each Makefile's libs_pic prerequisite
+        # chain (lib_pic -> mtxp_pic -> pl_pic -> eq_pic -> dp_pic /
+        # ob_pic -> module .so).
+        #
+        # IMPORTANT: tot MUST come last in this loop. tot/Makefile:378
+        # links libtotapi.so against ../eq/libeqapi.so + ../tr/libtrapi.so
+        # + ../fp/libfpapi.so, so those .so files must already exist.
+        #
+        # If any .so fails to build we want the job to FAIL (not skip
+        # the dependent pytest cases). `set -e` (also default in GH
+        # Actions bash) ensures that.
+        run: |
+          set -e
+          for mod in tr fp ti wr wrx eq tot; do
+            echo "::group::Building $mod/lib${mod}api.so"
+            make -C "$mod" "lib${mod}api.so"
+            echo "::endgroup::"
+          done
+
+      - name: Run pytest (Layer 1 equivalence + FFI now enabled)
         env:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONPATH: python
