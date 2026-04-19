@@ -50,6 +50,14 @@ jobs:
             "$GITHUB_WORKSPACE/../bpsd"
           ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
 
+      - name: Provision mtxp/make.mtxp from nompi template
+        # mtxp/make.mtxp is gitignored (per-system config). The nompi
+        # template builds bnd/pcg backends without MPI / MUMPS / PETSc,
+        # which is what every libXapi.so PIC build path uses.
+        run: |
+          cp mtxp/make.mtxp.nompi mtxp/make.mtxp
+          head -5 mtxp/make.mtxp
+
       - name: Install Python test dependencies
         run: |
           python -m pip install --upgrade pip
