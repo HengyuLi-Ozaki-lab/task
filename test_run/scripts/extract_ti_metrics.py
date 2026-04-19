@@ -21,6 +21,20 @@ SCALAR_FLOAT_KEYS = {"T", "residual_loop_max"}
 SCALAR_INT_KEYS = {"icount_loop_max", "icount_mat_max"}
 RE_PROFILE_HEADER = re.compile(r"^#\s*profile columns:")
 
+# Fortran's 1PE format can drop the "E" for subnormal exponents (e.g.
+# "1.0325172520468756-310" instead of "...E-310"). Repair such tokens
+# before float() so we don't crash on legitimate numerics. Mirrors
+# extract_wrx_metrics.py._to_float.
+_FORTRAN_NO_E = re.compile(r"^([+-]?\d+\.\d+)([+-]\d{2,3})$")
+
+
+def _to_float(token: str) -> float:
+    s = token.strip()
+    m = _FORTRAN_NO_E.match(s)
+    if m:
+        s = m.group(1) + "E" + m.group(2)
+    return float(s)
+
 
 def parse(dump_path: Path) -> dict:
     lines = dump_path.read_text().splitlines()
@@ -44,7 +58,7 @@ def parse(dump_path: Path) -> dict:
             if key in ("NT", "NRMAX", "NSMAX", "nsa_max"):
                 result[key] = int(val)
             elif key in SCALAR_FLOAT_KEYS:
-                result["scalars"][key] = float(val)
+                result["scalars"][key] = _to_float(val)
             elif key in SCALAR_INT_KEYS:
                 result["scalars_int"][key] = int(val)
             else:
@@ -64,10 +78,10 @@ def parse(dump_path: Path) -> dict:
                 )
             nr = int(parts[0])
             off = 1
-            rna = [float(x) for x in parts[off:off + nsa]]; off += nsa
-            rta = [float(x) for x in parts[off:off + nsa]]; off += nsa
-            rua = [float(x) for x in parts[off:off + nsa]]; off += nsa
-            rbp, rqp, rjp, zeff, beta, betap = (float(x) for x in parts[off:off + 6])
+            rna = [_to_float(x) for x in parts[off:off + nsa]]; off += nsa
+            rta = [_to_float(x) for x in parts[off:off + nsa]]; off += nsa
+            rua = [_to_float(x) for x in parts[off:off + nsa]]; off += nsa
+            rbp, rqp, rjp, zeff, beta, betap = (_to_float(x) for x in parts[off:off + 6])
             result["profile"].append({
                 "NR": nr, "RNA": rna, "RTA": rta, "RUA": rua,
                 "RBP": rbp, "RQP": rqp, "RJP": rjp,

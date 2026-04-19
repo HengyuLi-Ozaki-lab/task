@@ -43,6 +43,11 @@ CONTAINS
              CALL read_adpost(adpost_dir(1:l1)//adpost_filename(1:l2),IERR)
              IF(IERR.NE.0) WRITE(6,*) 'XX read_adpost: IERR=',IERR
           END IF
+          ! Skip broadcast/use of ADPOST tables when read failed (data missing)
+          IF(IERR.NE.0) THEN
+             WRITE(6,'(A)') 'XX tiprep: ADPOST data unavailable; aborting ti_prep'
+             RETURN
+          END IF
           CALL broadcast_adpost(ierr)
           IF(ierr.NE.0) WRITE(6,*) 'XX broadcast_adpost: IERR=',IERR
           init_adpost=1
@@ -56,6 +61,11 @@ CONTAINS
              CALL LOAD_ADF11_bin( &
                   adas_adf11_dir(1:l1)//adas_adf11_filename(1:l2),IERR)
              IF(IERR.NE.0) WRITE(6,*) 'XX load_ADF11_bin: IERR=',IERR
+          END IF
+          ! Skip broadcast/CALC when LOAD failed (ADF11-bin.data missing/unreadable)
+          IF(IERR.NE.0) THEN
+             WRITE(6,'(A)') 'XX tiprep: ADAS ADF11 data unavailable; aborting ti_prep'
+             RETURN
           END IF
           CALL broadcast_ADF11_bin(IERR)
           IF(IERR.NE.0) WRITE(6,*) 'XX broadcast_ADF11_bin: IERR=',IERR
