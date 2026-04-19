@@ -430,7 +430,7 @@ def build_slide_01_title(prs: Presentation) -> None:
         Inches(6.6),
         SLIDE_W - Inches(1.0),
         Inches(0.4),
-        "Phase L-0 〜 L-7 / Phase F-1 〜 F-4 / MCP サーバ / 86 PR merge",
+        "Phase L-0 〜 L-7 / Phase F-1 〜 F-5 / MCP サーバ / 96 PR merge",
         font_size=12,
         color=COLOR_GRAY,
         align=PP_ALIGN.CENTER,
@@ -513,8 +513,8 @@ def build_slide_03_modules(prs: Presentation) -> None:
         ["ti", "不純物輸送", "完了", "(対象外)", "完了", "PA 配列で原子質量設定"],
         ["wr", "波動レイトレーシング", "完了", "(対象外)", "完了", "Bugbot HIGH 修正済み"],
         ["wrx", "拡張レイトレーシング", "完了", "(対象外)", "完了", "wr のスーパセット"],
-        ["eq", "MHD 平衡", "L-0..L-5", "F-1..F-3 完了", "未着手", "L-6/L-7 残作業"],
-        ["tot", "統合輸送", "L-0..L-4", "(対象外)", "未着手", "他モジュールのコンポジット"],
+        ["eq", "MHD 平衡", "完了", "F-1..F-5 完了", "未着手", "F90 modernization も完了"],
+        ["tot", "統合輸送", "完了", "(対象外)", "完了", "namespace dispatch (eq:RR 等)"],
     ]
     add_table(
         slide,
@@ -539,10 +539,10 @@ def build_slide_03_modules(prs: Presentation) -> None:
 
     add_speaker_notes(
         slide,
-        "(想定 1 分) 対象は 7 モジュールです。tr / fp / ti / wr / wrx の 5 つは Phase L-0 から L-7、"
-        "そして MCP サーバまで完了しています。eq は MHD 平衡計算で、F77 のレガシーコードが多いため"
-        "Phase F (F90 化) も並行して走らせており、L-5 まで到達。tot は他モジュールを束ねるトップレベル"
-        "なので少し趣が違い、L-4 (.so ビルド) まで完了しています。残作業は後ほどスライド 15 で整理します。",
+        "(想定 1 分) 対象は 7 モジュールすべてが Phase L-0 から L-7、そして MCP サーバまで完了しました。"
+        "eq は MHD 平衡計算で、F77 のレガシーコードが多かったため、Phase F (F-1..F-5 で F90 化 + shim 削除) も完了。"
+        "tot は他 6 モジュールを namespace prefix (eq: / tr: 等) で束ねるオーケストレータで、L-5 Python wrapper + MCP まで完成。"
+        "残作業は trlib の plot+TOML runner を他モジュールに横展開する作業のみ (スライド 15 参照)。",
     )
 
 
@@ -743,8 +743,8 @@ def build_slide_06_phase_f(prs: Presentation) -> None:
             "Phase F-1: COMMON ブロックを MODULE 化 (PR #71) — shim を併設し旧コードと両立。",
             "Phase F-2: LOW tier (PR #79) — 単純な .f を .f90 に書き換え、INCLUDE 由来の COMMON を USE に置換。",
             "Phase F-3: MED tier (PR #81) — INCLUDE shim 経由で段階的に置換 (9 ファイル)。",
-            "Phase F-4: HIGH tier (進行中) — file I/O や driver の F90 化。",
-            "Phase F-5: shim removal + grep clean-up (予定) — 旧 INCLUDE を完全撤去。",
+            "Phase F-4: HIGH tier (PR #87) — file I/O や driver の F90 化 (8 ファイル)。",
+            "Phase F-5: shim removal (PR #93) — eqcom{c,m,q,x}.inc 撤去 + grep clean。",
             "shim policy: 一時的に COMMON↔MODULE 両方を有効化し、grep ゼロ確認後に撤去します。",
         ],
         font_size=14,
@@ -1341,10 +1341,10 @@ def build_slide_14_summary(prs: Presentation) -> None:
 
     # 4 つの指標を横並びに大きく表示
     items = [
-        ("86", "merged PR", "PR #1 〜 #86"),
-        ("7", "対象モジュール", "tr/fp/ti/wr/wrx/eq/tot"),
+        ("96+", "merged PR", "PR #1 〜 #96"),
+        ("7", "対象モジュール", "全 module 完了"),
         ("28+", "tests / module", "4 層 × 7 モジュール"),
-        ("9", "MCP ツール × 5", "tr/fp/ti/wr/wrx 横展開"),
+        ("9 × 6", "MCP ツール × server", "tr/fp/ti/wr/wrx/tot"),
     ]
     box_w = Inches(3.0)
     box_h = Inches(2.6)
@@ -1424,9 +1424,10 @@ def build_slide_14_summary(prs: Presentation) -> None:
     add_speaker_notes(
         slide,
         "(想定 1 分) ここまでの成果を数字でまとめます。"
-        "merged PR は 86 件、対象モジュールは 7 つ、各モジュール 28+ のテストケースを整備しました。"
-        "MCP ツールは 9 種類 × 5 モジュール (tr/fp/ti/wr/wrx) で展開済みです。"
-        "ドキュメントとして、再利用可能な SKILL.md と日本語マニュアル PDF も整備しました。"
+        "merged PR は 96 件超、対象モジュール 7 つ全て Phase L-0..L-7 完了、"
+        "各モジュール 28+ のテストケースを整備しました。"
+        "MCP ツールは 9 種類 × 6 サーバ (tr/fp/ti/wr/wrx/tot) で展開済みです。"
+        "ドキュメントとして、再利用可能な SKILL.md と日本語マニュアル PDF (55 ページ) も整備しました。"
         "重要なのは下段の通り、CLI バイナリは一切変更していない点です。共有ライブラリは純粋な追加機能であり、"
         "従来のユーザに何の影響も与えません。",
     )
@@ -1443,14 +1444,13 @@ def build_slide_15_remaining(prs: Presentation) -> None:
         Inches(12.3),
         Inches(5.5),
         [
-            "eq モジュール: L-6 (4 層テスト) と L-7 (ドキュメント) を完了させる。",
-            "tot モジュール: L-5 (Python wrapper) / L-6 / L-7 を順次。コンポジット特有の API 設計が課題。",
-            "Phase F-4 / F-5: eq の HIGH tier F90 化と shim 撤去 (grep clean-up)。",
-            "可視化 API: 各モジュールに plot(varname) を実装 (TR 先行 → fp / ti / wr 横展開)。",
-            "TOML config runner: python -m <X>lib config.toml を全モジュールへ。",
-            "MCP plot ツール: base64 PNG 返却を 5 サーバ全部に追加。",
-            "Tutorial notebooks: Jupyter で利用シナリオ別に整備 (parameter sweep / 最適化 / LLM)。",
-            "draft の plan PR 6 件を最新 develop にリベースして merge ready 化。",
+            "可視化 API: trlib に plot(varname) + TOML runner reference 実装中 (PR #83) → fp/ti/wr/wrx/eq/tot に横展開。",
+            "TOML config runner: python -m <X>lib config.toml を全モジュールに展開。",
+            "MCP plot ツール: base64 PNG 返却を 6 サーバ全部に追加 (plot/plot_sweep/plot_available)。",
+            "Tutorial notebooks: Jupyter で利用シナリオ別に整備 (parameter sweep / 最適化 / LLM 連携)。",
+            "Per-module Fortran-side README: 設計方針・invariant 集約 (English)。",
+            "tot 最適化ドライバ: scipy/optuna 連携 (元 L-7 plan の延長)。",
+            "MCP 利用マニュアル: 素人向け、Claude Desktop / Cursor 登録手順含む。",
         ],
         font_size=15,
     )
