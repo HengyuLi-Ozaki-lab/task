@@ -113,6 +113,11 @@ C     ------------------------------------------------------------------
       REAL(8), INTENT(OUT) :: QPS_OUT(NCOPY),  VPS_OUT(NCOPY)
       REAL(8), INTENT(OUT) :: RST_OUT(NCOPY)
       INTEGER :: I, N
+C     Defense-in-depth: assumed-size F77 arrays decay UB for NCOPY<=0.
+C     Caller (eq_api.f90 eq_api_get_state) already guards on
+C     nrmax_c > 0, so this branch is unreachable today; keep the
+C     guard so a future caller can't accidentally trip UB.
+      IF (NCOPY .LE. 0) RETURN
       N = MIN(NCOPY, NRMAX)
       DO I = 1, N
          PSIP_OUT(I) = PSIP(I)
