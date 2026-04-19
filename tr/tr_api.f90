@@ -77,6 +77,21 @@ CONTAINS
     ! namelist defaults.
     CALL pl_init
     CALL eq_init
+    ! Mirror trmain.f90:57 — open the scratch unit that tr_set_metric
+    ! and friends use for inline namelist (eq_parm(2,'nrmax= 51',...))
+    ! buffering. lib/libkio.f90:248-258 hard-codes WRITE(7)/REWIND(7),
+    ! so NEWUNIT= is not viable; this matches the legacy convention
+    ! used by trmain/eqmain. Without it, the C ABI path computes
+    ! initial profiles with junk geometry and trcalc produces
+    ! NEGATIVE TEMPERATURE at step 0 (Layer 1 repro: tr_tst2 MODELG=3).
+    BLOCK
+       INTEGER :: ios
+       OPEN(7, STATUS='SCRATCH', FORM='FORMATTED', IOSTAT=ios)
+       IF (ios /= 0) THEN
+          ierr = TR_ERR_CALC_FAILED
+          RETURN
+       END IF
+    END BLOCK
     CALL trinit_fortran
 
     ! Allocate TRCOMM arrays using NRMAX / NSMAX (etc.) defaults set by
@@ -318,6 +333,10 @@ CONTAINS
     END IF
 
     CALL DEALLOCATE_TRCOMM
+    ! Pair with the OPEN(7) in tr_api_init so re-init after finalize
+    ! does not try to OPEN an already-open unit (SCRATCH would auto-
+    ! delete on program exit but a same-process re-init would fail).
+    CLOSE(7, IOSTAT=ierr)
     g_initialized = .FALSE.
     g_prepared    = .FALSE.
     ierr = TR_OK
