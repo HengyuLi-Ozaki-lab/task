@@ -764,35 +764,51 @@ module fpcomm
           deallocate(DCTP,DCTT)
           deallocate(FCPP,FCTH)
 
+          ! Symmetry with fp_allocate: these 20 wave arrays are allocated
+          ! UNCONDITIONALLY (lines 491-518). Only DWPP_P/DWPT_P/DWTP_P/DWTT_P
+          ! are MODEL_WAVE-gated there, so only they need to be gated here.
+          ! Without this, a second fp_allocate after sizes change (e.g.
+          ! test_dt1 -> test_iter01) aborts with
+          !   Fortran runtime error: Attempting to allocate already
+          !   allocated variable 'dwpp'   at fpcomm.f90:491
+          deallocate(DWPP,DWPT)
+          deallocate(DWTP,DWTT)
+          deallocate(DWLHPP,DWLHPT)
+          deallocate(DWFWPP,DWFWPT)
+          deallocate(DWECPP,DWECPT,DWECTP,DWECTT)
+          deallocate(DWWRPP,DWWRPT,DWWRTP,DWWRTT)
+          deallocate(DWWMPP,DWWMPT,DWWMTP,DWWMTT)
           IF(MODEL_WAVE.ne.0)THEN
-             deallocate(DWPP,DWPT)
-             deallocate(DWTP,DWTT)
              deallocate(DWPP_P,DWPT_P)
              deallocate(DWTP_P,DWTT_P)
-
-             deallocate(DWLHPP,DWLHPT)
-             deallocate(DWFWPP,DWFWPT)
-             deallocate(DWECPP,DWECPT,DWECTP,DWECTT)
-             deallocate(DWWRPP,DWWRPT,DWWRTP,DWWRTT)
-             deallocate(DWWMPP,DWWMPT,DWWMTP,DWWMTT)
           END IF
           deallocate(SIGMA_SPP,SIGMA_SPM)
           deallocate(RJ_bs, RJ_bsm)
+          ! conduct_sp is allocated UNCONDITIONALLY (line 542), so must be
+          ! deallocated unconditionally too. Previously it was buried inside
+          ! the MODEL_DISRUPT block, which leaked it (and aborted a re-alloc
+          ! after size change) whenever MODEL_DISRUPT==0.
+          deallocate(conduct_sp)
           IF(MODEL_DISRUPT.ne.0)THEN
              deallocate(ER_drei, ER_crit,RP_crit,lnl_gl)
              deallocate(previous_rate, previous_rate_p)
              deallocate(previous_rate_G, previous_rate_p_G)
-             deallocate(RT_quench, RT_quench_f, conduct_sp)
+             deallocate(RT_quench, RT_quench_f)
              deallocate(RE_PITCH)
              deallocate(RN_disrupt, RN_runaway, Rj_ohm, RJ_runaway, RN_drei,RN_runaway_M)
-             deallocate(RJ_bs, RJ_bsm, R_djdt)
+             ! RJ_bs / RJ_bsm already deallocated above (they are allocated
+             ! unconditionally). Only R_djdt is DISRUPT-specific here.
+             deallocate(R_djdt)
              deallocate(POST_LNLAM_f,POST_LNLAM)
              deallocate(E_drei0,E_crit0)
              deallocate(POST_tau_ta0_f)
              deallocate(POST_tau_ta)
-             ! Symmetry: Rconnor/RFP_ava are allocated only when MODEL_DISRUPT/=0 (see fp_allocate)
-             deallocate(Rconnor, RFP_ava)
+             ! Symmetry: Rconnor is allocated only when MODEL_DISRUPT/=0 (see fp_allocate line 529).
+             ! RFP_ava however is allocated UNCONDITIONALLY (line 595) and is moved out of this block.
+             deallocate(Rconnor)
           END IF
+          ! RFP_ava: matches the unconditional allocate at line 595.
+          deallocate(RFP_ava)
           deallocate(tau_ta0)
 
           deallocate(SPPB,SPPF,SPPS,SPPD,SPPI,SPPL)
