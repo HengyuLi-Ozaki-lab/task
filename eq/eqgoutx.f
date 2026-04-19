@@ -5,7 +5,11 @@ C********************************************
 C
       SUBROUTINE EQGX2D
 C
-      INCLUDE '../eq/eqcomx.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
+      INCLUDE '../eq/eqcom5.inc'
 C
       DIMENSION RSPL(4*NRGM),ZSPL(4*NZGM)
       DIMENSION GR(4*NRGM),GZ(4*NZGM),GF(4*NRGM,4*NZGM)
@@ -174,7 +178,11 @@ C     ****** DRAW PARM ******
 C
       SUBROUTINE EQGPRX(GX2,GY2,GFMIN,GFMAX,GFSTEP)
 C
-      INCLUDE '../eq/eqcomx.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
+      INCLUDE '../eq/eqcom5.inc'
 C
       CALL SETLIN(-1,-1,7)
       CALL MOVE(GX2+0.5,GY2-0.3)
@@ -269,7 +277,11 @@ C
       SUBROUTINE EQGX1D
 C
       USE libgrf,ONLY: grf1d
-      INCLUDE '../eq/eqcomx.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
+      INCLUDE '../eq/eqcom5.inc'
       PARAMETER (NIM=301)
       DIMENSION GX(NIM),GY(NIM,3)
 C
