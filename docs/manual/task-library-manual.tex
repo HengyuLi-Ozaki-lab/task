@@ -80,24 +80,30 @@
 % ---- Metadata ----------------------------------------------------------
 \title{\Huge TASK プラズマ輸送ライブラリ化プロジェクト\\
        \Large 日本語マニュアル・報告書 \\
-       \large (tr / ti / wr / wrx / fp モジュール, Phase L-0 〜 L-7)}
+       \large (tr / ti / wr / wrx / fp / eq / tot モジュール, Phase L-0 〜 L-7)}
 \author{k-yoshimi (東京大学)}
-\date{2026 年 4 月 18 日}
+\date{2026 年 4 月 19 日}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}\noindent
 本書は TASK コード群 (プラズマ統合輸送シミュレーション) のうち,
-5 つの物理モジュール---\textbf{tr} (1 次元輸送), \textbf{ti} (不純物
-輸送), \textbf{wr} (波動レイトレーシング), \textbf{wrx} (拡張レイ
-トレーシング), \textbf{fp} (Fokker--Planck 解析)---を \emph{共有
-ライブラリ化} し, \emph{Python から利用可能} にした一連の作業
-(Phase L-0 〜 L-7) を, Fortran や ctypes に馴染みのない初学者にも
-読めるようにまとめたマニュアルである.
+7 つの物理/オーケストレータモジュール---\textbf{tr} (1 次元輸送),
+\textbf{ti} (不純物輸送), \textbf{wr} (波動レイトレーシング),
+\textbf{wrx} (拡張レイトレーシング), \textbf{fp} (Fokker--Planck 解析),
+\textbf{eq} (MHD 平衡), \textbf{tot} (統合シミュレータ)---を
+\emph{共有ライブラリ化} し, \emph{Python から利用可能} にした一連の
+作業 (Phase L-0 〜 L-7) を, Fortran や ctypes に馴染みのない
+初学者にも読めるようにまとめたマニュアルである.
 
-使い方章 (第 3〜7 章) は\textbf{です・ます調}で平易に記述し, 技術章
-(第 8〜10 章) は\textbf{だ・である調}で手短にまとめる.
+本改訂 (2026-04-19) では, eq モジュール (第 \ref{ch:eq} 章) と
+tot オーケストレータ (第 \ref{ch:tot} 章) の使い方を新規追加し,
+6 個揃った MCP サーバ群と eq の F90 モダナイゼーション (Phase F-1
+〜 F-5) も併せて反映した.
+
+使い方章 (第 3〜9 章) は\textbf{です・ます調}で平易に記述し, 技術章
+(第 10 章以降) は\textbf{だ・である調}で手短にまとめる.
 \end{abstract}
 
 \tableofcontents
@@ -179,8 +185,14 @@ TASK コード群 (京都大学・東京大学で長年開発されているプ�
         5 関数 API の説明.
   \item 第 \ref{ch:tr} 〜 \ref{ch:fp} 章 — tr / ti / wr / wrx / fp の
         各モジュール. 初学者向け hello-world と FAQ を含む.
+  \item 第 \ref{ch:eq} 章 — eq (MHD 平衡) モジュール. 6 関数 C ABI
+        (\texttt{eq\_set\_param\_str} 含む) と PSIB の 0-origin 等の
+        EQ 固有の癖を解説.
+  \item 第 \ref{ch:tot} 章 — tot (統合) モジュール. 名前空間
+        プレフィックス (\texttt{eq:RR}, \texttt{tr:DT} 等) で
+        6 モジュールを束ねる.
   \item 第 \ref{ch:tests} 章 — 4 層テスト基盤.
-  \item 第 \ref{ch:status} 章 — 作業状況 (完了/未完了, eq/tot 除外理由).
+  \item 第 \ref{ch:status} 章 — 作業状況 (完了/未完了, MCP サーバ群).
   \item 第 \ref{ch:appendix} 章 — 付録 (Makefile ターゲット, PR 一覧,
         参考資料).
 \end{itemize}
@@ -1289,6 +1301,414 @@ bash test_run/run_tests.sh fplib_equivalence fplib_c_abi \
 
 \clearpage
 % ======================================================================
+\chapter{eq モジュール}
+\label{ch:eq}
+
+\begin{learn}
+本章では, TASK/EQ (\textbf{MHD 平衡} 計算: EQDSK 形式の平衡データを
+読み込み, ψ プロファイルや磁気軸を求める) を Python から呼ぶ
+\texttt{eqlib} の使い方を学びます. eq は他モジュールと違い,
+\textbf{6 個目の C ABI} \texttt{eq\_set\_param\_str} を持ち,
+\texttt{KNAMEQ} 等の文字列パラメータ専用 API があります.
+\end{learn}
+
+\section{概要 — eq は何をする}
+
+\textbf{TASK/EQ} は, トカマクの\textbf{MHD 平衡}を解くモジュールです.
+入力としては
+\begin{itemize}[leftmargin=1.5em]
+  \item EQDSK 形式 (G-EQDSK) の平衡データファイル, あるいは
+  \item 解析プロファイル (圧力 \(p(\psi)\), 安全係数 \(q(\psi)\) 等)
+\end{itemize}
+を取り, 出力としては磁気軸位置 (\texttt{raxis}, \texttt{zaxis}),
+中心 q (\texttt{qaxis}), 表面 q (\texttt{qsurf}), プラズマ \(\beta\)
+(\texttt{betat}, \texttt{betap}), プラズマ体積 (\texttt{pvol}) などの
+スカラーと, R-Z 格子, ψ-面プロファイル (\texttt{psips},
+\texttt{ppps}, \texttt{ttps}, \texttt{qqps}) を返します.
+
+\section{前提とビルド}
+
+\begin{lstlisting}[style=bash,caption={eq モジュールのライブラリビルド}]
+$ cd /home/you/task
+$ make -C lib   libs_pic
+$ make -C pl    libs_pic
+$ make -C bpsd  libs_pic
+$ make -C mtxp  libs_pic
+$ make -C eq    libeqapi.so
+\end{lstlisting}
+
+成功すると \texttt{eq/libeqapi.so} が出来ます. \texttt{nm} で
+6 個のシンボルを確認できます (eq だけは\textbf{6 個}, 他は 5 個):
+
+\begin{lstlisting}[style=bash]
+$ nm -D eq/libeqapi.so | grep ' T eq_'
+... T eq_finalize
+... T eq_get_state
+... T eq_init
+... T eq_run
+... T eq_set_param
+... T eq_set_param_str    # <-- 6 番目: EQ 固有
+\end{lstlisting}
+
+\section{最短 hello-world}
+
+\begin{lstlisting}[style=py,caption={\texttt{eqlib} 最小例 — EQDSK 読込}]
+from eqlib import Eq
+with Eq() as eq:
+    eq.set_param("RR", 6.5)                    # 大半径 [m]
+    eq.set_param("BB", 5.3)                    # 磁場 [T]
+    eq.set_param("RIP", 1.5)                   # 電流 [MA]
+    eq.set_param("MODELG", 3)                  # EQDSK 経路を選択
+    eq.set_param_str("KNAMEQ", "eqdata.ITER")  # ファイル名
+    eq.run()                                   # mode=1 デフォルト
+    st = eq.get_state()
+print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
+\end{lstlisting}
+
+\section{パラメータ指定 — \texttt{set\_param} と \texttt{set\_param\_str}}
+
+\subsection{数値スカラー / 配列要素}
+
+通常の数値は \texttt{set\_param("名前", 値)} です. 配列要素は
+\texttt{"NAME[i]"} で指定します.
+
+\begin{lstlisting}[style=py]
+eq.set_param("RR", 6.5)
+eq.set_param("MODELG", 3)        # int も double で渡してよい
+eq.set_param("RIPFC[1]", 0.5)    # PF コイル電流 (1-origin, 1..10)
+\end{lstlisting}
+
+\begin{warn}
+\textbf{\texttt{PSIB} だけは 0-origin です.} Fortran 宣言が
+\texttt{REAL(KIND=8) :: PSIB(0:5)} と 0 から始まるため, 添字も
+\texttt{PSIB[0]} 〜 \texttt{PSIB[5]} で指定します. 添字無しの
+裸の \texttt{"PSIB"} はレジストリで明示的に拒否されます
+(\texttt{EqlibInvalidParamError}). 他の 1-D 配列 (\texttt{RIPFC},
+\texttt{RPFC}, \texttt{ZPFC}, \texttt{WPFC}) は 1-origin です.
+\end{warn}
+
+\subsection{文字列パラメータ — \texttt{set\_param\_str}}
+
+EQDSK ファイル名等の \texttt{CHARACTER(LEN=80)} パラメータには
+\textbf{専用 API} を使います. \texttt{set\_param} には渡せません.
+
+\begin{lstlisting}[style=py]
+eq.set_param_str("KNAMEQ", "eqdata.ITER01")
+eq.set_param_str("KNAMWR", "wrdata.dat")
+\end{lstlisting}
+
+対応するキーは 7 個: \texttt{KNAMEQ}, \texttt{KNAMEQ2},
+\texttt{KNAMWR}, \texttt{KNAMWM}, \texttt{KNAMFP}, \texttt{KNAMFO},
+\texttt{KNAMPF}.
+
+\section{FAQ / つまずきどころ (EQ 固有)}
+
+\begin{faq}[Q1. なぜ \texttt{PSIB} だけ 0-origin?]
+EQ の Fortran ソース \texttt{eqcom1\_mod.f90} で \texttt{PSIB} が
+\texttt{REAL(8) :: PSIB(0:5)} と宣言されており, ψ 境界条件として
+\(\psi = 0\) (磁気軸) から数えるのが物理的に自然だからです.
+他の 1-D 配列 (PF コイル系) は 1-origin の伝統に従います.
+\end{faq}
+
+\begin{faq}[Q2. なぜ \texttt{eq.run()} のデフォルトが \texttt{mode=1}?]
+\texttt{mode=1} は \texttt{equnit::eq\_load} を呼び, 現在の
+\texttt{KNAMEQ} (= EQDSK ファイル) を読み込んで平衡を構築する,
+EQDSK 駆動の標準ワークフローだからです. tr/ti/wr/fp の \texttt{run}
+は時間ステップ数 \texttt{ntmax} を引数に取りますが, EQ は時間発展を
+持たないため引数の意味が違います. \texttt{mode=0} (直接 EQCALQ
+呼び出し) は予約済みで, 現状は \texttt{EqlibNotImplementedError}
+を返します.
+\end{faq}
+
+\begin{faq}[Q3. \texttt{KNAMEQ} を kwargs で渡すとエラー]
+\texttt{set\_params(KNAMEQ="...")} は\textbf{NG}. 文字列パラメータは
+専用の \texttt{set\_param\_str("KNAMEQ", "...")} を使ってください.
+\end{faq}
+
+\begin{faq}[Q4. \texttt{EqlibError: libeqapi.so does not export
+eq\_set\_param\_str} が出る]
+古い \texttt{libeqapi.so} (Phase L-3 以前) を読み込んでいます.
+\texttt{make -C eq libeqapi.so} で再ビルドしてください.
+\end{faq}
+
+\section{入力パラメータ表 (抜粋, 約 60 エントリ)}
+
+\texttt{eq/eq\_param\_registry.f90} には Phase L-3 時点で 94 件の
+\texttt{CASE} (\(\sim\) 78 数値スカラー, 5 配列ファミリ, 7 文字列)
+が登録されています. 主なものを表に示します.
+
+\begin{longtable}{@{}p{3.3cm}p{2.2cm}p{9cm}@{}}
+\caption{eq モジュールの主な登録パラメータ}\label{tbl:eq-params}\\
+\toprule
+\textbf{名前} & \textbf{型} & \textbf{意味} \\ \midrule
+\endfirsthead
+\toprule
+\textbf{名前} & \textbf{型} & \textbf{意味} \\ \midrule
+\endhead
+\texttt{RR}, \texttt{RA}, \texttt{RB}        & double & 大半径/小半径/壁半径 [m] \\
+\texttt{RKAP}, \texttt{RDLT}                 & double & elongation, triangularity \\
+\texttt{BB}                                  & double & トロイダル磁場 [T] \\
+\texttt{RIP}                                 & double & プラズマ電流 [MA] \\
+\texttt{Q0}, \texttt{QA}, \texttt{QMIN}      & double & 中心/表面/最小 q \\
+\texttt{RHOMIN}, \texttt{RHOEDG}             & double & 規格化半径 \\
+\texttt{PP0}, \texttt{PP1}, \texttt{PP2}     & double & 圧力プロファイル係数 \\
+\texttt{PROFP0}, \texttt{PROFP1}, \texttt{PROFP2} & double & 圧力プロファイル指数 \\
+\texttt{PJ0}, \texttt{PJ1}, \texttt{PJ2}     & double & 電流プロファイル係数 \\
+\texttt{PROFJ0}, \texttt{PROFJ1}, \texttt{PROFJ2} & double & 電流プロファイル指数 \\
+\texttt{FF0}, \texttt{FF1}, \texttt{FF2}     & double & F 関数 \(F(\psi)\) 係数 \\
+\texttt{PROFF0}, \texttt{PROFF1}, \texttt{PROFF2} & double & F 関数指数 \\
+\texttt{PT0}, \texttt{PT1}, \texttt{PT2}, \texttt{PROFTP0/1/2} & double & 温度プロファイル \\
+\texttt{PV0}, \texttt{PV1}, \texttt{PV2}, \texttt{PROFV0/1/2}  & double & 速度プロファイル \\
+\texttt{PROFR0}, \texttt{PROFR1}, \texttt{PROFR2}              & double & 半径プロファイル \\
+\texttt{PTSEQ}, \texttt{PN0EQ}               & double & 端温度/中心密度 \\
+\texttt{EPSEQ}, \texttt{EPSNW}, \texttt{DELNW} & double & 反復収束判定 \\
+\texttt{NLPMAX}, \texttt{NLPNW}              & int    & 最大反復数 \\
+\texttt{RGMIN}, \texttt{RGMAX}, \texttt{ZGMIN}, \texttt{ZGMAX} & double & R-Z 計算領域 \\
+\texttt{ZLIMP}, \texttt{ZLIMM}, \texttt{FRBIN} & double & リミタ位置 \\
+\texttt{MODELG}                              & int   & 1:解析, 3:EQDSK \\
+\texttt{MODELQ}, \texttt{IDEBUG}, \texttt{MODEFR}, \texttt{MODEFW} & int & モデル切替 \\
+\texttt{MDLEQF}, \texttt{MDLEQC}, \texttt{MDLEQA}, \texttt{MDLEQX}, \texttt{MDLEQV} & int & EQ 内部モデル選択 \\
+\texttt{NPRINT}                              & int   & 出力詳細度 \\
+\texttt{NRMAX}, \texttt{NTHMAX}, \texttt{NSUMAX}, \texttt{NSGMAX}, \texttt{NTGMAX}, \texttt{NUGMAX} & int & ψ-メッシュ等 \\
+\texttt{NRGMAX}, \texttt{NZGMAX}, \texttt{NPSMAX}, \texttt{NRVMAX}, \texttt{NTVMAX}, \texttt{NPFCMAX} & int & 出力グリッド \\
+\texttt{PSIB[0..5]}                          & double 1D & \textbf{0-origin}, ψ 境界 \\
+\texttt{RIPFC[1..10]}, \texttt{RPFC[1..10]}, \texttt{ZPFC[1..10]}, \texttt{WPFC[1..10]} & double 1D & PF コイル (1-origin) \\
+\texttt{KNAMEQ}, \texttt{KNAMEQ2}, \texttt{KNAMWR}, \texttt{KNAMWM}, \texttt{KNAMFP}, \texttt{KNAMFO}, \texttt{KNAMPF} & 文字列 & \texttt{set\_param\_str} 専用 \\
+\bottomrule
+\end{longtable}
+
+\section{\texttt{EqState} 出力}
+
+\begin{lstlisting}[style=py]
+state.nrgmax, state.nzgmax       # 実働 R, Z 格子点数
+state.npsmax                     # 実働 ψ-面サンプル数
+state.nrmax, state.nthmax        # ψ-メッシュ, 極角メッシュ
+state.scalars["raxis"]           # 磁気軸 R [m]
+state.scalars["zaxis"]           # 磁気軸 Z [m]
+state.scalars["qaxis"]           # 中心 q
+state.scalars["qsurf"]           # 表面 q
+state.scalars["betat"]           # トロイダル beta
+state.scalars["betap"]           # ポロイダル beta
+state.scalars["pvol"]            # プラズマ体積 [m^3]
+state.scalars["raave"]           # 平均小半径 [m]
+state.scalars["ripx"]            # プラズマ電流 [MA]
+state.rg                         # [nrgmax] R 軸座標
+state.zg                         # [nzgmax] Z 軸座標
+state.psips, state.ppps          # [npsmax] ψ サーフェス値, 圧力
+state.ttps, state.qqps           # [npsmax] T (=R*Bφ), q
+state.to_dict()                  # JSON 用
+\end{lstlisting}
+
+\section{F90 モダナイゼーション (Phase F-1 〜 F-5)}
+
+eq モジュールは大量の F77 fixed-form ソースと \texttt{eqcom*.inc}
+INCLUDE ファイルを抱えていましたが, ライブラリ化と並行して F90
+モダナイゼーションを段階的に実施しました. F-1 で
+\texttt{eqcom\{0..3\}\_mod.f90} に COMMON ブロックを移し (shim 並存),
+F-2 〜 F-4 で fixed-form を free-form に書換え, F-5 で
+\texttt{eqcom\{c,m,q,x\}.inc} の shim を完全撤去して
+\texttt{USE} 文に置き換えました. これにより eq/ 配下のソースは
+F90 のみとなり, 他モジュールから \texttt{USE eqcom*\_mod} で
+直接参照できる状態に揃いました.
+
+\section{変更履歴 — Phase L-0 〜 L-7 と F-1 〜 F-5}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lllp{6.0cm}@{}}
+\toprule
+Phase & PR & 日付 & 内容 \\ \midrule
+L-0 & \#54 & 2026-04-18 & \texttt{eq\_iter01}, \texttt{eq\_tst2} ベースライン, \texttt{eqregress.f90} \\
+L-1 & \#65 & 2026-04-18 & \texttt{eq/Makefile} CORE/GRAPHICS/MENU 分割 \\
+L-2 & \#70 & 2026-04-18 & C ABI スタブ (\texttt{eq\_api.h}, 5 関数) \\
+L-3 & \#78 & 2026-04-18 & パラメータレジストリ (94 ケース) + 6 番目 ABI \texttt{eq\_set\_param\_str} \\
+L-4 & \#80 & 2026-04-18 & \texttt{libeqapi.so} ビルド + 明示的 PIC 依存 \\
+L-5 & \#86 & 2026-04-18 & Python ラッパ \texttt{python/eqlib/} (\texttt{run()} は \texttt{mode=1} デフォルト) \\
+L-6 & \#92 & 2026-04-19 & 4 層統合テスト (\texttt{eqlib\_*}) \\
+L-7 & \#89 & 2026-04-19 & ドキュメント (\texttt{python/eqlib/README.md}, \texttt{architecture.md}) \\
+\midrule
+F-1 & \#71 & 2026-04-18 & COMMON $\to$ MODULE 移行 (shim 並存) \\
+F-2 & \#79 & 2026-04-18 & LOW tier F90 化 \\
+F-3 & \#81 & 2026-04-18 & MED tier F90 化 (9 ファイル) \\
+F-4 & \#87 & 2026-04-19 & HIGH tier F90 化 (8 ファイル) \\
+F-5 & \#93 & 2026-04-19 & shim 撤去 \& INCLUDE $\to$ USE 全面切替 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{テスト}
+
+\begin{lstlisting}[style=bash]
+# Layer 1〜4 (PR #92 で wired):
+bash test_run/run_tests.sh eqlib_equivalence eqlib_c_abi \
+     eqlib_ffi eqlib_wrapper eqlib_sweep
+\end{lstlisting}
+
+\clearpage
+% ======================================================================
+\chapter{tot モジュール (オーケストレータ)}
+\label{ch:tot}
+
+\begin{learn}
+本章では, TASK/TOT (\textbf{統合シミュレータ}: eq / tr / ti / fp /
+wr / wrx の 6 モジュールを 1 本の物理計算として束ねる) を Python から
+呼ぶ \texttt{totlib} の使い方を学びます. tot のパラメータ名は
+\textbf{名前空間プレフィックス付き} (\texttt{eq:RR}, \texttt{tr:DT}
+等) で指定します.
+\end{learn}
+
+\section{概要 — tot は何をする}
+
+\textbf{TASK/TOT} は, 平衡 (eq), 輸送 (tr), 不純物 (ti), 速度分布
+(fp), レイトレーシング (wr/wrx) の各モジュールを呼び出して
+\textbf{一貫した物理計算}を回すオーケストレータです. パラメータ空間
+は 6 モジュールのレジストリの和集合で, 同名パラメータが複数モジュール
+にまたがる (例: \texttt{RR} は eq/tr/ti/wrx に存在, \texttt{DT} は
+tr/ti に存在) ため, 必ず \texttt{<ns>:<name>} 形式で振り分け先を
+明示します.
+
+\section{前提とビルド}
+
+\begin{lstlisting}[style=bash,caption={tot モジュールのライブラリビルド}]
+$ cd /home/you/task
+# tot は 6 モジュールに依存するので, 下流をすべて PIC でビルド
+$ make -C lib  libs_pic
+$ make -C pl   libs_pic
+$ make -C bpsd libs_pic
+$ make -C mtxp libs_pic
+$ make -C eq   libs_pic
+$ make -C tr   libs_pic
+$ make -C ti   libs_pic
+$ make -C fp   libs_pic
+$ make -C wrx  libs_pic
+$ make -C tot  libtotapi.so
+\end{lstlisting}
+
+\section{最短 hello-world}
+
+\begin{lstlisting}[style=py,caption={\texttt{totlib} 最小例}]
+from totlib import Tot
+with Tot() as tot:
+    tot.set_param("eq:RR", 6.5)        # eq の大半径 [m]
+    tot.set_param("tr:DT", 0.001)      # tr の時間刻み [s]
+    tot.set_param("fp:NSMAX", 2)       # fp の粒子種数
+    tot.set_param("ti:RR", 6.5)        # ti の大半径 (eq とは独立)
+    tot.set_param("wrx:RFIN", 170.0)   # wrx の RF 周波数 [GHz]
+    # L-6 で fan-out 完成後:
+    # tot.run(ntmax=10)
+    # st = tot.get_state()
+\end{lstlisting}
+
+\section{名前空間プレフィックス設計}
+
+\texttt{Tot.set\_param} に渡す名前は\textbf{必ず} \texttt{<ns>:<bare>}
+形式です. 振り分けは \texttt{tot/tot\_param\_registry.f90} の冒頭で
+\texttt{SELECT CASE} により per-module \texttt{*\_param\_set} へ
+ディスパッチされます.
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+プレフィックス & 振り分け先 & 代表例 \\ \midrule
+\texttt{eq:}  & \texttt{eq\_param\_set}  & \texttt{eq:RR}, \texttt{eq:BB}, \texttt{eq:KNAMEQ} \\
+\texttt{tr:}  & \texttt{tr\_param\_set}  & \texttt{tr:DT}, \texttt{tr:NTMAX}, \texttt{tr:PN[1]} \\
+\texttt{fp:}  & \texttt{fp\_param\_set}  & \texttt{fp:NSMAX}, \texttt{fp:DELT} \\
+\texttt{ti:}  & \texttt{ti\_param\_set}  & \texttt{ti:RR}, \texttt{ti:DT} \\
+\texttt{wrx:} & \texttt{wrx\_param\_set} & \texttt{wrx:RFIN}, \texttt{wrx:NRAY} \\
+\texttt{wr:}  & \texttt{wrx\_param\_set} (別名) & \texttt{wr:RFIN} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{warn}
+\texttt{wr:} は \texttt{wrx:} の\textbf{別名}です. tot は
+\texttt{wrx/libwr.a} をリンクするため, リンクグラフ上の都合で
+\texttt{wr:} も \texttt{wrx\_param\_set} に振り分けられます.
+\texttt{wr/} ツリー本来の (非 wrx) レジストリを使いたい場合は
+\texttt{libwrapi.so} を直接叩くか \texttt{python/wrlib} を
+使ってください.
+\end{warn}
+
+\subsection{kwargs ではなく dict}
+
+Python の kwargs にはコロンを書けないため, \texttt{set\_params}
+には dict もしくはタプルのイテラブルを\textbf{位置引数}として
+渡します.
+
+\begin{lstlisting}[style=py]
+tot.set_params({"eq:RR": 6.5, "tr:DT": 0.001, "fp:NSMAX": 2})
+tot.set_params([("ti:RR", 6.5), ("wrx:RFIN", 170.0)])
+\end{lstlisting}
+
+\subsection{文字列パラメータ}
+
+\texttt{set\_param\_str} は \texttt{tr:} と \texttt{eq:} のみ対応
+(両方とも文字列レジストリを持っているため). 他の名前空間で
+文字列を渡すと \texttt{TotlibInvalidParamError} になります.
+
+\begin{lstlisting}[style=py]
+tot.set_param_str("eq:KNAMEQ", "eqdata.ITER01")
+tot.set_param_str("tr:KNAMEQ", "eqdata.ITER01")
+\end{lstlisting}
+
+\section{各モジュールへの delegation}
+
+実装上, \texttt{tot\_param\_set} は受けた名前を最初のコロンで
+分割し, ベア部分 (\texttt{eq:RR} → \texttt{RR}) を per-module
+レジストリに渡します. 戻り値は per-module の \texttt{ierr} を
+そのまま返します. 例外マッピングは tot 側で
+\texttt{TotlibError} 階層に正規化されるため, ユーザは複数の
+モジュール例外を覚える必要はありません.
+
+\section{既知の制約}
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{\texttt{tot\_init}, \texttt{tot\_run},
+        \texttt{tot\_get\_state}, \texttt{tot\_finalize} は L-3/L-4/L-5
+        時点でスタブ}: \texttt{rc=4} (\texttt{TotlibNotImplementedError})
+        を返します. ラッパは \texttt{rc=0} と \texttt{rc=4} の双方を
+        「ロード成功」とみなして \texttt{set\_param} のみ動作確認できる
+        ようにしています. L-6 で per-module fan-out が完成すると順次
+        正常終了に切り替わります.
+  \item \textbf{プロセスあたり 1 インスタンス}: 6 モジュール分の
+        COMMON / module 変数を共有するため.
+  \item \textbf{graphics / MPI / OpenMP API なし}.
+  \item \textbf{未登録の bare 名}は per-module レジストリに追加した
+        うえで再ビルド.
+\end{itemize}
+
+\section{変更履歴 — Phase L-0 〜 L-7}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lllp{6.5cm}@{}}
+\toprule
+Phase & PR & 日付 & 内容 \\ \midrule
+L-1 & \#43 & 2026-04-18 & \texttt{tot/Makefile} CORE/GRAPHICS 分割 \\
+L-2 & \#-- & 2026-04-18 & C ABI スタブ (\texttt{tot\_api.h}) \\
+L-3 & \#82 & 2026-04-18 & 名前空間ディスパッチャ (\texttt{tot\_param\_registry.f90}) \\
+L-4 & \#85 & 2026-04-18 & \texttt{libtotapi.so} 合成共有ライブラリ \\
+L-5 & \#91 & 2026-04-19 & Python ラッパ \texttt{python/totlib/} \\
+L-6 & — & (TBD) & per-module \texttt{*\_run} fan-out + 統合テスト \\
+L-7 & \#94 & (TBD) & ドキュメント整備 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+(\#94, \#96 は本マニュアル改訂時点で進行中の番号で, 確定次第
+付録 \ref{ch:appendix} の PR 一覧で更新されます.)
+
+\section{テスト}
+
+\begin{lstlisting}[style=bash]
+# 純 Python テストは libtotapi.so 不要で常時実行可
+PYTHONPATH=python python3 -m unittest discover python/totlib/tests -v
+# .so がある場合は FFI / namespace ガードも検証される
+\end{lstlisting}
+
+\clearpage
+% ======================================================================
 \chapter{テストインフラ}
 \label{ch:tests}
 
@@ -1404,57 +1824,89 @@ bash test_run/run_tests.sh tr_iter01 tr_tst2 tr_m0904 \
 
 \section{モジュール別完了マトリクス}
 
+2026-04-19 改訂時点で, ライブラリ化完了モジュールは
+\textbf{tr / ti / wr / wrx / fp / eq / tot の 7 個}に拡大した
+(本改訂前は 5 個).
+
 \begin{center}
 \small
 \begin{tabular}{@{}lcccccccc@{}}
 \toprule
 Module & L-0 & L-1 & L-2 & L-3 & L-4 & L-5 & L-6 & L-7 \\ \midrule
 tr  & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
-ti  & \checkmark & \checkmark & \checkmark & \checkmark & $\triangle^{1}$ & \checkmark & \checkmark & \checkmark \\
+ti  & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
 wr  & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
-wrx & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark$^{2}$ & \checkmark & $\triangle^{2}$ & \checkmark \\
+wrx & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark$^{1}$ & \checkmark & $\triangle^{1}$ & \checkmark \\
 fp  & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
-eq  & \checkmark & plan & plan & plan & plan & plan & plan & plan \\
-tot & -- & plan & plan & plan & plan & plan & plan & plan \\
+eq  & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+tot & -- & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & $\triangle^{2}$ & $\triangle^{2}$ \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 脚注:
 \begin{itemize}[leftmargin=1.5em]
-  \item[$^{1}$] \texttt{ti/libtiapi.so} のトップレベル Makefile
-    ターゲットはフィーチャブランチ待ち.
-  \item[$^{2}$] \texttt{wrx\_run} が \texttt{libgrf::grd1d} 依存で
+  \item[$^{1}$] \texttt{wrx\_run} が \texttt{libgrf::grd1d} 依存で
     .so 経由だとセグフォる. \texttt{WRX\_RUN\_OK=1} でテストを限定
     有効化.
+  \item[$^{2}$] \texttt{tot} は L-3/L-4/L-5 で
+    \texttt{init/run/get\_state/finalize} がスタブ
+    (\texttt{rc=4}). L-6 で per-module fan-out が完了すると有効化.
+    L-7 ドキュメントは \#94 系列で進行中.
 \end{itemize}
 
-\section{eq モジュールが除外されている理由}
+\section{eq F90 モダナイゼーション (F-1 〜 F-5) 完了}
 
-\textbf{eq} (平衡解析) モジュールは, 2026-04-18 時点で
-Phase 0 (L-0) のみ完了しており, L-1 以降は\textbf{計画のみ}
-(\texttt{docs/superpowers/plans/2026-04-*-eq-library-L*.md}).
+eq モジュールは, ライブラリ化と並行して F90 モダナイゼーションを
+完了した. 完了マトリクス:
 
-主な未解決事項:
+\begin{center}
+\small
+\begin{tabular}{@{}lllp{6.0cm}@{}}
+\toprule
+Phase & PR & 日付 & 内容 \\ \midrule
+F-1 & \#71 & 2026-04-18 & COMMON $\to$ MODULE 移行 (\texttt{eqcom\{0..3\}\_mod.f90}, shim 並存) \\
+F-2 & \#79 & 2026-04-18 & LOW tier の fixed $\to$ free-form 化 \\
+F-3 & \#81 & 2026-04-18 & MED tier (9 ファイル) \\
+F-4 & \#87 & 2026-04-19 & HIGH tier (8 ファイル, \texttt{eqcalc.f}, \texttt{eqcalq.f} 等) \\
+F-5 & \#93 & 2026-04-19 & shim 撤去, INCLUDE $\to$ USE 全面切替 \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-\begin{enumerate}[leftmargin=1.5em]
-  \item eq は Fortran 77 の fixed-form が大部分を占め,
-        F90 化 (\texttt{docs/superpowers/plans/.../eq-f90-modernization-plan.md})
-        が未着手.
-  \item Shim 方針 (F77 → F90 の段階移行と, F90 shim の除却計画) が
-        \texttt{eq-f90-shim-policy.md} で合意済みだが, 実装未着手.
-  \item COMMON ブロックのモジュール化, BPSD 連携見直しが前提.
-\end{enumerate}
+これにより eq/ 配下のソースは F90 のみとなり, 下流モジュール
+(tr, tot 等) から \texttt{USE eqcom*\_mod} で直接参照できる
+ようになった.
 
-これらは本マニュアルの改訂時に追補される.
+\section{MCP サーバ群 (6 個揃い)}
 
-\section{tot モジュールが除外されている理由}
+各モジュールに対応する Model Context Protocol (MCP) サーバが
+\texttt{python/mcp-servers/} 配下に揃った. これは Claude Code
+等の AI エージェントから各 \texttt{X}lib を直接操作するための
+ブリッジである.
 
-\textbf{tot} (統合シミュレータ) は eq/tr/ti/fp/wr を束ねるトップレベル
-で, 下位モジュールすべての L-* が揃ってから最後にライブラリ化する
-設計方針である. 依存関係グラフが DAG として確定するのを待つ.
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+サーバ & ディレクトリ & 関連 PR \\ \midrule
+tr  & \texttt{python/mcp-servers/tr\_mcp/}  & \#72 \\
+ti  & \texttt{python/mcp-servers/ti\_mcp/}  & \#74 \\
+wr  & \texttt{python/mcp-servers/wr\_mcp/}  & \#76 \\
+wrx & \texttt{python/mcp-servers/wrx\_mcp/} & \#75 \\
+fp  & \texttt{python/mcp-servers/fp\_mcp/}  & \#77 \\
+tot & \texttt{python/mcp-servers/tot\_mcp/} & 進行中 (\#94/\#96 系列) \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-\section{Shim ポリシー}
+各サーバは \texttt{server.py} に MCP ツール (\texttt{set\_param},
+\texttt{run}, \texttt{get\_state} など) を実装し,
+\texttt{pyproject.toml} で \texttt{x-mcp} コマンドとしてインストール
+できる. tot 用 MCP は本改訂時点で in-flight (just-merged or
+作業中) のため, 詳細は次回改訂で追補する.
+
+\section{Shim ポリシー (グラフィクス層)}
 
 \texttt{X\_graphics\_stubs.f90} は, 共有ライブラリ版に\textbf{不要な
 グラフィクス関数}の\textbf{空実装}を置き, リンク時の「undefined
@@ -1468,18 +1920,31 @@ stubs は撤去される.
 
 \texttt{trcom0.inc} / \texttt{trcom1.inc} といった F77 の include
 ファイルはモジュール化 (\texttt{trcomm.f90} とその派生) 済み.
-eq は未実施. tot は依存が落ち着いてから.
+\textbf{eq モジュールも本改訂時点で完了}: F-1〜F-5 の 5 段階
+(PR \#71 / \#79 / \#81 / \#87 / \#93) で COMMON $\to$ MODULE 移行,
+fixed-form の free-form 化, shim 撤去まで完遂した.
+tot は eq 完了に伴い構築可能になった.
 
 \section{その他の残作業}
 
 \begin{itemize}[leftmargin=1.5em]
-  \item 文字列パラメータ: \texttt{KNAMEQ} 以外は未対応. wrx の
-        \texttt{KID\_NS}, fp の \texttt{KNAMFP} など.
+  \item \texttt{tot} の per-module fan-out (\texttt{tot\_init},
+        \texttt{tot\_run}, \texttt{tot\_get\_state},
+        \texttt{tot\_finalize}) の本実装. L-6 で扱う予定.
+  \item \texttt{tot\_mcp} サーバの develop 着地と本マニュアルへの追補.
+  \item \texttt{trlib} のみで先行している plot API
+        (\texttt{X.plot(varname)}) と TOML サンプルランナ
+        (\texttt{python -m Xlib config.toml}) を, 残り 6 モジュール
+        (ti, wr, wrx, fp, eq, tot) に横展開する作業 (deferred).
+  \item チュートリアル Notebook 集 (5 モジュール一気通貫の
+        Jupyter サンプル) の整備 (deferred).
+  \item 文字列パラメータ: tr の \texttt{KNAMEQ} と eq の 7 キーは
+        対応済み. wrx の \texttt{KID\_NS}, fp の \texttt{KNAMFP},
+        ti の \texttt{KID\_NS} はいまだ未対応.
   \item \texttt{fp\_finalize} の配列解放 (非対称 allocate/deallocate).
   \item メッシュキャップ (\texttt{FP\_MAX\_NRMAX=100} など) の拡大.
   \item マルチインスタンス化 (現状は 1 プロセス 1 インスタンス).
   \item \texttt{wrx\_run} の \texttt{libgrf} 依存解消.
-  \item \texttt{ti/libtiapi.so} の develop 昇格.
 \end{itemize}
 
 \clearpage
@@ -1503,21 +1968,35 @@ eq は未実施. tot は依存が落ち着いてから.
 \texttt{make -C adpost libs\_pic}     & \texttt{lib-adpost\_pic.a} (ti) \\
 \texttt{make -C open-adas/adf11/adf11-lib libs\_pic} & adf11 PIC (ti) \\
 \texttt{make -C tr  libtrapi.so}      & tr 共有ライブラリ \\
-\texttt{make -C ti  libtiapi.so}      & ti 共有ライブラリ (FB 待ち) \\
+\texttt{make -C ti  libtiapi.so}      & ti 共有ライブラリ \\
 \texttt{make -C wr  libwrapi.so}      & wr 共有ライブラリ \\
 \texttt{make -C wrx libwrxapi.so}     & wrx 共有ライブラリ \\
 \texttt{make -C fp  libfpapi.so}      & fp 共有ライブラリ \\
+\texttt{make -C eq  libeqapi.so}      & eq 共有ライブラリ \\
+\texttt{make -C tot libtotapi.so}     & tot (統合) 共有ライブラリ \\
 \texttt{make -C X  X\_api\_check\_all}  & Layer 2 C ABI 回帰 (各 X) \\
 \texttt{bash test\_run/run\_tests.sh} & 全テスト (Phase 0 + 4 層) \\
 \bottomrule
 \end{longtable}
 
-\section{主な PR 一覧}
+\section{主な PR 一覧 (2026-04-19 改訂時点, \#96 まで)}
 
-tr: \#2, \#21, \#27, \#33, \#35, \#44, \#53. ti: \#12, \#22, \#28, \#34,
-\#41, \#47, \#57, \#64. fp: \#13, \#26, \#29, \#37, \#43, \#55, \#56, \#68.
-wr/wrx の PR 番号は \texttt{git log --oneline develop --grep="Phase L-"}
-で確認.
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{tr}: \#2, \#21, \#27, \#33, \#35, \#44, \#53, \#62, \#63
+  \item \textbf{ti}: \#12, \#22, \#28, \#34, \#41, \#47, \#57, \#64, \#66
+  \item \textbf{fp}: \#13, \#26, \#29, \#37, \#43, \#55, \#56, \#68
+  \item \textbf{wr}: \#15, \#24, \#30, \#36, \#42, \#46, \#60, \#69
+  \item \textbf{wrx}: \#16, \#25, \#31, \#38, \#52, \#59, \#67, \#90
+  \item \textbf{eq (Phase L)}: \#54 (L-0), \#65 (L-1), \#70 (L-2), \#78 (L-3), \#80 (L-4), \#86 (L-5), \#92 (L-6), \#89 (L-7)
+  \item \textbf{eq (Phase F)}: \#71 (F-1), \#79 (F-2), \#81 (F-3), \#87 (F-4), \#93 (F-5)
+  \item \textbf{eq (plans/policy)}: \#58, \#61
+  \item \textbf{tot}: \#43 (L-1), \#82 (L-3), \#85 (L-4), \#91 (L-5), \#94/\#96 系列 (L-6/L-7 in flight)
+  \item \textbf{MCP servers}: \#72 (tr), \#74 (ti), \#75 (wrx), \#76 (wr), \#77 (fp), tot は \#94/\#96 系列で進行中
+  \item \textbf{ドキュメント}: \#62 (tr), \#64 (ti), \#68 (fp), \#69 (wr), \#73 (本マニュアル初版), \#84 (skill), \#88 (pptx), \#89 (eq), \#90 (wrx)
+\end{itemize}
+
+最新の状況は \texttt{git log --oneline develop} もしくは
+\texttt{gh pr list --state merged} で確認できます.
 
 \section{参考資料}
 
@@ -1561,7 +2040,7 @@ wr/wrx の PR 番号は \texttt{git log --oneline develop --grep="Phase L-"}
 \appendix
 \chapter{補足: Python 最小例カタログ}
 
-本付録では, 5 モジュールそれぞれの\textbf{最短 Python コード}を
+本付録では, 7 モジュールそれぞれの\textbf{最短 Python コード}を
 再掲する. コピペして \texttt{python3 script.py} すればそのまま動く
 ことを目指した.
 
@@ -1626,6 +2105,32 @@ with Fplib() as fp:
     fp.run(ntmax=2)
     s = fp.get_state()
 print("timefp", s.timefp, "RNT[0][:3]", s.RNT[0][:3])
+\end{lstlisting}
+
+\section{eq}
+
+\begin{lstlisting}[style=py]
+from eqlib import Eq
+with Eq() as eq:
+    eq.set_params(RR=3.0, BB=3.0, RIP=1.0, MODELG=3)
+    eq.set_param_str("KNAMEQ", "eqdata")   # EQDSK ファイル名
+    eq.run()                               # mode=1 デフォルト
+    s = eq.get_state()
+print("raxis", s.scalars["raxis"], "qaxis", s.scalars["qaxis"])
+\end{lstlisting}
+
+\section{tot}
+
+\begin{lstlisting}[style=py]
+from totlib import Tot
+with Tot() as tot:
+    # 名前空間プレフィックスは必須
+    tot.set_param("eq:RR", 6.5)
+    tot.set_param("tr:DT", 0.001)
+    tot.set_param("fp:NSMAX", 2)
+    # tot.run(ntmax=10)         # L-6 で fan-out 完成後に有効化
+    # s = tot.get_state()
+print("tot set_param OK (L-3 段階のスタブを通過)")
 \end{lstlisting}
 
 \chapter{補足: C から直接呼ぶ例}
@@ -1733,12 +2238,17 @@ L-* フェーズ間の依存関係 (各モジュール共通):
 を丁寧に説明することで, 物理屋の読者が\textbf{自分のスクリプト}を
 数分で書き始められる状態を目指した.
 
+\textbf{2026-04-19 改訂}: 第 \ref{ch:eq} 章 (eq) と第 \ref{ch:tot} 章
+(tot) を新規追加し, 完了モジュールを 5 → 7 に拡大した. 併せて
+eq の F90 モダナイゼーション (Phase F-1〜F-5) と MCP サーバ群
+(tr/ti/wr/wrx/fp/tot, 6 個) も反映した.
+
 ご意見・誤記の指摘は k-yoshimi@g.ecc.u-tokyo.ac.jp まで.
 
 \vfill
 \begin{center}\small
 TASK プラズマ輸送ライブラリ化プロジェクト --- 日本語マニュアル\\
-(tr / ti / wr / wrx / fp, Phase L-0 〜 L-7)\\
+(tr / ti / wr / wrx / fp / eq / tot, Phase L-0 〜 L-7)\\
 © 2026 k-yoshimi. TASK コードの license に準じる.
 \end{center}
 
