@@ -44,6 +44,7 @@ MODULE wrx_api
   USE wrx_param_registry, ONLY: wrx_param_set
   USE plinit,  ONLY: pl_init
   USE dpinit,  ONLY: dp_init
+  USE dpparm,  ONLY: dp_chek
   USE wrinit,  ONLY: wrinit_fortran => wr_init
   USE wrprep,  ONLY: wr_prep
   USE wrsetup, ONLY: wr_setup
@@ -69,7 +70,7 @@ MODULE wrx_api
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_run_called  = .FALSE.
 
-  EXTERNAL EQINIT, GSOPEN, GSCLOS
+  EXTERNAL EQINIT, EQCHEK, GSOPEN, GSCLOS
 
 CONTAINS
 
@@ -160,6 +161,27 @@ CONTAINS
     END IF
 
     IF (nstpmax_arg > 0) NSTPMAX = nstpmax_arg
+
+    ! Mirror WRNLIN namelist semantics (wrx/wrparm.f90:91-100): when
+    ! MODEL_PROF==0, an unsubscripted scalar PROFN1/PROFN2/PROFT1/
+    ! PROFT2/PROFU1/PROFU2 fans out to all NSMAX species. The C ABI
+    ! set_param path writes only element (1), so without this fan-out
+    ! NS>=2 keeps the pl_init defaults, perturbing the cold dispersion
+    ! solution along ray trajectories. Mirrors wr/wr_api.f90 PR #100.
+    CALL wrx_propagate_namelist_profiles
+
+    ! Run the post-namelist consistency checks that the Fortran path
+    ! invokes via wrx/wrparm.f90:43-47 (CALL EQCHEK / DP_CHEK inside
+    ! WR_PARM, plus the NSAMAX_WR cap). EQCHEK contains the critical
+    ! RB=RA fixup (eq/eqinit.f90:536-540): without it, fixtures using
+    ! ITER-scale RA leave RB at the pl_init default (1.2 m), so
+    ! RB/RA<1 and the ray-step boundary check trips at NSTP=1.
+    ! Mirrors wr/wr_api.f90 PR #100; wrx's wrparm has no WR_CHEK.
+    CALL wrx_apply_namelist_checks(ierr_local)
+    IF (ierr_local /= 0) THEN
+       ierr = WRX_ERR_CALC_FAILED
+       RETURN
+    END IF
 
     CALL wr_prep(ierr_local)
     IF (ierr_local /= 0) THEN
@@ -301,5 +323,57 @@ CONTAINS
     g_initialized = .FALSE.
     ierr = WRX_OK
   END FUNCTION wrx_api_finalize
+
+  !-------------------------------------------------------------------
+  ! wrx_propagate_namelist_profiles : fan out unsubscripted scalar
+  ! PROFN1/PROFN2/PROFT1/PROFT2/PROFU1/PROFU2 to all NS=1..NSMAX
+  ! when MODEL_PROF==0. Mirrors wrx/wrparm.f90::WRNLIN lines 91-100.
+  !
+  ! Required because the C ABI set_param path writes only PROFN?(1)
+  ! when called without an [idx] subscript, whereas Fortran namelist
+  ! READ semantics propagate the scalar to every species.
+  !-------------------------------------------------------------------
+  SUBROUTINE wrx_propagate_namelist_profiles
+    USE plcomm, ONLY: NSMAX, MODEL_PROF, &
+                      PROFN1, PROFN2, PROFT1, PROFT2, PROFU1, PROFU2
+    INTEGER :: ns
+    IF (MODEL_PROF /= 0) RETURN
+    DO ns = 2, NSMAX
+       PROFN1(ns) = PROFN1(1)
+       PROFN2(ns) = PROFN2(1)
+       PROFT1(ns) = PROFT1(1)
+       PROFT2(ns) = PROFT2(1)
+       PROFU1(ns) = PROFU1(1)
+       PROFU2(ns) = PROFU2(1)
+    END DO
+  END SUBROUTINE wrx_propagate_namelist_profiles
+
+  !-------------------------------------------------------------------
+  ! wrx_apply_namelist_checks : run EQCHEK / DP_CHEK that the Fortran
+  ! namelist path invokes via wrx/wrparm.f90:43-47 (inside WR_PARM).
+  ! The C ABI set_param path bypasses WR_PARM entirely so these
+  ! post-read fixups never run unless we call them here. Note: wrx's
+  ! wrparm.f90 does NOT call WR_CHEK (unlike wr/wrparm.f90), so we
+  ! mirror that by calling only EQCHEK + DP_CHEK + the NSAMAX_WR cap.
+  !
+  ! ierr aggregates the two sub-calls (first non-zero wins). The
+  ! NSAMAX_WR cap and nsamax_dp propagation only run if EQCHEK
+  ! succeeded, so on failure we don't half-mutate state.
+  !-------------------------------------------------------------------
+  SUBROUTINE wrx_apply_namelist_checks(ierr)
+    USE dpcomm, ONLY: nsamax_dp
+    INTEGER, INTENT(OUT) :: ierr
+    INTEGER :: ic_ierr
+    ierr = 0
+    CALL EQCHEK(ic_ierr)
+    IF (ic_ierr /= 0) THEN
+       ierr = ic_ierr
+       RETURN
+    END IF
+    IF (NSAMAX_WR > NSMAX) NSAMAX_WR = NSMAX
+    nsamax_dp = NSAMAX_WR
+    CALL dp_chek(ic_ierr)
+    IF (ic_ierr /= 0) ierr = ic_ierr
+  END SUBROUTINE wrx_apply_namelist_checks
 
 END MODULE wrx_api
