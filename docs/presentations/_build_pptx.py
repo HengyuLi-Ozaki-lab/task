@@ -268,14 +268,12 @@ def add_code_block(
         r.font.bold = True
         r.font.color.rgb = COLOR_GRAY
         r.font.name = JP_FONT
-        p2 = tf.add_paragraph()
-        first_p = p2
-    else:
-        first_p = p
+        # When title is set, the first code line gets a fresh paragraph
+        # (don't reuse the title paragraph).
     lines = code.split("\n")
     for i, line in enumerate(lines):
         if i == 0 and title is None:
-            p_use = first_p
+            p_use = p
         else:
             p_use = tf.add_paragraph()
         r = p_use.add_run()
