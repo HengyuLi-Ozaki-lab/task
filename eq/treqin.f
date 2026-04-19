@@ -20,7 +20,11 @@ C   ***************************************************************
 C
       SUBROUTINE TREQIN(RR1,RA1,RKAP1,RDLT1,BB1,IERR)
 C              
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
       CHARACTER KPNAME*80
       SAVE INIT
@@ -86,7 +90,11 @@ C
      &                  RSA,DPSIPDRHOA,IERR)
 C
       USE libspl1d
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
 C
       DIMENSION PRHO(NTRMAX1),HJRHO(NTRMAX1)
@@ -263,7 +271,11 @@ C
      &                  IERR)
 C
       USE libspl1d
-      INCLUDE 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE 'eqcom4.inc'
 C
       DIMENSION QRHO(NTRMAX1),TTRHO(NTRMAX1)

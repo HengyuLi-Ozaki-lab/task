@@ -174,7 +174,11 @@ c$$$      end subroutine wmfem_plasma
      &                          drrrho,dzzrho,drrchi,dzzchi)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       real(8),intent(in):: rho,th
       real(8),intent(out):: rrl,zzl,drrrho,dzzrho,drrchi,dzzchi
 
@@ -190,7 +194,11 @@ c$$$      end subroutine wmfem_plasma
       subroutine wmeq_get_magnetic(rho,th,babs,bsupth,bsupph)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       real(8),intent(in):: rho,th
       real(8),intent(out):: babs,bsupth,bsupph
       real(8):: rrl,zzl,drrpsi,dzzpsi,drrchi,dzzchi,rhol
@@ -241,7 +249,11 @@ c$$$      endif
       subroutine wmeq_get_mtxCL(nthmax2,nhhmax2,mtxcl)
 
       USE libspl2d
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER,INTENT(IN):: nthmax2,nhhmax2
       COMPLEX(8),DIMENSION(3,3,nthmax2,nhhmax2),INTENT(OUT):: mtxcl
       real(8):: rrl,zzl,drrpsi,dzzpsi,drrchi,dzzchi,rhol

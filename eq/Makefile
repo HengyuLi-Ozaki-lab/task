@@ -15,11 +15,15 @@ FFLAGS=-g $(OFLAGS)
 
 MODINCLUDE=-I$(MOD) -I../../bpsd/$(MOD) -I../mtxp/$(MOD) -I../pl/$(MOD) -I../lib/$(MOD)
 
-# Phase L-1 + F-1: SRCS split into CORE / GRAPHICS / MENU groups.
+# Phase L-1 + F-1 + F-5: SRCS split into CORE / GRAPHICS / MENU groups.
 # SRCS_CORE leads with the Phase F-1 F90 MODULEs (eqcom{0,1,2,3}_mod.f90)
 # that mirror the eqcom{0..3}.inc COMMON bundles; they must compile first
-# so their .mod files are available to every file that USEs them (directly
-# or via the shim headers eqcom{c,m,q,x}.inc).
+# so their .mod files are available to every file that USEs them.
+#
+# Phase F-5 retired the eqcom{c,m,q,x}.inc shim headers; every consumer
+# now USEs the F-1 MODULEs directly. The raw eqcom{0..5}.inc files are
+# still present for the few sites (eqcalx, eqgoutx) that pull eqcom5.inc
+# (matrix-solver COMMONs not yet F90-modernized).
 #
 # libeq_pic.a / libeqapi.so link SRCS_CORE only (no graphics / no menu).
 # The eq / pl / ak binaries still build from the full union.
@@ -167,19 +171,18 @@ clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libeq_pic.a libeqapi.so
 	-rm -f $(EQ_API_SO_O) $(EQ_API_SO_BIN)
 
-# EQCOMM = legacy raw .inc files (still INCLUDEd directly by eqcalx.f and
-# a few cross-module consumers). For the shim-routed paths, see EQCOM_MODS
-# below — that variable carries the F-1 MODULE objects. Every dependency
-# rule uses BOTH so edits to either propagate correctly without duplicating
-# the same targets in one variable.
-EQCOMM = eqcom0.inc eqcom1.inc
+# Phase F-5: shim .inc headers (eqcom{c,m,q,x}.inc) deleted. Every
+# consumer now USEs the F-1 MODULEs (eqcom0/1/2/3_mod) directly. The
+# raw eqcom{0..5}.inc files are kept (they are still INCLUDEd by
+# eqcalx.f / eqgoutx.f for eqcom5 matrix-solver COMMONs and by
+# eqfunc.f90 / treqin.f for eqcom4 inline).
 
-# Phase F-1: dependencies for new F90 COMMON-replacement MODULEs.
+# Phase F-1: dependencies for the F90 COMMON-replacement MODULEs.
 # - eqcom0_mod is the root (PARAMETER-only).
 # - eqcom1/2/3_mod USE eqcom0_mod, so their .mod must be available.
-# - Every .f that INCLUDEs a shim (eqcom{c,m,q,x}.inc) now transitively
-#   requires the corresponding .mod file. We list them here so that a
-#   parallel `make -jN` cannot race past module compilation.
+# - Every .f / .f90 that USEs an eqcomN_mod transitively requires the
+#   corresponding .mod file. We list them here so that a parallel
+#   `make -jN` cannot race past module compilation.
 EQCOM_MODS = eqcom0_mod.o eqcom1_mod.o eqcom2_mod.o eqcom3_mod.o
 
 eqcom0_mod.o: eqcom0_mod.f90
@@ -187,42 +190,43 @@ eqcom1_mod.o: eqcom1_mod.f90 eqcom0_mod.o
 eqcom2_mod.o: eqcom2_mod.f90 eqcom0_mod.o
 eqcom3_mod.o: eqcom3_mod.f90 eqcom0_mod.o
 
-# Shim .inc files now USE the new MODULEs; every consumer of a shim
-# therefore depends on those .mod files in addition to the raw .inc.
-eqmain.o: eqmain.f $(EQCOMM) $(EQCOM_MODS)
-eqinit.o: eqinit.f90 $(EQCOMM) $(EQCOM_MODS)
-eqcalc.o: eqcalc.f90 $(EQCOMM) $(EQCOM_MODS)
-eqcalx.o: eqcalx.f $(EQCOMM) eqcom5.inc $(EQCOM_MODS)
-eqcalq.o: eqcalq.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqcalv.o: eqcalv.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eqsub.o : eqsub.f90  $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eqfunc.o: eqfunc.f90 $(EQCOMM) eqcom2.inc eqcom4.inc $(EQCOM_MODS)
-eqsplf.o: eqsplf.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqfile.o: eqfile.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eq-eqdsk.o: eq-eqdsk.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eq-qst.o: eq-qst.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eqintf.o: eqintf.f90 $(EQCOMM) eqcom2.inc $(EQCOM_MODS)
-eqgout.o: eqgout.f90 $(EQCOMM) eqcom2.inc eqcom3.inc $(EQCOM_MODS)
-eqbpsd.o: eqbpsd.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-#eqtrbpsd.o: eqtrbpsd.f $(EQCOMM)
+# Phase F-5: dep lines now reference $(EQCOM_MODS) only (the raw .inc
+# files are no longer transitively included via shim headers). Files
+# that still INCLUDE a raw eqcom{4,5}.inc directly keep that prereq.
+eqmain.o: eqmain.f $(EQCOM_MODS)
+eqinit.o: eqinit.f90 $(EQCOM_MODS)
+eqcalc.o: eqcalc.f90 $(EQCOM_MODS)
+eqcalx.o: eqcalx.f eqcom5.inc $(EQCOM_MODS)
+eqcalq.o: eqcalq.f90 $(EQCOM_MODS)
+eqcalv.o: eqcalv.f90 $(EQCOM_MODS)
+eqsub.o : eqsub.f90  $(EQCOM_MODS)
+eqfunc.o: eqfunc.f90 eqcom4.inc $(EQCOM_MODS)
+eqsplf.o: eqsplf.f90 $(EQCOM_MODS)
+eqfile.o: eqfile.f90 $(EQCOM_MODS)
+eq-eqdsk.o: eq-eqdsk.f90 $(EQCOM_MODS)
+eq-qst.o: eq-qst.f90 $(EQCOM_MODS)
+eqintf.o: eqintf.f90 $(EQCOM_MODS)
+eqgout.o: eqgout.f90 $(EQCOM_MODS)
+eqbpsd.o: eqbpsd.f90 $(EQCOM_MODS)
+#eqtrbpsd.o: eqtrbpsd.f $(EQCOM_MODS)
 #eqtrbpsdlib.o: eqtrbpsdlib.f90
-eqjft2m.o: eqjft2m.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqjft2m.o: eqjft2m.f $(EQCOM_MODS)
 eqlib.o : eqlib.f90
 equnit.o: equnit.f90 eqbpsd.f90 $(EQCOM_MODS)
 eqgsub.o: eqgsub.f90
-eqg2d.o: eqg2d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqg3d.o: eqg3d.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+eqg2d.o: eqg2d.f $(EQCOM_MODS)
+eqg3d.o: eqg3d.f $(EQCOM_MODS)
 equcom.o: equcom.f90
 equread.o: equread.f90 equcom.f90
-equintf.o: equintf.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqrppl.o: eqrppl.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqgetp.o: eqgetp.f90 $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
-eqregress.o: eqregress.f $(EQCOMM) eqcom3.inc eqcomq.inc $(EQCOM_MODS)
-trtest.o: trtest.f
-treqin.o: treqin.f $(EQCOMM) eqcom3.inc eqcom4.inc $(EQCOM_MODS)
+equintf.o: equintf.f90 $(EQCOM_MODS)
+eqrppl.o: eqrppl.f90 $(EQCOM_MODS)
+eqgetp.o: eqgetp.f90 $(EQCOM_MODS)
+eqregress.o: eqregress.f $(EQCOM_MODS)
+trtest.o: trtest.f $(EQCOM_MODS)
+treqin.o: treqin.f eqcom4.inc $(EQCOM_MODS)
 pltest.o: pltest.f
 aktest.o: aktest.f
-akeqin.o: akeqin.f $(EQCOMM) eqcom3.inc $(EQCOM_MODS)
+akeqin.o: akeqin.f $(EQCOM_MODS)
 newton.o: newton.f90
 invematrix.o: invematrix.f90
 
@@ -271,7 +275,7 @@ EQ_API_SMOKE_BIN = $(EQ_API_SMOKE_DIR)/test_smoke
 eq_state.o          : eq_state.f90
 eq_param_registry.o : eq_param_registry.f90
 eq_api.o            : eq_api.f90 eq_state.f90 eq_param_registry.f90 equnit.f90
-eq_api_common.o     : eq_api_common.f $(EQCOMM)
+eq_api_common.o     : eq_api_common.f $(EQCOM_MODS)
 
 .PHONY: eq_api_compile_check
 eq_api_compile_check: libs libeq.a $(OBJ_API)

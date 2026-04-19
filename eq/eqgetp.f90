@@ -12,7 +12,11 @@
 
       SUBROUTINE EQGETP(RHOT1,PSIP1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NRMAX1
       REAL*8,  INTENT(OUT) :: RHOT1(NRMAX1), PSIP1(NRMAX1)
 
@@ -26,7 +30,11 @@
 
       SUBROUTINE EQGETR(RPS1,DRPSI1,DRCHI1,NTHM1,NTHMAX1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NTHM1, NTHMAX1, NRMAX1
       REAL*8,  INTENT(OUT) :: RPS1(NTHM1,NRMAX1)
       REAL*8,  INTENT(OUT) :: DRPSI1(NTHM1,NRMAX1), DRCHI1(NTHM1,NRMAX1)
@@ -47,7 +55,11 @@
 
       SUBROUTINE EQGETZ(ZPS1,DZPSI1,DZCHI1,NTHM1,NTHMAX1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NTHM1, NTHMAX1, NRMAX1
       REAL*8,  INTENT(OUT) :: ZPS1(NTHM1,NRMAX1)
       REAL*8,  INTENT(OUT) :: DZPSI1(NTHM1,NRMAX1), DZCHI1(NTHM1,NRMAX1)
@@ -64,7 +76,11 @@
 
       SUBROUTINE EQGETQ(PPS1,QPS1,RBPS1,VPS1,RLEN1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NRMAX1
       REAL*8,  INTENT(OUT) :: PPS1(NRMAX1), QPS1(NRMAX1), RBPS1(NRMAX1)
       REAL*8,  INTENT(OUT) :: VPS1(NRMAX1), RLEN1(NRMAX1)
@@ -81,7 +97,11 @@
 
       SUBROUTINE EQGETQN(PPS1,QPS1,RBPS1,VPS1,RLEN1,RITOR1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NRMAX1
       REAL*8,  INTENT(OUT) :: PPS1(NRMAX1), QPS1(NRMAX1), RBPS1(NRMAX1)
       REAL*8,  INTENT(OUT) :: VPS1(NRMAX1), RLEN1(NRMAX1), RITOR1(NRMAX1)
@@ -99,7 +119,11 @@
 
       SUBROUTINE EQGETU(RSU1,ZSU1,RSW1,ZSW1,NSUMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NSUMAX1
       REAL*8,  INTENT(OUT) :: RSU1(NSUMAX1), ZSU1(NSUMAX1)
       REAL*8,  INTENT(OUT) :: RSW1(NSUMAX1), ZSW1(NSUMAX1)
@@ -115,7 +139,11 @@
 
       SUBROUTINE EQGETF(RGMIN1,RGMAX1,ZGMIN1,ZGMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(OUT) :: RGMIN1, RGMAX1, ZGMIN1, ZGMAX1
 
       RGMIN1=RGMIN
@@ -127,7 +155,11 @@
 
       SUBROUTINE EQGETA(RAXIS1,ZAXIS1,PSIPA1,PSITA1,Q01,QA1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       REAL*8, INTENT(OUT) :: RAXIS1, ZAXIS1, PSIPA1, PSITA1, Q01, QA1
 
       RAXIS1=RAXIS
@@ -141,7 +173,11 @@
 
       SUBROUTINE EQGETG(RPS1,ZPS1,NTHM1,NTHMAX1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NTHM1, NTHMAX1, NRMAX1
       REAL*8,  INTENT(OUT) :: RPS1(NTHM1,NRMAX1)
       REAL*8,  INTENT(OUT) :: ZPS1(NTHM1,NRMAX1)
@@ -157,7 +193,11 @@
 
       SUBROUTINE EQGETBB(BPR1,BPZ1,BPT1,BTP1,NTHM1,NTHMAX1,NRMAX1)
 
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(IN)  :: NTHM1, NTHMAX1, NRMAX1
       REAL*8,  INTENT(OUT) :: BPR1(NTHM1,NRMAX1)
       REAL*8,  INTENT(OUT) :: BPZ1(NTHM1,NRMAX1)

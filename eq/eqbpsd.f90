@@ -27,7 +27,11 @@
 !=======================================================================
       subroutine eq_bpsd_init(ierr)
 !=======================================================================
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 !      implicit none
       integer, intent(out) :: ierr
 ! local variables
@@ -67,7 +71,11 @@
 !     interface eqiulibrium => transport
 !          equilibrium grid => transport grid
 !=======================================================================
-      INCLUDE '../eq/eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE '../eq/eqcom4.inc'
       integer, intent(out) :: ierr
       integer :: nr
@@ -133,7 +141,10 @@
 !     interface transport => equilibrium
 !=======================================================================
       USE libspl1d
-      INCLUDE '../eq/eqcomm.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INCLUDE '../eq/eqcom4.inc'
       integer, intent(out) :: ierr
       real(rkind),DIMENSION(NTRM):: ptrrho,qtrrho,deriv
