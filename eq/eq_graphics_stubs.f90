@@ -51,3 +51,15 @@ END SUBROUTINE GUTIME
 SUBROUTINE GUFLSH
   IMPLICIT NONE
 END SUBROUTINE GUFLSH
+
+! draw_cross in eqfile.f90 calls these; only reached on plotting paths
+! that the C ABI does not exercise (eq_save / eqdsk diagnostics).
+SUBROUTINE MOVE2D(X, Y)
+  IMPLICIT NONE
+  REAL, INTENT(IN) :: X, Y
+END SUBROUTINE MOVE2D
+
+SUBROUTINE DRAW2D(X, Y)
+  IMPLICIT NONE
+  REAL, INTENT(IN) :: X, Y
+END SUBROUTINE DRAW2D
