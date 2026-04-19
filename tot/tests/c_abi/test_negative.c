@@ -120,6 +120,8 @@ int main(void) {
               TOT_ERR_INVALID, "set_param-fp-unknown");
     EXPECT_EQ(tot_set_param("ti:DEFINITELY_NOT_A_PARAM", 0.0),
               TOT_ERR_INVALID, "set_param-ti-unknown");
+    EXPECT_EQ(tot_set_param("wr:DEFINITELY_NOT_A_PARAM", 0.0),
+              TOT_ERR_INVALID, "set_param-wr-unknown");
     EXPECT_EQ(tot_set_param("wrx:DEFINITELY_NOT_A_PARAM", 0.0),
               TOT_ERR_INVALID, "set_param-wrx-unknown");
 
