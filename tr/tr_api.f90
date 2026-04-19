@@ -64,7 +64,7 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION tr_api_init() RESULT(ierr) BIND(C, NAME="tr_init")
     INTEGER(C_INT) :: ierr
-    INTEGER :: alloc_ierr
+    INTEGER :: alloc_ierr, ios_close
 
     IF (g_initialized) THEN
        ! Idempotent: already initialized, just return OK.
@@ -98,6 +98,9 @@ CONTAINS
     ! trinit_fortran.
     CALL ALLOCATE_TRCOMM(alloc_ierr)
     IF (alloc_ierr /= 0) THEN
+       ! Pair the OPEN(7) above so a failed init does not leak the
+       ! scratch unit (Bugbot MED on PR #103).
+       CLOSE(7, IOSTAT=ios_close)
        ierr = TR_ERR_CALC_FAILED
        RETURN
     END IF
