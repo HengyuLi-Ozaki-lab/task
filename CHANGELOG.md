@@ -211,6 +211,76 @@ module. The `wr` CLI binary and its menu/graphics are unchanged.
 - String parameters are not wired through `wr_set_param`.
 - Single instance per process only.
 
+## WRX Phase L — library-ization (2026-04-18)
+
+Phase L mirrors the WR library-ization for the TASK/WRX extended
+ray-tracing module: the same 5 C ABI functions, the same wrapper
+architecture, parameter registry, and 4-layer test structure. The
+`wrx` CLI binary and its menu/graphics are unchanged.
+
+### Added
+
+- **L-0 (2026-04-18, PR #16)** — Phase 0 regression-test
+  infrastructure for WRX (`wrx_iter01` baseline,
+  `tools/extract_wrx_metrics.py`, `test_run/inputs/wrx_iter01.in`).
+- **L-1 (2026-04-18, PR #25)** — `wrx/Makefile` SRCS split into
+  CORE / GRAPHICS / MENU groups so graphics-free Fortran
+  compilations can be staged without touching the `wrx` binary
+  build.
+- **L-2 (2026-04-18, PR #31)** — C ABI foundation: `wrx/wrx_api.h`,
+  `wrx/wrx_api.f90`; 5 entry-point stubs returning
+  `WRX_ERR_NOT_IMPL` (ierr=4), plus first C-side smoke tests under
+  `wrx/tests/c_abi/`.
+- **L-3 (2026-04-18, PR #38)** — Parameter registry
+  (`wrx/wrx_param_registry.f90`, ~70 `SELECT CASE` entries covering
+  scalars and 1-D arrays) plus real bodies for `wrx_init` /
+  `wrx_run` / `wrx_get_state` / `wrx_finalize`. `wrx_set_param`
+  accepts `"NAME"` and `"NAME[idx]"` (1-origin).
+- **L-4 (2026-04-18, PR #52)** — `make -C wrx libwrxapi.so` builds
+  the shared library. PIC variants (`*_pic.a`) of `lib`, `pl`, `eq`,
+  `dp`, `mtxp`, `bpsd` added. Non-PIC archives and the `wrx` binary
+  are unchanged.
+- **L-5 (2026-04-18, PR #59)** — Python wrapper `python/wrxlib/`:
+  `Wrxlib` context manager, `WrxState` dataclass, exception
+  hierarchy mirroring `enum wrx_error`, `_ffi` ctypes layer with
+  `WRXLIB_PATH` override and `RTLD_LAZY` loading.
+- **L-6 (2026-04-18, PR #67)** — 4-layer test suite wired into
+  `test_run/test_definitions.conf`:
+  `wrxlib_c_abi` (Layer 2 `make -C wrx wrx_api_check_all`),
+  `wrxlib_ffi` + `wrxlib_wrapper` (Layer 3 Python),
+  `wrxlib_equivalence` (Layer 1 vs Phase 0 baselines, tol `1e-10`,
+  `WRX_RUN_OK` gated), `wrxlib_sweep` (Layer 4 3×3 RFIN × ANGPIN
+  smoke, `WRX_RUN_OK` gated).
+- **L-7 (2026-04-19, this PR)** — User-facing documentation:
+  rewritten `python/wrxlib/README.md` (with prominent `WRX_RUN_OK`
+  gate section), example scripts (`quickstart.py`,
+  `parameter_sweep.py`, `state_dump.py` — all `--dry-run` capable),
+  architecture doc (`docs/wrx-library/architecture.md`, including a
+  dedicated `libgrf::grd1d` limitation analysis with remediation
+  roadmap), and this changelog entry.
+
+### Known issues
+
+**WRX:**
+- **`wrx_run` may segfault on the shared build** because
+  `wrcalpwr.f90` retains an unconditional call to `libgrf::grd1d`
+  that the L-1 graphics split deliberately excludes from
+  `libwrxapi.so`. `RTLD_LAZY` loading hides the unresolved symbol
+  at `dlopen` time; the segfault occurs the first time `wrcalpwr`
+  is reached. Mitigation: every `.run()`-dependent test class is
+  gated behind `WRX_RUN_OK=1`; the C-side `test_run_so.c` skips
+  `wrx_run` likewise. Remediation roadmap (stub `grd1d`,
+  conditionalise `wrcalpwr`, or PIC `libgrf_pic.a`) tracked in
+  `docs/wrx-library/architecture.md`.
+- Beam tracing (`mode_beam /= 0`) is not exposed through
+  `wrx_get_state`; only ray-tracing per-species power-deposition
+  outputs are surfaced.
+- Input scalars (`RFIN`, `RPIN`, ...) are not echoed in
+  `wrx_get_state`.
+- String parameters are not wired through `wrx_set_param`.
+- Single instance per process only — WRX globals are COMMON-block
+  state.
+
 ## EQ Phase L — library-ization (2026-04-19)
 
 Phase L mirrors the TR library-ization for the TASK/EQ MHD-equilibrium
