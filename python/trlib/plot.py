@@ -28,7 +28,7 @@ message; ``trlib`` itself stays importable either way.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
     import matplotlib  # type: ignore[import-not-found]

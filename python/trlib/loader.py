@@ -41,7 +41,6 @@ parsing without the shared library present.
 """
 from __future__ import annotations
 
-import io
 import os
 from pathlib import Path
 from typing import Any, Dict, IO, List, Mapping, Tuple, Union
