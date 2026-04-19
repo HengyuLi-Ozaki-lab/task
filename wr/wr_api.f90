@@ -157,6 +157,16 @@ CONTAINS
 
     IF (nray_request > 0) NRAYMAX = nray_request
 
+    ! Mirror WRNLIN namelist semantics (wrparm.f90:87-96): when
+    ! MODEL_PROF==0, an unsubscripted scalar PROFN1/PROFN2/PROFT1/
+    ! PROFT2/PROFU1/PROFU2 fans out to all NSMAX species. The C ABI
+    ! set_param path writes only element (1), so without this fan-out
+    ! NS>=2 keeps the pl_init defaults (e.g. PROFN2(2)=0.5 instead of
+    ! the namelist's 2.0), perturbing the cold dispersion solution
+    ! along ray trajectories. See PR with this fix for the Layer-1
+    ! 1e-10 reproducer (wr_tst2_ec rays[0].RAYS_END[4]).
+    CALL wr_propagate_namelist_profiles
+
     CALL wr_allocate
     g_allocated = .TRUE.
 
@@ -321,5 +331,29 @@ CONTAINS
     g_initialized = .FALSE.
     ierr = WR_OK
   END FUNCTION wr_api_finalize
+
+  !-------------------------------------------------------------------
+  ! wr_propagate_namelist_profiles : fan out unsubscripted scalar
+  ! PROFN1/PROFN2/PROFT1/PROFT2/PROFU1/PROFU2 to all NS=1..NSMAX
+  ! when MODEL_PROF==0. Mirrors wrparm.f90::WRNLIN lines 87-96.
+  !
+  ! Required because the C ABI set_param path writes only PROFN?(1)
+  ! when called without an [idx] subscript, whereas Fortran namelist
+  ! READ semantics propagate the scalar to every species.
+  !-------------------------------------------------------------------
+  SUBROUTINE wr_propagate_namelist_profiles
+    USE plcomm, ONLY: NSMAX, MODEL_PROF, &
+                      PROFN1, PROFN2, PROFT1, PROFT2, PROFU1, PROFU2
+    INTEGER :: ns
+    IF (MODEL_PROF /= 0) RETURN
+    DO ns = 2, NSMAX
+       PROFN1(ns) = PROFN1(1)
+       PROFN2(ns) = PROFN2(1)
+       PROFT1(ns) = PROFT1(1)
+       PROFT2(ns) = PROFT2(1)
+       PROFU1(ns) = PROFU1(1)
+       PROFU2(ns) = PROFU2(1)
+    END DO
+  END SUBROUTINE wr_propagate_namelist_profiles
 
 END MODULE wr_api
