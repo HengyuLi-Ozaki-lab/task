@@ -135,6 +135,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     print(f"[trlib] plot backend unavailable: {exc}",
                           file=sys.stderr)
                     return _EXIT_CONFIG
+                except (KeyError, ValueError, TypeError) as exc:
+                    # User-config errors (unknown variable, bad output=, etc.)
+                    print(f"[trlib] plot config error: {exc}",
+                          file=sys.stderr)
+                    return _EXIT_CONFIG
                 for name, descriptor in results:
                     print(f"[trlib] plot {name} -> {descriptor}")
         # Sweep plots run AFTER the outer Trlib closes — each sweep
@@ -145,6 +150,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 sweep_results = run_sweep_plots(cfg)
             except ImportError as exc:
                 print(f"[trlib] plot backend unavailable: {exc}",
+                      file=sys.stderr)
+                return _EXIT_CONFIG
+            except (KeyError, ValueError, TypeError) as exc:
+                # User-config errors in sweep spec (missing range, unknown y, etc.)
+                print(f"[trlib] sweep config error: {exc}",
                       file=sys.stderr)
                 return _EXIT_CONFIG
             for name, descriptor in sweep_results:

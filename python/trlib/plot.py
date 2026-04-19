@@ -34,7 +34,6 @@ try:
     import matplotlib  # type: ignore[import-not-found]
     import matplotlib.pyplot as plt  # type: ignore[import-not-found]
     from matplotlib.figure import Figure  # type: ignore[import-not-found]
-    HAS_MATPLOTLIB = True
 except ImportError as _mpl_err:  # pragma: no cover - exercised in env without mpl
     raise ImportError(
         "trlib.plot requires matplotlib. Install it via "
@@ -454,7 +453,6 @@ def plot_sweep(
 
 __all__ = [
     "VARIABLE_INFO",
-    "HAS_MATPLOTLIB",
     "plot",
     "plot_available",
     "plot_sweep",
