@@ -244,6 +244,13 @@ CONTAINS
     state%qqps   = 0.0_C_DOUBLE
     state%rg     = 0.0_C_DOUBLE
     state%zg     = 0.0_C_DOUBLE
+    state%profile_psip = 0.0_C_DOUBLE
+    state%profile_psit = 0.0_C_DOUBLE
+    state%profile_pps  = 0.0_C_DOUBLE
+    state%profile_tts  = 0.0_C_DOUBLE
+    state%profile_qps  = 0.0_C_DOUBLE
+    state%profile_vps  = 0.0_C_DOUBLE
+    state%profile_rst  = 0.0_C_DOUBLE
 
     IF (.NOT. g_initialized) THEN
        ierr = EQ_ERR_NOT_INIT
@@ -269,6 +276,18 @@ CONTAINS
     state%nrvmax = nrvmax_c
     state%nsgmax = nsgmax_c
     state%ntgmax = ntgmax_c
+
+    ! Per-NR flux-surface profile (NR=1..NRMAX) — mirrors the 7
+    ! columns the Phase 0 baseline writes via eqregress.f. Indexed
+    ! 1..NRMAX is the active runtime slice; trailing entries up to
+    ! EQ_MAX_NRM stay zero from the initialisation above.
+    IF (nrmax_c > 0) THEN
+       CALL EQ_COMMON_GET_PROFILE(nrmax_c, &
+            state%profile_psip, state%profile_psit, &
+            state%profile_pps,  state%profile_tts,  &
+            state%profile_qps,  state%profile_vps,  &
+            state%profile_rst)
+    END IF
 
     ! Pull scalar plasma parameters.
     CALL EQ_COMMON_GET_SCALARS(raxis_v, zaxis_v, psi0_v, psipa_v, &

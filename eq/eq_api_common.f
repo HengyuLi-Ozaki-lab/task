@@ -90,6 +90,43 @@ C     ------------------------------------------------------------------
       END
 
 C     ------------------------------------------------------------------
+C     Copy the per-NR flux-surface profile (NR=1..NRMAX) into 7 caller-
+C     provided arrays. Mirrors eqregress.f:88-89 (PSIP / PSIT / PPS /
+C     TTS / QPS / VPS / RST), which is the exact set written to the
+C     Phase 0 baseline regression.log and indexed by NR=1..NRMAX in
+C     metrics.json under key "profile".
+C
+C     Caller must pass arrays of size at least NRMAX. Only NRMAX entries
+C     are touched; trailing zero-padding is the caller's responsibility.
+C     ------------------------------------------------------------------
+      SUBROUTINE EQ_COMMON_GET_PROFILE(NCOPY,
+     &                                 PSIP_OUT, PSIT_OUT,
+     &                                 PPS_OUT,  TTS_OUT,
+     &                                 QPS_OUT,  VPS_OUT,
+     &                                 RST_OUT)
+      USE eqcom1_mod, ONLY: NRMAX
+      USE eqcom3_mod, ONLY: PSIP, PSIT, PPS, TTS, QPS, VPS, RST
+      IMPLICIT NONE
+      INTEGER, INTENT(IN)  :: NCOPY
+      REAL(8), INTENT(OUT) :: PSIP_OUT(NCOPY), PSIT_OUT(NCOPY)
+      REAL(8), INTENT(OUT) :: PPS_OUT(NCOPY),  TTS_OUT(NCOPY)
+      REAL(8), INTENT(OUT) :: QPS_OUT(NCOPY),  VPS_OUT(NCOPY)
+      REAL(8), INTENT(OUT) :: RST_OUT(NCOPY)
+      INTEGER :: I, N
+      N = MIN(NCOPY, NRMAX)
+      DO I = 1, N
+         PSIP_OUT(I) = PSIP(I)
+         PSIT_OUT(I) = PSIT(I)
+         PPS_OUT(I)  = PPS(I)
+         TTS_OUT(I)  = TTS(I)
+         QPS_OUT(I)  = QPS(I)
+         VPS_OUT(I)  = VPS(I)
+         RST_OUT(I)  = RST(I)
+      END DO
+      RETURN
+      END
+
+C     ------------------------------------------------------------------
 C     Scalar plasma parameters from EQGLB1 / EQGLB2 / EQGLB4.
 C     ------------------------------------------------------------------
       SUBROUTINE EQ_COMMON_GET_SCALARS(RAXIS_OUT, ZAXIS_OUT,

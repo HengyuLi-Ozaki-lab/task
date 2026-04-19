@@ -72,6 +72,18 @@ MODULE eq_state
      ! Equilibrium grid samples (EQOUT1).
      REAL(C_DOUBLE)  :: rg(EQ_MAX_NRGM)
      REAL(C_DOUBLE)  :: zg(EQ_MAX_NZGM)
+     ! Per-NR flux-surface profile arrays (1..NRMAX). Mirrors the 7
+     ! columns written to the Phase 0 baseline regression.log via
+     ! eqregress.f:88-89 (PSIP / PSIT / PPS / TTS / QPS / VPS / RST).
+     ! Indexed 0..EQ_MAX_NRM-1; only the first NRMAX entries carry
+     ! valid runtime data, rest is zero-padded.
+     REAL(C_DOUBLE)  :: profile_psip(EQ_MAX_NRM)
+     REAL(C_DOUBLE)  :: profile_psit(EQ_MAX_NRM)
+     REAL(C_DOUBLE)  :: profile_pps(EQ_MAX_NRM)
+     REAL(C_DOUBLE)  :: profile_tts(EQ_MAX_NRM)
+     REAL(C_DOUBLE)  :: profile_qps(EQ_MAX_NRM)
+     REAL(C_DOUBLE)  :: profile_vps(EQ_MAX_NRM)
+     REAL(C_DOUBLE)  :: profile_rst(EQ_MAX_NRM)
   END TYPE eq_state_c
 
 END MODULE eq_state

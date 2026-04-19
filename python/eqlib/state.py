@@ -61,6 +61,9 @@ class EqState:
     ppps: List[float] = field(default_factory=list)
     ttps: List[float] = field(default_factory=list)
     qqps: List[float] = field(default_factory=list)
+    # Per-NR flux-surface profile (1..nrmax). 7 columns mirror the
+    # eqregress.f baseline dump: PSIP/PSIT/PPS/TTS/QPS/VPS/RST.
+    profile: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_c(cls, s: EqStateC) -> "EqState":
@@ -74,11 +77,25 @@ class EqState:
         nzg = int(s.nzgmax)
         nps = int(s.npsmax)
         scalars = {k: float(getattr(s, k)) for k in SCALAR_FIELDS}
+        nrmax_i = int(s.nrmax)
+        profile = [
+            {
+                "NR":   i + 1,
+                "PSIP": float(s.profile_psip[i]),
+                "PSIT": float(s.profile_psit[i]),
+                "PPS":  float(s.profile_pps[i]),
+                "TTS":  float(s.profile_tts[i]),
+                "QPS":  float(s.profile_qps[i]),
+                "VPS":  float(s.profile_vps[i]),
+                "RST":  float(s.profile_rst[i]),
+            }
+            for i in range(nrmax_i)
+        ]
         return cls(
             nrgmax=nrg,
             nzgmax=nzg,
             npsmax=nps,
-            nrmax=int(s.nrmax),
+            nrmax=nrmax_i,
             nthmax=int(s.nthmax),
             nsumax=int(s.nsumax),
             nrvmax=int(s.nrvmax),
@@ -91,6 +108,7 @@ class EqState:
             ppps=[float(s.ppps[i]) for i in range(nps)],
             ttps=[float(s.ttps[i]) for i in range(nps)],
             qqps=[float(s.qqps[i]) for i in range(nps)],
+            profile=profile,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -118,6 +136,7 @@ class EqState:
             "PPPS": list(self.ppps),
             "TTPS": list(self.ttps),
             "QQPS": list(self.qqps),
+            "profile": list(self.profile),
         }
 
 
