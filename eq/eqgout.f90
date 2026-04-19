@@ -1618,7 +1618,11 @@
       SUBROUTINE EQGTR1
 
       USE libspl1d
-      include 'eqcomq.inc'
+      USE plcomm
+      USE eqcom0_mod
+      USE eqcom1_mod
+      USE eqcom3_mod
+      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
       dimension gx(nrm),gy(nrm)
 

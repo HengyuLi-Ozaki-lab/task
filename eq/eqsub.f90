@@ -358,11 +358,7 @@
 !       N     : Number of positions
 !       IERR  : Error indicator
 !
-!      USE plcomm
-      USE eqcom0_mod
-      USE eqcom1_mod
-      USE eqcom2_mod
-      IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
+!      INCLUDE '../eq/eqcomc.inc'
 !
       USE bpsd_kinds,ONLY: rkind
       USE eqlib
