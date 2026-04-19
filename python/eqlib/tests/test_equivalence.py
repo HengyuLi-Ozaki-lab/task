@@ -34,6 +34,7 @@ Task 4 for the iteration protocol when the 1e-10 match is not yet met.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -46,7 +47,24 @@ HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
 BASELINES_DIR = REPO / "test_run" / "baselines"
+TEST_OUTPUT_DIR = REPO / "test_run" / "test_output"
 COMPARE_SCRIPT = REPO / "test_run" / "scripts" / "compare_metrics.py"
+
+
+@contextlib.contextmanager
+def _pushd(target: Path):
+    """chdir to ``target`` inside a ``with`` block, restore on exit.
+
+    EQRTSK / EQDSK loads in eqfile.f90 open ``KNAMEQ`` relative to the
+    current working directory, so MODELG=3/5/8/15 fixtures must run
+    from ``test_run/test_output/<case>/`` where the eqdata file lives.
+    """
+    prev = Path.cwd()
+    os.chdir(target)
+    try:
+        yield target
+    finally:
+        os.chdir(prev)
 
 # Make ``import eqlib`` work whether tests are launched from the repo
 # root (PYTHONPATH=python) or from inside python/eqlib/tests/.
@@ -84,18 +102,27 @@ def _eqlib_importable() -> bool:
     return True
 
 
-def _run_case(apply_fn, mode: int) -> dict:
+def _run_case(apply_fn, mode: int, cwd: Path | None = None) -> dict:
     """Drive a single libeqapi.so cycle and return the to_dict payload.
 
     Keeping this outside ``TestEquivalence`` lets Layer 4 reuse the
     same replay helper without importing a TestCase class.
+
+    ``cwd`` is the directory eq's file I/O resolves ``KNAMEQ`` against;
+    pass the test_output directory that holds the eqdata file.
     """
     from eqlib import Eq  # noqa: WPS433 (intentional local import)
 
-    with Eq() as eq:
-        apply_fn(eq)
-        eq.run(mode=int(mode))
-        state = eq.get_state()
+    if cwd is None:
+        ctx = contextlib.nullcontext()
+    else:
+        ctx = _pushd(cwd)
+
+    with ctx:
+        with Eq() as eq:
+            apply_fn(eq)
+            eq.run(mode=int(mode))
+            state = eq.get_state()
     return state.to_dict()
 
 
@@ -166,10 +193,28 @@ class TestEquivalence(unittest.TestCase):
 
         The fixture module must expose ``apply`` / ``MODE`` /
         ``BASELINE_NAME`` (see :mod:`fixtures.eq_iter01_params`).
+
+        When the fixture ships a STRINGS dict with KNAMEQ, the replay
+        runs inside ``test_run/test_output/<case>/`` so that the
+        eqdata file referenced by KNAMEQ is reachable via a relative
+        open. The Phase-0 runner writes that directory as a side
+        effect of running ``./run_tests.sh <case>``.
         """
+        cwd = None
+        knameq = getattr(fixture_module, "STRINGS", {}).get("KNAMEQ")
+        if knameq:
+            candidate = TEST_OUTPUT_DIR / fixture_module.BASELINE_NAME
+            if not (candidate / knameq).exists():
+                self.skipTest(
+                    f"eqdata '{knameq}' missing under {candidate}; "
+                    "run `./test_run/run_tests.sh "
+                    f"{fixture_module.BASELINE_NAME}` first."
+                )
+            cwd = candidate
         actual = _run_case(
             fixture_module.apply,
             mode=fixture_module.MODE,
+            cwd=cwd,
         )
         _compare_with_baseline(
             actual, fixture_module.BASELINE_NAME, self.TOLERANCE,

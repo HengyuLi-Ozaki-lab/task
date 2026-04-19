@@ -18,6 +18,10 @@ import warnings
 # Scalar parameters that ``eq_param_registry`` accepts via
 # ``eq_set_param``. Values copied verbatim from eq/in/eq.TST-2.in.
 SCALARS = {
+    # MODELG=3 selects EQRTSK (TASK/EQ binary file format) per
+    # eq/eqfile.f90:108. The .in menu-driven flow implicitly selects
+    # this via 'r' after 'f'; the C ABI needs it explicit.
+    "MODELG": 3,
     "RR":   0.36,
     "RA":   0.23,
     "RKAP": 1.3,
