@@ -123,7 +123,7 @@
          metric1D%data(nr)%avegvr2 = fnavgvr2(rhot(nr)) ! avegvr2 on rhot
          metric1D%data(nr)%avegr   = fnavgr  (rhot(nr)) ! avegr   on rhot
          metric1D%data(nr)%avegr2  = fnavgr2 (rhot(nr)) ! avegr2  on rhot
-         metric1D%data(nr)%avegrr2 = fnavgrr2(nr)       ! avegrr2 on rhot
+         metric1D%data(nr)%avegrr2 = fnavgrr2(rhot(nr)) ! avegrr2 on rhot
          metric1D%data(nr)%avegpp2 = fnavgp2 (rhot(nr)) ! avegp2  on rhot
          metric1D%data(nr)%rr      = fnrrps  (rhot(nr)) ! rrpsi   on rhot
          metric1D%data(nr)%rs      = fnrsps  (rhot(nr)) ! rspsi   on rhot
