@@ -1,125 +1,144 @@
-C     $Id$
-C
-C     ***** Calculated Flux Functions from PSIRZ *****
-C
+!     $Id$
+!
+! Phase F-4 (HIGH tier): free-form F90 conversion of eqcalq.f.
+! Q-profile / flux-surface diagnostics driver: EQCALQ, EQSETP,
+! EQCALQP, EQCALQV, EQSETS, EQSETS_RHO, EQCALF, PPFUNC/TTFUNC/
+! DPPFUNC/DTTFUNC, zminmax. Depends on the spline tables that
+! eqsplf.f90 evaluates. Preserves exact numerical semantics of the
+! original fixed-form source.
+!
+! NOTE on EXTERNAL: EQSETP and EQCALQP/EQCALQV pass PSIGD / EQDERV to
+!   NEWTN / EQRK4 via EXTERNAL declarations (the called solvers accept
+!   arbitrary external routines). Kept as-is.
+!
+! NOTE: IMPLICIT NONE is NOT added at file level because the INCLUDEd
+!       shim '../eq/eqcomq.inc' supplies an IMPLICIT statement
+!       (IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)) and USEs the F-1
+!       MODULEs (eqcom0/1/3_mod) for COMMON symbols. The trailing
+!       zminmax helper retains its original IMPLICIT NONE annotation.
+!
+!     ***** Calculated Flux Functions from PSIRZ *****
+!
       SUBROUTINE EQCALQ(IERR)
-C
+
       INCLUDE '../eq/eqcomq.inc'
-C
+      INTEGER, INTENT(OUT) :: IERR
+
       IERR=0
-C
-C     ----- CHECK NRMAX,NTHMAX,NSUMAX are not greater than *M -----
-C
+!
+!     ----- CHECK NRMAX,NTHMAX,NSUMAX are not greater than *M -----
+!
       IF(NRMAX.GT.NRM) THEN
-         WRITE(6,'(A,2I5)') 
-     &        'NRMAX.GT.NRM: NRMAX,NRM=',NRMAX,NRM
+         WRITE(6,'(A,2I5)') &
+              'NRMAX.GT.NRM: NRMAX,NRM=',NRMAX,NRM
          IERR=IERR+1
       ENDIF
       IF(NTHMAX.GT.NTHM) THEN
-         WRITE(6,'(A,2I5)') 
-     &        'NTHMAX.GT.NTHM: NTHMAX,NTHM=',NTHMAX,NTHM
+         WRITE(6,'(A,2I5)') &
+              'NTHMAX.GT.NTHM: NTHMAX,NTHM=',NTHMAX,NTHM
          IERR=IERR+2
       ENDIF
       IF(NSUMAX.GT.NSUM) THEN
-         WRITE(6,'(A,2I5)') 
-     &        'NSUMAX.GT.NSUM: NSUMAX,NSUM=',NSUMAX,NSUM
+         WRITE(6,'(A,2I5)') &
+              'NSUMAX.GT.NSUM: NSUMAX,NSUM=',NSUMAX,NSUM
          IERR=IERR+4
       ENDIF
       IF(IERR.NE.0) RETURN
-C
+
       IF(RB.LT.RA) THEN
-         WRITE(6,'(A,1P2E12.4)') 
-     &        '!! RB.LT.RA: set RB=RA: RA,RB=',RA,RB
+         WRITE(6,'(A,1P2E12.4)') &
+              '!! RB.LT.RA: set RB=RA: RA,RB=',RA,RB
          RB=RA
       ENDIF
-C
+
       CALL EQSETP(IERR)
       IF(IERR.NE.0) RETURN
-C
+
       CALL EQCALQP(IERR)
       IF(IERR.NE.0) RETURN
-C
-      IF(.NOT.(NSUMAX.EQ.0.OR.
-     &         RA-RB.EQ.0.D0.OR. 
-     &         RR+RB-REDGE.EQ.0.D0)) THEN
+
+      IF(.NOT.(NSUMAX.EQ.0.OR. &
+               RA-RB.EQ.0.D0.OR. &
+               RR+RB-REDGE.EQ.0.D0)) THEN
          CALL EQCALQV(IERR)
          IF(IERR.NE.0) RETURN
       ENDIF
-C
+
       CALL EQSETS_RHO(IERR)
       CALL EQSETS(IERR)
-C
-C     ----- Phase L-0 regression dump (env-guarded, no-op unless
-C           EQ_REGRESS_DUMP=1). Hook here so every successful R/RUN
-C           or C/CONT path produces eq_regress.dat in cwd. -----
+!
+!     ----- Phase L-0 regression dump (env-guarded, no-op unless
+!           EQ_REGRESS_DUMP=1). Hook here so every successful R/RUN
+!           or C/CONT path produces eq_regress.dat in cwd. -----
       CALL EQ_REGRESS_DUMP_IF_ENABLED
-C
+
       RETURN
       END
-C
-C     ***** SETUP DATA (spline PSIRZ and find axis) *****
-C
+!
+!     ***** SETUP DATA (spline PSIRZ and find axis) *****
+!
       SUBROUTINE EQSETP(IERR)
-C
+
       USE libspl1d
       USE libspl2d
       INCLUDE '../eq/eqcomq.inc'
-C
+      INTEGER, INTENT(OUT) :: IERR
+
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE:: PSIRG,PSIZG,PSIRZG
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE:: HJTRG,HJTZG,HJTRZG
 
       DIMENSION DERIV(NPSM)
       EXTERNAL PSIGD
-C
+
       ALLOCATE(PSIRG(NRGM,NZGM),PSIZG(NRGM,NZGM),PSIRZG(NRGM,NZGM))
       ALLOCATE(HJTRG(NRGM,NZGM),HJTZG(NRGM,NZGM),HJTRZG(NRGM,NZGM))
 
-      CALL SPL2D(RG,ZG,PSIRZ,PSIRG,PSIZG,PSIRZG,UPSIRZ,
-     &           NRGM,NRGMAX,NZGMAX,0,0,IERR)
+      CALL SPL2D(RG,ZG,PSIRZ,PSIRG,PSIZG,PSIRZG,UPSIRZ, &
+                 NRGM,NRGMAX,NZGMAX,0,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL2D for PSIRZ: IERR=',IERR
-C
-      CALL SPL2D(RG,ZG,HJTRZ,HJTRG,HJTZG,HJTRZG,UHJTRZ,
-     &           NRGM,NRGMAX,NZGMAX,0,0,IERR)
+
+      CALL SPL2D(RG,ZG,HJTRZ,HJTRG,HJTZG,HJTRZG,UHJTRZ, &
+                 NRGM,NRGMAX,NZGMAX,0,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL2D for HJTRZ: IERR=',IERR
-C
-C     *** Initial parameters for first guess of EQAXIS input ***
+
+!     *** Initial parameters for first guess of EQAXIS input ***
       IF(MODELG.NE.5) THEN
          RAXIS=RR
          ZAXIS=0.D0
       END IF
       PSI0=PSIG(RAXIS,ZAXIS)
       PSIPA=-PSI0
-C     **********************************************************
-C
-C     *** Calculate RAXIS, ZAXIS, PSI0 and PSIPA ***
-C      WRITE(6,'(A,1P4E12.4)') 
-C     &     'IN:RAXIS,ZAXIS,PSI0,PSIPA=',RAXIS,ZAXIS,PSI0,PSIPA
+!     **********************************************************
+!
+!     *** Calculate RAXIS, ZAXIS, PSI0 and PSIPA ***
+!      WRITE(6,'(A,1P4E12.4)')
+!     &     'IN:RAXIS,ZAXIS,PSI0,PSIPA=',RAXIS,ZAXIS,PSI0,PSIPA
       CALL EQAXIS(IERR)
-C      WRITE(6,'(A,1P4E12.4)') 
-C     &     'OT:RAXIS,ZAXIS,PSI0,PSIPA=',RAXIS,ZAXIS,PSI0,PSIPA
+!      WRITE(6,'(A,1P4E12.4)')
+!     &     'OT:RAXIS,ZAXIS,PSI0,PSIPA=',RAXIS,ZAXIS,PSI0,PSIPA
       IF(IERR.NE.0) RETURN
-C     **********************************************
-C
-C      IF(MODELG.EQ.5) THEN
-C     *** Reconstruct PSIPS ***********************************************
-C     *  PSIPS originates from PSI0 and PSIA in eqdsk data.
-C     *  However, EQAXIS calculates PSI0 and the position of the magnetic
-C     *    axis by using PSIRZ interpolated by cubic spline, and these
-C     *    are slightly different from those in eqdsk data.
-C     *  Then the radial psi-coordinate is corrected to fit itself to the
-C     *    interpolated PSI contour.
-C         DPS = PSIPA / (NPSMAX - 1)
-C         DO NPS=1,NPSMAX
-C            PSIPS(NPS) = DPS * (NPS - 1)
-C         ENDDO
-C     *********************************************************************
-C      ENDIF
-C
-C      DO NPS=1,NPSMAX
-C         WRITE(6,'(A,I5,1P3E12.4)') 'NPS:',NPS,PSIPS(NPS),
-C     &                             PPPS(NPS),TTPS(NPS)
-C      ENDDO
-C
+!     **********************************************
+!
+!      IF(MODELG.EQ.5) THEN
+!     *** Reconstruct PSIPS ***********************************************
+!     *  PSIPS originates from PSI0 and PSIA in eqdsk data.
+!     *  However, EQAXIS calculates PSI0 and the position of the magnetic
+!     *    axis by using PSIRZ interpolated by cubic spline, and these
+!     *    are slightly different from those in eqdsk data.
+!     *  Then the radial psi-coordinate is corrected to fit itself to the
+!     *    interpolated PSI contour.
+!         DPS = PSIPA / (NPSMAX - 1)
+!         DO NPS=1,NPSMAX
+!            PSIPS(NPS) = DPS * (NPS - 1)
+!         ENDDO
+!     *********************************************************************
+!      ENDIF
+!
+!      DO NPS=1,NPSMAX
+!         WRITE(6,'(A,I5,1P3E12.4)') 'NPS:',NPS,PSIPS(NPS),
+!     &                             PPPS(NPS),TTPS(NPS)
+!      ENDDO
+
       CALL SPL1D(PSIPS,PPPS,  DERIV,UPPPS, NPSMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for PPPS: IERR=',IERR
       CALL SPL1D(PSIPS,TTPS,  DERIV,UTTPS, NPSMAX,0,IERR)
@@ -133,18 +152,19 @@ C
 
       DEALLOCATE(PSIRG,PSIZG,PSIRZG)
       DEALLOCATE(HJTRG,HJTZG,HJTRZG)
-C
+
       RETURN
       END
-C
-C     ***** CALCULATE FLUX VARIABLES IN PLASMA *****
-C
+!
+!     ***** CALCULATE FLUX VARIABLES IN PLASMA *****
+!
       SUBROUTINE EQCALQP(IERR)
-C
+
       USE libspl1d
       USE libitp
       INCLUDE '../eq/eqcomq.inc'
-C
+      INTEGER, INTENT(OUT) :: IERR
+
       EXTERNAL EQDERV
       DIMENSION XA(NTVM),YA(2,NTVM)
       DIMENSION XCHI0(NTVM),XCHI1(NTVM)
@@ -153,11 +173,11 @@ C
       DIMENSION URCHI(4,NTVM),UZCHI(4,NTVM)
       DIMENSION UBRCHI(4,NTVM),UBZCHI(4,NTVM)
       DIMENSION UBTCHI(4,NTVM),UBBCHI(4,NTVM)
-C
+
       IERR=0
-C
-C     ----- SET DR, DTH -----
-C
+!
+!     ----- SET DR, DTH -----
+!
       IF(NSUMAX.EQ.0.OR.RA-RB.EQ.0.D0.OR.RR+RB-REDGE.EQ.0.D0) THEN
          NRPMAX=NRMAX
       ELSE
@@ -167,14 +187,14 @@ C
 !      write(6,*) 'nrmax,nrpmax,nsumax=',nrmax,nrpmax,nsumax
       DR=(REDGE-RAXIS)/(NRPMAX-1)
       DTH=2.d0*PI/NTHMAX
-C
-C     ----- SET NUMBER OF DIVISION for integration -----
-C
+!
+!     ----- SET NUMBER OF DIVISION for integration -----
+!
       IF(NTVMAX.GT.NTVM) NTVMAX=NTVM
-C
-C     ----- CALCULATE PSI,PPS,TTS,PSIT and RPS, ZPS 
-C           on magnetic surfaces, PSIP(NR) -----
-C
+!
+!     ----- CALCULATE PSI,PPS,TTS,PSIT and RPS, ZPS
+!           on magnetic surfaces, PSIP(NR) -----
+!
       NR=1
       DO NTH=1,NTHMAX+1
          RPS(NTH,NR)=RAXIS
@@ -183,22 +203,22 @@ C
       PSIP(1)=PSIG(RAXIS,ZAXIS)-PSI0
       PPS(1)=PPFUNC(PSIP(1))
       TTS(1)=TTFUNC(PSIP(1))
-C
-C         WRITE(6,'(A,I5,1P3E12.4)') 'NR:',NR,
-C     &        PSIP(NR),PPS(NR),TTS(NR)
-C
+!
+!         WRITE(6,'(A,I5,1P3E12.4)') 'NR:',NR,
+!     &        PSIP(NR),PPS(NR),TTS(NR)
+
       DO NR=2,NRPMAX
          RINIT=RAXIS+DR*(NR-1)
          ZINIT=ZAXIS
          PSIP(NR)=PSIG(RINIT,ZINIT)-PSI0
          PPS(NR)=PPFUNC(PSIP(NR))
          TTS(NR)=TTFUNC(PSIP(NR))
-C
+!
 !         WRITE(6,'(A,I5,1P5E12.4)') 'NR:',NR,
 !     &        PSIP(NR),PPS(NR),TTS(NR),RINIT,ZINIT
-C
+
          CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
-C
+
          SUMS=0.D0
          SUMV=0.D0
          SUMAVRR =0.D0
@@ -211,7 +231,7 @@ C
          SUMAVGV2=0.D0
          SUMAVGR2=0.D0
          SUMAVIR =0.D0
-C
+
          RMIN=RAXIS
          RMAX=RAXIS
          ZMIN=ZAXIS
@@ -220,12 +240,12 @@ C
          NZMAXR=1
          BMIN=ABS(2.D0*BB)
          BMAX=0.D0
-C
+
          XCHI0(1)=0.D0
          XCHI1(1)=0.D0
          RCHI(1)=RINIT
          ZCHI(1)=ZINIT
-C
+
          DO N=2,NA
             H=XA(N)-XA(N-1)
             R=0.5D0*(YA(1,N-1)+YA(1,N))
@@ -234,10 +254,10 @@ C
             BPL=SQRT(DPSIDR**2+DPSIDZ**2)/(2.D0*PI*R)
             BTL=TTS(NR)/(2.D0*PI*R)
             B2L=BTL**2+BPL**2
-C
+
             SUMV=SUMV+H/BPL
             SUMS=SUMS+H*R
-C
+
             SUMAVRR =SUMAVRR +H*R/BPL
             SUMAVRR2=SUMAVRR2+H*R*R/BPL
             SUMAVIR2=SUMAVIR2+H/(BPL*R*R)
@@ -248,7 +268,7 @@ C
             SUMAVGV2=SUMAVGV2+H*R*R*BPL
             SUMAVGR2=SUMAVGR2+H*BPL
             SUMAVIR =SUMAVIR +H/(BPL*R)
-C
+
             XCHI1(N)=SUMAVIR2
             RCHI(N)=YA(1,N)
             ZCHI(N)=YA(2,N)
@@ -256,7 +276,7 @@ C
             BZCHI(N)= DPSIDR/(2.D0*PI*R)
             BTCHI(N)= BTL
             BBCHI(N)= SQRT(B2L)
-C
+
             R=YA(1,N)
             Z=YA(2,N)
             CALL PSIGD(R,Z,DPSIDR,DPSIDZ)
@@ -264,7 +284,7 @@ C
             BTL=TTS(NR)/(2.D0*PI*R)
             B2L=BTL**2+BPL**2
             B=SQRT(B2L)
-C
+
             RMIN=MIN(RMIN,R)
             RMAX=MAX(RMAX,R)
             IF(Z.LT.ZMIN) THEN
@@ -278,7 +298,7 @@ C
             BMIN=MIN(BMIN,B)
             BMAX=MAX(BMAX,B)
          ENDDO
-C
+
          QPS(NR)=SUMAVIR2*TTS(NR)/(4.D0*PI**2)
          DVDPSIP(NR)=SUMV
          DVDPSIT(NR)=SUMV/QPS(NR)
@@ -293,7 +313,7 @@ C
          AVEGV  (NR)=SUMAVGV      *2.d0*PI
          AVEGV2 (NR)=SUMAVGV2*SUMV*4.d0*PI**2
          AVEGVR2(NR)=SUMAVGR2*SUMV*4.d0*PI**2
-Chonda         write(6,'(4E15.7)') PSIP(NR),SUMAVGR2,SUMV,AVEGVR2(NR)
+!honda         write(6,'(4E15.7)') PSIP(NR),SUMAVGR2,SUMV,AVEGVR2(NR)
          AVEGP2 (NR)=SUMAVGV2/SUMV*4.d0*PI**2
          AVEIR  (NR)=SUMAVIR /SUMV
          RITOR  (NR)=SUMAVGR2
@@ -313,9 +333,9 @@ Chonda         write(6,'(4E15.7)') PSIP(NR),SUMAVGR2,SUMV,AVEGVR2(NR)
          TRIGPSI(NR)=(RRPSI(NR)-(ZMAXR+ZMINR)/2.D0)/RSPSI(NR)
          BBMIN(NR)=BMIN
          BBMAX(NR)=BMAX
-C
-C        ----- CALCULATE POLOIDAL COORDINATES -----
-C
+!
+!        ----- CALCULATE POLOIDAL COORDINATES -----
+!
          IF(NTHMAX.GT.0) THEN
             DO N=1,NA
                XCHI0(N)=2.D0*PI*XA(N)/XA(NA)
@@ -331,9 +351,9 @@ C
             BZCHI(NA)=BZCHI(1)
             BTCHI(NA)=BTCHI(1)
             BBCHI(NA)=BBCHI(1)
-C
-C            write(6,'(I5,1P2E12.4)') (N,RCHI(N),ZCHI(N),N=1,NA)
-C     
+!
+!            write(6,'(I5,1P2E12.4)') (N,RCHI(N),ZCHI(N),N=1,NA)
+!
             IF(MDLEQC.EQ.0) THEN
                CALL SPL1D(XCHI0,RCHI,DXCHI,URCHI,NA,4,IERR)
                IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for RCHI: IERR=',IERR
@@ -361,7 +381,7 @@ C
                CALL SPL1D(XCHI1,BBCHI,DXCHI,UBBCHI,NA,4,IERR)
                IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for BBCHI: IERR=',IERR
             ENDIF
-C
+
             RPS(1,NR)=YA(1,1)
             ZPS(1,NR)=YA(2,1)
             DO NTH=2,NTHMAX+1
@@ -376,22 +396,22 @@ C
             ENDDO
          ENDIF
       ENDDO
-C
-C     ----- current profile evaluation -----
-C
+!
+!     ----- current profile evaluation -----
+!
       DO NR=2,NRPMAX
          DPPSL=DPPFUNC(PSIP(NR))
          DTTSL=DTTFUNC(PSIP(NR))
          TTSL =TTFUNC(PSIP(NR))
          AVEJTR(NR)=-RR*DPPSL-TTSL*DTTSL/(4.d0*PI**2*RMU0*RR)
-         AVEJPR(NR)=(-TTSL*DPPSL-DTTSL*AVEBB2(NR)/RMU0)
-     &              /(2.d0*PI*ABS(BB))
-C         WRITE(6,'(A,I6,4ES12.4)') 'AVEJ=',NR,
-C     &        AVEJTR(NR),AVEJPR(NR),AVEGP2(NR),AVEGVR2(NR)
+         AVEJPR(NR)=(-TTSL*DPPSL-DTTSL*AVEBB2(NR)/RMU0) &
+                    /(2.d0*PI*ABS(BB))
+!         WRITE(6,'(A,I6,4ES12.4)') 'AVEJ=',NR,
+!     &        AVEJTR(NR),AVEJPR(NR),AVEGP2(NR),AVEGVR2(NR)
       ENDDO
-C
-C     +++++ SETUP AXIS DATA +++++
-C
+!
+!     +++++ SETUP AXIS DATA +++++
+!
       PS2 = PSIP(2)
       PS3 = PSIP(3)
       PS4 = PSIP(4)
@@ -427,56 +447,55 @@ C
       TRIGPSI(1) = 0.D0
       BBMIN(1)   = ABS(TTS(1)/(2.D0*PI*RAXIS))
       BBMAX(1)   = ABS(TTS(1)/(2.D0*PI*RAXIS))
-C
-C     ----- CALCULATE TOROIDAL FLUX -----
-C
-C     Based on the definition of the safety factor, PSIT is calculated
-C       by using average of the inverse safety factor. This way of
-C       the evaluation is valid even if q is nearly infinite
-C       (eg. current hole).
-C
+!
+!     ----- CALCULATE TOROIDAL FLUX -----
+!
+!     Based on the definition of the safety factor, PSIT is calculated
+!       by using average of the inverse safety factor. This way of
+!       the evaluation is valid even if q is nearly infinite
+!       (eg. current hole).
+!
       PSIT(1)=0.D0
       VPS(1)=0.D0
       SPS(1)=0.D0
       DO NR=2,NRPMAX
-         PSIT(NR)=PSIT(NR-1)
-     &           +2.0D0*QPS(NR)*QPS(NR-1)/(QPS(NR)+QPS(NR-1))
-     &                 *(PSIP(NR)-PSIP(NR-1))
-         VPS(NR)=VPS(NR-1)
-     &           +0.5D0*(DVDPSIP(NR-1)+DVDPSIP(NR))
-     &                 *(PSIP(NR)-PSIP(NR-1))
+         PSIT(NR)=PSIT(NR-1) &
+                 +2.0D0*QPS(NR)*QPS(NR-1)/(QPS(NR)+QPS(NR-1)) &
+                       *(PSIP(NR)-PSIP(NR-1))
+         VPS(NR)=VPS(NR-1) &
+                 +0.5D0*(DVDPSIP(NR-1)+DVDPSIP(NR)) &
+                       *(PSIP(NR)-PSIP(NR-1))
 !         SPS(NR)=SPS(NR-1)
 !     &           +0.5D0*(DSDPSIT(NR-1)+DSDPSIT(NR))
 !     &                 *(PSIT(NR)-PSIT(NR-1))
       ENDDO
       PSITA=PSIT(NRPMAX)
       PSIPA=PSIP(NRPMAX)
-      
-c$$$      do nr=1,nrmax
-c$$$         write(6,'(I5,1P6E12.4)') 
-c$$$     &        nr,psip(nr)/psipa,psit(nr)/psita,
-c$$$     &        vps(nr),sps(nr),dvdpsip(nr),dvdpsit(nr)
-c$$$      enddo
 
-C
+!$$$      do nr=1,nrmax
+!$$$         write(6,'(I5,1P6E12.4)')
+!$$$     &        nr,psip(nr)/psipa,psit(nr)/psita,
+!$$$     &        vps(nr),sps(nr),dvdpsip(nr),dvdpsit(nr)
+!$$$      enddo
+
       RST(1)=0.D0
       DO NR=2,NRPMAX
          RST(NR)=SQRT(PSIT(NR)/(PI*BB))
       ENDDO
       RSTA=RST(NRPMAX)
-C
+
       RHOT(1)=0.D0
       DO NR=2,NRPMAX
          RHOT(NR)=SQRT(PSIT(NR)/PSITA)
       ENDDO
-C
-C     ----- CALCULATE EDGE VALUE -----
-C
+!
+!     ----- CALCULATE EDGE VALUE -----
+!
       RINIT=REDGE
       ZINIT=ZAXIS
       TTSA=TTFUNC(0.D0)
       CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
-C
+
       SUMS=0.D0
       SUMV=0.D0
       SUMQ=0.D0
@@ -489,27 +508,27 @@ C
          BPL=BPRL/(2.D0*PI*R)
          BTL=TTSA/(2.D0*PI*R)
          B=SQRT(BPL**2+BTL**2)
-C
+
          SUMS=SUMS+H*R
          SUMV=SUMV+H*R/BPRL
          SUMQ=SUMQ+H/(R*BPRL)
       ENDDO
-C
+
       SPSA=SPS(NRPMAX)
       VPSA=VPS(NRPMAX)
       QPSA=QPS(NRPMAX)
-C
-C     ----- CALCULATE PLASMA SURFACE -----
-C
+!
+!     ----- CALCULATE PLASMA SURFACE -----
+!
       CALL EQCALF(REDGE,ZAXIS,NTHMAX,RSU,ZSU,IERR)
-C
+
       RGMIN=RSU(1)
       RGMAX=RSU(1)
       ZGMIN=ZSU(1)
       ZGMAX=ZSU(1)
       DO NTH=2,NTHMAX
-C            write(6,'(A,I5,1P2E12.4)') 
-C     &           'NTH,RSU,ZSU=',NTH,RSU(NTH),ZSU(NTH)
+!            write(6,'(A,I5,1P2E12.4)')
+!     &           'NTH,RSU,ZSU=',NTH,RSU(NTH),ZSU(NTH)
          RGMIN=MIN(RGMIN,RSU(NTH))
          RGMAX=MAX(RGMAX,RSU(NTH))
          ZGMIN=MIN(ZGMIN,ZSU(NTH))
@@ -521,17 +540,18 @@ C     &           'NTH,RSU,ZSU=',NTH,RSU(NTH),ZSU(NTH)
       ENDDO
 
 !      write (6,'(I5,1PE12.4)') (i,QPS(i),i=1,NRMAX)
-      
-C
+
+
       RETURN
       END
-C
-C     ***** CALCULATE FLUX VARIABLES IN VACUUM *****
-C
+!
+!     ***** CALCULATE FLUX VARIABLES IN VACUUM *****
+!
       SUBROUTINE EQCALQV(IERR)
-C
+
       USE libspl1d
       INCLUDE '../eq/eqcomq.inc'
+      INTEGER, INTENT(OUT) :: IERR
       EXTERNAL EQDERV
       DIMENSION XA(NTVM),YA(2,NTVM)
       DIMENSION XCHI0(NTVM),XCHI1(NTVM)
@@ -541,15 +561,15 @@ C
       DIMENSION RPSW(NTHMP),DRPSW(NTHMP)
       DIMENSION ZPSW(NTHMP),DZPSW(NTHMP)
       REAL(rkind),ALLOCATABLE:: URPSW(:,:),UZPSW(:,:)
-C
+
       ALLOCATE(URPSW(4,NTHMP),UZPSW(4,NTHMP))
 
       npmax=abs(MDLEQV)
       IERR=0
       IF(NRMAX.EQ.NRPMAX) RETURN
-C
-C     +++++ SETUP VACUUM DATA +++++
-C
+!
+!     +++++ SETUP VACUUM DATA +++++
+!
 
       DR_OUT=(RR+RB-REDGE)/(NRMAX-NRPMAX)
       DR_IN =FRBIN*(RR+RB-REDGE)/(NRMAX-NRPMAX)
@@ -564,7 +584,7 @@ C
             PSIP(NR)=PSIG(RL_OUT,ZL)-PSI0
             PPS(NR)=0.D0
             TTS(NR)=2.D0*PI*BB*RR
-C
+
             DVDPSIP(NR)=DVDPSIP(NRPMAX)*Sratio
             DVDPSIT(NR)=DVDPSIT(NRPMAX)
             RLEN(NR)=RLEN(NRPMAX)*SQRT(Sratio)
@@ -590,12 +610,12 @@ C
             F_IN =(RL_IN -RR)/(REDGE-RR)
             DTHL=2.D0*PI/NTHMAX
             DO nth=1,nthmax+1
-               FACTOR=0.5D0*(F_OUT+F_IN)
-     &               +0.5D0*(F_OUT-F_IN)*COS(DTHL*(NTH-1))
+               FACTOR=0.5D0*(F_OUT+F_IN) &
+                     +0.5D0*(F_OUT-F_IN)*COS(DTHL*(NTH-1))
                rps(NTH,NR)=RAXIS+(RPS(NTH,NRPMAX)-RAXIS)*FACTOR
                zps(NTH,NR)=       ZPS(NTH,NRPMAX)       *FACTOR
             END DO
-            
+
             RMIN=RAXIS
             RMAX=RAXIS
             ZMIN=ZAXIS
@@ -635,26 +655,26 @@ C
             FACTOR_IN =(RL_IN -RAXIS)/(REDGE-RAXIS)
             BBMAX(NR)=BBMAX(NRPMAX)*FACTOR
          ENDDO
-C
+!
       ELSE
-C
-C     ****** Free boundary without X point ******
-C
-C     ----- CALCULATE PSI,PPS,TTS,PSIT and RPS, ZPS on mag surfaces -----
-C
+!
+!     ****** Free boundary without X point ******
+!
+!     ----- CALCULATE PSI,PPS,TTS,PSIT and RPS, ZPS on mag surfaces -----
+!
          DO NR=NRPMAX+1,NRMAX
             RINIT=REDGE+DR_OUT*(NR-NRPMAX)
             ZINIT=ZAXIS
             PSIP(NR)=PSIG(RINIT,ZINIT)-PSI0
             PPS(NR)=0.D0
             TTS(NR)=2.D0*PI*BB*RR
-C
-C         WRITE(6,'(A,I5,1P3E12.4)') 'NR:',NR,
-C     &        PSIP(NR),PPS(NR),TTS(NR)
-C
+!
+!         WRITE(6,'(A,I5,1P3E12.4)') 'NR:',NR,
+!     &        PSIP(NR),PPS(NR),TTS(NR)
+
             CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
             IF(IERR.NE.0) GOTO 1000
-C
+
             SUMS=0.D0
             SUMV=0.D0
             SUMAVRR =0.D0
@@ -667,19 +687,19 @@ C
             SUMAVGV2=0.D0
             SUMAVGR2=0.D0
             SUMAVIR =0.D0
-C
+
             RMIN=RAXIS
             RMAX=RAXIS
             ZMIN=ZAXIS
             ZMAX=ZAXIS
             BMIN=ABS(2.D0*BB)
             BMAX=0.D0
-C
+
             XCHI0(1)=0.D0
             XCHI1(1)=0.D0
             RCHI(1)=RINIT
             ZCHI(1)=ZINIT
-C
+
             DO N=2,NA
                H=XA(N)-XA(N-1)
                R=0.5D0*(YA(1,N-1)+YA(1,N))
@@ -688,10 +708,10 @@ C
                BPL=SQRT(DPSIDR**2+DPSIDZ**2)/(2.D0*PI*R)
                BTL=TTS(NR)/(2.D0*PI*R)
                B2L=BTL**2+BPL**2
-C
+
                SUMV=SUMV+H/BPL
                SUMS=SUMS+H*R
-C
+
                SUMAVRR =SUMAVRR +H*R/BPL
                SUMAVRR2=SUMAVRR2+H*R*R/BPL
                SUMAVIR2=SUMAVIR2+H/(BPL*R*R)
@@ -702,11 +722,11 @@ C
                SUMAVGV2=SUMAVGV2+H*R*R*BPL
                SUMAVGR2=SUMAVGR2+H*BPL
                SUMAVIR =SUMAVIR +H/(BPL*R)
-C
+
                XCHI1(N)=SUMAVIR2
                RCHI(N)=YA(1,N)
                ZCHI(N)=YA(2,N)
-C
+
                R=YA(1,N)
                Z=YA(2,N)
                CALL PSIGD(R,Z,DPSIDR,DPSIDZ)
@@ -714,7 +734,7 @@ C
                BTL=TTS(NR)/(2.D0*PI*R)
                B2L=BTL**2+BPL**2
                B=SQRT(B2L)
-C
+
                RMIN=MIN(RMIN,R)
                RMAX=MAX(RMAX,R)
                IF(Z.LT.ZMIN) THEN
@@ -728,7 +748,7 @@ C
                BMIN=MIN(BMIN,B)
                BMAX=MAX(BMAX,B)
             ENDDO
-C
+
             QPS(NR)=SUMAVIR2*TTS(NR)/(4.D0*PI**2)
             RITOR(NR)=RITOR(NRPMAX)
             DVDPSIP(NR)=SUMV
@@ -762,9 +782,9 @@ C
             TRIGPSI(NR)=(RRPSI(NR)-(ZMAXR+ZMINR)/2.D0)/RSPSI(NR)
             BBMIN(NR)=BMIN
             BBMAX(NR)=BMAX
-C
-C        ----- CALCULATE POLOIDAL COORDINATES -----
-C
+!
+!        ----- CALCULATE POLOIDAL COORDINATES -----
+!
             IF(NTHMAX.GT.0) THEN
                DO N=1,NA
                   XCHI0(N)=2.D0*PI*XA(N)/XA(NA)
@@ -772,23 +792,23 @@ C
                ENDDO
                RCHI(NA)=RCHI(1)
                ZCHI(NA)=ZCHI(1)
-C     
+!
                IF(MDLEQC.EQ.0) THEN
                   CALL SPL1D(XCHI0,RCHI,DXCHI,URCHI,NA,4,IERR)
-                  IF(IERR.NE.0) 
-     &                 WRITE(6,*) 'XX SPL1D for RCHI: IERR=',IERR
+                  IF(IERR.NE.0) &
+                       WRITE(6,*) 'XX SPL1D for RCHI: IERR=',IERR
                   CALL SPL1D(XCHI0,ZCHI,DXCHI,UZCHI,NA,4,IERR)
-                  IF(IERR.NE.0) 
-     &                 WRITE(6,*) 'XX SPL1D for ZCHI: IERR=',IERR
+                  IF(IERR.NE.0) &
+                       WRITE(6,*) 'XX SPL1D for ZCHI: IERR=',IERR
                ELSE
                   CALL SPL1D(XCHI1,RCHI,DXCHI,URCHI,NA,4,IERR)
-                  IF(IERR.NE.0) 
-     &                 WRITE(6,*) 'XX SPL1D for RCHI: IERR=',IERR
+                  IF(IERR.NE.0) &
+                       WRITE(6,*) 'XX SPL1D for RCHI: IERR=',IERR
                   CALL SPL1D(XCHI1,ZCHI,DXCHI,UZCHI,NA,4,IERR)
-                  IF(IERR.NE.0) 
-     &                 WRITE(6,*) 'XX SPL1D for ZCHI: IERR=',IERR
+                  IF(IERR.NE.0) &
+                       WRITE(6,*) 'XX SPL1D for ZCHI: IERR=',IERR
                ENDIF
-C
+
                RPS(1,NR)=YA(1,1)
                ZPS(1,NR)=YA(2,1)
                DO NTH=2,NTHMAX+1
@@ -804,70 +824,70 @@ C
             ENDIF
          ENDDO
  1000    CONTINUE
-C
+!
       ENDIF
 
-C      WRITE(6,'(A,2I5)') 'NRPMAX,NRMAX=',NRPMAX,NRMAX
-C      DO NR=1,NRMAX
-C         WRITE(6,'(I5,1P3E12.4)') NR,QPS(NR),VPS(NR),RLEN(NR)
-C      ENDDO
-C
-C     ----- CALCULATE TOROIDAL FLUX -----
-C
+!      WRITE(6,'(A,2I5)') 'NRPMAX,NRMAX=',NRPMAX,NRMAX
+!      DO NR=1,NRMAX
+!         WRITE(6,'(I5,1P3E12.4)') NR,QPS(NR),VPS(NR),RLEN(NR)
+!      ENDDO
+!
+!     ----- CALCULATE TOROIDAL FLUX -----
+!
       DO NR=NRPMAX+1,NRMAX
-         PSIT(NR)=PSIT(NR-1)
-     &           +2.0D0*QPS(NR)*QPS(NR-1)/(QPS(NR)+QPS(NR-1))
-     &                    *(PSIP(NR)-PSIP(NR-1))
+         PSIT(NR)=PSIT(NR-1) &
+                 +2.0D0*QPS(NR)*QPS(NR-1)/(QPS(NR)+QPS(NR-1)) &
+                          *(PSIP(NR)-PSIP(NR-1))
       ENDDO
-C
+
       PSITB=PSIT(NRMAX)
       PSIPB=PSIP(NRMAX)
-C
+
       DO NR=NRPMAX+1,NRMAX
          RST(NR)=SQRT(PSIT(NR)/(PI*BB))
       ENDDO
       RSTB=RST(NRMAX)
-C
+
       DO NR=NRPMAX+1,NRMAX
          RHOT(NR)=SQRT(PSIT(NR)/PSITA)
       ENDDO
-C
+
       DO NR=NRPMAX+1,NRMAX
          AVEJPR(NR)=0.D0
          AVEJTR(NR)=0.D0
       ENDDO
-C
-C      ----- CALCULATE PLASMA SURFACE -----
-C
+!
+!      ----- CALCULATE PLASMA SURFACE -----
+!
       CALL EQCALF(REDGE,ZAXIS,NSUMAX,RSU,ZSU,IERR)
-C
-C      +++++ CALCULATE WALL DATA +++++
-C
-C     FACTOR=(RB+RR-RAXIS)/(REDGE-RAXIS)
-C
+!
+!      +++++ CALCULATE WALL DATA +++++
+!
+!     FACTOR=(RB+RR-RAXIS)/(REDGE-RAXIS)
+
       DO NTH=1,NTHMAX
          THW(NTH)=(NTH-1)*2.d0*PI/NTHMAX
          RPSW(NTH)=RPS(NTH,NRMAX)
          ZPSW(NTH)=ZPS(NTH,NRMAX)
-C         WRITE(6,'(A,I5,1P3E12.4)') 
-C     &        'NTH: ',NTH,THW(NTH),RPSW(NTH),ZPSW(NTH)
+!         WRITE(6,'(A,I5,1P3E12.4)')
+!     &        'NTH: ',NTH,THW(NTH),RPSW(NTH),ZPSW(NTH)
       ENDDO
       NTH=NTHMAX+1
       THW(NTH)=2.d0*PI
       RPSW(NTH)=RPS(1,NRMAX)
       ZPSW(NTH)=ZPS(1,NRMAX)
-C         WRITE(6,'(A,I5,1P5E12.4)') 
-C     &        'NTH: ',NTH,THW(NTH),RPSW(NTH),ZPSW(NTH)
+!         WRITE(6,'(A,I5,1P5E12.4)')
+!     &        'NTH: ',NTH,THW(NTH),RPSW(NTH),ZPSW(NTH)
       CALL SPL1D(THW,RPSW,DRPSW,URPSW,NTHMAX+1,4,IERR)
       CALL SPL1D(THW,ZPSW,DZPSW,UZPSW,NTHMAX+1,4,IERR)
       DO NSU=1,NSUMAX+1
          THWL=(NSU-1)*2.d0*PI/NSUMAX
          CALL SPL1DF(THWL,RSW(NSU),THW,URPSW,NTHMAX+1,IERR)
          CALL SPL1DF(THWL,ZSW(NSU),THW,UZPSW,NTHMAX+1,IERR)
-C         WRITE(6,'(A,I5,1P5E12.4)') 
-C     &        'NSU: ',NSU,THWL,RSU(NSU),ZSU(NSU),RSW(NSU),ZSW(NSU)
+!         WRITE(6,'(A,I5,1P5E12.4)')
+!     &        'NSU: ',NSU,THWL,RSU(NSU),ZSU(NSU),RSW(NSU),ZSW(NSU)
       ENDDO
-C
+
       IF(MDLEQF.LT.10) THEN
          RGMIN=RSW(1)
          RGMAX=RSW(1)
@@ -880,36 +900,37 @@ C
             ZGMAX=MAX(ZGMAX,ZSW(NSU))
          ENDDO
       ENDIF
-C      WRITE(6,'(A,I5)') 'MDLEQF=',MDLEQF
-C      WRITE(6,'(A,1P4E12.4)') 'RG,ZG=',RGMIN,RGMAX,ZGMIN,ZGMAX
-C
+!      WRITE(6,'(A,I5)') 'MDLEQF=',MDLEQF
+!      WRITE(6,'(A,1P4E12.4)') 'RG,ZG=',RGMIN,RGMAX,ZGMIN,ZGMAX
+
       RETURN
       END
-C
-C     ***** CALCULATE SPLINES AND INTEGRAL QUANTITIES *****
-C
+!
+!     ***** CALCULATE SPLINES AND INTEGRAL QUANTITIES *****
+!
       SUBROUTINE EQSETS(IERR)
-C
+
       USE libspl1d
       USE libspl2d
       INCLUDE '../eq/eqcomq.inc'
-C
+      INTEGER, INTENT(OUT) :: IERR
+
       DIMENSION DERIV(NRM)
       REAL(rkind),ALLOCATABLE:: D01(:,:),D10(:,:),D11(:,:)
       REAL(rkind) CHIPL
 
       ALLOCATE(D01(NTHMP,NRM),D10(NTHMP,NRM),D11(NTHMP,NRM))
-C
-C      DO NR=1,NRMAX
-C         WRITE(6,'(A,I5,1P5E12.4)')
-C     &        'NR:',NR,PSIP(NR),PSIT(NR),QPS(NR),TTS(NR),AVEJPR(NR)
-C      ENDDO
-C
+!
+!      DO NR=1,NRMAX
+!         WRITE(6,'(A,I5,1P5E12.4)')
+!     &        'NR:',NR,PSIP(NR),PSIT(NR),QPS(NR),TTS(NR),AVEJPR(NR)
+!      ENDDO
+
       IERR=0
       DTH=2.D0*PI/NTHMAX
-C
-C     *** For functions defined in eqsplf.f ***
-C
+!
+!     *** For functions defined in eqsplf.f ***
+!
 !      WRITE(6,'(A)') 'PSIP='
 !      WRITE(6,'(1P5E12.4)') (PSIP(NR),NR=1,NRMAX)
 !      write(6,'(A)') 'psit='
@@ -918,24 +939,24 @@ C
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for PSIT: IERR=',IERR
       CALL SPL1D(PSIT,PSIP,DERIV,UPSIP,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for PSIP: IERR=',IERR
-C
-C     *** Make spline coefficients to convert F(PSIP) to F(RHOT) ***
-C                   where F is an arbitrary function.
-C
+!
+!     *** Make spline coefficients to convert F(PSIP) to F(RHOT) ***
+!                   where F is an arbitrary function.
+!
       CALL SPL1D(PSIP,PPS,DERIV,UPPS,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for PPS: IERR=',IERR
       CALL SPL1D(PSIP,TTS,DERIV,UTTS,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for TTS: IERR=',IERR
       CALL SPL1D(PSIP,QPS,DERIV,UQPS,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for QPS: IERR=',IERR
-C
+
       CALL SPL1D(PSIP,VPS,DERIV,UVPS,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for VPS: IERR=',IERR
       CALL SPL1D(PSIP,SPS,DERIV,USPS,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for SPS: IERR=',IERR
       CALL SPL1D(PSIP,RLEN,DERIV,URLEN,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for RLEN: IERR=',IERR
-C
+
       CALL SPL1D(PSIP,RRMIN,DERIV,URRMIN,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for RRMIN: IERR=',IERR
       CALL SPL1D(PSIP,RRMAX,DERIV,URRMAX,NRMAX,0,IERR)
@@ -948,7 +969,7 @@ C
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for BBMIN: IERR=',IERR
       CALL SPL1D(PSIP,BBMAX,DERIV,UBBMAX,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for BBMAX: IERR=',IERR
-C
+
       CALL SPL1D(PSIP,AVERR ,DERIV,UAVERR ,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for AVERRR: IERR=',IERR
       CALL SPL1D(PSIP,AVERR2,DERIV,UAVERR2,NRMAX,0,IERR)
@@ -975,7 +996,7 @@ C
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for AVEJTR: IERR=',IERR
       CALL SPL1D(PSIP,AVEIR ,DERIV,UAVEIR ,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for AVEIR: IERR=',IERR
-C
+
       CALL SPL1D(PSIP,RRPSI  ,DERIV,URRPSI  ,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for RRPSI: IERR=',IERR
       CALL SPL1D(PSIP,RSPSI  ,DERIV,URSPSI  ,NRMAX,0,IERR)
@@ -988,104 +1009,104 @@ C
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for DVDPSIP: IERR=',IERR
       CALL SPL1D(PSIP,DVDPSIT,DERIV,UDVDPSIT,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for DVDPSIT: IERR=',IERR
-C
-C        +++++ CALCULATE DERIVATIVES +++++
-C     
+!
+!        +++++ CALCULATE DERIVATIVES +++++
+!
       DTH=2.D0*PI/NTHMAX
       DO NTH=1,NTHMAX+1
          CHIP(NTH)=DTH*(NTH-1)
       ENDDO
-C
-      CALL SPL2D(CHIP,RHOT,RPS,D10,D01,D11,URPS,
-     &           NTHMP,NTHMAX+1,NRMAX,4,0,IERR)
+
+      CALL SPL2D(CHIP,RHOT,RPS,D10,D01,D11,URPS, &
+                 NTHMP,NTHMAX+1,NRMAX,4,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL2D for RPS: IERR=',IERR
-C
-      CALL SPL2D(CHIP,RHOT,ZPS,D10,D01,D11,UZPS,
-     &           NTHMP,NTHMAX+1,NRMAX,4,0,IERR)
+
+      CALL SPL2D(CHIP,RHOT,ZPS,D10,D01,D11,UZPS, &
+                 NTHMP,NTHMAX+1,NRMAX,4,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL2D for ZPS: IERR=',IERR
-C
+
       DO NR=1,NRMAX
          RHOTL=RHOT(NR)
-C         write(6,'(A,I5,1P3E12.4)') 'NR,RHOT:',NR,RHOTL,RHOTL**2,
-C     &        PSITA*RHOTL**2
+!         write(6,'(A,I5,1P3E12.4)') 'NR,RHOT:',NR,RHOTL,RHOTL**2,
+!     &        PSITA*RHOTL**2
          QPSL=FNQPS(RHOTL)
          DO NTH=1,NTHMAX+1
             CHIPL=CHIP(NTH)
-            CALL SPL2DD(CHIPL,RHOTL,RPSL,DRCHIL,DRRHOL,
-     &                  CHIP,RHOT,URPS,NTHMP,NTHMAX+1,NRMAX,IERR)
-            CALL SPL2DD(CHIPL,RHOTL,ZPSL,DZCHIL,DZRHOL,
-     &                  CHIP,RHOT,UZPS,NTHMP,NTHMAX+1,NRMAX,IERR)
+            CALL SPL2DD(CHIPL,RHOTL,RPSL,DRCHIL,DRRHOL, &
+                        CHIP,RHOT,URPS,NTHMP,NTHMAX+1,NRMAX,IERR)
+            CALL SPL2DD(CHIPL,RHOTL,ZPSL,DZCHIL,DZRHOL, &
+                        CHIP,RHOT,UZPS,NTHMP,NTHMAX+1,NRMAX,IERR)
             DRPSI(NTH,NR)=DRRHOL*QPSL/(2.D0*PSITA)
             DZPSI(NTH,NR)=DZRHOL*QPSL/(2.D0*PSITA)
             DRCHI(NTH,NR)=DRCHIL
             DZCHI(NTH,NR)=DZCHIL
-C
+!
 !            IF(NR.LE.5) WRITE(6,'(I5,1P4E12.4)')
 !     &           NR,DRRHOL,DRPSI(NTH,NR),QPSL,PSITA
-C
+
             CALL PSIGD(RPSL,ZPSL,DPSIDR,DPSIDZ)
             BPR(NTH,NR)= DPSIDZ/(2.D0*PI*RPSL)
             BPZ(NTH,NR)=-DPSIDR/(2.D0*PI*RPSL)
             BPT(NTH,NR)=SQRT(BPR(NTH,NR)**2+BPZ(NTH,NR)**2)
             BTP(NTH,NR)= TTS(NR)/(2.D0*PI*RPSL)
-C
-C            IF(NTH.EQ.1) WRITE(6,'(2I3,1P6E12.4)') 
-C     &           NTH,NR,RPSL,ZPSL,
-C     &           BPR(NTH,NR),BPZ(NTH,NR),BPT(NTH,NR),BTP(NTH,NR)
-C
+!
+!            IF(NTH.EQ.1) WRITE(6,'(2I3,1P6E12.4)')
+!     &           NTH,NR,RPSL,ZPSL,
+!     &           BPR(NTH,NR),BPZ(NTH,NR),BPT(NTH,NR),BTP(NTH,NR)
+
          ENDDO
       ENDDO
-C
-C        +++++ CALCULATE MAGNETIC FIELD +++++
-C
-C      DO NR=1,NRMAX,5
-C         DO NTH=1,NTHMAX
-C            WRITE(6,'(2I5,1P3E12.4)') 
-C     &           NR,NTH,RPS(NTH,NR),DRPSI(NTH,NR),DRCHI(NTH,NR)
-C         ENDDO
-C      ENDDO
-C
-C        +++++ CALCULATE INTEGRATED QUANTITIES +++++
-C
-c$$$      NDPMAX=100
-c$$$      DELPS=-PSI0/NDPMAX
-c$$$      PPSL=FNPPS(0.D0)
-c$$$      VPSL=FNVPS(0.D0)
-c$$$      SPSL=FNSPS(0.D0)
-c$$$      SUMV =0.5D0*VPSL*DELPS
-c$$$      SUMS =0.5D0*SPSL*DELPS
-c$$$      SUMPV=0.5D0*PPSL*VPSL*DELPS
-c$$$      SUMPS=0.5D0*PPSL*SPSL*DELPS
-c$$$      DO NDP=1,NDPMAX-1
-c$$$         PSIL=PSI0+DELPS*NDP
-c$$$         PSIN=1.D0-PSIL/PSI0
-c$$$         RHON=FNRHON(PSIN)
-c$$$         PPSL=FNPPS(RHON)
-c$$$         VPSL=FNVPS(RHON)
-c$$$         SPSL=FNSPS(RHON)
-c$$$         SUMV =SUMV +VPSL*DELPS
-c$$$         SUMS =SUMS +SPSL*DELPS
-c$$$         SUMPV=SUMPV+PPSL*VPSL*DELPS
-c$$$         SUMPS=SUMPS+PPSL*SPSL*DELPS
-c$$$      ENDDO
-c$$$      PPSL=FNPPS(1.D0)
-c$$$      VPSL=FNVPS(1.D0)
-c$$$      SPSL=FNSPS(1.D0)
-c$$$      SUMV =SUMV +0.5D0*VPSL*DELPS
-c$$$      SUMS =SUMS +0.5D0*SPSL*DELPS
-c$$$      SUMPV=SUMPV+0.5D0*PPSL*VPSL*DELPS
-c$$$      SUMPS=SUMPS+0.5D0*PPSL*SPSL*DELPS
-c$$$      PVOL=SUMV
-c$$$      PAREA=SUMS
-c$$$      RAAVE=SQRT(PAREA/PI)
-c$$$      PVAVE=SUMPV/SUMV
-c$$$      PSAVE=SUMPS/SUMS
-c$$$      BPA=RMU0*RIP*1.D6/FNRLEN(1.D0)
-c$$$      BETAT=PVAVE/(BB**2/(2.D0*RMU0))
-c$$$      BETAP=PSAVE/(BPA**2/(2.D0*RMU0))
-c$$$      QAXIS=FNQPS(0.D0)
-c$$$      QSURF=FNQPS(1.D0)
-C
+!
+!        +++++ CALCULATE MAGNETIC FIELD +++++
+!
+!      DO NR=1,NRMAX,5
+!         DO NTH=1,NTHMAX
+!            WRITE(6,'(2I5,1P3E12.4)')
+!     &           NR,NTH,RPS(NTH,NR),DRPSI(NTH,NR),DRCHI(NTH,NR)
+!         ENDDO
+!      ENDDO
+!
+!        +++++ CALCULATE INTEGRATED QUANTITIES +++++
+!
+!$$$      NDPMAX=100
+!$$$      DELPS=-PSI0/NDPMAX
+!$$$      PPSL=FNPPS(0.D0)
+!$$$      VPSL=FNVPS(0.D0)
+!$$$      SPSL=FNSPS(0.D0)
+!$$$      SUMV =0.5D0*VPSL*DELPS
+!$$$      SUMS =0.5D0*SPSL*DELPS
+!$$$      SUMPV=0.5D0*PPSL*VPSL*DELPS
+!$$$      SUMPS=0.5D0*PPSL*SPSL*DELPS
+!$$$      DO NDP=1,NDPMAX-1
+!$$$         PSIL=PSI0+DELPS*NDP
+!$$$         PSIN=1.D0-PSIL/PSI0
+!$$$         RHON=FNRHON(PSIN)
+!$$$         PPSL=FNPPS(RHON)
+!$$$         VPSL=FNVPS(RHON)
+!$$$         SPSL=FNSPS(RHON)
+!$$$         SUMV =SUMV +VPSL*DELPS
+!$$$         SUMS =SUMS +SPSL*DELPS
+!$$$         SUMPV=SUMPV+PPSL*VPSL*DELPS
+!$$$         SUMPS=SUMPS+PPSL*SPSL*DELPS
+!$$$      ENDDO
+!$$$      PPSL=FNPPS(1.D0)
+!$$$      VPSL=FNVPS(1.D0)
+!$$$      SPSL=FNSPS(1.D0)
+!$$$      SUMV =SUMV +0.5D0*VPSL*DELPS
+!$$$      SUMS =SUMS +0.5D0*SPSL*DELPS
+!$$$      SUMPV=SUMPV+0.5D0*PPSL*VPSL*DELPS
+!$$$      SUMPS=SUMPS+0.5D0*PPSL*SPSL*DELPS
+!$$$      PVOL=SUMV
+!$$$      PAREA=SUMS
+!$$$      RAAVE=SQRT(PAREA/PI)
+!$$$      PVAVE=SUMPV/SUMV
+!$$$      PSAVE=SUMPS/SUMS
+!$$$      BPA=RMU0*RIP*1.D6/FNRLEN(1.D0)
+!$$$      BETAT=PVAVE/(BB**2/(2.D0*RMU0))
+!$$$      BETAP=PSAVE/(BPA**2/(2.D0*RMU0))
+!$$$      QAXIS=FNQPS(0.D0)
+!$$$      QSURF=FNQPS(1.D0)
+
       NDRMAX=100
       DELRHO=1.D0/NDRMAX
       RHON1=0.D0
@@ -1110,7 +1131,7 @@ C
          CALL SPL1DF(FNPSIP(RHONH),AVEIRL,PSIP,UAVEIR,NRMAX,IERR)
          SUMS=SUMS+DVDRHOL*AVEIRL*DELRHO
       ENDDO
-C
+
       PVOL =SUMV           ! Volume (or FNVPS(1.D0))
       PAREA=SUMS/(2.D0*PI) ! Cross section
       RAAVE=SQRT(PAREA/PI) ! Minor radius determined by cross section
@@ -1120,34 +1141,35 @@ C
       BETAP=PVAVE/(BPA**2/(2.D0*RMU0)) ! Poloidal beta
       QAXIS=FNQPS(0.D0)    ! Safety factor at the magnetic axis
       QSURF=FNQPS(1.D0)    ! Safety factor at the separatrix
-C
+
       IF(NPRINT.GE.2) THEN
-c$$$         WRITE(6,'(A,1P4E12.4)') 
-c$$$     &        'PVOL,PAREA,PVAVE,PSAVE  =',PVOL,PAREA,PVAVE,PSAVE
-         WRITE(6,'(A,1P3E12.4)') 
-     &        'PVOL,PAREA,PVAVE  =',PVOL,PAREA,PVAVE
-         WRITE(6,'(A,1P4E12.4)') 
-     &        'BETAT,BETAP,QAXIS,QSURF =',BETAT,BETAP,QAXIS,QSURF
+!$$$         WRITE(6,'(A,1P4E12.4)')
+!$$$     &        'PVOL,PAREA,PVAVE,PSAVE  =',PVOL,PAREA,PVAVE,PSAVE
+         WRITE(6,'(A,1P3E12.4)') &
+              'PVOL,PAREA,PVAVE  =',PVOL,PAREA,PVAVE
+         WRITE(6,'(A,1P4E12.4)') &
+              'BETAT,BETAP,QAXIS,QSURF =',BETAT,BETAP,QAXIS,QSURF
       ENDIF
-C
+
       RETURN
       END
-C
-C     ***** Convert flux-surface-averaged quantities with grad V 
-C             to those with grad rho *****
-C
+!
+!     ***** Convert flux-surface-averaged quantities with grad V
+!             to those with grad rho *****
+!
       SUBROUTINE EQSETS_RHO(IERR)
-C
+
       USE libspl1d
       USE libitp
       INCLUDE '../eq/eqcomq.inc'
-C
+      INTEGER, INTENT(OUT) :: IERR
+
       dimension DERIV(NRM)
-C
+
       DO NR = 1, NRMAX
          DVDRHO(NR) = 2.D0 * PSITA * RHOT(NR) * DVDPSIT(NR) ! V'
       ENDDO
-C
+
       DO NR = 2, NRMAX
          AVEGRR2(NR) = AVEGVR2(NR) / DVDRHO(NR)**2 ! <|grad rho|^2/R^2>
          AVEGR  (NR) = AVEGV(NR)   / DVDRHO(NR)    ! <|grad rho|>
@@ -1156,7 +1178,7 @@ C
       AVEGRR2(1) = FCTR(RHOT(2),RHOT(3),AVEGRR2(2),AVEGRR2(3))
       AVEGR  (1) = FCTR(RHOT(2),RHOT(3),AVEGR  (2),AVEGR  (3))
       AVEGR2 (1) = FCTR(RHOT(2),RHOT(3),AVEGR2 (2),AVEGR2 (3))
-C
+
       CALL SPL1D(PSIP,DVDRHO ,DERIV,UDVDRHO ,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for DVDRHO: IERR=',IERR
       CALL SPL1D(PSIP,AVEGRR2,DERIV,UAVEGRR2,NRMAX,0,IERR)
@@ -1165,36 +1187,39 @@ C
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for AVEGR: IERR=',IERR
       CALL SPL1D(PSIP,AVEGR2 ,DERIV,UAVEGR2 ,NRMAX,0,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for AVEGR2: IERR=',IERR
-C
+
       RETURN
       END
-C
-C     ***** CALCULATE FLUX SURFACE *****
-C
+!
+!     ***** CALCULATE FLUX SURFACE *****
+!
       SUBROUTINE EQCALF(RINIT,ZINIT,NTHUMAX,RU,ZU,IERR)
-C
+
       USE libspl1d
       INCLUDE '../eq/eqcomq.inc'
-C
-      DIMENSION RU(NTHUMAX+1),ZU(NTHUMAX+1)
+      REAL(rkind), INTENT(IN)  :: RINIT, ZINIT
+      INTEGER,     INTENT(IN)  :: NTHUMAX
+      REAL(rkind), INTENT(OUT) :: RU(NTHUMAX+1), ZU(NTHUMAX+1)
+      INTEGER,     INTENT(OUT) :: IERR
+
       DIMENSION XA(NTVM),YA(2,NTVM)
       DIMENSION RCHI(NTVM),ZCHI(NTVM),DXCHI(NTVM)
       DIMENSION URCHI(4,NTVM),UZCHI(4,NTVM)
-C
+
       IERR=0
       DTH=2.D0*PI/NTHUMAX
-C
-C     ----- SET NUMBER OF DIVISION for integration -----
-C
+!
+!     ----- SET NUMBER OF DIVISION for integration -----
+!
 
       NMAX=200
       IF(NMAX.GT.NTVM) NMAX=NTVM
-C
-C     ----- CALCULATE PSIP, PSIT, PPS, TTS, RPS and ZPS -----
-C     -----              on magnetic surfaces           -----
-C
+!
+!     ----- CALCULATE PSIP, PSIT, PPS, TTS, RPS and ZPS -----
+!     -----              on magnetic surfaces           -----
+!
       CALL EQMAGS(RINIT,ZINIT,NMAX,XA,YA,NA,IERR)
-C
+
       FACTOR=2.D0*PI/XA(NA)
       RCHI(1)=RINIT
       ZCHI(1)=ZINIT
@@ -1207,12 +1232,12 @@ C
       RCHI(NA)=RCHI(1)
       ZCHI(NA)=ZCHI(1)
       XA(NA)=FACTOR*XA(NA)
-C
+
       CALL SPL1D(XA,RCHI,DXCHI,URCHI,NA,4,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for RCHI: IERR=',IERR
       CALL SPL1D(XA,ZCHI,DXCHI,UZCHI,NA,4,IERR)
       IF(IERR.NE.0) WRITE(6,*) 'XX SPL1D for ZCHI: IERR=',IERR
-C
+
       RU(1)=RINIT
       ZU(1)=ZINIT
       DO NTH=2,NTHUMAX
@@ -1222,17 +1247,18 @@ C
       ENDDO
       RU(NTHUMAX+1)=RINIT
       ZU(NTHUMAX+1)=ZINIT
-C
+
       RETURN
       END
-C
-C     ***** INTERPOLATE FUNCTION OF PP(PSIP) *****
-C
+!
+!     ***** INTERPOLATE FUNCTION OF PP(PSIP) *****
+!
       FUNCTION PPFUNC(PSIPL)
-C
+
       USE libspl1d
       INCLUDE '../eq/eqcomq.inc'
-C
+      REAL(rkind), INTENT(IN) :: PSIPL
+
       IF(PSIPL.GT.PSIPS(NPSMAX)) THEN
          PPFUNC=0.D0
          RETURN
@@ -1245,14 +1271,15 @@ C
       PPFUNC=PPL
       RETURN
       END
-C
-C     ***** INTERPOLATE FUNCTION OF TT(PSIP) *****
-C
+!
+!     ***** INTERPOLATE FUNCTION OF TT(PSIP) *****
+!
       FUNCTION TTFUNC(PSIPL)
-C
+
       USE libspl1d
       INCLUDE '../eq/eqcomq.inc'
-C
+      REAL(rkind), INTENT(IN) :: PSIPL
+
       IF(PSIPL.GT.PSIPS(NPSMAX)) THEN
          CALL SPL1DF(PSIPS(NPSMAX),TTL,PSIPS,UTTPS,NPSMAX,IERR)
          TTFUNC=TTL
@@ -1263,14 +1290,15 @@ C
       TTFUNC=TTL
       RETURN
       END
-C
-C     ***** INTERPOLATE FUNCTION OF PP(PSIP) *****
-C
+!
+!     ***** INTERPOLATE FUNCTION OF PP(PSIP) *****
+!
       FUNCTION DPPFUNC(PSIPL)
-C
+
       USE libspl1d
       INCLUDE '../eq/eqcomq.inc'
-C
+      REAL(rkind), INTENT(IN) :: PSIPL
+
       IF(PSIPL.GT.PSIPS(NPSMAX)) THEN
          IF(MODELG.EQ.5) THEN
             CALL SPL1DF(PSIPS(NPSMAX),DPPL,PSIPS,UDPPPS,NPSMAX,IERR)
@@ -1294,14 +1322,15 @@ C
       ENDIF
       RETURN
       END
-C
-C     ***** INTERPOLATE FUNCTION OF TT(PSIP) *****
-C
+!
+!     ***** INTERPOLATE FUNCTION OF TT(PSIP) *****
+!
       FUNCTION DTTFUNC(PSIPL)
-C
+
       USE libspl1d
       INCLUDE '../eq/eqcomq.inc'
-C
+      REAL(rkind), INTENT(IN) :: PSIPL
+
       IF(PSIPL.GT.PSIPS(NPSMAX)) THEN
          IF(MODELG.EQ.5) THEN
             CALL SPL1DF(PSIPS(NPSMAX),DTTL,PSIPS,UDTTPS,NPSMAX,IERR)
@@ -1324,13 +1353,13 @@ C
       END
 
 
-c     ------ calculate zmin and zmax -----
-c                assume: z=a(r-r0)^2+z0
-c       Input : ya(1, n) : R(psi)
-c               ya(2, n) : Z(psi)
-c               n        : poloidal index
-c       Output: z0, r0
-      
+!     ------ calculate zmin and zmax -----
+!                assume: z=a(r-r0)^2+z0
+!       Input : ya(1, n) : R(psi)
+!               ya(2, n) : Z(psi)
+!               n        : poloidal index
+!       Output: z0, r0
+
       subroutine zminmax(ya,n,z0,r0)
 
       USE bpsd_kinds,ONLY: rkind
