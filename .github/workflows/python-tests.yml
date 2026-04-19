@@ -148,7 +148,11 @@ jobs:
           set -e
           for mod in tr fp ti wr wrx eq tot; do
             echo "::group::Building $mod/lib${mod}api.so"
-            make -C "$mod" bpsd_pic
+            # tot has no bpsd_pic target (it links against the other
+            # modules' .so directly, not per-module bpsd PIC objs).
+            if [[ "$mod" != "tot" ]]; then
+              make -C "$mod" bpsd_pic
+            fi
             make -C "$mod" "lib${mod}api.so"
             echo "::endgroup::"
           done
