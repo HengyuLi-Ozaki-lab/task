@@ -48,7 +48,9 @@ MODULE wr_api
   USE wr_param_registry, ONLY: wr_param_set
   USE plinit,            ONLY: pl_init
   USE dpinit,            ONLY: dp_init
+  USE dpparm,            ONLY: dp_chek
   USE wrinit,            ONLY: wrinit_fortran => wr_init
+  USE wrparm,            ONLY: wr_chek
   USE wrsetup,           ONLY: wr_setup
   USE wrexec,            ONLY: wr_exec
   IMPLICIT NONE
@@ -71,7 +73,7 @@ MODULE wr_api
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_allocated   = .FALSE.
 
-  EXTERNAL :: EQINIT
+  EXTERNAL :: EQINIT, EQCHEK
 
 CONTAINS
 
@@ -166,6 +168,14 @@ CONTAINS
     ! along ray trajectories. See PR with this fix for the Layer-1
     ! 1e-10 reproducer (wr_tst2_ec rays[0].RAYS_END[4]).
     CALL wr_propagate_namelist_profiles
+
+    ! Run the post-namelist consistency checks that the Fortran path
+    ! invokes via wrparm.f90:42-44 (CALL EQCHEK / DP_CHEK / WR_CHEK
+    ! inside WR_PARM). EQCHEK contains the critical RB=RA fixup
+    ! (eq/eqinit.f90:536-540): without it, fixtures using ITER-scale
+    ! RA leave RB at the pl_init default (1.2 m), so RB/RA<1 and the
+    ! ray-step boundary check (wrexecr.f90:430) trips at NSTP=1.
+    CALL wr_apply_namelist_checks
 
     CALL wr_allocate
     g_allocated = .TRUE.
@@ -355,5 +365,18 @@ CONTAINS
        PROFU2(ns) = PROFU2(1)
     END DO
   END SUBROUTINE wr_propagate_namelist_profiles
+
+  !-------------------------------------------------------------------
+  ! wr_apply_namelist_checks : run EQCHEK / DP_CHEK / WR_CHEK that
+  ! the Fortran namelist path invokes via wrparm.f90:42-44 (inside
+  ! WR_PARM). The C ABI set_param path bypasses WR_PARM entirely so
+  ! these post-read fixups never run unless we call them here.
+  !-------------------------------------------------------------------
+  SUBROUTINE wr_apply_namelist_checks
+    INTEGER :: ic_ierr
+    CALL EQCHEK(ic_ierr)
+    CALL dp_chek(ic_ierr)
+    CALL wr_chek(ic_ierr)
+  END SUBROUTINE wr_apply_namelist_checks
 
 END MODULE wr_api
