@@ -376,6 +376,14 @@ def plot_sweep(
     if rng is None:
         raise TypeError("plot_sweep requires sweep_range=(start, stop, n)")
 
+    # Validate output up front (mirror plot() behaviour) so a TOML typo
+    # like `output = "bogus"` fails loudly instead of silently falling
+    # through to the window branch.
+    if output not in ("window", "file", "return"):
+        raise ValueError(
+            f"output must be one of 'window' / 'file' / 'return', got {output!r}"
+        )
+
     if y not in VARIABLE_INFO:
         raise KeyError(
             f"y variable {y!r} has no plot support. See plot_available()."
