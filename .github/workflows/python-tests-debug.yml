@@ -1,0 +1,152 @@
+name: python-tests-debug
+
+# Diagnostic job: build libXapi.so with gfortran runtime traps
+# (bounds check, signaling-NaN init for reals/integers/derived,
+# FP exception trap) and run the tests that currently CRASH in
+# the release CI build. Goal: surface exact uninit / bounds
+# violations with backtraces so they can be fixed one at a time.
+#
+# Triggers:
+# - workflow_dispatch: manual run from the Actions tab
+# - pull_request labeled 'debug-ci': apply the `debug-ci` label
+#   to a PR to get a diagnostic run for that PR's HEAD
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize]
+
+jobs:
+  debug:
+    # Only run when explicitly requested via label or manual trigger.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'debug-ci'))
+    name: pytest-debug (signaling-NaN init + bounds check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Fortran/C build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran gcc make
+
+      - name: Clone BPSD + apply patch
+        run: |
+          git clone --depth 1 https://github.com/ats-fukuyama/bpsd.git \
+            "$GITHUB_WORKSPACE/../bpsd"
+          if [[ -f docs/external-patches/bpsd/bpsd-species-kid-oob-fix.patch ]]; then
+            git -C "$GITHUB_WORKSPACE/../bpsd" apply \
+              "$GITHUB_WORKSPACE/docs/external-patches/bpsd/bpsd-species-kid-oob-fix.patch"
+          fi
+
+      - name: Provision mtxp/make.mtxp from nompi template
+        run: |
+          cp mtxp/make.mtxp.nompi mtxp/make.mtxp
+
+      - name: Provision make.header — DEBUG profile (OFLAGS := DFLAGS)
+        # Key difference from the release CI job: OFLAGS is set to the
+        # strict debug flag set so everything the Makefiles compile with
+        # $(OFLAGS) gets the runtime traps. Adds -finit-* so any read of
+        # a not-yet-written real / integer / logical / derived-type
+        # member trips a signalling-NaN FPE or SIGABRT immediately,
+        # with a clean -fbacktrace line.
+        run: |
+          cat > make.header <<'HEADER_EOF'
+          ### CI-generated make.header (DEBUG: signaling-NaN init, fcheck=all)
+          LAPACK = nolapack.f
+          LIBLA =
+          MODLA95 =
+          MDSPLUS = nomdsplus.f
+          MDSLIB =
+          MF77 = mpif77
+          MF90 = mpif90
+          MF95 = mpif90
+          MFC  = $(MF90)
+
+          ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
+          GFLIBS=
+          OFLAGS = -g -O0 -m64 -std=legacy \
+                   -fbounds-check -fcheck=all \
+                   -ffpe-trap=invalid,zero,overflow -fbacktrace \
+                   -finit-real=snan -finit-integer=-8888 \
+                   -finit-logical=false -finit-derived
+          DFLAGS = $(OFLAGS)
+          FCFIXED = gfortran -ffixed-form
+          FCFREE = gfortran -ffree-form
+          MOD = mod
+          MODDIR = -Jmod
+          LD=ld
+          LDFLAGS=-r -o
+          FPP=
+          HEADER_EOF
+          head -20 make.header
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-mock pytest-subtests pytest-forked
+          pip install tomli
+
+      - name: Build PIC support libraries (debug flags)
+        run: |
+          set -e
+          make -C "$GITHUB_WORKSPACE/../bpsd" libbpsd.a
+          make -C lib libtask_pic.a libgrf_pic.a libmds_pic.a
+          make -C mtxp libmtxnompi_pic.o libmtxbnd_pic.o
+          make -C tr bpsd_pic
+          make -C pl libpl_noeq_pic
+          make -C eq libeq_pic.a
+          make -C pl libpl_pic.a
+          make -C dp libdp_pic.a
+          make -C ob libob_pic.a
+          make -C open-adas/adf11/adf11-lib lib-adf11_pic.a
+          make -C adpost lib-adpost_pic.a
+
+      - name: Build module shared libraries (debug)
+        run: |
+          set -e
+          for mod in tr fp ti wr wrx eq tot; do
+            echo "::group::Building $mod/lib${mod}api.so (debug)"
+            if [[ "$mod" != "tot" ]]; then
+              make -C "$mod" bpsd_pic
+            fi
+            make -C "$mod" "lib${mod}api.so"
+            echo "::endgroup::"
+          done
+
+      - name: Run FULL pytest suite (expect crashes with backtraces)
+        # continue-on-error: the whole point is to SURFACE crashes that
+        # the release CI skips. We want the logs, not a green check.
+        continue-on-error: true
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: python
+          WRX_RUN_OK: "1"
+          WRX_REINIT_OK: "1"
+        run: |
+          python -m pytest python/ \
+            --forked \
+            --tb=short \
+            -ra \
+            --maxfail=50 \
+            --ignore-glob='*property_boundary*' \
+            --ignore-glob='*property_fanout*' \
+            2>&1 | tee pytest-debug.log
+
+      - name: Upload diagnostic log
+        # Always upload so we can inspect crashes from the Actions UI.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-debug-log
+          path: pytest-debug.log
+          retention-days: 14
