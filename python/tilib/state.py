@@ -14,11 +14,16 @@ from ._ffi import TiStateC
 
 # Scalar field names in canonical order. ``nt/nrmax/nsa_max/nsmax`` are
 # carried as dedicated attributes on TiState and not listed in the
-# ``to_dict`` "scalars" block; the fields below are the physical /
-# diagnostic scalars returned from ``ti_get_state``.
+# ``to_dict`` "scalars" block. ``SCALAR_FIELDS`` lists the real-valued
+# physical/diagnostic scalars (grouped under ``scalars`` in to_dict);
+# ``SCALAR_INT_FIELDS`` lists the integer iteration counters (grouped
+# under ``scalars_int`` in to_dict, mirroring the Phase-0 baseline
+# JSON shape emitted by tiregress.f90).
 SCALAR_FIELDS = (
     "T",
     "residual_loop_max",
+)
+SCALAR_INT_FIELDS = (
     "icount_loop_max",
     "icount_mat_max",
 )
@@ -114,10 +119,20 @@ class TiState:
             "NT": self.nt,
             "NRMAX": self.nrmax,
             "NSA_MAX": self.nsa_max,
+            # Phase-0 regression dump (tiregress.f90 -> baselines/.../metrics.json)
+            # uses lowercase ``nsa_max``; compare_metrics.py expects this exact
+            # key alongside the dimension set. Emit both spellings so Layer 1
+            # equivalence and other downstream consumers stay in sync.
+            "nsa_max": self.nsa_max,
             "NSMAX": self.nsmax,
             "scalars": {
                 "T": self.T,
                 "residual_loop_max": self.residual_loop_max,
+            },
+            # Phase-0 baseline (tiregress.f90) splits int counters into a
+            # separate ``scalars_int`` group; mirror that grouping so
+            # compare_metrics finds the keys at the expected paths.
+            "scalars_int": {
                 "icount_loop_max": self.icount_loop_max,
                 "icount_mat_max": self.icount_mat_max,
             },
@@ -139,4 +154,4 @@ class TiState:
         }
 
 
-__all__ = ["TiState", "SCALAR_FIELDS"]
+__all__ = ["TiState", "SCALAR_FIELDS", "SCALAR_INT_FIELDS"]
