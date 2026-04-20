@@ -328,21 +328,41 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION tr_api_finalize() RESULT(ierr) BIND(C, NAME="tr_finalize")
     INTEGER(C_INT) :: ierr
+    LOGICAL :: trace_on
+    CHARACTER(LEN=32) :: env_val
+
+    ! Bisection markers for the CI SIGABRT that does not reproduce
+    ! on the dev host. Enable by setting TR_FINALIZE_TRACE=1; flush
+    ! to stderr at every step so the last line before SIGABRT
+    ! pinpoints which dealloc call tripped. Release flags in CI
+    ! already give -fbacktrace, so we get a Fortran stack too.
+    CALL GET_ENVIRONMENT_VARIABLE("TR_FINALIZE_TRACE", env_val)
+    trace_on = (TRIM(env_val) == "1")
+
+    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: enter"
 
     IF (.NOT. g_initialized) THEN
+       IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: idempotent early-return"
        ! Idempotent: nothing to free, but not an error either.
        ierr = TR_OK
        RETURN
     END IF
 
+    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: -> DEALLOCATE_TRCOMM"
     CALL DEALLOCATE_TRCOMM
+    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: <- DEALLOCATE_TRCOMM"
+
     ! Pair with the OPEN(7) in tr_api_init so re-init after finalize
     ! does not try to OPEN an already-open unit (SCRATCH would auto-
     ! delete on program exit but a same-process re-init would fail).
+    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: -> CLOSE(7)"
     CLOSE(7, IOSTAT=ierr)
+    IF (trace_on) WRITE(0, '(A,I0)') "tr_api_finalize: <- CLOSE(7) ierr=", ierr
+
     g_initialized = .FALSE.
     g_prepared    = .FALSE.
     ierr = TR_OK
+    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: exit OK"
   END FUNCTION tr_api_finalize
 
 END MODULE tr_api

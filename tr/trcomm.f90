@@ -96,13 +96,36 @@ CONTAINS
 
   SUBROUTINE DEALLOCATE_TRCOMM
     use trcom1, ONLY : DEALLOCATE_TRCOM1
+    LOGICAL :: trace_on
+    CHARACTER(LEN=32) :: env_val
+
+    ! See tr_api::tr_api_finalize for the TR_FINALIZE_TRACE bisection
+    ! rationale. We reuse the same env flag here because the CI
+    ! SIGABRT is inside one of the 5 dispatch calls below — the last
+    ! marker written before SIGABRT pinpoints which one.
+    CALL GET_ENVIRONMENT_VARIABLE("TR_FINALIZE_TRACE", env_val)
+    trace_on = (TRIM(env_val) == "1")
 
     ! Deallocate in reverse dependency order
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> globals"
     CALL deallocate_trcomm_globals
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- globals"
+
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> profile"
     CALL deallocate_trcomm_profile
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- profile"
+
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> mtx"
     CALL deallocate_trcomm_mtx
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- mtx"
+
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> ctrl"
     CALL deallocate_trcomm_ctrl
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- ctrl"
+
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> trcom1"
     CALL DEALLOCATE_TRCOM1
+    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- trcom1"
 
     return
 

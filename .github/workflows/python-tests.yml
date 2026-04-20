@@ -103,7 +103,11 @@ jobs:
 
           ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
           GFLIBS=
-          OFLAGS = -g -O3 -m64 -std=legacy
+          # -fbacktrace added so any SIGABRT/SEGV in CI prints the
+          # Fortran call stack (host dev machines do not reproduce the
+          # crash; backtrace is the only way to locate the failing
+          # routine from CI logs).
+          OFLAGS = -g -O3 -m64 -std=legacy -fbacktrace
           DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
           FCFIXED = gfortran -ffixed-form
           FCFREE = gfortran -ffree-form
@@ -224,6 +228,35 @@ jobs:
             --deselect='python/wrxlib/tests/test_sweep.py' \
             --deselect='python/totlib/tests/test_sweep.py' \
             -k 'not TestIntegration and not TestL6Integration and not TestLifecycle and not TestTotRunGetState and not test_run_zero_and_get_state'
+
+      # Diagnostic: run ONE deselected test with TR_FINALIZE_TRACE=1 so
+      # the marker prints (tr_api::tr_api_finalize, trcomm::DEALLOCATE_TRCOMM)
+      # + -fbacktrace pinpoint where inside tr_finalize the CI SIGABRT
+      # fires. continue-on-error: true — the test is expected to crash;
+      # we just want the last-marker + backtrace in the log.
+      - name: Diagnostic run — tr_mcp test_init_run_state_finalize with markers
+        if: always()
+        continue-on-error: true
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: python
+          TR_FINALIZE_TRACE: "1"
+        shell: bash
+        run: |
+          python -m pytest \
+            python/mcp-servers/tr_mcp/tests/test_server.py::TestIntegration::test_init_run_state_finalize \
+            -v --tb=long 2>&1 | tee tr-finalize-trace.log || true
+          echo ""
+          echo "=== Last 40 lines of tr-finalize-trace.log ==="
+          tail -40 tr-finalize-trace.log
+
+      - name: Upload tr_finalize diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tr-finalize-trace
+          path: tr-finalize-trace.log
+          retention-days: 14
 
       # Deferred: "Run C ABI check drivers (per-module integration)"
       # The <mod>_api_check_all Makefile targets recompile wrcomm.f90
