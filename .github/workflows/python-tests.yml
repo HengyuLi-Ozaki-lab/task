@@ -47,10 +47,11 @@ jobs:
           sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc gfortran-14 make
+            gcc gfortran-14 make valgrind
           sudo update-alternatives --install /usr/bin/gfortran gfortran \
             /usr/bin/gfortran-14 140
           gfortran --version | head -1
+          valgrind --version
 
       - name: Clone BPSD (sibling repo expected at ../bpsd)
         # All module Makefiles reference BPSD_SRC=../../bpsd; the BPSD
@@ -229,42 +230,54 @@ jobs:
             --deselect='python/totlib/tests/test_sweep.py' \
             -k 'not TestIntegration and not TestL6Integration and not TestLifecycle and not TestTotRunGetState and not test_run_zero_and_get_state'
 
-      # Diagnostic: run ONE deselected test with TR_FINALIZE_TRACE=1 so
-      # the marker prints (tr_api::tr_api_finalize, trcomm::DEALLOCATE_TRCOMM)
-      # + -fbacktrace pinpoint where inside tr_finalize the CI SIGABRT
-      # fires. continue-on-error: true — the test is expected to crash;
-      # we just want the last-marker + backtrace in the log.
-      - name: Diagnostic run — tr_mcp test_init_run_state_finalize with markers
+      # Diagnostic: run the canonical SIGABRT reproducer under valgrind
+      # so memcheck pinpoints the actual write-past-end / double-free
+      # at the moment it happens (not when glibc later notices via
+      # "corrupted size vs. prev_size"). Previous round of bisection
+      # markers confirmed the bug is a Heisenbug: adding markers /
+      # local variables shifts heap layout and moves the detector,
+      # but valgrind's shadow memory does not perturb the application
+      # heap. Slow (10-30x) so scoped to ONE test.
+      - name: Diagnostic run — tr_mcp test under valgrind
         if: always()
         continue-on-error: true
         env:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONPATH: python
-          TR_FINALIZE_TRACE: "1"
-          # Disable stdio buffering so Fortran WRITE(0,...) markers are
-          # flushed before the SIGABRT kills the process. Previous run
-          # produced a log with zero Fortran-side output because the
-          # buffers were dropped on crash.
-          GFORTRAN_UNBUFFERED_ALL: "y"
           PYTHONUNBUFFERED: "1"
+          PYTHONMALLOC: "malloc"  # let valgrind see real malloc, not pymalloc
         shell: bash
         run: |
-          # -s / --capture=no: disable pytest's stdout+stderr capture so
-          # Fortran WRITE(0,...) markers AND -fbacktrace output reach
-          # the log. Previous run's pytest swallowed every Fortran line.
-          python -u -m pytest -s --capture=no \
-            python/mcp-servers/tr_mcp/tests/test_server.py::TestIntegration::test_init_run_state_finalize \
-            -v --tb=long 2>&1 | tee tr-finalize-trace.log || true
+          # PYTHONMALLOC=malloc routes Python's allocator through libc
+          # malloc so valgrind can track every allocation. Without it
+          # pymalloc's arena pool hides everything.
+          set -o pipefail
+          valgrind \
+            --tool=memcheck \
+            --error-exitcode=99 \
+            --show-leak-kinds=definite \
+            --errors-for-leak-kinds=definite \
+            --track-origins=yes \
+            --num-callers=20 \
+            --log-file=valgrind.log \
+            python -u -m pytest -s --capture=no \
+              python/mcp-servers/tr_mcp/tests/test_server.py::TestIntegration::test_init_run_state_finalize \
+              -v --tb=long 2>&1 | tee tr-valgrind-pytest.log || true
           echo ""
-          echo "=== Last 60 lines of tr-finalize-trace.log ==="
-          tail -60 tr-finalize-trace.log
+          echo "=== Valgrind summary (errors / leaks) ==="
+          grep -E "ERROR SUMMARY|definitely lost|Invalid (read|write)|Use of uninitialised" valgrind.log | head -30 || true
+          echo ""
+          echo "=== First Invalid write / read context (top 30 lines around) ==="
+          grep -B 1 -A 25 "Invalid (read|write)" valgrind.log | head -60 || true
 
-      - name: Upload tr_finalize diagnostic log
+      - name: Upload tr_finalize valgrind diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tr-finalize-trace
-          path: tr-finalize-trace.log
+          name: tr-valgrind-trace
+          path: |
+            valgrind.log
+            tr-valgrind-pytest.log
           retention-days: 14
 
       # Deferred: "Run C ABI check drivers (per-module integration)"
