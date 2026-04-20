@@ -124,13 +124,13 @@ jobs:
           done
 
       - name: Run FULL pytest suite (expect crashes with backtraces)
-        # continue-on-error: the whole point is to SURFACE crashes that
-        # the release CI skips. When pytest exits non-zero, the step
-        # must ALSO exit non-zero so the Actions UI shows red — that
-        # way a fresh run is visually distinguishable from one where
-        # everything crashed cleanly. `set -o pipefail` ensures the
-        # `| tee` does not swallow pytest's exit code.
-        continue-on-error: true
+        # The whole point is to SURFACE crashes that the release CI
+        # skips. When pytest exits non-zero, the step MUST show red
+        # in the Actions UI. `set -o pipefail` ensures `| tee` does
+        # not swallow pytest's exit code. `continue-on-error` is NOT
+        # set — we rely on the next step's `if: always()` to upload
+        # the artifact even after this step fails, while the job
+        # status correctly reflects the crash.
         env:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONPATH: python
