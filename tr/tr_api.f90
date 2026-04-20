@@ -339,30 +339,30 @@ CONTAINS
     CALL GET_ENVIRONMENT_VARIABLE("TR_FINALIZE_TRACE", env_val)
     trace_on = (TRIM(env_val) == "1")
 
-    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: enter"
+    IF (trace_on) THEN; WRITE(0, '(A)') "tr_api_finalize: enter"; FLUSH(0); END IF
 
     IF (.NOT. g_initialized) THEN
-       IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: idempotent early-return"
+       IF (trace_on) THEN; WRITE(0, '(A)') "tr_api_finalize: idempotent early-return"; FLUSH(0); END IF
        ! Idempotent: nothing to free, but not an error either.
        ierr = TR_OK
        RETURN
     END IF
 
-    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: -> DEALLOCATE_TRCOMM"
+    IF (trace_on) THEN; WRITE(0, '(A)') "tr_api_finalize: -> DEALLOCATE_TRCOMM"; FLUSH(0); END IF
     CALL DEALLOCATE_TRCOMM
-    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: <- DEALLOCATE_TRCOMM"
+    IF (trace_on) THEN; WRITE(0, '(A)') "tr_api_finalize: <- DEALLOCATE_TRCOMM"; FLUSH(0); END IF
 
     ! Pair with the OPEN(7) in tr_api_init so re-init after finalize
     ! does not try to OPEN an already-open unit (SCRATCH would auto-
     ! delete on program exit but a same-process re-init would fail).
-    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: -> CLOSE(7)"
+    IF (trace_on) THEN; WRITE(0, '(A)') "tr_api_finalize: -> CLOSE(7)"; FLUSH(0); END IF
     CLOSE(7, IOSTAT=ierr)
-    IF (trace_on) WRITE(0, '(A,I0)') "tr_api_finalize: <- CLOSE(7) ierr=", ierr
+    IF (trace_on) THEN; WRITE(0, '(A,I0)') "tr_api_finalize: <- CLOSE(7) ierr=", ierr; FLUSH(0); END IF
 
     g_initialized = .FALSE.
     g_prepared    = .FALSE.
     ierr = TR_OK
-    IF (trace_on) WRITE(0, '(A)') "tr_api_finalize: exit OK"
+    IF (trace_on) THEN; WRITE(0, '(A)') "tr_api_finalize: exit OK"; FLUSH(0); END IF
   END FUNCTION tr_api_finalize
 
 END MODULE tr_api

@@ -241,14 +241,23 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONPATH: python
           TR_FINALIZE_TRACE: "1"
+          # Disable stdio buffering so Fortran WRITE(0,...) markers are
+          # flushed before the SIGABRT kills the process. Previous run
+          # produced a log with zero Fortran-side output because the
+          # buffers were dropped on crash.
+          GFORTRAN_UNBUFFERED_ALL: "y"
+          PYTHONUNBUFFERED: "1"
         shell: bash
         run: |
-          python -m pytest \
+          # -s / --capture=no: disable pytest's stdout+stderr capture so
+          # Fortran WRITE(0,...) markers AND -fbacktrace output reach
+          # the log. Previous run's pytest swallowed every Fortran line.
+          python -u -m pytest -s --capture=no \
             python/mcp-servers/tr_mcp/tests/test_server.py::TestIntegration::test_init_run_state_finalize \
             -v --tb=long 2>&1 | tee tr-finalize-trace.log || true
           echo ""
-          echo "=== Last 40 lines of tr-finalize-trace.log ==="
-          tail -40 tr-finalize-trace.log
+          echo "=== Last 60 lines of tr-finalize-trace.log ==="
+          tail -60 tr-finalize-trace.log
 
       - name: Upload tr_finalize diagnostic log
         if: always()

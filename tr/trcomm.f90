@@ -106,26 +106,28 @@ CONTAINS
     CALL GET_ENVIRONMENT_VARIABLE("TR_FINALIZE_TRACE", env_val)
     trace_on = (TRIM(env_val) == "1")
 
-    ! Deallocate in reverse dependency order
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> globals"
+    ! Deallocate in reverse dependency order. FLUSH(0) after every
+    ! marker so stderr is drained before any subsequent SIGABRT —
+    ! without it Fortran unit 0 buffering drops the crash location.
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> globals"; FLUSH(0); END IF
     CALL deallocate_trcomm_globals
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- globals"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- globals"; FLUSH(0); END IF
 
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> profile"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> profile"; FLUSH(0); END IF
     CALL deallocate_trcomm_profile
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- profile"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- profile"; FLUSH(0); END IF
 
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> mtx"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> mtx"; FLUSH(0); END IF
     CALL deallocate_trcomm_mtx
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- mtx"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- mtx"; FLUSH(0); END IF
 
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> ctrl"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> ctrl"; FLUSH(0); END IF
     CALL deallocate_trcomm_ctrl
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- ctrl"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- ctrl"; FLUSH(0); END IF
 
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> trcom1"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: -> trcom1"; FLUSH(0); END IF
     CALL DEALLOCATE_TRCOM1
-    IF (trace_on) WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- trcom1"
+    IF (trace_on) THEN; WRITE(0, '(A)') "DEALLOCATE_TRCOMM: <- trcom1"; FLUSH(0); END IF
 
     return
 
