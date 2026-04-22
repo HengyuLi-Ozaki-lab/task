@@ -15,6 +15,14 @@ jobs:
   pytest:
     name: pytest (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    # Hard upper bound on the whole job: if any test enters a genuine
+    # infinite loop inside libXapi.so (runaway physics iteration, not a
+    # clean STOP), per-test --timeout=signal cannot interrupt it — the
+    # child is spinning in C/Fortran and never returns to Python. This
+    # cap ensures the runner aborts instead of hanging up to the
+    # default 360 min. Typical runtime is ~12 s; 10 min is plenty of
+    # slack for a slow CI host without wasting minutes on a hung test.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -125,7 +133,7 @@ jobs:
       - name: Install Python test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-mock pytest-subtests pytest-forked
+          pip install pytest pytest-mock pytest-subtests pytest-forked pytest-timeout
           # tomli is needed only on <3.11; keep installed for safety on 3.11 too.
           pip install tomli
 
@@ -200,30 +208,27 @@ jobs:
           # of lib<mod>api.so + the ctypes-layer / state-struct tests
           # that cover the C ABI shape.
         run: |
-          # The previous huge --deselect list deferred Layer-1
-          # equivalence + lifecycle + integration tests because they
-          # SIGABRTed in CI. Root cause located via valgrind in #139:
-          # write-past-end in upstream BPSD's bpsd_setup_species_kdata
-          # loop. With docs/external-patches/bpsd/bpsd-species-kid-oob-
-          # fix.patch now applied during the BPSD clone step above,
-          # those tests should pass — restore them per MEMORY.md
-          # feedback_never_skip_tests + feedback_equivalence_must_pass:
-          # SKIPped tests do not count as verification.
-          #
-          # property_boundary / property_fanout stay ignored: they
-          # crash on a different bug class (tr NRMAX registry gap,
-          # fp/ti/wr NSMAX range-guard, wr MDLWRI=2 unsupported)
-          # tracked separately as a PR #125 deferred punch list.
+          # Full test surface. No --ignore-glob or --deselect per
+          # MEMORY.md feedback_never_skip_tests + feedback_
+          # equivalence_must_pass: SKIPped tests do not count as
+          # verification. BPSD heap-corruption root cause is fixed
+          # by docs/external-patches/bpsd/bpsd-species-kid-oob-fix.patch
+          # (PR #140). property_boundary / property_fanout are the
+          # remaining class; this PR adds NSMAX range guards (one of
+          # the three known-bug triplet) and un-ignores the property
+          # suites so CI verifies the guard in action. Follow-up PRs
+          # will fix tr NRMAX registry gap + wr MDLWRI=2 to make the
+          # property tests pass fully.
           #
           # --forked keeps process isolation so any single still-bad
           # test does not take down the whole suite.
           python -m pytest python/ \
             --forked \
+            --timeout=120 \
+            --timeout-method=signal \
             --tb=short \
             -ra \
-            --maxfail=20 \
-            --ignore-glob='*property_boundary*' \
-            --ignore-glob='*property_fanout*'
+            --maxfail=50
 
       # Deferred: "Run C ABI check drivers (per-module integration)"
       # The <mod>_api_check_all Makefile targets recompile wrcomm.f90
