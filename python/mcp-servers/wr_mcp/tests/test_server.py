@@ -218,6 +218,56 @@ class TestBulkParamDispatch(unittest.TestCase):
         with self.assertRaises(WrlibError):
             srv._apply_bulk_params(wr, {"RR": object()})
 
+    def test_rejects_bool(self) -> None:
+        # bool is a subclass of int; we want it rejected as ambiguous.
+        wr = _MockWrlib()
+        with self.assertRaises(WrlibError):
+            srv._apply_bulk_params(wr, {"mode_beam": True})
+
+    def test_rejects_bool_in_list(self) -> None:
+        # Codex P2 follow-up: nested bool in list must also raise.
+        wr = _MockWrlib()
+        with self.assertRaises(WrlibError):
+            srv._apply_bulk_params(wr, {"RFIN": [170.0, True]})
+
+    def test_rejects_bool_in_dict_value(self) -> None:
+        # Codex P2 follow-up: bool as dict value must raise.
+        wr = _MockWrlib()
+        with self.assertRaises(WrlibError):
+            srv._apply_bulk_params(wr, {"UUIN": {1: True}})
+
+    def test_rejects_bool_dict_index(self) -> None:
+        # Codex P2 follow-up: bool key would be int()-coerced to 1.
+        wr = _MockWrlib()
+        with self.assertRaises(WrlibError):
+            srv._apply_bulk_params(wr, {"UUIN": {True: 0.6}})
+
+    def test_rejects_non_numeric_string_element(self) -> None:
+        # MED-5: float() on a non-numeric list element maps to WrlibError.
+        wr = _MockWrlib()
+        with self.assertRaises(WrlibError) as ctx:
+            srv._apply_bulk_params(wr, {"RFIN": [170.0, "oops"]})
+        self.assertIn("RFIN[2]", str(ctx.exception))
+
+    def test_rejects_non_int_dict_index(self) -> None:
+        # MED-5: int() on a non-numeric index maps to WrlibError.
+        wr = _MockWrlib()
+        with self.assertRaises(WrlibError) as ctx:
+            srv._apply_bulk_params(wr, {"UUIN": {"bad": 0.6}})
+        self.assertIn("UUIN", str(ctx.exception))
+
+    def test_partial_bulk_mutation_on_failure(self) -> None:
+        # LOW-2: on a partial failure, earlier keys remain written.
+        wr = _MockWrlib()
+        with self.assertRaises(WrlibError):
+            srv._apply_bulk_params(
+                wr,
+                {"RR": 3.0, "BAD": object(), "BB": 3.5},
+            )
+        scalar_names = [n for n, _ in wr.scalar_calls]
+        self.assertIn("RR", scalar_names)
+        self.assertNotIn("BB", scalar_names)
+
 
 class TestHandlersWithMockedState(unittest.TestCase):
     """Exercise handle_* against a mocked _ServerState.ensure_open."""

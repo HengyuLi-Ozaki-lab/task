@@ -262,6 +262,127 @@ class TestBulkParamDispatch(unittest.TestCase):
         with self.assertRaises(TotlibError):
             srv._apply_bulk_params(tot, {"tr:RR": object()})
 
+    def test_rejects_bool(self) -> None:
+        # bool is a subclass of int; we want it rejected as ambiguous.
+        tot = _MockTot()
+        with self.assertRaises(TotlibError):
+            srv._apply_bulk_params(tot, {"tr:MDLNB": True})
+
+    def test_rejects_bool_in_list(self) -> None:
+        # Codex P2 follow-up: nested bool in list must also raise.
+        tot = _MockTot()
+        with self.assertRaises(TotlibError):
+            srv._apply_bulk_params(tot, {"tr:PN": [0.7, True]})
+
+    def test_rejects_bool_in_dict_value(self) -> None:
+        # Codex P2 follow-up: bool as dict value must raise.
+        tot = _MockTot()
+        with self.assertRaises(TotlibError):
+            srv._apply_bulk_params(tot, {"tr:PT": {1: True}})
+
+    def test_rejects_bool_dict_index(self) -> None:
+        # Codex P2 follow-up: bool key would be int()-coerced to 1.
+        tot = _MockTot()
+        with self.assertRaises(TotlibError):
+            srv._apply_bulk_params(tot, {"tr:PT": {True: 3.5}})
+
+    def test_rejects_non_numeric_string_element(self) -> None:
+        # MED-5: float() on a non-numeric list element maps to TotlibError.
+        tot = _MockTot()
+        with self.assertRaises(TotlibError) as ctx:
+            srv._apply_bulk_params(tot, {"tr:PN": [0.7, "oops"]})
+        self.assertIn("tr:PN[2]", str(ctx.exception))
+
+    def test_rejects_non_int_dict_index(self) -> None:
+        # MED-5: int() on a non-numeric index maps to TotlibError.
+        tot = _MockTot()
+        with self.assertRaises(TotlibError) as ctx:
+            srv._apply_bulk_params(tot, {"tr:PT": {"bad": 4.2}})
+        self.assertIn("tr:PT", str(ctx.exception))
+
+    def test_partial_bulk_mutation_on_failure(self) -> None:
+        # LOW-2: on a partial failure, earlier keys remain written.
+        # Documented as non-transactional in set_params docstring.
+        tot = _MockTot()
+        with self.assertRaises(TotlibError):
+            srv._apply_bulk_params(
+                tot,
+                {"eq:RR": 6.5, "tr:BAD": object(), "eq:BB": 5.3},
+            )
+        scalar_names = [n for n, _ in tot.scalar_calls]
+        self.assertIn("eq:RR", scalar_names)
+        self.assertNotIn("eq:BB", scalar_names)
+
+    def test_rejects_list_for_eq_psib(self) -> None:
+        # Codex review (P2 on PR b6d23243): eq:PSIB is 0-origin, so a
+        # list form would silently skip index 0 and overshoot past
+        # PSIB[5]. Mirror the eq_mcp guard — list must be rejected so
+        # LLMs explicitly use the dict form.
+        tot = _MockTot()
+        with self.assertRaises(TotlibError) as ctx:
+            srv._apply_bulk_params(
+                tot, {"eq:PSIB": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]}
+            )
+        self.assertIn("0-origin", str(ctx.exception))
+        # And no partial writes leak through when the guard trips.
+        scalar_names = [n for n, _ in tot.scalar_calls]
+        for bad in ("eq:PSIB[1]", "eq:PSIB[2]", "eq:PSIB[6]"):
+            self.assertNotIn(bad, scalar_names)
+
+    def test_accepts_dict_for_eq_psib(self) -> None:
+        # Paired with the list-rejection test: dict form routes through
+        # verbatim, preserving the caller's explicit 0-origin indices.
+        tot = _MockTot()
+        applied = srv._apply_bulk_params(
+            tot,
+            {"eq:PSIB": {0: 0.0, 1: 0.1, 5: 0.5}},
+        )
+        scalar_names = [n for n, _ in tot.scalar_calls]
+        for expected in ("eq:PSIB[0]", "eq:PSIB[1]", "eq:PSIB[5]"):
+            self.assertIn(expected, scalar_names)
+        self.assertEqual(len(applied), 3)
+
+
+class TestSiblingRegistryFallback(unittest.TestCase):
+    """LOW-3: sibling-import failure should yield an empty namespace."""
+
+    def test_load_sibling_registry_returns_empty_on_import_error(self) -> None:
+        # A deliberately-missing module name must not raise — the
+        # loader swallows the import error so tot_mcp stays usable
+        # when siblings are not installed alongside.
+        out = srv._load_sibling_registry("definitely_not_a_real_module_xyz")
+        self.assertEqual(out, {})
+
+    def test_load_sibling_registry_returns_dict_when_present(self) -> None:
+        # wrx_mcp ships with this repo, so it must load successfully
+        # (even if the dict is small in test setups).
+        out = srv._load_sibling_registry("wrx_mcp")
+        self.assertIsInstance(out, dict)
+
+    def test_build_namespaced_registry_tolerates_missing_sibling(self) -> None:
+        # Simulate a failed sibling import for one namespace by
+        # monkey-patching __import__ so tr_mcp.server blows up.
+        real_import = __import__
+        missing = "tr_mcp.server"
+
+        def _fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name == missing:
+                raise ImportError(
+                    f"simulated missing sibling: {missing}"
+                )
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=_fake_import):
+            out = srv._build_namespaced_registry()
+
+        # tr namespace must be present but empty; other namespaces
+        # still load.
+        self.assertIn("tr", out)
+        self.assertEqual(out["tr"], {})
+        # The eq namespace is inline (no sibling) and must still be
+        # populated — the outage must not cascade.
+        self.assertGreater(len(out["eq"]), 0)
+
 
 class TestHandlersWithMockedState(unittest.TestCase):
     """Exercise handle_* against a mocked _ServerState.ensure_open."""
