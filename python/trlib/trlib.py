@@ -16,11 +16,45 @@ Usage::
 from __future__ import annotations
 
 import ctypes
+import weakref
 from typing import Optional
 
 from . import _ffi
-from .errors import TrlibError, raise_for_ierr
+from .errors import TrlibError, TrlibParamError, TrlibStateError, raise_for_ierr
 from .state import TrState
+
+
+_MAX_C_STRING_BYTES = 63              # name buffer is CHARACTER(LEN=64)
+_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128);
+                                       # tr_api_set_param_str DO loop reads
+                                       # up to LEN(fvalue) chars so full 128 OK
+
+
+def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
+    """Encode a C string argument accepted by the TR registry.
+
+    ``max_bytes`` is the Fortran buffer size minus 1 (for NUL). Names
+    use the default; values passed to ``set_param_str`` use
+    ``_MAX_C_STRING_VALUE_BYTES``.
+    """
+    if not isinstance(s, str):
+        raise TrlibParamError(
+            f"TR C string arguments must be str, got {type(s).__name__}"
+        )
+    try:
+        encoded = s.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise TrlibParamError(
+            f"TR C string {s!r} contains non-ASCII characters"
+        ) from exc
+    if b"\x00" in encoded:
+        raise TrlibParamError(f"TR C string {s!r} contains an embedded NUL byte")
+    if len(encoded) > max_bytes:
+        raise TrlibParamError(
+            f"TR C string {s!r} is {len(encoded)} bytes; "
+            f"maximum is {max_bytes}"
+        )
+    return encoded
 
 
 class Trlib:
@@ -32,13 +66,37 @@ class Trlib:
     shared state. This matches the design-spec contract.
     """
 
+    _live_instance = None
+
     def __init__(self, lib_path: Optional[str] = None) -> None:
-        self._lib = _ffi.load_library(lib_path)
         # Start closed so _open() can transition to open.
         self._closed = True
-        self._open()
+        self._claim_live_instance()
+        try:
+            self._lib = _ffi.load_library(lib_path)
+            self._open()
+        except Exception:
+            self._release_live_instance()
+            raise
 
     # --- lifecycle ------------------------------------------------------
+    def _claim_live_instance(self) -> None:
+        cls = self.__class__
+        ref = cls._live_instance
+        live = ref() if ref is not None else None
+        if live is not None:
+            raise TrlibStateError(
+                "another live Trlib() instance exists; COMMON-block backend "
+                "cannot be safely shared"
+            )
+        cls._live_instance = weakref.ref(self)
+
+    def _release_live_instance(self) -> None:
+        cls = self.__class__
+        ref = cls._live_instance
+        if ref is not None and ref() is self:
+            cls._live_instance = None
+
     def _open(self) -> None:
         if not self._closed:
             return
@@ -49,10 +107,12 @@ class Trlib:
     def close(self) -> None:
         """Finalise the library. Idempotent."""
         if self._closed:
+            self._release_live_instance()
             return
         ierr = self._lib.tr_finalize()
         # Mark closed before raising so __del__ doesn't retry.
         self._closed = True
+        self._release_live_instance()
         raise_for_ierr("tr_finalize", ierr)
 
     def __enter__(self) -> "Trlib":
@@ -82,7 +142,7 @@ class Trlib:
         if self._closed:
             raise TrlibError("set_param on closed Trlib")
         ierr = self._lib.tr_set_param(
-            name.encode("ascii"), ctypes.c_double(float(value))
+            _encode_name(name), ctypes.c_double(float(value))
         )
         raise_for_ierr(f"tr_set_param('{name}', {value})", ierr)
 
@@ -104,7 +164,10 @@ class Trlib:
                 "rebuild the shared library after the L-6 registry "
                 "extension PR."
             ) from exc
-        ierr = fn(name.encode("ascii"), value.encode("ascii"))
+        ierr = fn(
+            _encode_name(name),
+            _encode_name(value, _MAX_C_STRING_VALUE_BYTES),
+        )
         raise_for_ierr(f"tr_set_param_str('{name}', '{value}')", ierr)
 
     def set_params(self, **kwargs: float) -> None:
