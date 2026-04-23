@@ -15,8 +15,10 @@ comments or trivial 1-line CI tweaks):
 2. **Code review**: launch `Agent(subagent_type="feature-dev:code-reviewer",
    …)` on the diff since the last reviewed commit. Paste its HIGH /
    MED findings back to the user before pushing.
-3. **Write a pre-push marker**: `touch .git/REVIEW_OK_$(git rev-parse HEAD)`
-   — the pre-push hook blocks push without it.
+3. **Write a pre-push marker**: `touch "$(git rev-parse --git-common-dir)/REVIEW_OK_$(git rev-parse HEAD)"`
+   — the pre-push hook blocks push without it. `--git-common-dir`
+   resolves to the shared `<main>/.git` from both the main checkout
+   and any linked worktrees, so the same command works everywhere.
 
 The hook exists at `.git/hooks/pre-push` (see `scripts/pre-push.sh`). If
 you rewrite history with `git commit --amend` or `git rebase`, the SHA
