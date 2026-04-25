@@ -48,6 +48,8 @@ myst_enable_extensions = [
     "fieldlist",
     "tasklist",
     "attrs_inline",
+    "dollarmath",       # $...$ inline and $$...$$ display math
+    "amsmath",          # \begin{align} ... \end{align} blocks
     # "linkify" auto-link detection removed — requires linkify-it-py, not
     # worth adding an extra dep for minor convenience.
 ]
@@ -108,11 +110,28 @@ latex_elements = {
     # Override Sphinx's default font pins (which select FreeSerif etc. that
     # aren't on minimal TeX Live installs). `fontpkg` is injected BEFORE
     # Sphinx's own \setmainfont defaults, so we win.
+    # Use file-name lookups (kpathsea finds these via TeX Live) rather
+    # than fontconfig names like "DejaVu Serif". On macOS, fontconfig
+    # often fails to see TeX Live-installed fonts even when they're on
+    # disk, leading to xelatex falling back to ``nullfont`` (no glyphs
+    # rendered). File-name lookups work everywhere TeX Live is set up.
     "fontpkg": r"""
 \usepackage{fontspec}
-\setmainfont{DejaVu Serif}
-\setsansfont{DejaVu Sans}
-\setmonofont{DejaVu Sans Mono}
+\setmainfont{DejaVuSerif.ttf}[
+    BoldFont = DejaVuSerif-Bold.ttf,
+    ItalicFont = DejaVuSerif-Italic.ttf,
+    BoldItalicFont = DejaVuSerif-BoldItalic.ttf,
+]
+\setsansfont{DejaVuSans.ttf}[
+    BoldFont = DejaVuSans-Bold.ttf,
+    ItalicFont = DejaVuSans-Oblique.ttf,
+    BoldItalicFont = DejaVuSans-BoldOblique.ttf,
+]
+\setmonofont{DejaVuSansMono.ttf}[
+    BoldFont = DejaVuSansMono-Bold.ttf,
+    ItalicFont = DejaVuSansMono-Oblique.ttf,
+    BoldItalicFont = DejaVuSansMono-BoldOblique.ttf,
+]
 """,
     # Force polyglossia to treat English as the main language regardless of
     # the Sphinx-level `language` setting. Otherwise the JA build asks
@@ -145,25 +164,59 @@ intersphinx_mapping = {
 }
 
 # -- HTML output -------------------------------------------------------------
-html_theme = "sphinx_rtd_theme"
-html_static_path = ["_static"]
-html_css_files: list[str] = []  # per-language confs may append
+# Switched from sphinx_rtd_theme (2026-04-24) because RTD's sidebar does
+# not expose the current page's section hierarchy — long single-page
+# chapters like tr/index.md showed no H2/H3 navigation. Furo's right
+# sidebar renders an automatic "On this page" TOC with configurable depth.
+html_theme = "furo"
+# Each per-language conf has its own "_static" next to it, plus the
+# repo-wide "_shared_static" for CSS that applies to every build.
+html_static_path = ["_static", os.path.join(_REPO_ROOT, "docs", "sphinx", "_shared_static")]
+html_css_files: list[str] = ["toc_h2_only.css"]  # H3+ hidden in right sidebar
 
-# Hide "View page source" if we're embedding release tags, etc.
 html_theme_options = {
-    "collapse_navigation": False,
-    "navigation_depth": 4,
-    "titles_only": False,
+    # Furo's navigation_with_keys enables ← / → keyboard navigation.
+    "navigation_with_keys": True,
 }
+
+# Show only the "view source" button at the top of each page. The
+# "edit" button needs html_context with source_repository / source_branch
+# / source_directory; we don't wire those up, so omit it to avoid
+# build warnings under -W.
+html_theme_options["top_of_page_buttons"] = ["view"]
+
+# On the right sidebar ("On this page"), do NOT list autodoc-generated
+# symbols (each class member, method, attribute). Otherwise the
+# api-reference page explodes into 40+ entries. Keep section headings only.
+toc_object_entries = False
 
 # -- Copybutton: skip the "$" and ">>>" prompts ------------------------------
 copybutton_prompt_text = r">>> |\$ |# "
 copybutton_prompt_is_regexp = True
 
 # -- i18n reminder -----------------------------------------------------------
-# We use the *parallel-tree* i18n strategy (`docs/sphinx/en/` and
-# `docs/sphinx/ja/` are independent Sphinx projects).  Each PR that changes
-# one tree should mention whether the other tree also needs an update.
-# A future migration to gettext-based i18n would add `.po` files under
-# `docs/sphinx/locales/`; `sphinx-intl` is already in requirements.txt for
-# that eventuality.
+# We use the *parallel-tree* i18n strategy: portal/{en,ja} and
+# modules/<mod>/{en,ja} are independent Sphinx projects.  Each PR that
+# changes one tree should mention whether the other tree also needs an
+# update.  A future migration to gettext-based i18n would add `.po` files
+# under `docs/sphinx/locales/`; `sphinx-intl` is already in
+# requirements.txt for that eventuality.
+
+
+def apply_ja_latex(latex_elements_dict: dict) -> dict:
+    """Return *latex_elements_dict* merged with the xeCJK preamble for JA PDF.
+
+    Usage in any ``ja/conf.py``::
+
+        latex_elements = apply_ja_latex(latex_elements)
+    """
+    _ja_preamble = r"""
+\usepackage{xeCJK}
+\setCJKmainfont{Noto Serif CJK JP}
+\setCJKsansfont{Noto Sans CJK JP}
+\setCJKmonofont{Noto Sans Mono CJK JP}
+"""
+    return {
+        **latex_elements_dict,
+        "preamble": latex_elements_dict.get("preamble", "") + _ja_preamble,
+    }

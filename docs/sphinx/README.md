@@ -5,31 +5,46 @@ It supersedes the standalone LaTeX document at
 `docs/manual/task-library-manual.tex`, which is now frozen at its 2026-04
 snapshot.
 
-## Layout
+## Layout (hybrid portal + per-module)
 
 ```
 docs/sphinx/
 ├── README.md                 (this file)
 ├── requirements.txt          pip install target
-├── Makefile                  builds both language trees
+├── Makefile                  builds portal + per-module docs
 ├── conf_common.py            shared Sphinx config (extensions, autodoc, MyST)
-├── en/                       English tree (independent Sphinx project)
-│   ├── conf.py               imports conf_common, sets language='en'
-│   ├── index.md
-│   ├── common/architecture.md
-│   ├── tr/index.md           (full chapter)
-│   └── {eq,ti,fp,wr,wrx,tot}/index.md   (placeholders)
-├── ja/                       Japanese tree (same shape as en/)
-└── shared/notebooks/         executable notebooks included from both trees
+│
+├── portal/                   landing page — links to all modules
+│   ├── en/
+│   │   ├── conf.py
+│   │   ├── index.md          card-based module directory
+│   │   └── common/architecture.md
+│   └── ja/ (same shape)
+│
+├── modules/                  per-module independent Sphinx projects
+│   ├── tr/{en,ja}/           (full chapter)
+│   ├── eq/{en,ja}/           (full chapter)
+│   ├── ti/{en,ja}/           (placeholder)
+│   ├── fp/{en,ja}/           (placeholder)
+│   ├── wr/{en,ja}/           (placeholder)
+│   ├── wrx/{en,ja}/          (placeholder)
+│   └── tot/{en,ja}/          (placeholder)
+│
+├── shared/notebooks/         executable notebooks included from both trees
+└── _build/                   build output (portal/{en,ja}, tr/{en,ja}, …)
 ```
+
+Each module directory (`modules/<mod>/{en,ja}/`) is a self-contained
+Sphinx project with its own `conf.py` that imports `conf_common.py`.
+The portal links to modules via `sphinx-design` cards and `intersphinx`.
 
 ## i18n strategy
 
-We use the **parallel-tree** strategy: `en/` and `ja/` are two independent
-Sphinx projects with their own `conf.py`. Source prose is edited in both
-languages directly — no `.po` files involved. The trade-off is that we
-rely on reviewer discipline to keep the trees in sync; PRs that modify
-one tree should state whether the other tree needs a matching update.
+We use the **parallel-tree** strategy: each `en/` and `ja/` directory is
+an independent Sphinx project. Source prose is edited in both languages
+directly — no `.po` files involved. The trade-off is that we rely on
+reviewer discipline to keep the trees in sync; PRs that modify one tree
+should state whether the other tree needs a matching update.
 
 `sphinx-intl` is present in `requirements.txt` so we can migrate to a
 gettext-driven flow later without re-architecting the project.
@@ -41,10 +56,11 @@ gettext-driven flow later without re-architecting the project.
 ```bash
 pip install -r docs/sphinx/requirements.txt     # one-time
 cd docs/sphinx
-make              # builds both en and ja into _build/{en,ja}
-make en           # only the English tree
-make ja           # only the Japanese tree
-make linkcheck-en
+make              # builds portal + all modules (en + ja)
+make portal       # portal only
+make tr           # tr module (en + ja)
+make tr-en        # tr English only
+make modules      # all 7 modules
 make clean
 ```
 
@@ -52,9 +68,9 @@ make clean
 
 ```bash
 cd docs/sphinx
-make pdf-en       # -> _build/latex-en/task_manual.pdf
-make pdf-ja       # -> _build/latex-ja/task_manual.pdf
-make pdf          # both
+make pdf-portal-en    # -> _build/latex-portal-en/
+make pdf-tr-en        # -> _build/latex-tr-en/
+make pdf              # all PDFs
 ```
 
 The PDF path needs xelatex plus Japanese CJK fonts. On Debian / Ubuntu:
@@ -76,26 +92,27 @@ tlmgr install cmap fontspec polyglossia collection-latexrecommended \
 though Sphinx's xelatex output requires it via our
 `latex_elements["fontpkg"]` block — list it explicitly here.
 
-Both builds drive xelatex twice (TOC and cross-refs) then convert the
-`.xdv` to PDF via `xdvipdfmx`.  The English build uses DejaVu Serif /
-DejaVu Sans Mono; the Japanese build additionally loads `xeCJK` with
-Noto Serif CJK JP, and polyglossia is clamped to English so it does
-not clash with `xeCJK` on the main roman font.
-
 The default `SPHINXOPTS = -W --keep-going` treats warnings as errors
-(CI-strict). Nitpicky mode (`-n`) is opt-in — many existing wrapper
-docstrings use unqualified `:class:` refs that would otherwise warn,
-so nitpicky is promoted to the default only after those docstrings are
-hardened. Override for local dev:
+(CI-strict). Override for local dev:
 
 ```bash
-make SPHINXOPTS="" en
+make SPHINXOPTS="" tr-en
+```
+
+## Build order
+
+The portal is built first because per-module Sphinx projects reference
+the portal's `objects.inv` via `intersphinx` for cross-references to
+`common/architecture`. The Makefile encodes this dependency:
+
+```
+make tr-en  →  depends on portal-en  →  then builds modules/tr/en
 ```
 
 ## Notebooks
 
 Jupyter notebooks live under `docs/sphinx/shared/notebooks/` and are
-symlinked or copied into both language trees. They are included via
+symlinked into both language trees of each module. They are included via
 `myst-nb` with `nb_execution_mode = "off"` — we commit pre-executed
 output cells for determinism. To re-execute before committing:
 
