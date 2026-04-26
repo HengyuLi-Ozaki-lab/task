@@ -41,6 +41,7 @@ parameter-setting
 state
 context-manager
 faq
+applications
 ```
 
 ## リファレンス

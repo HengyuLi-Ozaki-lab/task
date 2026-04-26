@@ -327,10 +327,27 @@ libs_pic: ../lib/libtask_pic.a ../mtxp/libmtxnompi_pic.o \
 # SRCS_GRAPHICS / SRCS_MENU so none of the gsaf calls are reachable;
 # the small set of GUTIME/PAGES/GRD1D refs left in core code are
 # satisfied by fp_graphics_stubs.f90.
+# Platform-aware ld flags: Apple ld (macOS) rejects GNU-ld-only flags
+# (-soname / --start-group / --end-group) but resolves cycles
+# automatically and uses -install_name. `-undefined dynamic_lookup`
+# defers unresolved imports to runtime so dlopen succeeds on macOS.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  SO_SONAME = -Wl,-install_name,@rpath/libfpapi.so
+  SO_GROUP_BEGIN =
+  SO_GROUP_END =
+  SO_UNDEFINED = -Wl,-undefined,dynamic_lookup
+else
+  SO_SONAME = -Wl,-soname,libfpapi.so
+  SO_GROUP_BEGIN = -Wl,--start-group
+  SO_GROUP_END = -Wl,--end-group
+  SO_UNDEFINED =
+endif
+
 libfpapi.so: $(OBJ_LIBFPAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC)
-	$(FCFREE) -shared -fPIC -Wl,-soname,libfpapi.so \
+	$(FCFREE) -shared -fPIC $(SO_SONAME) $(SO_UNDEFINED) \
 	    $(OBJ_LIBFPAPI) $(OBJBPSD_PIC) $(LIBMTX_PIC) \
-	    -Wl,--start-group $(LIBS_PIC) -Wl,--end-group \
+	    $(SO_GROUP_BEGIN) $(LIBS_PIC) $(SO_GROUP_END) \
 	    -o libfpapi.so
 
 # ---------------------------------------------------------------------

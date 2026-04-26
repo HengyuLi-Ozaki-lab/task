@@ -106,7 +106,7 @@ tr-mcp doctor
 - Linux: `~/.config/claude-desktop/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
-```jsonc
+```json
 {
   "mcpServers": {
     "task-tr": {
@@ -212,6 +212,68 @@ LLM は 3 回の `run_and_get_state` を呼んで結果を表組みします.
 
 LLM は `describe_parameters` を呼び, `group == "transport"` を抽出して
 返します.
+
+## 使用シナリオ — もう少し深い使い方
+
+「ツール一覧」だけでは MCP の実用イメージが掴みにくいので, 典型的な
+解析フローを 2 つ詳しく見ます.
+
+### シナリオ A: 装置パラメータを変えてエネルギーバランスを見る
+
+ユーザのプロンプト:
+
+> ITER 想定 (RR=6.2, BB=5.3, RIP=15) で 100 ステップ走らせて, 蓄積エネルギー
+> WPT と規格化 β (BETAN) を教えて. それから RIP を 12 と 18 でも比較して.
+
+LLM が内部で行うツール呼び出し:
+
+```text
+1. run_and_get_state(params={RR=6.2, BB=5.3, RIP=15.0, NSMAX=2}, ntmax=100)
+   → state.scalars["WPT"], state.scalars["BETAN"] を取得
+2. run_and_get_state(params={RR=6.2, BB=5.3, RIP=12.0, NSMAX=2}, ntmax=100)
+   (各 run の前に init/finalize は MCP サーバ側で自動)
+3. run_and_get_state(params={RR=6.2, BB=5.3, RIP=18.0, NSMAX=2}, ntmax=100)
+4. 結果を表組みで返す:
+     | RIP   | WPT   | BETAN |
+     |-------|-------|-------|
+     | 12 MA | ...   | ...   |
+     | 15 MA | ...   | ...   |
+     | 18 MA | ...   | ...   |
+```
+
+ポイント:
+
+- LLM は `describe_parameters` で名前を確認してから `run_and_get_state` を
+  発行するので, パラメータ名のタイポが起こりにくい
+- 結果がプロセス間で残らないため, 各 `run_and_get_state` は独立した
+  クリーン状態でスタート
+- 物理的考察 ({doc}`appendix-sensitivity` 参照: `RIP↑` で `BETAN↓` の傾向)
+  まで合わせて書いてもらうと解析レポートに近い形になる
+
+### シナリオ B: validate でエラーを LLM に直してもらう
+
+ユーザのプロンプト:
+
+> MODELG=3 で `eqdata.MISSING` を読ませて 10 ステップ走らせて. エラーが
+> 出たら適切なファイルを推測して直して.
+
+LLM の動作:
+
+```text
+1. run_and_get_state(params={MODELG: 3, ...}, string_params={KNAMEQ: "eqdata.MISSING"})
+   → エラー (FILE_MISSING)
+2. validate を呼び diag を確認
+3. 既知の eqdata ファイル名 (eqdata.ITER01, eqdata.JET, ...) を提案
+4. ユーザに確認を取るか, 自動的に最有力候補で再実行
+```
+
+LLM が「自動修正をどこまで踏み込むか」は LLM の指示次第:
+
+- **安全寄り**: `validate` だけ呼んで結果報告 → ユーザに任せる
+- **攻め寄り**: 推測で再実行も可能
+
+このパターンは Python ラッパー側 ({doc}`applications` の §3 validate 駆動
+セットアップ) を LLM に呼んでもらう形にも展開できます.
 
 ## アーキテクチャ的な注意点
 

@@ -50,3 +50,20 @@ END SUBROUTINE GUTIME
 SUBROUTINE GUFLSH
   IMPLICIT NONE
 END SUBROUTINE GUFLSH
+
+! ----------------------------------------------------------------------
+! Additional stubs for the macOS shared-library build. Apple's dlopen
+! does eager symbol resolution; any unresolved import causes dlopen to
+! fail. These no-op stubs satisfy the eager check; the .so init / run /
+! finalize path never reaches them.
+! ----------------------------------------------------------------------
+
+! NUMBD writes a numeric value with the given format and width to the
+! current graphics output (CALL NUMBD(value, '(format)', width)).
+! Stub: no-op.
+SUBROUTINE NUMBD(VAL, FMT, NW)
+  IMPLICIT NONE
+  REAL, INTENT(IN) :: VAL
+  CHARACTER(LEN=*), INTENT(IN) :: FMT
+  INTEGER, INTENT(IN) :: NW
+END SUBROUTINE NUMBD

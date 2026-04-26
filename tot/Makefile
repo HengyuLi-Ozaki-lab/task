@@ -447,12 +447,35 @@ $(OBJS_PIC): | $(LIBS_PIC_SO)
 # libtotapi.so excludes graphics so none of the gsaf calls are
 # reachable; leaving GFLIBS in triggers R_X86_64_PC32 relocation errors
 # when ld tries to copy non-PIC .text from libg3d-gfc64.a into the .so.
+# Platform-aware ld flags. macOS notes:
+#   - Apple ld uses -install_name instead of -soname.
+#   - Apple ld resolves archive cycles automatically (no group flags).
+#   - `-undefined dynamic_lookup` is macOS's counterpart of Linux's
+#     --unresolved-symbols=ignore-all (defer to runtime).
+#   - `@loader_path/...` is macOS's counterpart of Linux's `$ORIGIN/...`
+#     for relative rpath, telling dyld to look in sibling module dirs
+#     for libtrapi.so / libeqapi.so / etc.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  SO_SONAME = -Wl,-install_name,@rpath/libtotapi.so
+  SO_GROUP_BEGIN =
+  SO_GROUP_END =
+  SO_UNDEFINED = -Wl,-undefined,dynamic_lookup
+  SO_RPATH = -Wl,-rpath,@loader_path/../tr -Wl,-rpath,@loader_path/../fp \
+             -Wl,-rpath,@loader_path/../ti -Wl,-rpath,@loader_path/../wr \
+             -Wl,-rpath,@loader_path/../wrx -Wl,-rpath,@loader_path/../eq
+else
+  SO_SONAME = -Wl,-soname,libtotapi.so
+  SO_GROUP_BEGIN = -Wl,--start-group
+  SO_GROUP_END = -Wl,--end-group
+  SO_UNDEFINED = -Wl,--unresolved-symbols=ignore-all
+  SO_RPATH = -Wl,-rpath,'$$ORIGIN/../tr:$$ORIGIN/../fp:$$ORIGIN/../ti:$$ORIGIN/../wr:$$ORIGIN/../wrx:$$ORIGIN/../eq'
+endif
+
 libtotapi.so: $(OBJS_PIC) $(LIBS_PIC_SO)
-	$(FCFREE) -shared -fPIC -Wl,-soname,libtotapi.so \
-	    -Wl,--unresolved-symbols=ignore-all \
-	    -Wl,-rpath,'$$ORIGIN/../tr:$$ORIGIN/../fp:$$ORIGIN/../ti:$$ORIGIN/../wr:$$ORIGIN/../wrx:$$ORIGIN/../eq' \
+	$(FCFREE) -shared -fPIC $(SO_SONAME) $(SO_UNDEFINED) $(SO_RPATH) \
 	    $(OBJS_PIC) \
-	    -Wl,--start-group $(LIBS_PIC_SO) -Wl,--end-group \
+	    $(SO_GROUP_BEGIN) $(LIBS_PIC_SO) $(SO_GROUP_END) \
 	    -o libtotapi.so
 
 .PHONY: libtotapi_inspect
