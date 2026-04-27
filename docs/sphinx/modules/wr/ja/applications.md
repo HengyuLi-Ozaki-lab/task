@@ -237,11 +237,12 @@ for r in results:
   RFIN=6000.0, ANGPHIN=35.0: pos_pwrmax_rl=4.2002, nstp_end=100
 ```
 
-`nstp_end` が `NSTPMAX` (=100, ITER fixture の `NSTPMAX=2000` を Layer-2
-スタブが内部 100 にクリップ) より小さい点は **早期に積分が終端した**
-ことを意味します (例: レイがプラズマから抜ける, 共鳴吸収など). 今回の
-スイープでは `RFIN=5000, ANGPHIN=25` と `RFIN=6000, ANGPHIN=25` が
-それぞれ 98 / 97 ステップで終了しています.
+`nstp_end` が積分上限 (=100, ITER fixture の `SMAX=5.0` / `DELS=0.05`
+= 100 ステップで律速; `wrexecr.f90:505` の `NSTPLIM=MIN(INT(SMAX/DELS),
+NSTPMAX)`) より小さい点は **早期に積分が終端した** ことを意味します
+(例: レイがプラズマから抜ける, 共鳴吸収など). 今回のスイープでは
+`RFIN=5000, ANGPHIN=25` と `RFIN=6000, ANGPHIN=25` がそれぞれ 98 / 97
+ステップで終了しています.
 
 ### 拡張案
 
