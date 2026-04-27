@@ -8,15 +8,16 @@ It does NOT touch libtotapi.so — that path is handled by the legacy
 totlib.Tot class and remains untouched at L-7a.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Any, Callable, Union
+from typing import Any, Callable, Dict, List, Union
 
 
 @dataclass(frozen=True)
 class CouplingRule:
     """A single source-to-sink scalar coupling between adjacent steps.
+
+    Frozen so the registry can be hashable in the future (rule dedup,
+    set-based lookups) and to prevent accidental mutation by callers.
 
     src_state_key resolves a value from the source module's get_state():
 
@@ -31,7 +32,7 @@ class CouplingRule:
     conversion) before it reaches the sink.
     """
 
-    src_state_key: Union[str, Callable[[Any, dict], float]]
+    src_state_key: Union[str, Callable[[Any, Dict[str, Any]], float]]
     dst_param: str
     transform: Callable[[float], float] = lambda v: v
     doc: str = ""
@@ -42,15 +43,15 @@ class PipelineStep:
     """Snapshot of one completed pipeline step."""
 
     module: str
-    scalars: dict[str, float]
-    coupling_applied: list[str]
+    scalars: Dict[str, float]
+    coupling_applied: List[str]
 
 
 @dataclass
 class PipelineResult:
     """Aggregated result from a run_pipeline call."""
 
-    steps: list[PipelineStep] = field(default_factory=list)
+    steps: List[PipelineStep] = field(default_factory=list)
 
     def last(self, module: str) -> PipelineStep:
         """Return the most recent step for the given module name.
@@ -62,9 +63,16 @@ class PipelineResult:
                 return step
         raise KeyError(module)
 
-    def to_dict(self) -> dict:
-        """JSON-serializable representation for MCP transport."""
-        out: dict[str, Any] = {}
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-serializable representation for MCP transport.
+
+        For repeated modules, later steps overwrite earlier in the
+        flat per-module map; the full timeline is preserved under
+        the "_steps" key. Values reference the underlying step.scalars
+        dicts directly (no defensive copy) — callers that mutate the
+        returned dict will perturb the originating PipelineStep.
+        """
+        out: Dict[str, Any] = {}
         for step in self.steps:
             out[step.module] = step.scalars  # later steps overwrite earlier
         out["_steps"] = [
