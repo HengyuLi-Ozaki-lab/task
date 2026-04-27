@@ -68,7 +68,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
 ```text
 解析プロファイルから解く?
   ├─ Yes → mode=0 (MODELG=2, デフォルト)
-  └─ No  → mode=1 (MODELG=3 + KNAMEQ 指定)
+  └─ No  → mode=1 (MODELG ∈ {3, 5, 8} + KNAMEQ 指定)
 ```
 
 完全な実行可能 notebook: {doc}`quickstart`.

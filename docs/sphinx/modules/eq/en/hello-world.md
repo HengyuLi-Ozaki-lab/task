@@ -69,7 +69,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
 ```text
 Solving from analytic profiles?
   |- Yes -> mode=0 (MODELG=2, the default)
-  `- No  -> mode=1 (MODELG=3 with KNAMEQ set)
+  `- No  -> mode=1 (MODELG in {3, 5, 8} with KNAMEQ set)
 ```
 
 For a fully runnable notebook, see {doc}`quickstart`.
