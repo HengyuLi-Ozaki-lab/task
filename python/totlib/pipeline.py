@@ -9,6 +9,7 @@ totlib.Tot class and remains untouched at L-7a.
 """
 
 import importlib
+import math
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Tuple, Union
@@ -174,6 +175,40 @@ def _import_module_error(name: str) -> type:
     pkg, _, err_cls_name = _MODULE_REGISTRY[name]
     errors_mod = importlib.import_module(f"{pkg}.errors")
     return getattr(errors_mod, err_cls_name)
+
+
+def compute_rjt_volint(state, *, R0: float, a: float) -> float:
+    """fp's driven current as a scalar [Amperes]: integral of RJT(rho) dA_pol.
+
+    Per spec §8 R2: fp stores RJT in [MA/m^2] on a uniform rho-grid in [0,1]
+    with NRMAX cells. The poloidal cross-section element is
+        dA_pol(NR) = 2*pi * rho_mid * a^2 * drho
+    matching fp's VOLR/(2*pi*R0). Sums over species (matches fp's
+    rtotalIP = sum_NSA PIT). R0 is unused in the area integral but kept
+    in the signature for symmetry with future toroidal-volume variants.
+
+    Args:
+        state: FpState (from fplib.Fplib.get_state()). Reads .RJT[ns][i],
+            .nrmax, .nsamax.
+        R0: major radius [m]. Sourced from tr.RR (set via tot.set_param("tr:RR", ...)).
+        a: minor radius [m]. Sourced from tr.RA (R3 confirmed RA, not RB —
+            fp's rho mesh is RA-normalized per fp/fpcale.f90:34,56).
+
+    Returns:
+        Driven current in Amperes (positive → co-current direction).
+    """
+    nr = state.nrmax
+    if nr < 1:
+        return 0.0
+    drho = 1.0 / nr
+    total = 0.0
+    for ns in range(state.nsamax):
+        for i in range(nr):
+            rho_mid = (i + 0.5) * drho
+            dA_pol = 2.0 * math.pi * rho_mid * (a ** 2) * drho
+            total += state.RJT[ns][i] * 1.0e6 * dA_pol  # MA/m^2 -> A/m^2
+    _ = R0  # unused in area integral; reserved for future toroidal extension
+    return total
 
 
 # ------------------------------------------------------------------
