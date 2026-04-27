@@ -324,7 +324,12 @@ class TotPipeline:
         prev_state = None
 
         for i, (name, kwargs) in enumerate(steps):
-            base_err = _import_module_error(name)
+            # base_err is left in for forward-compat / debugging clarity, but
+            # the actual catch is broader: any Exception during step execution
+            # (per-module domain error, TypeError from bad kwargs, etc.) is
+            # wrapped as TotPipelineRunError so partial_result is always
+            # available to the caller. Keyboard/system signals are NOT caught.
+            base_err = _import_module_error(name)  # noqa: F841 — keeps lazy-import semantics for downstream debugging
             try:
                 module = self._ensure_module(name)
                 applied: List[str] = []
@@ -353,7 +358,7 @@ class TotPipeline:
                     coupling_applied=applied,
                 ))
                 prev_name, prev_state = name, cur_state
-            except (base_err, TotPipelineCouplingError) as e:
+            except Exception as e:  # noqa: BLE001 — see comment above
                 raise TotPipelineRunError(
                     f"step {i} ({name}) failed: {e}",
                     partial_result=PipelineResult(steps=result_steps),

@@ -90,12 +90,19 @@ def test_set_param_unknown_module_raises(patch_wrappers):
 
 
 def test_set_param_records_into_params_dict(patch_wrappers):
-    """set_param updates self._params after the wrapper accepts the value."""
+    """set_param updates self._params after the wrapper accepts the value
+    (covers both numeric and string paths)."""
     pipe = TotPipeline()
     pipe.set_param("tr:RR", 6.2)
     pipe.set_param("tr:RA", 2.0)
     pipe.set_param("fp:NSAMAX", 2)
-    assert pipe._params == {"tr:RR": 6.2, "tr:RA": 2.0, "fp:NSAMAX": 2}
+    pipe.set_param("tr:KNAMEQ", "/path/to/eqdsk")    # string path
+    assert pipe._params == {
+        "tr:RR": 6.2,
+        "tr:RA": 2.0,
+        "fp:NSAMAX": 2,
+        "tr:KNAMEQ": "/path/to/eqdsk",
+    }
 
 
 def test_set_param_string_to_module_without_set_param_str_raises(monkeypatch):
@@ -281,6 +288,30 @@ def test_run_pipeline_partial_failure_carries_partial_result(
     assert len(err.partial_result.steps) == 1
     assert err.partial_result.steps[0].module == "fp"
     assert err.partial_result.steps[0].scalars == {"foo": 7.0}
+    # No coupling rule fired between fp (first step) and the failed tr step,
+    # so the fp snapshot must record an empty applied list (regression guard
+    # against silently dropping coupling metadata).
+    assert err.partial_result.steps[0].coupling_applied == []
+
+
+def test_run_pipeline_typeerror_from_bad_kwargs_is_wrapped(patch_wrappers):
+    """If module.run(**kwargs) raises TypeError (e.g. unrecognized kwarg),
+    the orchestrator must still wrap it as TotPipelineRunError so partial_result
+    is preserved. Codex review caught that the previous narrow except-tuple
+    let TypeError escape unwrapped."""
+    pipe = TotPipeline()
+    fp_inst = patch_wrappers["classes"]["fp"].return_value
+    fp_inst.get_state.return_value = _make_state({"foo": 1.0})
+    tr_inst = patch_wrappers["classes"]["tr"].return_value
+    tr_inst.run.side_effect = TypeError("unexpected kwarg 'unknown'")
+    with pytest.raises(TotPipelineRunError) as exc_info:
+        pipe.run_pipeline([("fp", {"ntmax": 1}), ("tr", {"unknown": 99})])
+    err = exc_info.value
+    assert err.failed_step_index == 1
+    assert err.failed_module == "tr"
+    assert isinstance(err.__cause__, TypeError)
+    assert len(err.partial_result.steps) == 1
+    assert err.partial_result.steps[0].module == "fp"
 
 
 def test_run_pipeline_after_close_raises_lifecycle(patch_wrappers):
