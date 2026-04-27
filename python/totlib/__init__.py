@@ -38,6 +38,11 @@ from .errors import (
     TotLibNotInitialized,
     TotLibCalculationFailed,
     TotLibNotImplemented,
+    TotPipelineError,
+    TotPipelineUnknownModuleError,
+    TotPipelineCouplingError,
+    TotPipelineLifecycleError,
+    TotPipelineRunError,
     raise_for_rc,
     raise_for_ierr,
 )
@@ -56,6 +61,11 @@ __all__ = [
     "TotLibNotInitialized",
     "TotLibCalculationFailed",
     "TotLibNotImplemented",
+    "TotPipelineError",
+    "TotPipelineUnknownModuleError",
+    "TotPipelineCouplingError",
+    "TotPipelineLifecycleError",
+    "TotPipelineRunError",
     "raise_for_rc",
     "raise_for_ierr",
 ]
