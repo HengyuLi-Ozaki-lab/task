@@ -8,8 +8,12 @@ It does NOT touch libtotapi.so — that path is handled by the legacy
 totlib.Tot class and remains untouched at L-7a.
 """
 
+import importlib
+
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Tuple, Union
+
+from .errors import TotPipelineUnknownModuleError
 
 
 @dataclass(frozen=True)
@@ -84,3 +88,45 @@ class PipelineResult:
             for s in self.steps
         ]
         return out
+
+
+_MODULE_REGISTRY: Dict[str, Tuple[str, str, str]] = {
+    # name : (package, wrapper_class, base_error_class)
+    "fp":  ("fplib",  "Fplib",  "FplibError"),
+    "tr":  ("trlib",  "Trlib",  "TrlibError"),
+    "eq":  ("eqlib",  "Eq",     "EqlibError"),
+    "wr":  ("wrlib",  "Wrlib",  "WrlibError"),
+    "wrx": ("wrxlib", "Wrxlib", "WrxlibError"),
+    "ti":  ("tilib",  "Tilib",  "TilibError"),
+}
+
+
+def _import_wrapper(name: str):
+    """Lazy-import the per-module wrapper class for `name`.
+
+    Only modules actually used in a pipeline are loaded (matters on
+    macOS where wr/wrx may not have buildable lib*.so). Raises
+    TotPipelineUnknownModuleError if name is not in _MODULE_REGISTRY.
+    """
+    if name not in _MODULE_REGISTRY:
+        raise TotPipelineUnknownModuleError(
+            f"unknown module {name!r}; expected one of {sorted(_MODULE_REGISTRY)}"
+        )
+    pkg, cls_name, _ = _MODULE_REGISTRY[name]
+    return getattr(importlib.import_module(pkg), cls_name)
+
+
+def _import_module_error(name: str) -> type:
+    """Lazy-import the base error class for module `name`.
+
+    Same lazy pattern as _import_wrapper — only the errors.py for the
+    requested module is imported. Used by run_pipeline to determine
+    which exceptions to catch + wrap as TotPipelineRunError.
+    """
+    if name not in _MODULE_REGISTRY:
+        raise TotPipelineUnknownModuleError(
+            f"unknown module {name!r}; expected one of {sorted(_MODULE_REGISTRY)}"
+        )
+    pkg, _, err_cls_name = _MODULE_REGISTRY[name]
+    errors_mod = importlib.import_module(f"{pkg}.errors")
+    return getattr(errors_mod, err_cls_name)
