@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 from .errors import (
     TotPipelineCouplingError,
     TotPipelineLifecycleError,
+    TotPipelineRunError,
     TotPipelineUnknownModuleError,
 )
 
@@ -94,6 +95,32 @@ class PipelineResult:
         return out
 
 
+def _state_to_scalars(state) -> Dict[str, float]:
+    """Extract a flat dict of numeric scalars from any module's state.
+
+    Modules that expose state.scalars dict (Tr, Eq, Wr, Wrx, Ti) — return
+    a shallow copy. Modules that don't (Fp) — extract numeric top-level
+    dataclass attributes (excluding bool, str, and non-numeric).
+
+    Per spec §5.3. Required because FpState lacks the uniform .scalars
+    dict the spec originally assumed (R1/R2 finding).
+    """
+    if hasattr(state, "scalars") and isinstance(state.scalars, dict):
+        return dict(state.scalars)
+    out: Dict[str, float] = {}
+    for name in dir(state):
+        if name.startswith("_"):
+            continue
+        val = getattr(state, name, None)
+        if callable(val):
+            continue
+        if isinstance(val, bool):
+            continue
+        if isinstance(val, (int, float)):
+            out[name] = float(val)
+    return out
+
+
 _MODULE_REGISTRY: Dict[str, Tuple[str, str, str]] = {
     # name : (package, wrapper_class, base_error_class)
     "fp":  ("fplib",  "Fplib",  "FplibError"),
@@ -134,6 +161,20 @@ def _import_module_error(name: str) -> type:
     pkg, _, err_cls_name = _MODULE_REGISTRY[name]
     errors_mod = importlib.import_module(f"{pkg}.errors")
     return getattr(errors_mod, err_cls_name)
+
+
+# ------------------------------------------------------------------
+# Coupling rule registry
+# ------------------------------------------------------------------
+# L-7a scope: only ('fp','tr') is populated. Concrete src_state_key,
+# dst_param, transform are filled in Phase 2 (Equivalence test PR)
+# after R2/R3 outcomes are recorded in the spec.
+# L-7b will add more pairs (('wr','fp'), ('wr','tr'), ('eq','tr'), ...)
+# without changing the orchestrator code.
+
+COUPLING_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
+    # ("fp", "tr"): [...]    ← Phase 2 fills this
+}
 
 
 class TotPipeline:
@@ -219,3 +260,105 @@ class TotPipeline:
         self._closed = True
         if errors:
             raise errors[0]
+
+    @staticmethod
+    def _validate_steps(steps) -> None:
+        """Pre-flight: reject malformed steps before any side effects."""
+        if not steps:
+            raise TotPipelineCouplingError("steps must be non-empty")
+        for i, item in enumerate(steps):
+            if not isinstance(item, tuple) or len(item) != 2:
+                raise TotPipelineCouplingError(
+                    f"steps[{i}] must be (module_name, kwargs) tuple, got {item!r}"
+                )
+            name, kwargs = item
+            if name not in _MODULE_REGISTRY:
+                raise TotPipelineUnknownModuleError(
+                    f"steps[{i}].module = {name!r}; expected one of "
+                    f"{sorted(_MODULE_REGISTRY)}"
+                )
+            if not isinstance(kwargs, dict):
+                raise TotPipelineCouplingError(
+                    f"steps[{i}].kwargs must be dict, got {type(kwargs).__name__}"
+                )
+
+    def _extract_source(self, prev_state, rule: CouplingRule) -> float:
+        """Resolve a rule's source value from the previous module's state.
+
+        - If src_state_key is a callable, invoke it with (prev_state, self._params).
+          The params dict carries every set_param call so the rule can pull
+          cross-module context (e.g. fp's compute_rjt_volint needs tr's RR/RA).
+        - If src_state_key is a string, look it up in
+          _state_to_scalars(prev_state) — handles both .scalars-bearing modules
+          and FpState's top-level attribute layout.
+        Wraps lookup/computation errors as TotPipelineCouplingError.
+        """
+        try:
+            if callable(rule.src_state_key):
+                return float(rule.src_state_key(prev_state, self._params))
+            scalars = _state_to_scalars(prev_state)
+            return float(scalars[rule.src_state_key])
+        except KeyError as e:
+            raise TotPipelineCouplingError(
+                f"source state key {rule.src_state_key!r} missing from "
+                f"prev_state scalars; rule: {rule.doc!r}"
+            ) from e
+        except Exception as e:
+            raise TotPipelineCouplingError(
+                f"source extraction failed for rule {rule.doc!r}: {e}"
+            ) from e
+
+    def run_pipeline(self, steps) -> PipelineResult:
+        """Run the given module steps in order, applying COUPLING_RULES
+        between adjacent (prev, current) pairs.
+
+        Returns a PipelineResult. Per-module exceptions during execution
+        are wrapped as TotPipelineRunError exposing partial_result.
+        """
+        if self._closed:
+            raise TotPipelineLifecycleError("TotPipeline is closed")
+        self._validate_steps(steps)
+
+        result_steps: List[PipelineStep] = []
+        prev_name = None
+        prev_state = None
+
+        for i, (name, kwargs) in enumerate(steps):
+            base_err = _import_module_error(name)
+            try:
+                module = self._ensure_module(name)
+                applied: List[str] = []
+
+                if prev_name is not None:
+                    for rule in COUPLING_RULES.get((prev_name, name), []):
+                        raw = self._extract_source(prev_state, rule)
+                        try:
+                            transformed = rule.transform(raw)
+                        except Exception as e:
+                            raise TotPipelineCouplingError(
+                                f"transform failed for rule {rule.doc!r}: {e}"
+                            ) from e
+                        module.set_param(rule.dst_param, transformed)
+                        # Record the injected value so subsequent rules can see it
+                        # (mirrors set_param's _params bookkeeping).
+                        self._params[f"{name}:{rule.dst_param}"] = transformed
+                        applied.append(rule.doc)
+
+                module.run(**kwargs)
+                cur_state = module.get_state()
+                # _state_to_scalars adapter handles fp (no .scalars) and tr (.scalars dict) uniformly.
+                result_steps.append(PipelineStep(
+                    module=name,
+                    scalars=_state_to_scalars(cur_state),
+                    coupling_applied=applied,
+                ))
+                prev_name, prev_state = name, cur_state
+            except (base_err, TotPipelineCouplingError) as e:
+                raise TotPipelineRunError(
+                    f"step {i} ({name}) failed: {e}",
+                    partial_result=PipelineResult(steps=result_steps),
+                    failed_step_index=i,
+                    failed_module=name,
+                ) from e
+
+        return PipelineResult(steps=result_steps)
