@@ -446,7 +446,10 @@ grep -n -E "(PNBCD|PNBI|PRFCD|PCURRENT|PCD|driven)" tr/tr_param_registry.f90
 
 > _この節は R1/R2/R3 完了後に追記する. 未確定状態では「TBD」と書かない — 確定するまで本 spec は完成しない._
 
-- R1 結果: __未確定__
+- R1 結果: PASS (R1-a + R1-b 両方). Fplib/Trlib は同時 live 可能, かつ close→再 open で state がリークしない. Fallback A/B どちらも適用不要. (検証日: 2026-04-28)
+  - R1-a stdout: `R1-a PASS: fp/tr concurrent live preserves single-module state at 1e-10` — fp scalars `[npmax, nrmax, nsamax, ntg2, nthmax, timefp]` と tr scalars `[AJT, ALI, BETA0, BETAA, BETAN, BETAP0, Q0, RQ1, T, TAUE1, TAUE2, WPT, ZEFF0]` (計 19 個) が solo / concurrent 間で 1e-10 相対許容内で完全一致.
+  - R1-b stdout: `R1-b PASS: tr re-init is clean (cycle1 == cycle3 at 1e-10)` — ITER-like fixture (`RR=8.5, RA=2.0, RKAP=1.7, BB=5.3, NSMAX=2, DT=0.1, NTSTEP=10, PN[1..2]=1.0, PT[1..2]=1.5`) で cycle1 を実行し, 摂動 fixture (`RR=6.2, RA=1.8, RKAP=1.6, BB=4.0, PN[1..2]=0.8, PT[1..2]=1.2`) で cycle2 を挟んだ後, 同じ fixture で cycle3 を実行. tr scalars 13 個全てが cycle1 == cycle3 (`WP=34.08 MJ, TAUE=48.120 S, Q0=2.552`) で 1e-10 相対許容内.
+  - 検証 script: `/tmp/r1a_concurrent_live.py`, `/tmp/r1b_reinit_leak.py`. fp の scalar は `FpState` の top-level dataclass attribute (`nrmax/nsamax/npmax/nthmax/ntg2/timefp`) から抽出, tr は `TrState.scalars` (dict) から抽出. R1-b fixture は当初 plan 記載の `RIP=15.0` が `tr_set_param('RIP', 15.0)` で `ierr=1` となったため, `python/trlib/examples/quickstart.py` の ITER-like fixture (RIP は使わない) に差し替え.
 - R2 結果: __未確定__
 - R3 結果: __未確定__
 
