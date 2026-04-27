@@ -174,6 +174,12 @@ class TotPipeline:
 
         E.g. set_param('fp:NSAMAX', 2). String values are routed to
         set_param_str on the sink wrapper; numeric values to set_param.
+
+        Note: only fp/tr/eq currently expose set_param_str; wr/wrx/ti
+        accept numeric params only. Passing a string value to one of
+        those raises TotPipelineCouplingError (rather than a bare
+        AttributeError leaking out of getattr).
+
         Records the value into self._params after the wrapper accepts
         it (failed validation in the wrapper keeps _params consistent).
         """
@@ -186,7 +192,13 @@ class TotPipeline:
         ns, bare = namespaced.split(":", 1)
         module = self._ensure_module(ns)
         if isinstance(value, str):
-            module.set_param_str(bare, value)
+            setter = getattr(module, "set_param_str", None)
+            if setter is None:
+                raise TotPipelineCouplingError(
+                    f"module {ns!r} does not accept string parameters "
+                    f"(set_param_str not defined); got {namespaced!r}={value!r}"
+                )
+            setter(bare, value)
         else:
             module.set_param(bare, float(value))
         self._params[namespaced] = value

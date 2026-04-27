@@ -98,6 +98,27 @@ def test_set_param_records_into_params_dict(patch_wrappers):
     assert pipe._params == {"tr:RR": 6.2, "tr:RA": 2.0, "fp:NSAMAX": 2}
 
 
+def test_set_param_string_to_module_without_set_param_str_raises(monkeypatch):
+    """wr/wrx/ti wrappers don't expose set_param_str. Passing a string
+    value to one of them must raise TotPipelineCouplingError, not a
+    bare AttributeError. (Regression guard: real wrappers checked.)
+    """
+    # Build a fake wrapper class WITHOUT set_param_str
+    fake_wrapper_class = MagicMock(name="WrxlibClass")
+    fake_instance = MagicMock(spec=["set_param", "close"])  # no set_param_str
+    fake_wrapper_class.return_value = fake_instance
+
+    def fake_import_wrapper(name):
+        if name == "wrx":
+            return fake_wrapper_class
+        raise TotPipelineUnknownModuleError(name)
+
+    monkeypatch.setattr("totlib.pipeline._import_wrapper", fake_import_wrapper)
+    pipe = TotPipeline()
+    with pytest.raises(TotPipelineCouplingError, match="string parameters"):
+        pipe.set_param("wrx:KFILE", "/path/to/something")
+
+
 def test_close_finalizes_all_open_modules(patch_wrappers):
     pipe = TotPipeline()
     pipe.set_param("fp:A", 1.0)
