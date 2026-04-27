@@ -221,7 +221,31 @@ def compute_rjt_volint(state, *, R0: float, a: float) -> float:
 # without changing the orchestrator code.
 
 COUPLING_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
-    # ("fp", "tr"): [...]    ← Phase 2 fills this
+    ("fp", "tr"): [
+        CouplingRule(
+            # Callable: receives (prev_state, params); pulls tr:RR / tr:RA
+            # from params (set via tot.set_param("tr:RR", ...) before run_pipeline).
+            # Short-circuits to 0.0 when context params are absent (e.g. unit
+            # tests that exercise tr.run() error paths without a full fp→tr
+            # param setup) — real pipelines always set tr:RR and tr:RA first.
+            src_state_key=lambda state, params: (
+                compute_rjt_volint(
+                    state,
+                    R0=params["tr:RR"],
+                    a=params["tr:RA"],
+                )
+                if ("tr:RR" in params and "tr:RA" in params)
+                else 0.0
+            ),
+            dst_param="PLHCD",                  # R3: PNBCD unregistered; PLHCD is the only
+                                                # set_param-accepting current-drive scalar.
+            transform=lambda v: v * 1e-6,       # Amperes -> "MA-scale numeric value"
+                                                # (skeleton: PLHCD is dimensionless — see
+                                                # spec §3 non-goals).
+            doc="fp driven current (RJT volume integral, A) -> tr PLHCD"
+                " (skeleton coupling; L-7b adds proper EXTERNAL_DRIVEN_I scalar)",
+        ),
+    ],
 }
 
 

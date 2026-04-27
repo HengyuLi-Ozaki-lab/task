@@ -438,3 +438,17 @@ def test_state_to_scalars_without_scalars_extracts_top_level():
     state = FakeState(rjt=[1.0, 2.0])
     out = _state_to_scalars(state)
     assert out == {"nrmax": 10.0, "timefp": 0.5}
+
+
+def test_coupling_rules_has_fp_to_tr():
+    from totlib.pipeline import COUPLING_RULES
+    rules = COUPLING_RULES.get(("fp", "tr"), [])
+    assert len(rules) == 1, f"expected exactly 1 rule, got {rules!r}"
+    rule = rules[0]
+    # R3 confirmed: PNBCD is NOT registered in tr_param_registry.f90; use PLHCD
+    # (dimensionless skeleton — see spec §3 non-goals + §8 R3 outcome).
+    assert rule.dst_param == "PLHCD"
+    # src_state_key is a callable wrapper around compute_rjt_volint that pulls
+    # tr:RR / tr:RA from the params dict.
+    assert callable(rule.src_state_key)
+    assert "RJT" in rule.doc or "driven current" in rule.doc.lower()
