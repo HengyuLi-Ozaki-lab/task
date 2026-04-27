@@ -66,7 +66,18 @@ with Eq() as eq:
     if diags:
         raise SystemExit("fix the diagnostics before running")
 
-    eq.run()
+    eq.run()  # mode=1 (EQDSK 読み込み)
+```
+
+解析的に解く場合は `mode=0` を渡します:
+
+```python
+with Eq() as eq:
+    eq.set_params(RR=3.0, RA=1.0, BB=3.0, RIP=1.5)  # MODELG=2 既定
+    diags = eq.validate()
+    if diags:
+        raise SystemExit("fix the diagnostics before running")
+    eq.run(mode=0)  # EQCALC + EQCALQ で解析的に
 ```
 
 診断コードは `tr` と共通の 5 種類:

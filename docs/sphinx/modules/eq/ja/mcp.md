@@ -11,7 +11,8 @@
 
 入門者向けの完全ガイドは `python/mcp-servers/eq_mcp/README.md` にあります.
 本ページはその要約 + 簡単な使い方リファレンスです. MCP プロトコル全般の
-解説は {ref}`tr_mcp 側 <tr/mcp>` も参照.
+解説は `tr` モジュールの MCP サーバページ
+(`docs/sphinx/modules/tr/ja/mcp.md`) も参照.
 ```
 
 ## アーキテクチャ
@@ -98,7 +99,7 @@ eq-mcp doctor
 
 設定ファイル (`claude_desktop_config.json`) に追加:
 
-```jsonc
+```json
 {
   "mcpServers": {
     "task-eq": {

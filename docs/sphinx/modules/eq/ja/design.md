@@ -28,13 +28,25 @@ C から呼ばれる関数は **6 つ** + `eq_validate`. 標準の 5 関数に�
 
 `eq_run(mode)` は時間ステップ数ではなく **動作モード** を取ります.
 
-| `mode` | 挙動 |
-|---|---|
-| 0 | (予約) `eq_calq` 直接呼び出し — `EqlibNotImplementedError` |
-| 1 (既定) | `equnit::eq_load` — `KNAMEQ` のファイルを読み平衡を構築 |
-| 2 以上 | (将来拡張用) |
+| `mode` | 挙動 | 元 CLI |
+|---|---|---|
+| 0 | `EQCALC` (解析的 G-S 解) + `EQCALQ` (post-processing) | `R` → `F` |
+| 1 (既定) | `equnit::eq_load` — `KNAMEQ` のファイルを読み平衡を構築 | `L` |
+| 2 以上 | (将来拡張用) — `EqlibNotImplementedError` | — |
 
 `tr` の `tr_run(ntmax)` とは引数の意味が違うので注意してください.
+
+```{note}
+`mode=0` は `MODELG ∈ {0, 1, 2}` (解析的幾何) で使います. 装置パラメータ
+(`RR`, `RA`, `BB`, `RIP`) と圧力・電流プロファイル係数 (`PP*`, `PJ*`,
+`FF*` 等) から解析的に Grad-Shafranov を解きます. 元 `eqx2` CLI の `R`
+(Run) コマンドが対応する経路で, `EQCALC` で平衡を構築した後 `EQCALQ` で
+post-processing して `qaxis`, `qsurf`, `betat`, `betap`, `pvol` 等の
+診断量を埋めます.
+
+`mode=1` は `MODELG ∈ {3, 5, 8}` (ファイル系) で使い, `KNAMEQ` で指定
+された EQDSK ファイルを読み込みます.
+```
 
 ### C 構造体レイアウト (`eq_state_t`)
 

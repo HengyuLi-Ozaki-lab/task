@@ -2,7 +2,8 @@
 
 `Eq` クラスはコンテキストマネージャとして設計されており, `with` 文と
 組み合わせて使うのが推奨です. `tr` と同じ仕組みなので, 詳細な解説は
-{ref}`tr 側の解説 <tr/context-manager>` も参考になります.
+`tr` 側のコンテキストマネージャページ
+(`docs/sphinx/modules/tr/ja/context-manager.md`) も参照してください.
 
 ## なぜ `with` が必要か
 

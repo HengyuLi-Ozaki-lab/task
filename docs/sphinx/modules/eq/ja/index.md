@@ -13,18 +13,27 @@ TASK/EQ (**MHD 平衡** ソルバ: EQDSK 形式の平衡データ, または解�
 
 ## 概要 — `eq` は何をする
 
-**TASK/EQ** はトカマクの **MHD 平衡** を解くモジュールです. 入力は
+**TASK/EQ** はトカマクの **MHD 平衡** を解くモジュールです. 2 つの入り口を
+持ちます:
 
-- EQDSK 形式 (G-EQDSK) の平衡データファイル, または
-- 解析プロファイル (圧力 $p(\psi)$, 安全係数 $q(\psi)$ 等)
+- **`run(mode=0)`** — 解析的 Grad-Shafranov 解 (`EQCALC` + `EQCALQ`).
+  圧力プロファイル係数 (`PP*`), 電流プロファイル係数 (`PJ*`),
+  $F(\psi)$ 係数 (`FF*`) を与えて解析的に解きます.
+  `MODELG=2` (既定) で使用. ファイル不要.
+- **`run(mode=1)`** — EQDSK 形式 (G-EQDSK) の平衡データファイル読み込み
+  (`equnit::eq_load`). `MODELG ∈ {3, 5, 8}` + `KNAMEQ` ファイル名指定が必要.
 
-を取り, 出力としては磁気軸位置 (`raxis`, `zaxis`), 中心 q (`qaxis`),
+両方とも出力としては磁気軸位置 (`raxis`, `zaxis`), 中心 q (`qaxis`),
 表面 q (`qsurf`), プラズマ $\beta$ (`betat`, `betap`), プラズマ体積
 (`pvol`) などのスカラーと, R-Z 格子, ψ-面プロファイル (`psips`, `ppps`,
 `ttps`, `qqps`) を返します.
 
+```{note}
 PR #164/#165 でライブラリ / Python ラッパ / `validate()` API が揃い,
-L-6 等価性ゲートを 1e-10 で通過済みです.
+L-6 等価性ゲートを 1e-10 で通過済みです. `mode=0` (解析的経路) は
+元 `eqx2` CLI の `R` (Run) コマンド相当で, ライブラリ化に伴って
+復活させた経路です.
+```
 
 ## 使い方ガイド
 
@@ -72,7 +81,7 @@ appendix-sensitivity
 初めて触る場合は次の順序がおすすめです:
 
 1. {doc}`build` — 共有ライブラリをビルドし, `import eqlib` できるようにする
-2. {doc}`hello-world` — `MODELG=3` で EQDSK を読み込む最短例
+2. {doc}`hello-world` — 解析モード (`mode=0`) と EQDSK モード (`mode=1`) の両方の最短例
 3. {doc}`parameters` — どんな入力パラメータがあるか (登録パラメータ完全リスト)
 4. {doc}`parameter-setting` — 入力パラメータ指定の 4 通り (スカラー / 配列 / **文字列** / `validate`)
 5. {doc}`state` — `eq.get_state()` で取れる出力パラメータ・物理量の一覧

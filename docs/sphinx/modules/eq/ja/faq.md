@@ -11,13 +11,24 @@ PF コイル系配列 (`RIPFC`, `RPFC`, `ZPFC`, `WPFC`) は 1-origin の
 裸の `"PSIB"` はレジストリで明示的に拒否されます
 (`EqlibInvalidParamError`).
 
-## Q2. なぜ `eq.run()` のデフォルトが `mode=1`?
+## Q2. `eq.run()` の `mode` 引数の意味は?
 
-`mode=1` は `equnit::eq_load` を呼び, 現在の `KNAMEQ` (EQDSK ファイル)
-を読んで平衡を構築する EQDSK 駆動の標準ワークフローだからです. `mode=0`
-(直接 EQCALQ 呼び出し) は予約済みで, 現状 `EqlibNotImplementedError`
-を返します. `tr`/`ti`/`wr`/`fp` の `run` は時間ステップ数 `ntmax` を
-取りますが, EQ は時間発展を持たないため引数の意味が違います.
+`eq.run(mode)` には現在 2 つの動作モードがあります. 両方とも元の
+`eqx2` CLI のメニューコマンドに対応します:
+
+| `mode` | 用途 | 元 CLI コマンド | 必要な設定 |
+|---|---|---|---|
+| `0` | **解析的 G-S 解** (`EQCALC` + post-processing) | `R` (Run) → `F` (Fields) | `MODELG ∈ {0, 1, 2}`, 解析プロファイル係数 (`PP*`, `PJ*`, `FF*` 等) |
+| `1` (既定) | **EQDSK ファイル読み込み** (`equnit::eq_load`) | `L` (Load) | `MODELG ∈ {3, 5, 8}`, `KNAMEQ` (ファイル名) |
+
+`mode=1` がデフォルトなのは **EQDSK 駆動の標準ワークフロー** だからですが,
+解析的に解きたい場合 (装置パラメータと圧力・電流プロファイル係数だけ
+与える場合) は `mode=0` を使います.
+
+```{note}
+`tr`/`ti`/`wr`/`fp` の `run` は時間ステップ数 `ntmax` を取りますが,
+EQ は時間発展を持たないため引数の意味が違います.
+```
 
 ## Q3. `KNAMEQ` を kwargs で渡すとエラー
 
