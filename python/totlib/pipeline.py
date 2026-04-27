@@ -13,7 +13,11 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Tuple, Union
 
-from .errors import TotPipelineUnknownModuleError
+from .errors import (
+    TotPipelineCouplingError,
+    TotPipelineLifecycleError,
+    TotPipelineUnknownModuleError,
+)
 
 
 @dataclass(frozen=True)
@@ -130,3 +134,76 @@ def _import_module_error(name: str) -> type:
     pkg, _, err_cls_name = _MODULE_REGISTRY[name]
     errors_mod = importlib.import_module(f"{pkg}.errors")
     return getattr(errors_mod, err_cls_name)
+
+
+class TotPipeline:
+    """Python-side multi-module orchestrator with scalar coupling.
+
+    Lazy-instantiates per-module wrappers (Fplib, Trlib, ...) only when
+    referenced by set_param or run_pipeline. Coupling between adjacent
+    steps follows COUPLING_RULES (populated in Task 1.5 / 2.2).
+
+    Mutually exclusive with the legacy totlib.Tot class — both call
+    tr_init internally and same-process coexistence is undefined.
+    """
+
+    def __init__(self) -> None:
+        self._modules: Dict[str, Any] = {}
+        # Track every set_param call, indexed by namespaced key. Used by
+        # CouplingRule callables that need cross-module context (e.g. fp's
+        # compute_rjt_volint needs tr's RR/RA). Per spec §5.4.
+        self._params: Dict[str, Any] = {}
+        self._closed: bool = False
+
+    def __enter__(self) -> "TotPipeline":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def _ensure_module(self, name: str):
+        if self._closed:
+            raise TotPipelineLifecycleError("TotPipeline is closed")
+        if name not in self._modules:
+            cls = _import_wrapper(name)
+            self._modules[name] = cls()
+        return self._modules[name]
+
+    def set_param(self, namespaced: str, value) -> None:
+        """Set a per-module parameter via 'module:name' addressing.
+
+        E.g. set_param('fp:NSAMAX', 2). String values are routed to
+        set_param_str on the sink wrapper; numeric values to set_param.
+        Records the value into self._params after the wrapper accepts
+        it (failed validation in the wrapper keeps _params consistent).
+        """
+        if self._closed:
+            raise TotPipelineLifecycleError("TotPipeline is closed")
+        if ":" not in namespaced:
+            raise TotPipelineCouplingError(
+                f"param name must be prefixed with '<module>:', got {namespaced!r}"
+            )
+        ns, bare = namespaced.split(":", 1)
+        module = self._ensure_module(ns)
+        if isinstance(value, str):
+            module.set_param_str(bare, value)
+        else:
+            module.set_param(bare, float(value))
+        self._params[namespaced] = value
+
+    def close(self) -> None:
+        """Finalize all opened module wrappers. Idempotent. If any close
+        raises, all remaining modules are still finalized; the first
+        exception is re-raised after the loop."""
+        if self._closed:
+            return
+        errors = []
+        for name, module in list(self._modules.items()):
+            try:
+                module.close()
+            except Exception as e:  # noqa: BLE001 — caller wants to see all
+                errors.append(e)
+        self._modules.clear()
+        self._closed = True
+        if errors:
+            raise errors[0]
