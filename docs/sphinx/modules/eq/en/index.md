@@ -50,6 +50,7 @@ parameter-setting
 state
 context-manager
 faq
+applications
 ```
 
 ## Reference
