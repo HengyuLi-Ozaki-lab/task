@@ -87,11 +87,18 @@ with StableTrRunner() as runner:
           f"再試行数={runner.retries}")
 ```
 
-期待される挙動:
+期待される出力 (上記パラメータでは安定なので再試行は走りません):
+
+```
+完走: T=1.000s, BETAN=0.283, 再試行数=0
+```
+
+数値発散しがちな組合せ (例: 極端な `BB`, 大きな `DT`) では `[retry]` ログが
+混じり, `再試行数` が 1 以上になります:
 
 ```
 [retry] TrlibRunError(...) → DT=5.00e-03 に縮めて再試行 (1/5)
-完走: T=0.500s, BETAN=0.42, 再試行数=1
+完走: T=..., BETAN=..., 再試行数=1
 ```
 
 ### 拡張案
@@ -158,11 +165,12 @@ for r in results:
     print(r)
 ```
 
-期待される出力（抜粋）:
+期待される出力（抜粋, `WPT` の単位は MJ）:
 
 ```text
-{'RR': 3.0, 'BB': 3.0, 'T': 0.2, 'WPT': 8.3e+05, 'BETAN': 0.42, ...}
-{'RR': 6.5, 'BB': 5.3, 'T': 0.2, 'WPT': 3.1e+06, 'BETAN': 0.85, ...}
+{'RR': 3.0, 'BB': 3.0, 'T': 0.2, 'WPT': 1.65, 'BETAN': 0.288, ...}
+{'RR': 5.0, 'BB': 5.0, 'T': 0.2, 'WPT': 2.95, 'BETAN': 0.186, ...}
+{'RR': 6.5, 'BB': 7.0, 'T': 0.2, 'WPT': 3.96, 'BETAN': 0.137, ...}
 ```
 
 ### 拡張案
@@ -215,9 +223,13 @@ def auto_setup(
         params.update(extra_params or {})
         tr.set_params(**params)
 
-        # 2. EQDSK 経由なら KNAMEQ を必須としてセット
-        if params.get("MODELG") in (3, 5, 7, 8) and eq_file:
-            tr.set_param_str("KNAMEQ", eq_file)
+        # 2. EQDSK 経由なら KNAMEQ を必須としてセット.
+        #    eq_file が None なら KNAMEQ を明示的に空文字列にして
+        #    validate の FILE_MISSING に拾わせる (デフォルト
+        #    KNAMEQ='eqdata' をそのまま残すと validate を素通り
+        #    して run 時に ierr=3 で死ぬ).
+        if params.get("MODELG") in (3, 5, 7, 8):
+            tr.set_param_str("KNAMEQ", eq_file or "")
 
         # 3. validate でチェック
         diags = tr.validate()
@@ -246,10 +258,10 @@ with auto_setup("ITER") as tr:
     print(f"BETAN = {state.scalars['BETAN']:.3f}")
 ```
 
-期待される出力:
+期待される出力 (ITER プリセット, `ntmax=10`):
 
 ```text
-BETAN = 0.852
+BETAN = 0.074
 ```
 
 `MODELG=3` を指定したのに `eq_file=None` だった場合:
