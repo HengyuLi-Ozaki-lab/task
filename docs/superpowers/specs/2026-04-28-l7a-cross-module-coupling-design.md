@@ -480,7 +480,14 @@ grep -n -E "(PNBCD|PNBI|PRFCD|PCURRENT|PCD|driven)" tr/tr_param_registry.f90
   - **fplib 改変**: なし (helper は totlib/pipeline.py 配置, fp 側 ABI を触らない). Phase 2 Task 2.1 で実装.
   - **L-7a coupling への影響**: tr → fp の方向では `tr.AJT [MA]` を fp の `set_param("PI", value [MA])` 等に渡す (R3 で確認予定). fp → tr の方向では本 helper で `RJT [MA/m²] → I_drive [A]` を計算し, tr に渡す. R0/a は TotPipeline で tr.set_param 直後にキャッシュ (R3 と組み合わせて確定).
   - **検証 script**: `/tmp/r2_rjt_extraction.py` (FpState 構造プローブ), `/tmp/r2_rjt_extraction2.py` (NRMAX=10 sanity check). キャプチャ済 stdout は本 R2 commit message に貼付.
-- R3 結果: __未確定__
+- R3 結果: PARTIAL PASS (検証日: 2026-04-28). spec で想定された `PNBCD` は **`tr_param_registry.f90` に登録されていない** (PNBCD は内部 NBI 効率係数として trcomm にだけ存在). 登録済みかつ意味的に最も近い候補は **`PLHCD`** (LH "CURRENT DRIVE FACTOR"; default 0.0; 無次元). 他に `PICCD`, `PECCD` も登録されている (全て同種の dimensionless CD factor); `PLHTOT` は LH 入力電力 [MW] でこれも登録済み. `PNBTOT/PECTOT/PICTOT/PBSCD/MDLCD` は **未登録** (`tr.set_param` で `ierr=1` を返す, 経験的に確認).
+  - **tr param 名**: `PLHCD` (registered at tr/tr_param_registry.f90:159; declared in tr/trcomm_param.f90:37; default 0.0 (trinit.f90 周辺); unit 無次元 = "CURRENT DRIVE FACTOR OF LH" trhelp.f90:262 風 — fp helper が返す Amperes と単位は本来 mismatch だが, L-7a skeleton では magnitude carrier として運用).
+  - **Transform**: `lambda v: v * 1.0e-6` (fp helper Amperes → 「LH driven current の代理 [MA-相当]」). 単位の semantic mismatch はあるが, L-7a は "scalar coupling pipeline 骨格" の確立が目的で, 物理的に厳密な current → factor 変換 (= I_fp / I_tr_LH_baseline) は L-7b 以降に温存. README/applications.md に注記必須.
+  - **Python 検証**: `tr.set_param('PLHCD', 1.0)` 後 `tr.run(ntmax=1)` で AJT = 2.999999999999999 MA (= RIPS=3.0 を反映); 例外なく完走. `PNBCD` は同条件で `TrlibParamError: tr_set_param('PNBCD', 1.0): ierr=1`. 検証 script: ad-hoc Python (本 commit message に出力貼付).
+  - **`a` の sourcing** (R2 follow-up): `tr.RA` を使う (理由: fp の radial mesh は `RA` で normalize されている — `fp/fpcale.f90:34, 56` 等で `(DELR*RA)**2` として現れ, `RB` は wall side coefficient `coef_ln=LOG(RA*(1+0.5*DELR)/RB)/DELR` の境界条件にしか使われない. fp の RJT[ns][i] が積分で覆う物理半径は LCFS = `RA`).
+  - **Active-drive fixture** (Phase 2.3 用): fp params = `{"E0": 0.001}` (induction electric field 0.001 V/m, 他 default) で `compute_rjt_volint(state, R0=3.0, a=1.0)` ≈ **0.946 MA** (= 非trivial, default fixture の 1e-13 MA に対し +13桁). E0 sweep: 0.001 V/m→0.946 MA, 0.01→9.46 MA, 0.1→95.1 MA — 線形応答領域. `MODEL_WAVE=1 + MODELW[1]=1 + PABS_LH=1.0` は `fp_run(1): rc=3` で失敗 (wave 計算経路は別途追加 setup が必要; E0 fixture が最小コスト). **default fixture (1e-13 MA) は equivalence test に不適**.
+  - **Phase 2.3 への含意**: equivalence test では fp.set_param('E0', 0.001) を共通 fixture とし, helper の出力 (≈0.946 MA → A 単位 ≈ 9.46e5) を direct-call と pipeline-call で 1e-10 相対許容で比較する. tr.set_param('PLHCD', value) の後の AJT diff まで含めた full equivalence は L-7b で扱う (PLHCD の「無次元→電流」変換は tr 内部 model に依存).
+  - **Open issue**: 本来意味的に正しい coupling target ("外部から MA で driven current を注入する scalar param") は **tr の登録 surface に存在しない**. PNBCD を tr_param_registry に追加するか, 新規 `EXTERNAL_DRIVEN_I_MA` のような scalar を tr側に新設する必要がある. 本 spec の "fp → tr (driven current)" は L-7a では **skeleton 配線のみ** とし, 物理的整合は L-7b で issue 化推奨.
 
 ## 9. テスト戦略
 
