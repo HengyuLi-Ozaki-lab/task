@@ -48,6 +48,7 @@ parameters
 parameter-setting
 state
 context-manager
+applications
 faq
 ```
 
