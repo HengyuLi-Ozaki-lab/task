@@ -29,14 +29,28 @@ All are bound to fixed C ABI symbols via `BIND(C, NAME="eq_xxx")`.
 
 `eq_run(mode)` takes an **operating mode**, not a time-step count.
 
-| `mode` | Behaviour |
-|---|---|
-| 0 | (reserved) direct call of `eq_calq` — `EqlibNotImplementedError` |
-| 1 (default) | `equnit::eq_load` — read the file in `KNAMEQ` and build the equilibrium |
-| 2+ | (for future expansion) |
+| `mode` | Behaviour | Legacy CLI |
+|---|---|---|
+| 0 | `EQCALC` (analytic G-S solve) + `EQCALQ` (post-processing) | `R` -> `F` |
+| 1 (default) | `equnit::eq_load` — read the file in `KNAMEQ` and build the equilibrium | `L` |
+| 2+ | (for future expansion) — `EqlibNotImplementedError` | — |
 
 The argument has a different meaning from `tr`'s `tr_run(ntmax)`, so
 do not confuse the two.
+
+```{note}
+`mode=0` is for `MODELG ∈ {0, 1, 2}` (analytic geometries). It solves
+the Grad-Shafranov equation analytically from the device parameters
+(`RR`, `RA`, `BB`, `RIP`) and the pressure / current profile
+coefficients (`PP*`, `PJ*`, `FF*`, ...). It corresponds to the `R`
+(Run) command of the legacy `eqx2` CLI: `EQCALC` builds the
+equilibrium and then `EQCALQ` runs the flux-surface-average
+post-processing that fills the diagnostic quantities `qaxis`,
+`qsurf`, `betat`, `betap`, `pvol`, etc.
+
+`mode=1` is for `MODELG ∈ {3, 5, 8}` (file-based geometries) and
+loads the EQDSK file named by `KNAMEQ`.
+```
 
 ### C structure layout (`eq_state_t`)
 

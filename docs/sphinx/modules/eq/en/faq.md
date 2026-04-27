@@ -11,14 +11,24 @@ Through `set_param`, use `"PSIB[0]"` through `"PSIB[5]"`. The bare
 name `"PSIB"` (no index) is explicitly rejected by the registry
 (`EqlibInvalidParamError`).
 
-## Q2. Why does `eq.run()` default to `mode=1`?
+## Q2. What does the `mode` argument of `eq.run()` mean?
 
-`mode=1` invokes `equnit::eq_load`, which reads the current `KNAMEQ`
-(EQDSK file) and builds the equilibrium — that is the standard,
-EQDSK-driven workflow. `mode=0` (a direct EQCALQ call) is reserved
-and currently raises `EqlibNotImplementedError`. The `run` of
-`tr`/`ti`/`wr`/`fp` takes a step count `ntmax`, but EQ has no time
-evolution, so the argument has a different meaning.
+`eq.run(mode)` currently has two operating modes. Both correspond to
+menu commands of the legacy `eqx2` CLI:
+
+| `mode` | Purpose | Legacy CLI command | Required setup |
+|---|---|---|---|
+| `0` | **Analytic G-S solve** (`EQCALC` + post-processing) | `R` (Run) -> `F` (Fields) | `MODELG ∈ {0, 1, 2}`, analytic profile coefficients (`PP*`, `PJ*`, `FF*`, ...) |
+| `1` (default) | **Load EQDSK file** (`equnit::eq_load`) | `L` (Load) | `MODELG ∈ {3, 5, 8}`, `KNAMEQ` (filename) |
+
+`mode=1` is the default because it is the **standard EQDSK-driven
+workflow**. When you want to solve analytically (giving only the
+device parameters and analytic profile coefficients), use `mode=0`.
+
+```{note}
+The `run` of `tr`/`ti`/`wr`/`fp` takes a step count `ntmax`, but EQ
+has no time evolution, so the argument has a different meaning.
+```
 
 ## Q3. Passing `KNAMEQ` as a kwarg fails
 
