@@ -24,7 +24,7 @@ TASK プラズマライブラリの `tot` orchestrator は現状 L-6 (TR-only). 
 | Scope | (B) 段階的, 最小ペアから | 物理仕様の固まりきっていない段階で全結合を一気に詰めると stuck する確率高 |
 | 実装層 | (β) Python-side | Fortran ABI 拡張ゼロ, 反復速い, lib*api.so への変更不要 |
 | データ変換 | (III) Hybrid (scalar-only) | rho↔psi を numpy で再実装すると BPSD と乖離するリスク. profile/coord は L-7b で BPSD ABI に委譲 |
-| Coupling pair (L-7a) | (a) `fp → tr` (driven current) | 物理的に scalar 結合が意味を持つ (RJT volume integral → PNBCD scalar) |
+| Coupling pair (L-7a) | (a) `fp → tr` (driven current, **skeleton**) | API plumbing 確立目的. R3 で `PNBCD` 不在判明 → `PLHCD` (dimensionless multiplier) を採用. 物理的整合性は L-7b で proper scalar 追加時に達成 |
 | API 表面 | (α) `TotPipeline.run_pipeline(steps)` のみ | 既存 `Tot.run` を変更しない最小表面. backwards compat 完全保持 |
 | ファイル分離 | (新提案) `python/totlib/pipeline.py` を別ファイル新設 | legacy `Tot` (test/regression 用) と `TotPipeline` (新規ユーザ用) を完全独立化 |
 | MCP | (A) `run_pipeline` を MCP tool として露出 | force-close pattern を踏襲して isolation 保証 |
@@ -39,6 +39,7 @@ TASK プラズマライブラリの `tot` orchestrator は現状 L-6 (TR-only). 
 - Per-module state aggregation (`Tot.get_state().fp_scalars` 等)
 - Legacy `Tot.run(ntmax)` の挙動変更 (永久に変更しない)
 - `wr/wrx/eq/ti` を含む coupling rule (L-7b 以降で同じパターン適用)
+- **物理的整合性のある fp→tr scalar 結合** — R3 で発覚した通り tr 側に Amperes 単位の driven current 注入用 scalar param が無い (現存は `PLHCD/PICCD/PECCD` 等 dimensionless multiplier のみ). L-7a は **API plumbing demonstration** として `PLHCD` を採用するが, 値は `compute_rjt_volint` の Amperes 値を `× 1e-6` した数値であり, 物理的には placeholder. **proper scalar drive injection (e.g. `EXTERNAL_DRIVEN_I_MA` を tr/tr_param_registry.f90 に追加) は L-7b 着手時に Fortran 改修と同時に実施** (§12 follow-up 参照).
 
 ## 4. アーキテクチャ概観
 
@@ -125,12 +126,15 @@ per-module 例外 (`FplibCalcFailedError`, `TrlibError` 等) の伝播ルール:
 ```python
 @dataclass(frozen=True)
 class CouplingRule:
-    src_state_key: str | Callable[[ModuleState], float]
-        # str: prev_state.scalars[key] でルックアップ
-        # callable: prev_state (per-module の State 型: FpState | TrState | ...)
-        #          を引数に渡して float を返す. R2 の profile→scalar 変換用.
-        # ModuleState は型エイリアス: ModuleState = Union[FpState, TrState, EqState,
-        #                                                  WrState, WrxState, TiState]
+    src_state_key: str | Callable[[ModuleState, dict[str, Any]], float]
+        # str: prev_state.scalars[key] でルックアップ (= module が .scalars dict
+        #      を露出する場合のみ. fp は callable 必須).
+        # callable: 2 引数 (prev_state, params_dict) で float を返す.
+        #   - prev_state: per-module の State 型 (FpState | TrState | ...)
+        #   - params_dict: TotPipeline._params (これまでの set_param で蓄積された
+        #     "<ns>:<bare>" -> value の dict). 例: 他 module の RR/RA を参照したい時用.
+        # ModuleState は型エイリアス: Union[FpState, TrState, EqState,
+        #                                  WrState, WrxState, TiState]
     dst_param: str
     transform: Callable[[float], float] = lambda v: v
     doc: str = ""
@@ -138,23 +142,35 @@ class CouplingRule:
 COUPLING_RULES: dict[tuple[str, str], list[CouplingRule]] = {
     ("fp", "tr"): [
         CouplingRule(
-            src_state_key=...,         # R2 で確定
-            dst_param=...,             # R3 で確定 (e.g. "PNBCD")
-            transform=...,             # R3 で確定 (e.g. lambda v: v * 1e-6 for A→MA)
-            doc="fp driven current (RJT volume integral) -> tr <param>",
+            src_state_key=lambda state, params: compute_rjt_volint(
+                state,
+                R0=params["tr:RR"],   # tr の major radius (set_param で先に設定済前提)
+                a=params["tr:RA"],    # tr の minor radius
+            ),
+            dst_param="PLHCD",        # R3 で確定 (PNBCD は tr_param_registry.f90 に未登録)
+            transform=lambda v: v * 1e-6,    # Amperes → "MA-scale numeric value"
+            doc="fp driven current (RJT volume integral, A) -> tr PLHCD"
+                " (skeleton: PLHCD は dimensionless multiplier; L-7b で proper"
+                " scalar param 追加時に物理的整合化)",
         ),
     ],
 }
 ```
 
-### 5.3 PipelineResult / PipelineStep
+**Skeleton coupling 注意**:
+- `PLHCD` は元来 LH current drive の dimensionless factor. ここに `compute_rjt_volint` の `× 1e-6` 値を流すのは **physical fidelity ではなく API plumbing の demonstration**.
+- L-7a の equivalence test (§9.2) は「pattern X (手書) と pattern Y (run_pipeline) が同じ PLHCD 値を tr に渡し, tr 最終 state が 1e-10 で一致」を verify する. **物理的に正しい coupling であるか** は本 spec 範囲外.
+
+### 5.3 PipelineResult / PipelineStep + state shape adapter
+
+R2 で確認: **FpState は `.scalars` dict を露出していない** (top-level dataclass attribute のみ: nrmax, nsamax, npmax, nthmax, ntg2, timefp). 一方 TrState/EqState/WrState/WrxState/TiState は `.scalars` dict を持つ. そのため `dict(state.scalars)` を一律に呼ぶ設計は破綻 → adapter ヘルパを置く.
 
 ```python
 @dataclass
 class PipelineStep:
     module: str
     scalars: dict[str, float]
-    coupling_applied: list[str]   # この step に適用された rule の doc
+    coupling_applied: list[str]
 
 @dataclass
 class PipelineResult:
@@ -176,6 +192,32 @@ class PipelineResult:
             for s in self.steps
         ]
         return out
+
+
+def _state_to_scalars(state) -> dict[str, float]:
+    """Module state から flat scalar dict を抽出する adapter.
+
+    - state.scalars (dict) が存在すれば: その shallow copy を返す
+      (Tr/Eq/Wr/Wrx/Ti 系の標準 path).
+    - 存在しなければ: top-level numeric dataclass attribute (int/float, bool 除く)
+      を集約する (Fp 系の fallback path).
+
+    R2/R1 で FpState の shape を確認した結果として導入.
+    """
+    if hasattr(state, "scalars") and isinstance(state.scalars, dict):
+        return dict(state.scalars)
+    out: dict[str, float] = {}
+    for name in dir(state):
+        if name.startswith("_"):
+            continue
+        val = getattr(state, name, None)
+        if callable(val):
+            continue
+        if isinstance(val, bool):
+            continue
+        if isinstance(val, (int, float)):
+            out[name] = float(val)
+    return out
 ```
 
 ### 5.4 TotPipeline 主要メソッド
@@ -184,16 +226,20 @@ class PipelineResult:
 class TotPipeline:
     def __init__(self):
         self._modules: dict[str, Any] = {}
+        # set_param で蓄積される. CouplingRule の callable に渡される.
+        # 例: {"tr:RR": 6.2, "tr:RA": 2.0, "fp:NSAMAX": 2}
+        self._params: dict[str, Any] = {}
         self._closed = False
 
     def __enter__(self): return self
     def __exit__(self, *a): self.close()
 
     def set_param(self, namespaced: str, value):
-        """e.g. set_param('fp:NSAMAX', 2)."""
+        """e.g. set_param('fp:NSAMAX', 2). _params にも記録 (callable rule 用)."""
 
     def run_pipeline(self, steps: list[tuple[str, dict]]) -> PipelineResult:
-        """順序付き steps で fp/tr/... を実行. 隣接 step 間で COUPLING_RULES を適用."""
+        """順序付き steps で fp/tr/... を実行. 隣接 step 間で COUPLING_RULES を適用.
+        Callable rule は (prev_state, self._params) で呼ばれる."""
 
     def close(self):
         """全 per-module wrapper を finalize. 冪等. 例外集約."""
@@ -260,16 +306,19 @@ def run_pipeline(self, steps):
 
             if prev_name is not None:
                 for rule in COUPLING_RULES.get((prev_name, name), []):
+                    # _extract_source は callable 型 rule に self._params を渡す
                     raw = self._extract_source(prev_state, rule)
                     transformed = rule.transform(raw)
                     module.set_param(rule.dst_param, transformed)
+                    self._params[f"{name}:{rule.dst_param}"] = transformed
                     applied.append(rule.doc)
 
             module.run(**kwargs)
             cur_state = module.get_state()
+            # _state_to_scalars adapter で fp (no .scalars) と tr (.scalars) を統一処理
             result_steps.append(PipelineStep(
                 module=name,
-                scalars=dict(cur_state.scalars),
+                scalars=_state_to_scalars(cur_state),
                 coupling_applied=applied,
             ))
             prev_name, prev_state = name, cur_state
@@ -627,13 +676,15 @@ def test_fp_tr_pipeline_equiv():
 
 ## 12. L-7b 以降の follow-up (本 spec 範囲外)
 
+- **tr に `EXTERNAL_DRIVEN_I_MA` (or similar) scalar param を新規追加** — R3 で発覚した skeleton coupling 問題の真の解決. tr/tr_param_registry.f90 に CASE 追加 + tr/trcomm_param.f90 に COMMON 変数追加 + tr の transport eq の current source 項に注入. これで fp の `compute_rjt_volint` 出力を物理的整合性のある形で tr に流せる. **L-7b 着手と同時に実装** (Fortran 改修なので Python-only 制約から外れる).
 - `wr → fp`: RF deposition power scalar coupling (`wr.pwrtot → fp.PRF`)
-- `wr → tr`: RF heating power scalar coupling
+- `wr → tr`: RF heating power scalar coupling (`wr.pwrtot → tr.PRFTOT` or similar)
 - `eq → tr`: profile 級 coupling (psi↔rho 変換が必要 → BPSD ABI 公開と同時)
 - `<mod>_api_bpsd_sync()` Fortran ABI を全モジュール (eq/tr/wr/wrx/fp/ti) に追加 (L-7b)
 - Declarative `tot.couple(src, dst)` API (L-7c)
 - `Tot.get_state().fp_scalars` 等の per-module state aggregation (L-7b)
 - `applications.md` の L-7 placeholder を完全に解消する次世代版
+- L-7a の `_state_to_scalars` adapter を fplib 側の `FpState.scalars` プロパティ追加で不要化することの検討 (fplib 改修の是非はユーザ判断).
 
 ## 13. 参考
 

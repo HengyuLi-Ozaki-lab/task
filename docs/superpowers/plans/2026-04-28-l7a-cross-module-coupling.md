@@ -640,13 +640,20 @@ from typing import Any, Callable, Union
 class CouplingRule:
     """A single source-to-sink scalar coupling between adjacent steps.
 
-    src_state_key resolves a value from the source module's get_state().
+    src_state_key resolves a value from the source module's get_state():
+
+    * str  -> looked up in prev_state.scalars (only valid for modules
+      that expose a .scalars dict — Tr/Eq/Wr/Wrx/Ti).
+    * callable(prev_state, params) -> float. params is TotPipeline._params,
+      a dict of every set_param call so far keyed as "<ns>:<bare>" (used
+      by fp's compute_rjt_volint which needs tr's RR/RA).
+
     dst_param is the bare parameter name on the sink module (set via
     sink.set_param). transform is applied to the source value (e.g. unit
     conversion) before it reaches the sink.
     """
 
-    src_state_key: Union[str, Callable[[Any], float]]
+    src_state_key: Union[str, Callable[[Any, dict], float]]
     dst_param: str
     transform: Callable[[float], float] = lambda v: v
     doc: str = ""
@@ -1047,6 +1054,10 @@ class TotPipeline:
 
     def __init__(self) -> None:
         self._modules: dict[str, Any] = {}
+        # Track every set_param call, indexed by namespaced key. Used by
+        # CouplingRule callables that need cross-module context (e.g. fp's
+        # compute_rjt_volint needs tr's RR/RA). Per spec §5.4.
+        self._params: dict[str, Any] = {}
         self._closed: bool = False
 
     def __enter__(self) -> "TotPipeline":
@@ -1068,6 +1079,7 @@ class TotPipeline:
 
         E.g. set_param('fp:NSAMAX', 2). String values are routed to
         set_param_str on the sink wrapper; numeric values to set_param.
+        Also records the value into self._params for CouplingRule access.
         """
         if self._closed:
             raise TotPipelineLifecycleError("TotPipeline is closed")
@@ -1081,6 +1093,9 @@ class TotPipeline:
             module.set_param_str(bare, value)
         else:
             module.set_param(bare, float(value))
+        # Record after the wrapper accepted it (raise in wrapper means
+        # _params stays consistent).
+        self._params[namespaced] = value
 
     def close(self) -> None:
         """Finalize all opened module wrappers. Idempotent. If any close
@@ -1248,6 +1263,80 @@ def test_run_pipeline_after_close_raises_lifecycle(patch_wrappers):
     pipe.close()
     with pytest.raises(TotPipelineLifecycleError):
         pipe.run_pipeline([("fp", {})])
+
+
+def test_run_pipeline_callable_rule_receives_params(patch_wrappers, monkeypatch):
+    """Callable src_state_key gets (prev_state, self._params) — verifies
+    cross-module context passing (e.g. fp's compute_rjt_volint reading tr's RR/RA).
+    """
+    from totlib.pipeline import CouplingRule
+    captured = {}
+
+    def callable_src(state, params):
+        captured["state"] = state
+        captured["params"] = dict(params)
+        return state.scalars["raw"] * params["tr:RR"]
+
+    rules = {
+        ("fp", "tr"): [
+            CouplingRule(
+                src_state_key=callable_src,
+                dst_param="PLHCD",
+                transform=lambda v: v * 1e-3,
+                doc="callable rule with params",
+            ),
+        ]
+    }
+    monkeypatch.setattr("totlib.pipeline.COUPLING_RULES", rules)
+    pipe = TotPipeline()
+    pipe.set_param("tr:RR", 6.2)   # populates _params before pipeline runs
+    fp_inst = patch_wrappers["classes"]["fp"].return_value
+    tr_inst = patch_wrappers["classes"]["tr"].return_value
+    fp_inst.get_state.return_value = _make_state({"raw": 100.0})
+    tr_inst.get_state.return_value = _make_state({"AJT": 0.0})
+    pipe.run_pipeline([("fp", {"ntmax": 1}), ("tr", {"ntmax": 1})])
+    assert captured["params"]["tr:RR"] == 6.2
+    # transform applied: 100 * 6.2 * 1e-3 = 0.62
+    tr_inst.set_param.assert_any_call("PLHCD", 0.62)
+
+
+def test_set_param_records_into_params_dict(patch_wrappers):
+    """set_param updates self._params after the wrapper accepts the value."""
+    pipe = TotPipeline()
+    pipe.set_param("tr:RR", 6.2)
+    pipe.set_param("tr:RA", 2.0)
+    pipe.set_param("fp:NSAMAX", 2)
+    assert pipe._params == {"tr:RR": 6.2, "tr:RA": 2.0, "fp:NSAMAX": 2}
+
+
+def test_state_to_scalars_with_scalars_dict():
+    """_state_to_scalars returns a copy of state.scalars when present."""
+    from totlib.pipeline import _state_to_scalars
+    state = MagicMock()
+    state.scalars = {"a": 1.0, "b": 2.0}
+    out = _state_to_scalars(state)
+    assert out == {"a": 1.0, "b": 2.0}
+    # Must be a copy, not the same dict
+    out["a"] = 99.0
+    assert state.scalars["a"] == 1.0
+
+
+def test_state_to_scalars_without_scalars_extracts_top_level():
+    """_state_to_scalars extracts numeric top-level fields when .scalars absent."""
+    from dataclasses import dataclass
+    from totlib.pipeline import _state_to_scalars
+
+    @dataclass
+    class FakeState:
+        nrmax: int = 10
+        timefp: float = 0.5
+        flag: bool = True              # excluded (bool)
+        label: str = "abc"             # excluded (str)
+        rjt: list = None               # excluded (not numeric)
+
+    state = FakeState(rjt=[1.0, 2.0])
+    out = _state_to_scalars(state)
+    assert out == {"nrmax": 10.0, "timefp": 0.5}
 ```
 
 - [ ] **Step 2: Run extended test to verify FAIL**
@@ -1302,22 +1391,26 @@ Then in `class TotPipeline`, add `_validate_steps`, `_extract_source`, and `run_
                     f"steps[{i}].kwargs must be dict, got {type(kwargs).__name__}"
                 )
 
-    @staticmethod
-    def _extract_source(prev_state, rule: CouplingRule) -> float:
+    def _extract_source(self, prev_state, rule: CouplingRule) -> float:
         """Resolve a rule's source value from the previous module's state.
 
-        - If src_state_key is a string, look it up in prev_state.scalars.
-        - If src_state_key is a callable, invoke it with prev_state.
+        - If src_state_key is a callable, invoke it with (prev_state, self._params).
+          The params dict carries every set_param call so the rule can pull
+          cross-module context (e.g. fp's compute_rjt_volint needs tr's RR/RA).
+        - If src_state_key is a string, look it up in
+          _state_to_scalars(prev_state) — handles both .scalars-bearing modules
+          and FpState's top-level attribute layout.
         Wraps lookup/computation errors as TotPipelineCouplingError.
         """
         try:
             if callable(rule.src_state_key):
-                return float(rule.src_state_key(prev_state))
-            return float(prev_state.scalars[rule.src_state_key])
+                return float(rule.src_state_key(prev_state, self._params))
+            scalars = _state_to_scalars(prev_state)
+            return float(scalars[rule.src_state_key])
         except KeyError as e:
             raise TotPipelineCouplingError(
                 f"source state key {rule.src_state_key!r} missing from "
-                f"prev_state.scalars; rule: {rule.doc!r}"
+                f"prev_state scalars; rule: {rule.doc!r}"
             ) from e
         except Exception as e:
             raise TotPipelineCouplingError(
@@ -1355,13 +1448,18 @@ Then in `class TotPipeline`, add `_validate_steps`, `_extract_source`, and `run_
                                 f"transform failed for rule {rule.doc!r}: {e}"
                             ) from e
                         module.set_param(rule.dst_param, transformed)
+                        # Record the injected value so subsequent rules can
+                        # see it (mirrors set_param's _params bookkeeping).
+                        self._params[f"{name}:{rule.dst_param}"] = transformed
                         applied.append(rule.doc)
 
                 module.run(**kwargs)
                 cur_state = module.get_state()
+                # Use _state_to_scalars adapter so fp (no .scalars) and tr
+                # (.scalars dict) are treated uniformly.
                 result_steps.append(PipelineStep(
                     module=name,
-                    scalars=dict(cur_state.scalars),
+                    scalars=_state_to_scalars(cur_state),
                     coupling_applied=applied,
                 ))
                 prev_name, prev_state = name, cur_state
@@ -1374,6 +1472,35 @@ Then in `class TotPipeline`, add `_validate_steps`, `_extract_source`, and `run_
                 ) from e
 
         return PipelineResult(steps=result_steps)
+```
+
+**Also add `_state_to_scalars` as a module-level helper** in `pipeline.py` (top-level, after the dataclasses, before `class TotPipeline`):
+
+```python
+def _state_to_scalars(state) -> dict[str, float]:
+    """Extract a flat dict of numeric scalars from any module's state.
+
+    Modules that expose state.scalars dict (Tr, Eq, Wr, Wrx, Ti) — return
+    a shallow copy. Modules that don't (Fp) — extract numeric top-level
+    dataclass attributes.
+
+    Per spec §5.3. Required because FpState lacks the uniform .scalars
+    dict the spec originally assumed (R1/R2 finding).
+    """
+    if hasattr(state, "scalars") and isinstance(state.scalars, dict):
+        return dict(state.scalars)
+    out: dict[str, float] = {}
+    for name in dir(state):
+        if name.startswith("_"):
+            continue
+        val = getattr(state, name, None)
+        if callable(val):
+            continue
+        if isinstance(val, bool):
+            continue
+        if isinstance(val, (int, float)):
+            out[name] = float(val)
+    return out
 ```
 
 Also, at the top of the file with the other error imports, add `TotPipelineRunError`, `TotPipelineUnknownModuleError`:
@@ -1394,7 +1521,9 @@ cd /Users/k-yoshimi/Dropbox/cursor/task && \
   python3 -m pytest python/totlib/tests/test_pipeline.py -v 2>&1 | tail -30
 ```
 
-Expected: 19 passed (11 lifecycle + 8 run_pipeline).
+Expected: 24 passed (11 lifecycle + 8 run_pipeline + 5 new: 1 callable+params + 1 set_param tracking + 2 _state_to_scalars + 1 (existing test_run_pipeline_calls_module_run_and_collects_state)).
+
+Note: the new Task 1.5 tests cover the 2-arg callable signature, `self._params` tracking, and `_state_to_scalars` adapter introduced after R1/R2 outcomes.
 
 - [ ] **Step 5: Commit**
 
@@ -1478,7 +1607,7 @@ cd /Users/k-yoshimi/Dropbox/cursor/task && \
   python3 -m pytest python/totlib/tests/test_pipeline*.py -v 2>&1 | tail -15
 ```
 
-Expected: 29 passed (4 errors + 7 dataclasses + 6 registry + 19 pipeline + 3 export).
+Expected: 34 passed (4 errors + 7 dataclasses + 6 registry + 24 pipeline + 3 export). The 24 pipeline tests include 5 added in Task 1.5 (callable rule + params tracking + _state_to_scalars adapter) for the post-R1/R2 design adjustments.
 
 - [ ] **Step 6: Commit**
 
@@ -1499,7 +1628,7 @@ cd /Users/k-yoshimi/Dropbox/cursor/task && \
     python/totlib/tests/test_pipeline*.py -v 2>&1 | head -c 1M | tail -40
 ```
 
-Expected: 29 passed, 0 failed. (No SKIPs allowed per CLAUDE.md.)
+Expected: 34 passed, 0 failed. (No SKIPs allowed per CLAUDE.md.)
 
 - [ ] **Step 2: Run general-purpose code-reviewer**
 
@@ -1572,29 +1701,54 @@ Create `python/totlib/tests/test_pipeline_helpers.py`:
 from unittest.mock import MagicMock
 import math
 import pytest
+from unittest.mock import MagicMock
 from totlib.pipeline import compute_rjt_volint
 
 
-def test_compute_rjt_volint_uniform_profile():
-    """For RJT(rho)=const, the integral should equal const * total volume."""
-    state = MagicMock()
-    # Plug in the exact attribute names confirmed by R2 (e.g. RJT, RG, nrmax)
-    # Replace these with the names recorded in the spec's Research outcomes.
-    state.RJT = [1.0, 1.0, 1.0, 1.0]
-    # ... additional attributes per R2 outcome
-    expected_volume = 1.0  # ← compute analytically from chosen grid
-    result = compute_rjt_volint(state)
-    assert math.isclose(result, expected_volume * 1.0, rel_tol=1e-12), \
-        f"got {result}, expected {expected_volume}"
+def _fake_state(rjt_values: list[list[float]]):
+    """Build a mock FpState matching R2's confirmed shape.
+
+    R2 outcome: RJT is shape [nsamax][nrmax] in MA/m^2, on uniform rho-grid in [0,1].
+    nrmax is len(rjt[0]), nsamax is len(rjt).
+    """
+    s = MagicMock()
+    s.RJT = rjt_values
+    s.nrmax = len(rjt_values[0])
+    s.nsamax = len(rjt_values)
+    return s
+
+
+def test_compute_rjt_volint_uniform_single_species():
+    """RJT = 1.0 MA/m^2, uniform across nr=4 cells, R0=3.0, a=1.0 → expected ~3.14159 MA."""
+    state = _fake_state([[1.0, 1.0, 1.0, 1.0]])
+    # Per R2 helper: total = sum_ns sum_i RJT[ns][i] * 1e6 * 2*pi*rho_mid*a^2*drho
+    # rho_mid = (i+0.5)/nr; drho = 1/nr
+    # = 1e6 * 2*pi * a^2 * (1/nr) * sum_i (i+0.5)/nr
+    # For nr=4, sum_i (i+0.5)/nr = (0.5+1.5+2.5+3.5)/4 = 8/4 = 2
+    # = 1e6 * 2*pi * 1.0 * (1/4) * 2 = 1e6 * pi
+    expected = 1.0e6 * math.pi
+    result = compute_rjt_volint(state, R0=3.0, a=1.0)
+    assert math.isclose(result, expected, rel_tol=1e-12), \
+        f"got {result}, expected {expected}"
 
 
 def test_compute_rjt_volint_zero_profile():
-    state = MagicMock()
-    state.RJT = [0.0, 0.0, 0.0, 0.0]
-    assert compute_rjt_volint(state) == 0.0
+    state = _fake_state([[0.0, 0.0, 0.0, 0.0]])
+    assert compute_rjt_volint(state, R0=3.0, a=1.0) == 0.0
+
+
+def test_compute_rjt_volint_two_species_sums():
+    """For 2 species, total is the sum across species (R2 confirms this matches fp's PIT)."""
+    state = _fake_state([[1.0, 1.0], [2.0, 2.0]])
+    # Per-species int with nr=2, a=1.0:
+    #   spec_a: 1e6 * 2*pi * 1.0 * (1/2) * (0.5/2 + 1.5/2) = 1e6*pi
+    #   spec_b: 1e6 * 2*pi * 1.0 * (1/2) * 2.0 * (0.5/2 + 1.5/2) = 2e6*pi
+    expected = 1.0e6 * math.pi + 2.0e6 * math.pi
+    result = compute_rjt_volint(state, R0=3.0, a=1.0)
+    assert math.isclose(result, expected, rel_tol=1e-12)
 ```
 
-**Note:** the synthetic state shape MUST match what R2 confirmed. If R2 found that fp's volume integral requires `state.RG` + cell widths, mock `state.RG` accordingly. Update the test attributes from the R2 outcome before running.
+**Note:** the synthetic state shape (`RJT[nsamax][nrmax]`, `nrmax`, `nsamax`) is what R2 confirmed. The function signature is `compute_rjt_volint(state, *, R0, a)` (keyword-only R0/a, since they're geometry inputs that don't live on FpState).
 
 - [ ] **Step 2: Run test to verify FAIL**
 
@@ -1610,19 +1764,42 @@ Expected: ImportError on `compute_rjt_volint`.
 Edit `python/totlib/pipeline.py`. Add (placement: top-level, after `_import_module_error`):
 
 ```python
-def compute_rjt_volint(state) -> float:
-    """fp's driven current as a scalar [Amperes]: ∫ RJT(rho) dV.
+import math
 
-    Implementation paste-in from spec §8 R2 outcome. Operates only on
-    Python-side state attributes — no FFI calls.
+
+def compute_rjt_volint(state, *, R0: float, a: float) -> float:
+    """fp's driven current as a scalar [Amperes]: integral of RJT(rho) dA_pol.
+
+    Per spec §8 R2: fp stores RJT in [MA/m^2] on a uniform rho-grid in [0,1]
+    with NRMAX cells. The poloidal cross-section element is
+        dA_pol(NR) = 2*pi * rho_mid * a^2 * drho
+    matching fp's VOLR/(2*pi*R0). Sums over species (matches fp's
+    rtotalIP = sum_NSA PIT). R0 is unused in the area integral but kept
+    in the signature for symmetry with future toroidal-volume variants.
+
+    Args:
+        state: FpState (from fplib.Fplib.get_state()). Reads .RJT[ns][i],
+            .nrmax, .nsamax.
+        R0: major radius [m]. Sourced from tr.RR (set via tot.set_param("tr:RR", ...)).
+        a: minor radius [m]. Sourced from tr.RA (R3 confirmed RA, not RB —
+            fp's rho mesh is RA-normalized per fp/fpcale.f90:34,56).
+
+    Returns:
+        Driven current in Amperes (positive → co-current direction).
     """
-    # ← Paste the R2-derived implementation here.
-    # The function must return a float in Amperes regardless of the
-    # underlying grid (uniform-rho or otherwise).
-    raise NotImplementedError("Fill me in from R2 outcome")
+    nr = state.nrmax
+    if nr < 1:
+        return 0.0
+    drho = 1.0 / nr
+    total = 0.0
+    for ns in range(state.nsamax):
+        for i in range(nr):
+            rho_mid = (i + 0.5) * drho
+            dA_pol = 2.0 * math.pi * rho_mid * (a ** 2) * drho
+            total += state.RJT[ns][i] * 1.0e6 * dA_pol  # MA/m^2 -> A/m^2
+    _ = R0  # unused in area integral; reserved for future toroidal extension
+    return total
 ```
-
-Replace the `raise NotImplementedError` with the concrete implementation derived from R2.
 
 - [ ] **Step 4: Run test to verify PASS**
 
@@ -1662,9 +1839,12 @@ def test_coupling_rules_has_fp_to_tr():
     rules = COUPLING_RULES.get(("fp", "tr"), [])
     assert len(rules) == 1, f"expected exactly 1 rule, got {rules!r}"
     rule = rules[0]
-    # The dst_param must match what R3 confirmed (e.g. 'PNBCD').
-    # If R3 produced a different name, update this assertion.
-    assert rule.dst_param == "PNBCD"
+    # R3 confirmed: PNBCD is NOT registered in tr_param_registry.f90; use PLHCD
+    # (dimensionless skeleton — see spec §3 non-goals + §8 R3 outcome).
+    assert rule.dst_param == "PLHCD"
+    # src_state_key is a callable wrapper around compute_rjt_volint that pulls
+    # tr:RR / tr:RA from the params dict.
+    assert callable(rule.src_state_key)
     assert "RJT" in rule.doc or "driven current" in rule.doc.lower()
 ```
 
@@ -1677,7 +1857,7 @@ cd /Users/k-yoshimi/Dropbox/cursor/task && \
 
 Expected: `assert 0 == 1` (empty rule list).
 
-- [ ] **Step 3: Populate the rule with R2/R3 values**
+- [ ] **Step 3: Populate the rule with R2/R3 outcomes**
 
 Edit `python/totlib/pipeline.py`. Replace the empty `COUPLING_RULES = {}` body with:
 
@@ -1685,17 +1865,24 @@ Edit `python/totlib/pipeline.py`. Replace the empty `COUPLING_RULES = {}` body w
 COUPLING_RULES: dict[tuple[str, str], list[CouplingRule]] = {
     ("fp", "tr"): [
         CouplingRule(
-            src_state_key=compute_rjt_volint,    # callable: profile→scalar
-            dst_param="PNBCD",                   # ← R3 outcome
-            transform=lambda v: v * 1e-6,        # ← R3 outcome (A→MA);
-                                                 # adjust if R3 confirmed otherwise
-            doc="fp driven current (RJT volume integral) [A] -> tr PNBCD [MA]",
+            # Callable: receives (prev_state, params); pulls tr:RR / tr:RA
+            # from params (set via tot.set_param("tr:RR", ...) before run_pipeline).
+            src_state_key=lambda state, params: compute_rjt_volint(
+                state,
+                R0=params["tr:RR"],
+                a=params["tr:RA"],
+            ),
+            dst_param="PLHCD",                  # R3: PNBCD unregistered; PLHCD is the only
+                                                # set_param-accepting current-drive scalar.
+            transform=lambda v: v * 1e-6,       # Amperes -> "MA-scale numeric value"
+                                                # (skeleton: PLHCD is dimensionless — see
+                                                # spec §3 non-goals).
+            doc="fp driven current (RJT volume integral, A) -> tr PLHCD"
+                " (skeleton coupling; L-7b adds proper EXTERNAL_DRIVEN_I scalar)",
         ),
     ],
 }
 ```
-
-Replace `dst_param`, `transform`, and `doc` with the exact values from R3.
 
 - [ ] **Step 4: Run test to verify PASS**
 
@@ -1704,7 +1891,7 @@ cd /Users/k-yoshimi/Dropbox/cursor/task && \
   python3 -m pytest python/totlib/tests/test_pipeline.py -v 2>&1 | tail -25
 ```
 
-Expected: 20 passed (19 prior + 1 new).
+Expected: 25 passed (24 prior + 1 new test_coupling_rules_has_fp_to_tr).
 
 - [ ] **Step 5: Commit**
 
@@ -1712,9 +1899,10 @@ Expected: 20 passed (19 prior + 1 new).
 git add python/totlib/pipeline.py python/totlib/tests/test_pipeline.py
 git commit -m "feat(totlib): populate COUPLING_RULES[('fp','tr')]
 
-Single rule wires fp's compute_rjt_volint(state) to tr's PNBCD scalar
-parameter (per spec §8 R2/R3 outcomes). The transform converts from
-Amperes (fp output) to MA (tr input).
+Single rule wires fp's compute_rjt_volint to tr's PLHCD param (per
+spec §8 R2/R3 outcomes). The src_state_key is a callable that pulls
+tr:RR/tr:RA from TotPipeline._params. PLHCD is dimensionless, so this
+is a skeleton coupling — L-7b adds a proper EXTERNAL_DRIVEN_I scalar.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -1734,16 +1922,11 @@ ls fp/libfpapi.so tr/libtrapi.so 2>&1
 
 If missing, run `make` for each. Document the build commands in the test file's docstring so CI knows how to provision.
 
-- [ ] **Step 2: Identify a working fixture parameter set**
+- [ ] **Step 2: Confirm active-current-drive fixture (R3 outcome)**
 
-Look at existing fp/tr unit tests for the smallest fixture that runs without errors:
+R3 confirmed that fp's default fixture produces ~1e-13 MA (numerical noise) — too small to drive a meaningful equivalence comparison. The active-drive fixture is `fp:E0 = 0.001` (induction E-field, V/m), which produces ~0.946 MA driven current with `R0=3.0, a=1.0`.
 
-```bash
-grep -nE "set_param.*[\"']" python/fplib/tests/*.py | head -20
-grep -nE "set_param.*[\"']" python/trlib/tests/*.py | head -20
-```
-
-Pick a fixture that produces a non-zero RJT (otherwise the coupling test is vacuous — both patterns will trivially agree).
+For the equivalence test, use the active-drive fixture below (already verified in R3 to produce a non-trivial driven current).
 
 - [ ] **Step 3: Write the equivalence test**
 
@@ -1756,7 +1939,13 @@ CLAUDE.md non-negotiable: must pass at 1e-10 relative tolerance.
 Requires libfpapi.so + libtrapi.so. Run with --forked --timeout=120
 --timeout-method=signal per CLAUDE.md test discipline.
 
-Per spec §9.2.
+Per spec §9.2. Uses the active-drive fixture from spec §8 R3.
+
+Note (skeleton coupling): tr's PLHCD is dimensionless (per R3), so the
+"physical" semantics of the rule are placeholder. The equivalence test
+verifies API correctness — pattern X and pattern Y compute identical
+PLHCD inputs to tr and identical tr final scalars. Physical fidelity
+of the skeleton coupling itself is out of L-7a scope.
 """
 import math
 import os
@@ -1765,7 +1954,7 @@ import pytest
 from fplib import Fplib
 from trlib import Trlib
 from totlib import TotPipeline
-from totlib.pipeline import compute_rjt_volint
+from totlib.pipeline import _state_to_scalars, compute_rjt_volint
 
 
 def _libs_present() -> bool:
@@ -1782,21 +1971,26 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-# Bare-name params (existing fp/trlib unit tests use these forms).
-# Update the values to match the smallest fixture confirmed in step 2.
-FP_PARAMS = {
-    "NSAMAX": 2,
-    # ← additional fp params per the chosen fixture
-}
+# fp active-drive fixture per R3: E0 (induction E-field, V/m) is the
+# minimum-viable trigger that produces a non-trivial RJT (~0.946 MA at R0=3, a=1).
+FP_PARAMS = {"E0": 0.001}
+
+# tr fixture from python/trlib/examples/quickstart.py (validated in R1-b);
+# RR=6.2, RA=2.0 propagate into compute_rjt_volint via the COUPLING_RULES callable.
 TR_PARAMS = {
     "RR": 6.2,
     "RA": 2.0,
+    "RKAP": 1.7,
     "BB": 5.3,
-    "RIP": 15.0,
-    "MODELG": 2,
-    # ← additional tr params per the chosen fixture
+    "NSMAX": 2,
+    "DT": 0.1,
+    "NTSTEP": 10,
+    "PN1": 1.0,
+    "PN2": 1.0,
+    "PT1": 1.5,
+    "PT2": 1.5,
 }
-NTMAX_FP = 5
+NTMAX_FP = 1
 NTMAX_TR = 1
 
 
@@ -1806,15 +2000,19 @@ def _baseline():
     fp.set_params(**FP_PARAMS)
     fp.run(ntmax=NTMAX_FP)
     fp_state = fp.get_state()
-    rjt_volint = compute_rjt_volint(fp_state)
-    fp_scalars = dict(fp_state.scalars)
+    # Mirror what the COUPLING_RULES callable does inside run_pipeline:
+    rjt_volint = compute_rjt_volint(
+        fp_state, R0=TR_PARAMS["RR"], a=TR_PARAMS["RA"]
+    )
+    fp_scalars = _state_to_scalars(fp_state)   # adapter handles missing .scalars
     fp.close()
 
     tr = Trlib()
     tr.set_params(**TR_PARAMS)
-    tr.set_param("PNBCD", rjt_volint * 1e-6)   # ← R3 transform
+    # R3 confirmed: PNBCD is unregistered; PLHCD is the chosen skeleton param.
+    tr.set_param("PLHCD", rjt_volint * 1e-6)
     tr.run(ntmax=NTMAX_TR)
-    tr_scalars = dict(tr.get_state().scalars)
+    tr_scalars = _state_to_scalars(tr.get_state())
     tr.close()
     return fp_scalars, tr_scalars
 
@@ -1833,7 +2031,11 @@ def _through_pipeline():
         ("tr", {"ntmax": NTMAX_TR}),
     ])
     pipe.close()
-    return dict(result.last("fp").scalars), dict(result.last("tr").scalars), result
+    return (
+        dict(result.last("fp").scalars),
+        dict(result.last("tr").scalars),
+        result,
+    )
 
 
 def _close(a: float, b: float) -> bool:
@@ -1864,17 +2066,39 @@ def test_pipeline_records_coupling_doc():
     assert any("RJT" in d or "driven current" in d.lower()
                for d in tr_step.coupling_applied), \
         f"expected RJT/driven current doc, got {tr_step.coupling_applied!r}"
+
+
+def test_pipeline_active_drive_produces_nontrivial_current():
+    """Sanity guard: the chosen fixture must trigger non-zero driven current,
+    otherwise the equivalence test is vacuous (0 == 0 trivially)."""
+    fp = Fplib()
+    fp.set_params(**FP_PARAMS)
+    fp.run(ntmax=NTMAX_FP)
+    rjt_volint = compute_rjt_volint(
+        fp.get_state(), R0=TR_PARAMS["RR"], a=TR_PARAMS["RA"]
+    )
+    fp.close()
+    # R3 anchor: ≥ 1e-3 MA = 1e3 A. If your run produces less, the fixture
+    # has lost potency — investigate before accepting an equivalence pass.
+    assert abs(rjt_volint) >= 1.0e3, (
+        f"compute_rjt_volint = {rjt_volint:.3e} A (= {rjt_volint*1e-6:.3e} MA). "
+        "Active-drive fixture is supposed to produce ≥ 1e-3 MA per R3 outcome. "
+        "The equivalence test would be vacuous at this magnitude — fix the fixture."
+    )
 ```
 
 - [ ] **Step 4: Run the equivalence test**
 
+macOS lacks GNU `timeout` (R1 finding). Use `perl -e 'alarm 600; exec @ARGV'` as the equivalent if you want a guard, or run unguarded — the test completes in <60 s on R3's evidence.
+
 ```bash
 cd /Users/k-yoshimi/Dropbox/cursor/task && \
-  timeout 600 python3 -m pytest --forked --timeout=120 --timeout-method=signal \
+  perl -e 'alarm 600; exec @ARGV' python3 -m pytest \
+    --forked --timeout=120 --timeout-method=signal \
     python/totlib/tests/test_pipeline_equiv.py -v 2>&1 | head -c 1M | tail -40
 ```
 
-Expected: 2 passed (no skips!). If skipped due to missing libs, run `scripts/setup.sh` first. If a scalar deviates, the per-key diff in the assertion message points to which physical quantity is off — investigate (likely either compute_rjt_volint or the transform factor).
+Expected: 3 passed (no skips!). If skipped due to missing libs, run `scripts/setup.sh` first. If a scalar deviates, the per-key diff in the assertion message points to which physical quantity is off — investigate (likely either compute_rjt_volint or the transform factor).
 
 - [ ] **Step 5: Commit**
 
@@ -1882,10 +2106,11 @@ Expected: 2 passed (no skips!). If skipped due to missing libs, run `scripts/set
 git add python/totlib/tests/test_pipeline_equiv.py
 git commit -m "test(totlib): add fp→tr equivalence test at 1e-10 tolerance
 
-Compares pattern X (hand-written Fplib + Trlib + compute_rjt_volint
-+ tr.set_param('PNBCD', ...)) vs pattern Y (TotPipeline.run_pipeline).
+Compares pattern X (hand-written Fplib + compute_rjt_volint + Trlib
++ tr.set_param('PLHCD', ...)) vs pattern Y (TotPipeline.run_pipeline).
 Per CLAUDE.md, equivalence tests at 1e-10 must pass — no SKIP allowed.
-Requires libfpapi.so + libtrapi.so.
+Uses E0=0.001 active-drive fixture (R3 outcome) to ensure the integral
+is non-trivial. Requires libfpapi.so + libtrapi.so.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -1900,7 +2125,13 @@ cd /Users/k-yoshimi/Dropbox/cursor/task && \
     python/totlib/tests/test_pipeline*.py -v 2>&1 | head -c 1M | tail -40
 ```
 
-Expected: 32 passed (29 prior Phase 1 + helpers 2 + COUPLING_RULES test 1 = 32 mock; equivalence 2 + records-doc 1 = 3 lib-required, brings total to 35 if libs present). All pass with 0 skips on a machine that has the libs.
+Expected count breakdown:
+- Phase 1 mock-only suite: 29 (errors 4 + dataclasses 7 + registry 6 + pipeline 19 + export 3) — actually this becomes **34** after the Task 1.5 extensions (callable rule + params tracking + state_to_scalars adapter tests added 5 more).
+- Phase 2 helpers (mock): 3 (uniform single species + zero + two species).
+- Phase 2 COUPLING_RULES test (mock): 1.
+- Phase 2 equivalence (lib*.so required): 3 (scalars match + coupling doc + active-drive sanity guard).
+
+Total when libs present: **41 passed**. 0 skips on a machine that has the libs.
 
 - [ ] **Step 2: code-reviewer + codex:codex-rescue**
 
