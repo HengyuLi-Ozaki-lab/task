@@ -623,8 +623,12 @@ def build_server() -> Any:
 
         ``mode=1`` (default) performs the real EQDSK load via
         ``equnit::eq_load`` using the current ``MODELG`` + ``KNAMEQ``.
-        ``mode=0`` is reserved for future direct-solve modes and
-        currently returns ``EQ_ERR_NOT_IMPL``.
+
+        ``mode=0`` runs the in-process analytic Grad-Shafranov solve
+        (``EQCALC`` + ``EQCALQ``); use it with ``MODELG=2`` and the
+        basic geometry parameters (``RR``, ``RA``, ``BB``, ``RIP``,
+        ``RKAP``, ``RDLT``, ...) to produce a self-consistent
+        equilibrium without any external EQDSK file.
         """
         return handle_run(mode)
 

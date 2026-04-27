@@ -54,7 +54,7 @@ Register in `claude_desktop_config.json` (or `claude mcp add task-eq …`):
 | `set_param`         | numeric scalar / array element (`NAME[i]`) |
 | `set_param_str`     | string parameter (`KNAMEQ` etc.) |
 | `set_params`        | bulk dispatch (scalar / list / dict / str) |
-| `run`               | `eq_run(mode)`; default `mode=1` (real EQDSK load) |
+| `run`               | `eq_run(mode)`; `mode=1` real EQDSK load (default), `mode=0` analytic Grad-Shafranov solve (with `MODELG=2`) |
 | `get_state`         | grid counters, 12 scalars, profile arrays |
 | `validate`          | pre-run diagnostics (Issue #143) |
 | `describe_parameters` / `describe_state_schema` | discovery / schema |
