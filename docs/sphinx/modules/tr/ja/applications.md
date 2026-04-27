@@ -184,11 +184,13 @@ for r in results:
 from trlib import Trlib, TrDiagCode
 
 
-# 装置プリセット
+# 装置プリセット.
+# tr は時間依存電流のため RIPS (開始) / RIPE (終了) のペアで指定します.
+# 定常解析では両者を同値に. (eq の場合は単一の RIP)
 DEVICE_PRESETS = {
-    "ITER": dict(RR=6.2, RA=2.0, BB=5.3, RIP=15.0, RKAP=1.7, RDLT=0.5),
-    "JET":  dict(RR=2.96, RA=1.0, BB=3.4, RIP=4.0, RKAP=1.6, RDLT=0.3),
-    "DIIID": dict(RR=1.67, RA=0.67, BB=2.1, RIP=2.0, RKAP=1.8, RDLT=0.4),
+    "ITER":  dict(RR=6.2,  RA=2.0,  BB=5.3, RIPS=15.0, RIPE=15.0, RKAP=1.7, RDLT=0.5),
+    "JET":   dict(RR=2.96, RA=1.0,  BB=3.4, RIPS=4.0,  RIPE=4.0,  RKAP=1.6, RDLT=0.3),
+    "DIIID": dict(RR=1.67, RA=0.67, BB=2.1, RIPS=2.0,  RIPE=2.0,  RKAP=1.8, RDLT=0.4),
 }
 
 
