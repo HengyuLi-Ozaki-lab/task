@@ -82,7 +82,7 @@ Available prefixes:
 Per-namespace definitions can be enumerated via `describe_parameters` on
 each module's MCP (see {doc}`mcp`).
 
-### Extension ideas
+### Possible extensions
 
 - Bundle device presets (ITER / JET / DIIID) into a single dict and
   expand them in one shot via `_apply_namespaced(tot, preset)`
@@ -146,7 +146,7 @@ Expected output:
   Q0 = 2.519
 ```
 
-### Extension ideas
+### Possible extensions
 
 - Extend the wrapper to return all 13 entries of `state.scalars`
   (`T, WPT, AJT, Q0, BETA0, BETAP0, BETAA, BETAN, TAUE1, TAUE2, ZEFF0,

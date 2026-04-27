@@ -114,7 +114,7 @@ or more:
 finished: T=..., T0=..., retries=1
 ```
 
-### Extension ideas
+### Possible extensions
 
 - Loosen / increase `EPSLOOP` and `MAXLOOP` together
 - Split `NTMAX` and restore `DT` once the unstable region is past
@@ -200,7 +200,7 @@ sensitivity, enable ``MODEL_NB``, ``MODEL_NC`` etc., or switch to a
 heavy-impurity setup such as ``ti_ar`` (see {doc}`parameters`).
 ```
 
-### Extension ideas
+### Possible extensions
 
 - Pipe the results into a `pandas.DataFrame` and plot a heatmap
 - Parallelize across processes with `multiprocessing.Pool`
@@ -367,7 +367,7 @@ Detected problems (1):
 RuntimeError: 1 problem(s) need to be fixed
 ```
 
-### Extension ideas
+### Possible extensions
 
 - Load presets from an external file such as `iter_baseline.toml`
 - Promote switch groups like ``MODEL_NB`` / ``MODEL_NC`` into presets too

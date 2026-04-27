@@ -142,7 +142,7 @@ from the actual ray tracing. If you need an absorption profile, refer
 to the `wrx` module.
 ```
 
-### Extension ideas
+### Possible extensions
 
 - Accumulate a failure history in `failures: List[Dict]` for later
   analysis
@@ -249,7 +249,7 @@ see `wrexecr.f90:505` `NSTPLIM=MIN(INT(SMAX/DELS),NSTPMAX)`) mean that
 resonant absorption, etc.). In this sweep, `RFIN=5000, ANGPHIN=25` and
 `RFIN=6000, ANGPHIN=25` finished at 98 / 97 steps respectively.
 
-### Extension ideas
+### Possible extensions
 
 - Pipe the results into a `pandas.DataFrame` and plot a heat map
 - Parallelise across processes with `multiprocessing.Pool`
@@ -438,7 +438,7 @@ Issues detected (1):
 RuntimeError: 1 blocking issue(s) remain to be fixed
 ```
 
-### Extension ideas
+### Possible extensions
 
 - Read presets from external files such as `iter_lhcd.toml`
 - Auto-clamping of `[OUT_OF_RANGE]` (e.g. round `RFIN=0.1` MHz up to

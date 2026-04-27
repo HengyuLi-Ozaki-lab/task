@@ -138,7 +138,7 @@ run_ok = False, error = "WrxlibRunError('wrx_run(0): ierr=3')"
 For a healthy launch (e.g. `RPI=8.0, ANGT=10.0`) `preflight` is an
 empty list, `run_ok=True`, and `state.scalars["pwr_tot"] ~ 0.78`.
 
-### Extension ideas
+### Possible extensions
 
 - Have preflight also check the consistency of `MODELP[i]`, `NCMIN[i]`,
   and `NCMAX[i]` (e.g. `MODELP=206` (relativistic) with `NCMAX < 1`
@@ -226,7 +226,7 @@ which makes the angle-sweep sensitivity easy to read off. Note that
 `pwr_nray[i]` always returns `0.0` in this build (a known limitation) —
 to obtain per-ray absorption, sum `pwr_nsa_nray[i][isa]` instead.
 
-### Extension ideas
+### Possible extensions
 
 - Pipe the results into a `pandas.DataFrame` and plot the angle-sweep
   curve.
@@ -358,7 +358,7 @@ Detected issues (1):
 RuntimeError: 1 issue(s) still need to be fixed
 ```
 
-### Extension ideas
+### Possible extensions
 
 - Load presets from external files such as `iter_lhcd_2ray.toml`.
 - Carry `RBRADAIN[i]` / `RCURVAIN[i]` as additional keys in `rays[i]`
@@ -369,7 +369,7 @@ RuntimeError: 1 issue(s) still need to be fixed
 
 ---
 
-## Combined patterns
+## Combination patterns
 
 The three patterns work individually but compose naturally:
 

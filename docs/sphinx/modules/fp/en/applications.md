@@ -14,7 +14,7 @@ language, see the "Usage scenarios" section of {doc}`mcp`.
 
 ---
 
-## 1. Auto-stabilising wrapper
+## 1. Auto-stabilizing wrapper
 
 A wrapper that halves the time step `DELT` and retries when `run()` raises
 `FplibCalcFailedError` (Fokker-Planck convergence failure / overflow;

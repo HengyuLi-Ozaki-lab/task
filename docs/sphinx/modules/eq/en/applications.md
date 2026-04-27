@@ -276,7 +276,7 @@ If you want to block on it, add it to the `blocking` predicate.)
 
 ---
 
-## Combined patterns
+## Combination patterns
 
 The three patterns can be used individually or in combination:
 
