@@ -450,7 +450,36 @@ grep -n -E "(PNBCD|PNBI|PRFCD|PCURRENT|PCD|driven)" tr/tr_param_registry.f90
   - R1-a stdout: `R1-a PASS: fp/tr concurrent live preserves single-module state at 1e-10` — fp scalars `[npmax, nrmax, nsamax, ntg2, nthmax, timefp]` と tr scalars `[AJT, ALI, BETA0, BETAA, BETAN, BETAP0, Q0, RQ1, T, TAUE1, TAUE2, WPT, ZEFF0]` (計 19 個) が solo / concurrent 間で 1e-10 相対許容内で完全一致.
   - R1-b stdout: `R1-b PASS: tr re-init is clean (cycle1 == cycle3 at 1e-10)` — ITER-like fixture (`RR=8.5, RA=2.0, RKAP=1.7, BB=5.3, NSMAX=2, DT=0.1, NTSTEP=10, PN[1..2]=1.0, PT[1..2]=1.5`) で cycle1 を実行し, 摂動 fixture (`RR=6.2, RA=1.8, RKAP=1.6, BB=4.0, PN[1..2]=0.8, PT[1..2]=1.2`) で cycle2 を挟んだ後, 同じ fixture で cycle3 を実行. tr scalars 13 個全てが cycle1 == cycle3 (`WP=34.08 MJ, TAUE=48.120 S, Q0=2.552`) で 1e-10 相対許容内.
   - 検証 script: `/tmp/r1a_concurrent_live.py`, `/tmp/r1b_reinit_leak.py`. fp の scalar は `FpState` の top-level dataclass attribute (`nrmax/nsamax/npmax/nthmax/ntg2/timefp`) から抽出, tr は `TrState.scalars` (dict) から抽出. R1-b fixture は当初 plan 記載の `RIP=15.0` が `tr_set_param('RIP', 15.0)` で `ierr=1` となったため, `python/trlib/examples/quickstart.py` の ITER-like fixture (RIP は使わない) に差し替え.
-- R2 結果: __未確定__
+- R2 結果: PASS (検証日: 2026-04-28). `compute_rjt_volint(state, *, R0, a)` を totlib 側 helper として実装可能. fp 側の改変は不要.
+  - **FpState shape**: top-level dataclass attributes `[nrmax: int, nsamax: int, npmax: int, nthmax: int, ntg2: int, timefp: float, RNT/RWT/RTT/RJT/RPCT/RPWT: list[list[float]]]`. **`.scalars` 属性は存在しない** (R1 の concern #3 を確認). `to_dict()` は `{"NRMAX","NSAMAX","NPMAX","NTHMAX","NTG2","TIMEFP","profile":[{"NSA","RNT",...}]}` の形 (tr の `TrState.scalars` dict と非対称). L-7a の equivalence test と PipelineStep aggregation で fp 用の adapter が必要 (Phase 1.5/2.3 で対応, equivalence test は `fp_state.timefp` のような top-level scalar を直接抽出).
+  - **RJT 形状**: `list[list[float]]`, 外側 `nsamax`, 内側 `nrmax`. 単位は `[MA/m^2]` (fp 内部の `RJS(NR,NSA)` を直コピー; `fpcale.f90:290` で `RJ_P = RJS(NR,1)*1.D6` のように SI 化されることから確認).
+  - **Grid info**: FpState は `RG/DV/VOLP/RM/RA/RR` を **公開しない**. fp の `VOLR(NR) = 2π·rho_mid·a · drho·a · 2π·R0` (`fpprep.f90:218,226`) を使うには R0 と a を外部から渡す必要がある. helper は `R0, a` を kwarg で受ける 2-arg variant を採用 (Step 4 オプション b).
+  - **抽出関数 (`compute_rjt_volint`)** — totlib/pipeline.py に置く想定:
+    ```python
+    import math
+    def compute_rjt_volint(state, *, R0: float, a: float) -> float:
+        """fp の駆動電流の体積積分 [A].
+        ∫ j(ρ) dV / (2π R0) = ∫ j(ρ) dA_pol で総電流 I [A] を得る.
+        fp は uniform ρ-grid (ρ ∈ [0, 1], NRMAX 等分割), RJT は [MA/m²].
+        dA_pol(NR) = 2π · ρ_mid · a² · Δρ (fp の VOLR/(2π R0) と同形).
+        species (NSAMAX) は単純加算 (fp 内 rtotalIP = Σ_NSA PIT と一致).
+        """
+        nr = state.nrmax
+        if nr < 1:
+            return 0.0
+        drho = 1.0 / nr
+        total = 0.0
+        for ns in range(state.nsamax):
+            for i in range(nr):
+                rho_mid = (i + 0.5) * drho
+                dA_pol = 2.0 * math.pi * rho_mid * (a ** 2) * drho
+                total += state.RJT[ns][i] * 1.0e6 * dA_pol  # MA/m^2 -> A/m^2
+        return total
+    ```
+  - **Sanity check** (NRMAX=10, RR=3.0, RA=1.0, NSMAX=1, ntmax=1, default fp): `compute_rjt_volint = -2.769528e-07 A = -2.769528e-13 MA`, fp stdout `total plasma current [MA] -2.7695E-13` と **完全一致** (1e-10 レベル). 値が小さいのは fp の default fixture に current drive (PNBI/LH/EC/FW) が無いため; 純粋な numerical noise 領域だが, 積分式と単位変換 (MA/m² → A) の正しさは検証された.
+  - **fplib 改変**: なし (helper は totlib/pipeline.py 配置, fp 側 ABI を触らない). Phase 2 Task 2.1 で実装.
+  - **L-7a coupling への影響**: tr → fp の方向では `tr.AJT [MA]` を fp の `set_param("PI", value [MA])` 等に渡す (R3 で確認予定). fp → tr の方向では本 helper で `RJT [MA/m²] → I_drive [A]` を計算し, tr に渡す. R0/a は TotPipeline で tr.set_param 直後にキャッシュ (R3 と組み合わせて確定).
+  - **検証 script**: `/tmp/r2_rjt_extraction.py` (FpState 構造プローブ), `/tmp/r2_rjt_extraction2.py` (NRMAX=10 sanity check). キャプチャ済 stdout は本 R2 commit message に貼付.
 - R3 結果: __未確定__
 
 ## 9. テスト戦略
