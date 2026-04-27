@@ -811,7 +811,7 @@ _MODULE_REGISTRY: dict[str, tuple[str, str, str]] = {
     "eq":  ("eqlib",  "Eq",     "EqlibError"),
     "wr":  ("wrlib",  "Wrlib",  "WrlibError"),
     "wrx": ("wrxlib", "Wrxlib", "WrxlibError"),
-    "ti":  ("tilib",  "Tilib",  "TilibError"),
+    "ti":  ("tilib",  "TiLib",  "TilibError"),    # NB: wrapper TiLib (capital L) ≠ TilibError
 }
 
 

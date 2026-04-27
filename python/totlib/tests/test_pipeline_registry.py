@@ -42,3 +42,25 @@ def test_import_module_error_returns_class_for_fp():
     err_cls = _import_module_error("fp")
     assert err_cls.__name__ == "FplibError"
     assert issubclass(err_cls, Exception)
+
+
+# Parametrized coverage across all 6 modules so a silent rename in any
+# sibling errors.py / wrapper module is caught immediately by the
+# registry tests (rather than waiting for L-7b to light up that module).
+@pytest.mark.parametrize("name", sorted(_MODULE_REGISTRY))
+def test_import_wrapper_class_name_matches_registry(name):
+    expected_cls_name = _MODULE_REGISTRY[name][1]
+    cls = _import_wrapper(name)
+    assert cls.__name__ == expected_cls_name, (
+        f"registry says {name} -> {expected_cls_name}, got {cls.__name__}"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(_MODULE_REGISTRY))
+def test_import_module_error_name_matches_registry(name):
+    expected_err_name = _MODULE_REGISTRY[name][2]
+    err_cls = _import_module_error(name)
+    assert err_cls.__name__ == expected_err_name, (
+        f"registry says {name} -> {expected_err_name}, got {err_cls.__name__}"
+    )
+    assert issubclass(err_cls, Exception)

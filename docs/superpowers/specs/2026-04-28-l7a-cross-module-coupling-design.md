@@ -254,7 +254,7 @@ _MODULE_REGISTRY = {
     "eq":  ("eqlib",  "Eq",     "EqlibError"),
     "wr":  ("wrlib",  "Wrlib",  "WrlibError"),
     "wrx": ("wrxlib", "Wrxlib", "WrxlibError"),
-    "ti":  ("tilib",  "Tilib",  "TilibError"),
+    "ti":  ("tilib",  "TiLib",  "TilibError"),    # NB: wrapper TiLib (capital L) ≠ TilibError
 }
 # 3 番目のフィールドは各モジュールの **base error class 名**.
 # 全 wrapper の errors.py に存在することを Codex review (#8/#13/#14) で確認済.

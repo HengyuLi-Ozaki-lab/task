@@ -97,7 +97,7 @@ _MODULE_REGISTRY: Dict[str, Tuple[str, str, str]] = {
     "eq":  ("eqlib",  "Eq",     "EqlibError"),
     "wr":  ("wrlib",  "Wrlib",  "WrlibError"),
     "wrx": ("wrxlib", "Wrxlib", "WrxlibError"),
-    "ti":  ("tilib",  "Tilib",  "TilibError"),
+    "ti":  ("tilib",  "TiLib",  "TilibError"),    # NB: wrapper class TiLib (capital L) but TilibError
 }
 
 
