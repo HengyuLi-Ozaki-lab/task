@@ -81,10 +81,10 @@ with Tot() as tot:
         "eq:RIP": 1.5,
     })
 
-    # Once L-6 fan-out lands these become real; today they raise
-    # TotlibNotImplementedError.
-    # tot.run(ntmax=10)
-    # state = tot.get_state()
+    # L-6 fan-out is wired: tot.run advances tr_api_run; tot.get_state
+    # aggregates the TR-authoritative scalars (T, WPT, BETAN, ...).
+    tot.run(ntmax=10)
+    state = tot.get_state()
 ```
 
 See `examples/` for runnable scripts (all support `--dry-run`):
@@ -102,10 +102,10 @@ calls `tot_finalize`. Only one live instance per process is meaningful
 (TOT backend holds global COMMON-block plus per-module module-variable
 state).
 
-> **L-3/L-4 stub note:** `tot_init` and `tot_finalize` currently return
-> `TOT_ERR_NOT_IMPL`. The wrapper accepts both `OK` and `NOT_IMPL` as
-> "library opened" so `set_param` testing works today; once L-6 wires
-> real fan-out, the `OK` path takes over automatically.
+> **L-6 fan-out wired:** `tot_init` brings up tr + ti + fp + wr (with
+> rollback on per-module init failure); `tot_finalize` tears them down
+> in reverse order. The wrapper accepts both `OK` and `NOT_IMPL` returns
+> for forward compatibility, but the live path is `OK` end-to-end.
 
 ### `Tot.set_param(name, value) -> None`
 
@@ -134,17 +134,24 @@ Each key passes through the same guard as `set_param`.
 
 ### `Tot.run(ntmax: int) -> None`
 
-Advance the integrated simulation by `ntmax` steps. At L-3/L-4 this is
-a stub returning `rc=4`; the wrapper raises
-`TotlibNotImplementedError`. L-6 fan-out will make it succeed.
+Advance the integrated simulation by `ntmax` steps. L-6 fan-out
+invokes `tr_api_run(ntmax)` (the dominant solver and the one whose
+state is exposed in `tot_state_t`). `fp_api_run` and `wr_api_run` are
+intentionally NOT called here; the cross-module coupling (wr → tr
+power deposition, fp → tr current source, etc.) lives in
+`totlib.TotPipeline` (L-7a, Python-side) instead of inside
+`libtotapi.so`.
 
 ### `Tot.get_state() -> TotState`
 
 Snapshot current TOT state into a `TotState` dataclass. Profile arrays
 are trimmed to the active runtime slice (`[0:nrmax]` / `[0:nsmax]`),
 so trailing zero padding (up to `TOT_MAX_*`) never reaches callers. At
-L-3/L-4 this raises `TotlibNotImplementedError`; L-6 fan-out wires it
-up.
+L-6 the orchestrator aggregates the TR-authoritative slots; `ti_present`
+/ `fp_present` / `wr_present` stay `0` because those modules are init'd
+but their `*_run` is not invoked from `tot_api_run` (the per-module
+state is reachable via the per-module wrappers — `from trlib import
+Trlib` etc. — or via the L-7a `TotPipeline` orchestrator).
 
 ### `Tot.close() -> None`
 
