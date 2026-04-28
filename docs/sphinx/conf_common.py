@@ -70,6 +70,13 @@ source_suffix = {
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 
+# Cross-Sphinx-project Markdown links (e.g. modules/<mod> → portal/<lang>) cannot
+# be resolved by MyST inside a single project's xref system; the link text is
+# correct in source and the deployed unified site serves both projects under one
+# tree, so the .md path resolves at runtime. Suppress the false-positive build
+# warning so -W doesn't fail on these intentionally-cross-project links.
+suppress_warnings = ["myst.xref_missing"]
+
 # Autodoc: class docstrings inherit __init__; type hints in description.
 autodoc_default_options = {
     "members": True,
