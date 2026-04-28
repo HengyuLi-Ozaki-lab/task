@@ -26,6 +26,12 @@ Example::
 """
 from .totlib import Tot
 from .state import TotState
+from .pipeline import (
+    TotPipeline,
+    CouplingRule,
+    PipelineStep,
+    PipelineResult,
+)
 from .errors import (
     TotlibError,
     TotlibInitError,
@@ -38,6 +44,11 @@ from .errors import (
     TotLibNotInitialized,
     TotLibCalculationFailed,
     TotLibNotImplemented,
+    TotPipelineError,
+    TotPipelineUnknownModuleError,
+    TotPipelineCouplingError,
+    TotPipelineLifecycleError,
+    TotPipelineRunError,
     raise_for_rc,
     raise_for_ierr,
 )
@@ -45,6 +56,10 @@ from .errors import (
 __all__ = [
     "Tot",
     "TotState",
+    "TotPipeline",
+    "CouplingRule",
+    "PipelineStep",
+    "PipelineResult",
     "TotlibError",
     "TotlibInitError",
     "TotlibInvalidParamError",
@@ -56,6 +71,11 @@ __all__ = [
     "TotLibNotInitialized",
     "TotLibCalculationFailed",
     "TotLibNotImplemented",
+    "TotPipelineError",
+    "TotPipelineUnknownModuleError",
+    "TotPipelineCouplingError",
+    "TotPipelineLifecycleError",
+    "TotPipelineRunError",
     "raise_for_rc",
     "raise_for_ierr",
 ]
