@@ -19,3 +19,13 @@ intersphinx_mapping = {
 }
 latex_elements = apply_ja_latex(latex_elements)
 latex_documents = [("index", "task_tot_manual.tex", project, author, "manual")]
+
+# Cross-Sphinx-project Markdown links (modules → portal) trigger
+# myst.xref_missing because the target lives outside this project's
+# srcdir. Suppress only this specific warning so -W doesn't fail; the
+# deployed unified site serves modules/ and portal/ under one tree, so
+# the relative .md path resolves to .html at runtime.
+# TODO: revert once intersphinx_mapping URL is real (placeholder today).
+suppress_warnings = list(
+    dict.fromkeys(globals().get("suppress_warnings", []) + ["myst.xref_missing"])
+)
