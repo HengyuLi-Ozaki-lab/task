@@ -225,17 +225,10 @@ COUPLING_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
         CouplingRule(
             # Callable: receives (prev_state, params); pulls tr:RR / tr:RA
             # from params (set via tot.set_param("tr:RR", ...) before run_pipeline).
-            # Short-circuits to 0.0 when context params are absent (e.g. unit
-            # tests that exercise tr.run() error paths without a full fp→tr
-            # param setup) — real pipelines always set tr:RR and tr:RA first.
-            src_state_key=lambda state, params: (
-                compute_rjt_volint(
-                    state,
-                    R0=params["tr:RR"],
-                    a=params["tr:RA"],
-                )
-                if ("tr:RR" in params and "tr:RA" in params)
-                else 0.0
+            src_state_key=lambda state, params: compute_rjt_volint(
+                state,
+                R0=params["tr:RR"],
+                a=params["tr:RA"],
             ),
             dst_param="PLHCD",                  # R3: PNBCD unregistered; PLHCD is the only
                                                 # set_param-accepting current-drive scalar.

@@ -355,8 +355,17 @@ def test_run_pipeline_typeerror_from_bad_kwargs_is_wrapped(patch_wrappers):
     let TypeError escape unwrapped."""
     pipe = TotPipeline()
     fp_inst = patch_wrappers["classes"]["fp"].return_value
-    fp_inst.get_state.return_value = _make_state({"foo": 1.0})
     tr_inst = patch_wrappers["classes"]["tr"].return_value
+    # COUPLING_RULES[("fp","tr")] is now populated (Phase 2) — set the minimum
+    # tr:RR/tr:RA so the rule's lambda doesn't KeyError before tr.run() is
+    # reached. This test is about TypeError wrapping at the run() boundary,
+    # not about coupling-rule validation.
+    pipe.set_param("tr:RR", 6.2)
+    pipe.set_param("tr:RA", 2.0)
+    fp_state = _make_state({"foo": 1.0})
+    fp_state.nrmax = 0   # compute_rjt_volint short-circuits at nr < 1 → 0.0
+    fp_state.nsamax = 0
+    fp_inst.get_state.return_value = fp_state
     tr_inst.run.side_effect = TypeError("unexpected kwarg 'unknown'")
     with pytest.raises(TotPipelineRunError) as exc_info:
         pipe.run_pipeline([("fp", {"ntmax": 1}), ("tr", {"unknown": 99})])
