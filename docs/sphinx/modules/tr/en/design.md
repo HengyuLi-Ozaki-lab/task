@@ -5,7 +5,7 @@ The `tr` library is built by layering a thin C-ABI entry layer
 `tr2` CLI version (`trloop.f90`, `trcalc.f90`, `trcoef_*.f90` and
 roughly 64 other `.f90` source files), producing `libtrapi.so`. The
 shared three-layer design is described in
-{ref}`Common Architecture <portal:common-architecture>`. This page
+[Common Architecture](../../../portal/en/common/architecture.md). This page
 focuses on `tr`-specific aspects.
 
 ## Entry layer (`tr_api.f90`)
@@ -141,7 +141,7 @@ For physical meanings, see the table in {doc}`state`.
 If you repeat `tr_finalize` → `tr_init` in the same process, parts
 of the module-level Fortran state are not fully reset (this is a
 cross-module issue — see "Module-state reset" in
-{ref}`Common Architecture <portal:common-architecture>`). For tests
+[Common Architecture](../../../portal/en/common/architecture.md)). For tests
 that re-initialise, use `pytest --forked` to isolate by process, or
 use `multiprocessing` to spawn a separate process.
 
@@ -166,7 +166,7 @@ for the `tr2` binary), so the library and existing CLI can coexist.
 - [`docs/tr-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/tr-library/architecture.md)
   — design notes at the repository root (more design rationale and
   per-phase records)
-- {ref}`Common Architecture <portal:common-architecture>` — the
+- [Common Architecture](../../../portal/en/common/architecture.md) — the
   cross-module 3-layer design
 - `tr/tr_api.h` — C-ABI header (the `TR_MAX_NRMAX=500`,
   `TR_MAX_NSMAX=8` constants and the error enum)

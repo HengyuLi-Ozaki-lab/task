@@ -61,7 +61,7 @@ END SELECT
 9. 次の時刻ステップへ
 
 連携経路は **BPSD** (Plasma Simulation Database) モジュールを通して
-データの受け渡しを行います ({ref}`共通アーキテクチャ <portal:common-architecture>`
+データの受け渡しを行います ([共通アーキテクチャ](../../../portal/ja/common/architecture.md)
 参照).
 
 ## ライブラリ内部のソース構成
@@ -110,7 +110,7 @@ PIC アーカイブを作る必要があります ({doc}`build` 参照).
 ## 参考リンク
 
 - [`docs/tot-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/tot-library/architecture.md)
-- {ref}`共通アーキテクチャ <portal:common-architecture>`
+- [共通アーキテクチャ](../../../portal/ja/common/architecture.md)
 - `tot/tot_api.h` — C ABI ヘッダ
 - `tot/tot_api.f90` — Fortran 側エントリ
 - `tot/tot_param_registry.f90` — プレフィックスルーティング

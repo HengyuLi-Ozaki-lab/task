@@ -4,7 +4,7 @@
 (`eqcalq.f90`, `eqfunc.f90`, `eqcalc.f90` など約 32 本の `.f90` ソース)
 の上に, C ABI 用の薄いエントリ層 (`eq_api.f90`) を被せて `libeqapi.so`
 を構成しています. 共通の 3 層設計は
-{ref}`共通アーキテクチャ <portal:common-architecture>` を参照してください.
+[共通アーキテクチャ](../../../portal/ja/common/architecture.md) を参照してください.
 ここでは `eq` 固有の部分に絞って解説します.
 
 ## エントリ層 (`eq_api.f90`)
@@ -155,7 +155,7 @@ libeqapi.so
 
 - [`docs/eq-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/eq-library/architecture.md)
   — リポジトリ直下の設計ノート
-- {ref}`共通アーキテクチャ <portal:common-architecture>` — 全モジュール共通の 3 層設計
+- [共通アーキテクチャ](../../../portal/ja/common/architecture.md) — 全モジュール共通の 3 層設計
 - `eq/eq_api.h` — C ABI ヘッダ
 - `eq/eq_api.f90` — Fortran 側エントリ
 - `eq/eq_param_registry.f90` — `set_param` の `SELECT CASE` テーブル

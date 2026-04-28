@@ -95,7 +95,7 @@ libwrapi.so
 ## 参考リンク
 
 - [`docs/wr-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/wr-library/architecture.md)
-- {ref}`共通アーキテクチャ <portal:common-architecture>`
+- [共通アーキテクチャ](../../../portal/ja/common/architecture.md)
 - `wr/wr_api.h` — C ABI ヘッダ
 - `wr/wr_api.f90` — Fortran 側エントリ
 - `wr/wr_param_registry.f90` — パラメータレジストリ

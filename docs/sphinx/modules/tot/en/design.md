@@ -66,7 +66,7 @@ flow:
 9. Advance to the next time step
 
 Data exchange between modules goes through **BPSD** (Plasma Simulation
-Database); see {ref}`Common architecture <portal:common-architecture>`.
+Database); see [Common architecture](../../../portal/en/common/architecture.md).
 
 ## Source layout inside the library
 
@@ -116,7 +116,7 @@ archive before `tot` can be built (see {doc}`build`).
 ## References
 
 - [`docs/tot-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/tot-library/architecture.md)
-- {ref}`Common architecture <portal:common-architecture>`
+- [Common architecture](../../../portal/en/common/architecture.md)
 - `tot/tot_api.h` — C-ABI header
 - `tot/tot_api.f90` — Fortran entry side
 - `tot/tot_param_registry.f90` — prefix routing

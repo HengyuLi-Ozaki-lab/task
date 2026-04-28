@@ -3,7 +3,7 @@
 `tr` ライブラリは, 既存 `tr2` CLI 版と同一の物理カーネル (`trloop.f90`,
 `trcalc.f90`, `trcoef_*.f90` など約 64 本の `.f90` ソース) の上に, C ABI
 用の薄いエントリ層 (`tr_api.f90`) を被せて `libtrapi.so` を構成しています.
-共通の 3 層設計は {ref}`共通アーキテクチャ <portal:common-architecture>` を
+共通の 3 層設計は [共通アーキテクチャ](../../../portal/ja/common/architecture.md) を
 参照してください. ここでは `tr` 固有の部分に絞って解説します.
 
 ## エントリ層 (`tr_api.f90`)
@@ -132,7 +132,7 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! 軸上 Zeff
 
 `tr_finalize` → `tr_init` を同一プロセスで繰り返すと, モジュールレベルの
 Fortran 状態が完全にはリセットされない箇所があります (全モジュール共通の
-issue — {ref}`共通アーキテクチャ <portal:common-architecture>` の
+issue — [共通アーキテクチャ](../../../portal/ja/common/architecture.md) の
 「モジュール状態のリセット」参照). テストで再初期化する場合は
 `pytest --forked` でプロセス分離するか, `multiprocessing` で別プロセスに
 隔離してください.
@@ -157,7 +157,7 @@ libtrapi.so
 
 - [`docs/tr-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/tr-library/architecture.md)
   — リポジトリ直下の設計ノート (より詳しい設計意図と phase 記録)
-- {ref}`共通アーキテクチャ <portal:common-architecture>` — 全モジュール共通の 3 層設計
+- [共通アーキテクチャ](../../../portal/ja/common/architecture.md) — 全モジュール共通の 3 層設計
 - `tr/tr_api.h` — C ABI ヘッダ (定数 `TR_MAX_NRMAX=500`, `TR_MAX_NSMAX=8`, error enum)
 - `tr/tr_api.f90` — Fortran 側エントリ (7 関数)
 - `tr/tr_param_registry.f90` — `set_param` の `SELECT CASE` テーブル

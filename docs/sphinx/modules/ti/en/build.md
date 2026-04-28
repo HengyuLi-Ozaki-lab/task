@@ -17,7 +17,7 @@ Success means the file `ti/libtiapi.so` has been produced.
 ## Verify the exported functions
 
 `ti` exports the same **5 functions** as `tr` (the standard pattern from
-the {ref}`Common Architecture <portal:common-architecture>` chapter).
+the [Common Architecture](../../../portal/en/common/architecture.md) chapter).
 
 ```bash
 $ nm -D ti/libtiapi.so | grep ' T ti_'

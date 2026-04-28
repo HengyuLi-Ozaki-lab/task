@@ -32,7 +32,7 @@ $ nm -D eq/libeqapi.so | grep ' T eq_'
 The `T` column lists the exported functions. The 6th, `eq_set_param_str`,
 is a dedicated API that accepts `CHARACTER(LEN=80)` string parameters
 such as `KNAMEQ` (an extension of the 5-function ABI described in
-{ref}`Common Architecture <portal:common-architecture>`).
+[Common Architecture](../../../portal/en/common/architecture.md)).
 
 ## Make it visible to Python
 

@@ -26,7 +26,7 @@ TASK/TR (1 次元トカマク輸送シミュレーション) を Python から�
   `BETAN` ($\beta_N$) など 13 種
 
 Fortran 設計・パラメータレジストリの詳細は
-{ref}`共通アーキテクチャ <portal:common-architecture>` および `docs/tr-library/architecture.md`
+[共通アーキテクチャ](../../../portal/ja/common/architecture.md) および `docs/tr-library/architecture.md`
 を参照.
 
 ## 使い方ガイド

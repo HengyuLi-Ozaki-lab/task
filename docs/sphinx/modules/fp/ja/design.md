@@ -80,7 +80,7 @@ libfpapi.so
 ## 参考リンク
 
 - [`docs/fp-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/fp-library/architecture.md)
-- {ref}`共通アーキテクチャ <portal:common-architecture>`
+- [共通アーキテクチャ](../../../portal/ja/common/architecture.md)
 - `fp/fp_api.h` — C ABI ヘッダ
 - `fp/fp_api.f90` — Fortran 側エントリ
 - `fp/fp_param_registry.f90` — パラメータレジストリ

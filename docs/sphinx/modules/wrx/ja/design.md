@@ -90,7 +90,7 @@ libwrxapi.so
 ## 参考リンク
 
 - [`docs/wrx-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/wrx-library/architecture.md)
-- {ref}`共通アーキテクチャ <portal:common-architecture>`
+- [共通アーキテクチャ](../../../portal/ja/common/architecture.md)
 - `wrx/wrx_api.h` — C ABI ヘッダ
 - `wrx/wrx_api.f90` — Fortran 側エントリ
 - `wrx/wrx_param_registry.f90` — パラメータレジストリ
