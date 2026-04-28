@@ -90,19 +90,35 @@ def test_set_param_unknown_module_raises(patch_wrappers):
 
 
 def test_set_param_records_into_params_dict(patch_wrappers):
-    """set_param updates self._params after the wrapper accepts the value
-    (covers both numeric and string paths)."""
+    """set_param updates self._params after the wrapper accepts the value.
+
+    Numeric values are stored as the same float the wrapper received, so
+    coupling rules reading self._params see exactly what the underlying
+    module saw. Strings are stored as-is via the set_param_str path.
+    """
     pipe = TotPipeline()
     pipe.set_param("tr:RR", 6.2)
     pipe.set_param("tr:RA", 2.0)
-    pipe.set_param("fp:NSAMAX", 2)
+    pipe.set_param("fp:NSAMAX", 2)                   # int input → 2.0 stored
     pipe.set_param("tr:KNAMEQ", "/path/to/eqdsk")    # string path
     assert pipe._params == {
         "tr:RR": 6.2,
         "tr:RA": 2.0,
-        "fp:NSAMAX": 2,
+        "fp:NSAMAX": 2.0,
         "tr:KNAMEQ": "/path/to/eqdsk",
     }
+
+
+def test_set_param_records_bool_as_float(patch_wrappers):
+    """bool inputs are coerced to float at the wrapper boundary; _params must
+    record the same coerced float so callable coupling rules don't see a
+    different type than the module actually received."""
+    pipe = TotPipeline()
+    pipe.set_param("fp:E0", True)
+    assert pipe._params["fp:E0"] == 1.0
+    assert isinstance(pipe._params["fp:E0"], float)
+    fp_inst = patch_wrappers["classes"]["fp"].return_value
+    fp_inst.set_param.assert_called_once_with("E0", 1.0)
 
 
 def test_set_param_string_to_module_without_set_param_str_raises(monkeypatch):
@@ -157,6 +173,26 @@ def test_close_finalizes_remaining_modules_on_error(patch_wrappers):
         pipe.close()
     # tr.close was still called despite fp.close raising
     tr_inst.close.assert_called_once()
+
+
+def test_close_raises_exception_group_when_multiple_modules_fail(patch_wrappers):
+    """When more than one module's close() raises, every error must surface
+    via ExceptionGroup so cleanup failures are not silently dropped."""
+    pipe = TotPipeline()
+    pipe.set_param("fp:A", 1.0)
+    pipe.set_param("tr:B", 2.0)
+    fp_inst = patch_wrappers["classes"]["fp"].return_value
+    tr_inst = patch_wrappers["classes"]["tr"].return_value
+    fp_inst.close.side_effect = RuntimeError("fp boom")
+    tr_inst.close.side_effect = ValueError("tr boom")
+    with pytest.raises(ExceptionGroup) as exc_info:
+        pipe.close()
+    raised = exc_info.value
+    assert len(raised.exceptions) == 2
+    assert any(isinstance(e, RuntimeError) and "fp boom" in str(e)
+               for e in raised.exceptions)
+    assert any(isinstance(e, ValueError) and "tr boom" in str(e)
+               for e in raised.exceptions)
 
 
 def test_set_param_after_close_raises_lifecycle(patch_wrappers):

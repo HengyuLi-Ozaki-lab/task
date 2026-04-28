@@ -240,14 +240,21 @@ class TotPipeline:
                     f"(set_param_str not defined); got {namespaced!r}={value!r}"
                 )
             setter(bare, value)
+            self._params[namespaced] = value
         else:
-            module.set_param(bare, float(value))
-        self._params[namespaced] = value
+            # Store the coerced value so coupling rules reading self._params
+            # see the same scalar the wrapper actually received (e.g. True is
+            # forwarded as 1.0, so 1.0 is what _params should hold).
+            coerced = float(value)
+            module.set_param(bare, coerced)
+            self._params[namespaced] = coerced
 
     def close(self) -> None:
         """Finalize all opened module wrappers. Idempotent. If any close
-        raises, all remaining modules are still finalized; the first
-        exception is re-raised after the loop."""
+        raises, all remaining modules are still finalized; on a single
+        failure the original exception is re-raised, on multiple failures
+        an ExceptionGroup carrying every collected error is raised so no
+        cleanup failure is silently dropped."""
         if self._closed:
             return
         errors = []
@@ -258,8 +265,12 @@ class TotPipeline:
                 errors.append(e)
         self._modules.clear()
         self._closed = True
-        if errors:
+        if len(errors) == 1:
             raise errors[0]
+        if errors:
+            raise ExceptionGroup(
+                f"{len(errors)} module(s) failed to close", errors
+            )
 
     @staticmethod
     def _validate_steps(steps) -> None:
@@ -324,12 +335,11 @@ class TotPipeline:
         prev_state = None
 
         for i, (name, kwargs) in enumerate(steps):
-            # base_err is left in for forward-compat / debugging clarity, but
-            # the actual catch is broader: any Exception during step execution
-            # (per-module domain error, TypeError from bad kwargs, etc.) is
-            # wrapped as TotPipelineRunError so partial_result is always
-            # available to the caller. Keyboard/system signals are NOT caught.
-            base_err = _import_module_error(name)  # noqa: F841 — keeps lazy-import semantics for downstream debugging
+            # The catch below is broad on purpose: any Exception during step
+            # execution (per-module domain error, TypeError from bad kwargs,
+            # etc.) is wrapped as TotPipelineRunError so partial_result is
+            # always available to the caller. Keyboard/system signals are NOT
+            # caught.
             try:
                 module = self._ensure_module(name)
                 applied: List[str] = []
