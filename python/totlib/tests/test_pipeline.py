@@ -109,16 +109,16 @@ def test_set_param_records_into_params_dict(patch_wrappers):
     }
 
 
-def test_set_param_records_bool_as_float(patch_wrappers):
-    """bool inputs are coerced to float at the wrapper boundary; _params must
-    record the same coerced float so callable coupling rules don't see a
-    different type than the module actually received."""
+def test_set_param_rejects_bool(patch_wrappers):
+    """bool inputs are explicitly rejected (Python's bool is a subclass of
+    int, so silent float() coercion would mask intent — see Bugbot finding
+    on PR #178)."""
     pipe = TotPipeline()
-    pipe.set_param("fp:E0", True)
-    assert pipe._params["fp:E0"] == 1.0
-    assert isinstance(pipe._params["fp:E0"], float)
-    fp_inst = patch_wrappers["classes"]["fp"].return_value
-    fp_inst.set_param.assert_called_once_with("E0", 1.0)
+    with pytest.raises(TotPipelineCouplingError, match="bool"):
+        pipe.set_param("fp:E0", True)
+    # Sanity: integer paths still work.
+    pipe.set_param("fp:NSAMAX", 2)
+    assert pipe._params["fp:NSAMAX"] == 2.0
 
 
 def test_set_param_string_to_module_without_set_param_str_raises(monkeypatch):
@@ -177,7 +177,12 @@ def test_close_finalizes_remaining_modules_on_error(patch_wrappers):
 
 def test_close_raises_exception_group_when_multiple_modules_fail(patch_wrappers):
     """When more than one module's close() raises, every error must surface
-    via ExceptionGroup so cleanup failures are not silently dropped."""
+    via ExceptionGroup so cleanup failures are not silently dropped.
+
+    Note: on Python 3.10 without the `exceptiongroup` backport, close()
+    falls back to raising errors[0] only (same as pre-fix behavior).
+    CI runs 3.11+ so ExceptionGroup is available here.
+    """
     pipe = TotPipeline()
     pipe.set_param("fp:A", 1.0)
     pipe.set_param("tr:B", 2.0)
@@ -247,6 +252,19 @@ def test_run_pipeline_bad_kwargs_raises(patch_wrappers):
     pipe = TotPipeline()
     with pytest.raises(TotPipelineCouplingError, match="kwargs"):
         pipe.run_pipeline([("fp", "not_a_dict")])
+
+
+def test_run_pipeline_accepts_list_shaped_steps(patch_wrappers):
+    """JSON-decoded payloads pass list-of-list to run_pipeline; the
+    validator must accept those equivalent to tuples (regression
+    guard for the MCP transport boundary)."""
+    pipe = TotPipeline()
+    fp_inst = patch_wrappers["classes"]["fp"].return_value
+    fp_inst.get_state.return_value = _make_state({"foo": 1.0})
+    # List-shape (what JSON deserialisation produces) instead of tuple-shape.
+    result = pipe.run_pipeline([["fp", {"ntmax": 1}]])
+    assert result.steps[0].module == "fp"
+    assert result.steps[0].scalars == {"foo": 1.0}
 
 
 def test_run_pipeline_calls_module_run_and_collects_state(patch_wrappers):

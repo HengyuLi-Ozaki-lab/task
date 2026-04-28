@@ -61,3 +61,22 @@ def test_pipeline_result_to_dict_flattens():
     assert "_steps" in d
     assert len(d["_steps"]) == 2
     assert d["_steps"][1]["coupling_applied"] == ["fp RJT -> tr PNBCD"]
+
+
+def test_to_dict_returns_defensive_copies():
+    """Mutation of the returned dict must not perturb the originating PipelineStep."""
+    step1 = PipelineStep("fp", {"foo": 1.0}, [])
+    step2 = PipelineStep("tr", {"bar": 2.0}, ["fp -> tr"])
+    result = PipelineResult(steps=[step1, step2])
+    out = result.to_dict()
+
+    # Mutate every payload returned by to_dict.
+    out["fp"]["foo"] = 999.0
+    out["tr"]["bar"] = 888.0
+    out["_steps"][1]["scalars"]["bar"] = 777.0
+    out["_steps"][1]["coupling_applied"].append("manipulated")
+
+    # Originating PipelineStep instances must be untouched.
+    assert step1.scalars == {"foo": 1.0}
+    assert step2.scalars == {"bar": 2.0}
+    assert step2.coupling_applied == ["fp -> tr"]

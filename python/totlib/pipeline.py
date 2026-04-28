@@ -13,6 +13,18 @@ import importlib
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Tuple, Union
 
+# ExceptionGroup is a Python 3.11+ builtin. The exceptiongroup PyPI
+# package back-ports it to 3.10. Fall back to None if neither is
+# available (close() then degrades to raising errors[0] only — same
+# pre-fix behavior, slightly less informative).
+try:
+    ExceptionGroup  # type: ignore[name-defined]  # builtin on 3.11+
+except NameError:  # pragma: no cover  # Python 3.10 path
+    try:
+        from exceptiongroup import ExceptionGroup  # type: ignore[no-redef]  # backport
+    except ImportError:  # pragma: no cover
+        ExceptionGroup = None  # type: ignore[assignment]
+
 from .errors import (
     TotPipelineCouplingError,
     TotPipelineLifecycleError,
@@ -77,18 +89,19 @@ class PipelineResult:
 
         For repeated modules, later steps overwrite earlier in the
         flat per-module map; the full timeline is preserved under
-        the "_steps" key. Values reference the underlying step.scalars
-        dicts directly (no defensive copy) — callers that mutate the
-        returned dict will perturb the originating PipelineStep.
+        the "_steps" key. Inner dicts/lists are defensive copies so
+        callers (e.g. the MCP `run_pipeline` tool that may add metadata
+        or filter scalars before transport) cannot mutate the originating
+        PipelineStep.
         """
         out: Dict[str, Any] = {}
         for step in self.steps:
-            out[step.module] = step.scalars  # later steps overwrite earlier
+            out[step.module] = dict(step.scalars)  # defensive copy
         out["_steps"] = [
             {
                 "module": s.module,
-                "scalars": s.scalars,
-                "coupling_applied": s.coupling_applied,
+                "scalars": dict(s.scalars),               # defensive copy
+                "coupling_applied": list(s.coupling_applied),  # defensive copy
             }
             for s in self.steps
         ]
@@ -232,6 +245,14 @@ class TotPipeline:
             )
         ns, bare = namespaced.split(":", 1)
         module = self._ensure_module(ns)
+        # bool is a subclass of int in Python, so it would silently take
+        # the numeric branch and become 1.0/0.0 — semantically lossy.
+        # Reject explicitly so callers must be deliberate.
+        if isinstance(value, bool):
+            raise TotPipelineCouplingError(
+                f"set_param: bool value not accepted (would silently coerce to "
+                f"{float(value)}); pass an explicit float/int. Got {namespaced!r}={value!r}"
+            )
         if isinstance(value, str):
             setter = getattr(module, "set_param_str", None)
             if setter is None:
@@ -243,8 +264,7 @@ class TotPipeline:
             self._params[namespaced] = value
         else:
             # Store the coerced value so coupling rules reading self._params
-            # see the same scalar the wrapper actually received (e.g. True is
-            # forwarded as 1.0, so 1.0 is what _params should hold).
+            # see the same scalar the wrapper actually received.
             coerced = float(value)
             module.set_param(bare, coerced)
             self._params[namespaced] = coerced
@@ -268,6 +288,10 @@ class TotPipeline:
         if len(errors) == 1:
             raise errors[0]
         if errors:
+            if ExceptionGroup is None:
+                # Python 3.10 without the backport — surface the first
+                # error and lose visibility on the rest. Same as pre-fix.
+                raise errors[0]
             raise ExceptionGroup(
                 f"{len(errors)} module(s) failed to close", errors
             )
@@ -278,9 +302,9 @@ class TotPipeline:
         if not steps:
             raise TotPipelineCouplingError("steps must be non-empty")
         for i, item in enumerate(steps):
-            if not isinstance(item, tuple) or len(item) != 2:
+            if not isinstance(item, (tuple, list)) or len(item) != 2:
                 raise TotPipelineCouplingError(
-                    f"steps[{i}] must be (module_name, kwargs) tuple, got {item!r}"
+                    f"steps[{i}] must be (module_name, kwargs) sequence of length 2, got {item!r}"
                 )
             name, kwargs = item
             if name not in _MODULE_REGISTRY:
