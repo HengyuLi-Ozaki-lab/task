@@ -239,6 +239,68 @@ Spec-style aliases (`TotLibError`, `TotLibInvalidParam`,
 The wrapper does **not** wrap graphics, file output, or the
 interactive menu — those live in `tot/tot` only.
 
+## TotPipeline (L-7a — Python-side scalar coupling)
+
+`TotPipeline` is a thin orchestrator that composes existing per-module
+wrappers (`Fplib`, `Trlib`, …) with a hardcoded scalar coupling
+registry. It does **not** use `libtotapi.so` — that path is handled by
+the legacy `Tot` class above and is left untouched at L-7a.
+
+**When to use which:**
+
+- TR-only transport solver, regression tests against `libtotapi.so` →
+  `Tot`
+- Multi-module scalar coupling pipelines (e.g. fp driven current → tr) →
+  `TotPipeline`
+- Direct module access without coupling → `from <mod>lib import <Mod>`
+
+**Same-process coexistence with `Tot` is undefined** — both call
+`tr_init` internally on the same Fortran modules. Pick one orchestrator
+per process; if you need both, fork via `multiprocessing` or use the
+`tot_mcp` `run_pipeline` MCP tool, which force-closes the legacy `Tot`
+state on every invocation.
+
+**Example:**
+
+```python
+from totlib import TotPipeline
+
+with TotPipeline() as tot:
+    tot.set_param("fp:NSAMAX", 2)
+    tot.set_param("fp:E0", 0.001)        # active-drive fixture (R3)
+    tot.set_param("tr:RR", 6.2)
+    tot.set_param("tr:RA", 2.0)
+    result = tot.run_pipeline([
+        ("fp", {"ntmax": 5}),
+        ("tr", {"ntmax": 1}),
+    ])
+    print(result.last("tr").scalars)
+    print(result.last("tr").coupling_applied)
+```
+
+**Coupling rules (L-7a):**
+
+- `fp → tr`: fp's RJT volume integral [A] → tr's `PLHCD` [dimensionless]
+  (transform `× 1e-6`).
+
+> **Skeleton coupling caveat.** `tr.PLHCD` is a dimensionless multiplier
+> (R3 outcome: `tr_param_registry.f90` does not register `PNBCD`, so
+> `PLHCD` is the only `set_param`-accepting current-drive scalar). L-7a
+> verifies API correctness — the equivalence test
+> (`python/totlib/tests/test_pipeline_equiv.py`) pins `1e-10` agreement
+> between hand-written and pipeline-driven runs. Physical fidelity (a
+> proper `EXTERNAL_DRIVEN_I` scalar) is L-7b's scope.
+
+**Failure handling:** If a step raises mid-pipeline, the exception is
+wrapped as `TotPipelineRunError` whose `partial_result` carries the
+steps that completed before the failure. Useful for mid-pipeline
+debugging without losing earlier scalars.
+
+**Spec / plan:**
+
+- Spec: `docs/superpowers/specs/2026-04-28-l7a-cross-module-coupling-design.md`
+- Plan: `docs/superpowers/plans/2026-04-28-l7a-cross-module-coupling.md`
+
 ## Known limitations
 
 - **Single instance per process.** TOT backend uses COMMON blocks plus
