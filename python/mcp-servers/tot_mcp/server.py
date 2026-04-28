@@ -679,24 +679,28 @@ def handle_run_pipeline(
     """
     global PIPELINE_STATE
 
-    # Validate steps input BEFORE any pipeline construction (pre-flight).
-    # _normalize_pipeline_steps raises TotPipelineCouplingError for
-    # malformed payloads so the caller gets the error without side effects.
+    # Validate first so a malformed payload raises with NO side effects
+    # (no STATE.close, no PIPELINE_STATE construction). Raised raw so the
+    # caller sees the validation error directly without wrapper noise.
     normalized = _normalize_pipeline_steps(steps)
 
-    # Mutually exclusive with legacy STATE: close the wrapper's inner Tot.
-    # _ServerState.close() is idempotent and DOES NOT null STATE itself;
-    # subsequent legacy tool calls re-open via STATE.ensure_open().
+    # Mutually exclusive with legacy STATE; force-close prior pipeline.
     STATE.close()
-
-    # Force-close any leftover pipeline from a previous run_pipeline call.
     _force_close_pipeline()
 
-    PIPELINE_STATE = TotPipeline()
-    if params:
-        for k, v in params.items():
-            PIPELINE_STATE.set_param(k, v)
-    return PIPELINE_STATE.run_pipeline(normalized).to_dict()
+    try:
+        PIPELINE_STATE = TotPipeline()
+        if params:
+            for k, v in params.items():
+                PIPELINE_STATE.set_param(k, v)
+        return PIPELINE_STATE.run_pipeline(normalized).to_dict()
+    except Exception as exc:
+        # Mid-run failure: tear down the half-initialised pipeline so the
+        # next invocation (and any concurrent legacy-tool call) starts
+        # clean. Then map to ToolError using the same wrapper every other
+        # handler in this file uses for consistency at the MCP boundary.
+        _force_close_pipeline()
+        raise _wrap_totlib_error(exc) from exc
 
 
 # =====================================================================
@@ -872,7 +876,19 @@ def build_server() -> Any:
     ) -> Dict[str, Any]:
         """Run a multi-module scalar coupling pipeline (L-7a).
 
-        See handle_run_pipeline for details.
+        Backed by totlib.TotPipeline. Mutually exclusive with the legacy
+        STATE (Tot) — every invocation force-closes whatever is currently
+        live, so successive calls produce clean, isolated runs.
+
+        Args:
+            steps: list of {"module": "<name>", "kwargs": {...}} dicts.
+                Module names: "fp", "tr", "eq", "wr", "wrx", "ti".
+            params: optional bulk param setter, e.g. {"fp:NSAMAX": 2,
+                "tr:RR": 6.2}.
+
+        Returns:
+            dict: PipelineResult.to_dict() — flat per-module final scalars
+            plus a "_steps" timeline of every step that ran.
         """
         return handle_run_pipeline(steps=steps, params=params)
 

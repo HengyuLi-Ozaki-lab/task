@@ -6,26 +6,26 @@ import pytest
 
 @pytest.fixture
 def stub_pipeline(monkeypatch):
-    """Replace TotPipeline with a stub that records all calls.
+    """Replace TotPipeline with a stub that records per-instance state.
 
-    Each StubPipeline instance records its own params/steps/closed state
-    into the captured dict so successive run_pipeline invocations can be
-    inspected (matters for the prev-pipeline force-close test).
+    Each instantiation appends to captured["instances"] so that successive
+    run_pipeline invocations (which create fresh pipelines) leave a per-
+    instance audit trail. This lets the prev-pipeline force-close test
+    assert that the previous instance's close() was called BEFORE a new
+    one is constructed.
     """
-    captured = {"params": {}, "steps": None, "closed": False, "init_count": 0}
+    captured = {"instances": []}
 
     class StubPipeline:
         def __init__(self):
-            captured["init_count"] += 1
-            captured["closed"] = False
-            captured["params"] = {}
-            captured["steps"] = None
+            self._record = {"params": {}, "steps": None, "closed": False}
+            captured["instances"].append(self._record)
 
         def set_param(self, k, v):
-            captured["params"][k] = v
+            self._record["params"][k] = v
 
         def run_pipeline(self, steps):
-            captured["steps"] = steps
+            self._record["steps"] = steps
             from totlib.pipeline import PipelineStep, PipelineResult
             return PipelineResult(steps=[
                 PipelineStep("fp", {"foo": 1.0}, []),
@@ -33,7 +33,7 @@ def stub_pipeline(monkeypatch):
             ])
 
         def close(self):
-            captured["closed"] = True
+            self._record["closed"] = True
 
     # Patch the import path used inside server.py
     monkeypatch.setattr("tot_mcp.server.TotPipeline", StubPipeline)
@@ -51,8 +51,9 @@ def test_run_pipeline_tool_calls_pipeline(stub_pipeline):
     )
     assert out["fp"] == {"foo": 1.0}
     assert out["tr"] == {"bar": 2.0}
-    assert stub_pipeline["steps"] == [("fp", {"ntmax": 5}), ("tr", {"ntmax": 1})]
-    assert stub_pipeline["params"] == {"fp:NSAMAX": 2}
+    assert len(stub_pipeline["instances"]) == 1
+    assert stub_pipeline["instances"][0]["steps"] == [("fp", {"ntmax": 5}), ("tr", {"ntmax": 1})]
+    assert stub_pipeline["instances"][0]["params"] == {"fp:NSAMAX": 2}
     assert "_steps" in out  # PipelineResult.to_dict adds this timeline key
 
 
@@ -70,6 +71,8 @@ def test_run_pipeline_tool_force_closes_legacy_state(stub_pipeline, monkeypatch)
         params=None,
     )
     assert legacy_close_calls, "legacy STATE.close() was not called"
+    # One stub pipeline instance was constructed
+    assert len(stub_pipeline["instances"]) == 1
 
 
 def test_run_pipeline_tool_force_closes_prev_pipeline(stub_pipeline):
@@ -80,12 +83,13 @@ def test_run_pipeline_tool_force_closes_prev_pipeline(stub_pipeline):
     handle_run_pipeline(
         steps=[{"module": "fp", "kwargs": {}}], params=None,
     )
-    first_init = stub_pipeline["init_count"]
     handle_run_pipeline(
         steps=[{"module": "tr", "kwargs": {}}], params=None,
     )
-    # The second call constructed a fresh pipeline (new instance opened)
-    assert stub_pipeline["init_count"] == first_init + 1
+    # Two pipelines were constructed over two calls
+    assert len(stub_pipeline["instances"]) == 2
+    # The first instance was closed before the second was constructed
+    assert stub_pipeline["instances"][0]["closed"] is True
 
 
 def test_run_pipeline_tool_validates_input(stub_pipeline):
@@ -99,4 +103,43 @@ def test_run_pipeline_tool_validates_input(stub_pipeline):
             params=None,
         )
     # Ensure no pipeline was even constructed (pre-flight validation)
-    assert stub_pipeline["steps"] is None
+    assert len(stub_pipeline["instances"]) == 0
+
+
+def test_run_pipeline_tool_force_closes_on_run_failure(monkeypatch):
+    """If pipeline.run_pipeline raises mid-run, PIPELINE_STATE must be
+    reset to None before the exception escapes — otherwise the next call
+    inherits a dangling open pipeline (regression guard for review I2)."""
+    from tot_mcp import server as srv
+
+    closed_calls = []
+
+    class FailingPipeline:
+        def __init__(self):
+            self._closed = False
+
+        def set_param(self, k, v):
+            pass
+
+        def run_pipeline(self, steps):
+            raise RuntimeError("intentional mid-run failure")
+
+        def close(self):
+            self._closed = True
+            closed_calls.append(self)
+
+    monkeypatch.setattr("tot_mcp.server.TotPipeline", FailingPipeline)
+
+    # Reset PIPELINE_STATE to None so we exercise the fresh-start path
+    monkeypatch.setattr("tot_mcp.server.PIPELINE_STATE", None)
+
+    with pytest.raises(Exception):  # _wrap_totlib_error result; type may vary
+        srv.handle_run_pipeline(
+            steps=[{"module": "fp", "kwargs": {}}],
+            params=None,
+        )
+
+    assert srv.PIPELINE_STATE is None, (
+        f"PIPELINE_STATE not reset after failure: {srv.PIPELINE_STATE!r}"
+    )
+    assert closed_calls, "FailingPipeline.close() was never called"
