@@ -4,7 +4,7 @@ The `eq` library wraps the same physics kernel as the existing `eqx2`
 binary (≈32 `.f90` source files including `eqcalq.f90`, `eqfunc.f90`,
 `eqcalc.f90`, …) with a thin C-ABI entry layer (`eq_api.f90`) on top
 to produce `libeqapi.so`. The shared three-layer design is described
-in {ref}`Common Architecture <portal:common-architecture>`. This page
+in [Common Architecture](../../../portal/en/common/architecture.md). This page
 focuses on the parts specific to `eq`.
 
 ## Entry layer (`eq_api.f90`)
@@ -162,7 +162,7 @@ depend on the eq PIC archive.
 
 - [`docs/eq-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/eq-library/architecture.md)
   — design notes at the repository root
-- {ref}`Common Architecture <portal:common-architecture>` — the shared three-layer design across modules
+- [Common Architecture](../../../portal/en/common/architecture.md) — the shared three-layer design across modules
 - `eq/eq_api.h` — C ABI header
 - `eq/eq_api.f90` — Fortran-side entry points
 - `eq/eq_param_registry.f90` — `SELECT CASE` table for `set_param`

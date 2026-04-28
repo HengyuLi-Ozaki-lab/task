@@ -30,7 +30,7 @@ $ nm -D eq/libeqapi.so | grep ' T eq_'
 
 `T` 列のシンボルが「エクスポートされた関数」を示します. 6 番目の
 `eq_set_param_str` は `KNAMEQ` 等の `CHARACTER(LEN=80)` 文字列パラメータを
-受け取る専用 API です ({ref}`共通アーキテクチャ <portal:common-architecture>`
+受け取る専用 API です ([共通アーキテクチャ](../../../portal/ja/common/architecture.md)
 の 5 関数 ABI から拡張).
 
 ## Python から見えるようにする

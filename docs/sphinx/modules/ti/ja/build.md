@@ -16,8 +16,7 @@ make -C ti   libtiapi.so             # ti モジュールの共有ライブラ�
 
 ## エクスポートされている関数を確認する
 
-`tr` と同じ **5 関数** がエクスポートされます ({ref}`共通アーキテクチャ
-<portal:common-architecture>` の標準パターン).
+`tr` と同じ **5 関数** がエクスポートされます ([共通アーキテクチャ](../../../portal/ja/common/architecture.md) の標準パターン).
 
 ```bash
 $ nm -D ti/libtiapi.so | grep ' T ti_'

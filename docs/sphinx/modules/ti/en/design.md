@@ -4,7 +4,7 @@ The `ti` library wraps the same physics kernel as the existing `tix2`
 binary (`ticalc.f90`, `ticoef.f90`, `tinclass.f90`, and roughly 20
 other `.f90` sources) with a thin C-ABI entry layer (`ti_api.f90`) to
 form `libtiapi.so`. The 3-layer common design is described in the
-{ref}`Common Architecture <portal:common-architecture>` chapter.
+[Common Architecture](../../../portal/en/common/architecture.md) chapter.
 
 ## Entry layer (`ti_api.f90`)
 
@@ -79,7 +79,7 @@ libtiapi.so
 ## See also
 
 - [`docs/ti-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/ti-library/architecture.md)
-- {ref}`Common Architecture <portal:common-architecture>`
+- [Common Architecture](../../../portal/en/common/architecture.md)
 - `ti/ti_api.h` — C ABI header
 - `ti/ti_api.f90` — Fortran-side entry layer
 - `ti/ti_param_registry.f90` — parameter registry

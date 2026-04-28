@@ -81,7 +81,7 @@ libfpapi.so
 ## References
 
 - [`docs/fp-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/fp-library/architecture.md)
-- {ref}`Common architecture <portal:common-architecture>`
+- [Common architecture](../../../portal/en/common/architecture.md)
 - `fp/fp_api.h` — C ABI header
 - `fp/fp_api.f90` — Fortran-side entry
 - `fp/fp_param_registry.f90` — parameter registry

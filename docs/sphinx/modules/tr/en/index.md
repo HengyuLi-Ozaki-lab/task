@@ -26,7 +26,7 @@ Representative output quantities:
   `BETAN` ($\beta_N$), and 9 more — 13 in total
 
 For Fortran-side design and parameter-registry details see
-{ref}`Common Architecture <portal:common-architecture>` and
+[Common Architecture](../../../portal/en/common/architecture.md) and
 `docs/tr-library/architecture.md`.
 
 ## User guide

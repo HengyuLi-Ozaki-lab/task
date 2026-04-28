@@ -95,7 +95,7 @@ libwrxapi.so
 ## References
 
 - [`docs/wrx-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/wrx-library/architecture.md)
-- {ref}`Common Architecture <portal:common-architecture>`
+- [Common Architecture](../../../portal/en/common/architecture.md)
 - `wrx/wrx_api.h` — C-ABI header
 - `wrx/wrx_api.f90` — Fortran entry layer
 - `wrx/wrx_param_registry.f90` — parameter registry

@@ -106,7 +106,7 @@ libwrapi.so
 ## See also
 
 - [`docs/wr-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/wr-library/architecture.md)
-- {ref}`Common Architecture <portal:common-architecture>`
+- [Common Architecture](../../../portal/en/common/architecture.md)
 - `wr/wr_api.h` — C ABI header
 - `wr/wr_api.f90` — Fortran-side entry
 - `wr/wr_param_registry.f90` — parameter registry

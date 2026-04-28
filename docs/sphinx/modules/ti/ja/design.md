@@ -3,7 +3,7 @@
 `ti` ライブラリは, 既存 `tix2` バイナリと同一の物理カーネル (`ticalc.f90`,
 `ticoef.f90`, `tinclass.f90` など約 20 本の `.f90` ソース) の上に, C ABI 用
 の薄いエントリ層 (`ti_api.f90`) を被せて `libtiapi.so` を構成しています.
-共通の 3 層設計は {ref}`共通アーキテクチャ <portal:common-architecture>` を
+共通の 3 層設計は [共通アーキテクチャ](../../../portal/ja/common/architecture.md) を
 参照してください.
 
 ## エントリ層 (`ti_api.f90`)
@@ -78,7 +78,7 @@ libtiapi.so
 ## 参考リンク
 
 - [`docs/ti-library/architecture.md`](https://github.com/k-yoshimi/task/blob/develop/docs/ti-library/architecture.md)
-- {ref}`共通アーキテクチャ <portal:common-architecture>`
+- [共通アーキテクチャ](../../../portal/ja/common/architecture.md)
 - `ti/ti_api.h` — C ABI ヘッダ
 - `ti/ti_api.f90` — Fortran 側エントリ
 - `ti/ti_param_registry.f90` — パラメータレジストリ
