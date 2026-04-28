@@ -9,6 +9,7 @@ totlib.Tot class and remains untouched at L-7a.
 """
 
 import importlib
+import math
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Tuple, Union
@@ -176,17 +177,68 @@ def _import_module_error(name: str) -> type:
     return getattr(errors_mod, err_cls_name)
 
 
+def compute_rjt_volint(state, *, R0: float, a: float) -> float:
+    """fp's driven current as a scalar [Amperes]: integral of RJT(rho) dA_pol.
+
+    Per spec §8 R2: fp stores RJT in [MA/m^2] on a uniform rho-grid in [0,1]
+    with NRMAX cells. The poloidal cross-section element is
+        dA_pol(NR) = 2*pi * rho_mid * a^2 * drho
+    matching fp's VOLR/(2*pi*R0). Sums over species (matches fp's
+    rtotalIP = sum_NSA PIT). R0 is unused in the area integral but kept
+    in the signature for symmetry with future toroidal-volume variants.
+
+    Args:
+        state: FpState (from fplib.Fplib.get_state()). Reads .RJT[ns][i],
+            .nrmax, .nsamax.
+        R0: major radius [m]. Sourced from tr.RR (set via tot.set_param("tr:RR", ...)).
+        a: minor radius [m]. Sourced from tr.RA (R3 confirmed RA, not RB —
+            fp's rho mesh is RA-normalized per fp/fpcale.f90:34,56).
+
+    Returns:
+        Driven current in Amperes (positive → co-current direction).
+    """
+    nr = state.nrmax
+    if nr < 1:
+        return 0.0
+    drho = 1.0 / nr
+    total = 0.0
+    for ns in range(state.nsamax):
+        for i in range(nr):
+            rho_mid = (i + 0.5) * drho
+            dA_pol = 2.0 * math.pi * rho_mid * (a ** 2) * drho
+            total += state.RJT[ns][i] * 1.0e6 * dA_pol  # MA/m^2 -> A/m^2
+    _ = R0  # unused in area integral; reserved for future toroidal extension
+    return total
+
+
 # ------------------------------------------------------------------
 # Coupling rule registry
 # ------------------------------------------------------------------
-# L-7a scope: only ('fp','tr') is populated. Concrete src_state_key,
-# dst_param, transform are filled in Phase 2 (Equivalence test PR)
-# after R2/R3 outcomes are recorded in the spec.
-# L-7b will add more pairs (('wr','fp'), ('wr','tr'), ('eq','tr'), ...)
+# L-7a: ('fp','tr') is populated below from R2/R3 outcomes (spec §8).
+# tr's PLHCD is dimensionless, so this is a skeleton coupling — physical
+# fidelity (a proper EXTERNAL_DRIVEN_I scalar) is L-7b's scope.
+# L-7b will also add more pairs (('wr','fp'), ('wr','tr'), ('eq','tr'), ...)
 # without changing the orchestrator code.
 
 COUPLING_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
-    # ("fp", "tr"): [...]    ← Phase 2 fills this
+    ("fp", "tr"): [
+        CouplingRule(
+            # Callable: receives (prev_state, params); pulls tr:RR / tr:RA
+            # from params (set via tot.set_param("tr:RR", ...) before run_pipeline).
+            src_state_key=lambda state, params: compute_rjt_volint(
+                state,
+                R0=params["tr:RR"],
+                a=params["tr:RA"],
+            ),
+            dst_param="PLHCD",                  # R3: PNBCD unregistered; PLHCD is the only
+                                                # set_param-accepting current-drive scalar.
+            transform=lambda v: v * 1e-6,       # Amperes -> "MA-scale numeric value"
+                                                # (skeleton: PLHCD is dimensionless — see
+                                                # spec §3 non-goals).
+            doc="fp driven current (RJT volume integral, A) -> tr PLHCD"
+                " (skeleton coupling; L-7b adds proper EXTERNAL_DRIVEN_I scalar)",
+        ),
+    ],
 }
 
 
@@ -328,9 +380,15 @@ class TotPipeline:
           and FpState's top-level attribute layout.
         Wraps lookup/computation errors as TotPipelineCouplingError.
         """
-        try:
-            if callable(rule.src_state_key):
+        if callable(rule.src_state_key):
+            try:
                 return float(rule.src_state_key(prev_state, self._params))
+            except Exception as e:
+                raise TotPipelineCouplingError(
+                    f"source extraction failed for rule {rule.doc!r}: "
+                    f"{type(e).__name__}: {e}"
+                ) from e
+        try:
             scalars = _state_to_scalars(prev_state)
             return float(scalars[rule.src_state_key])
         except KeyError as e:
@@ -340,7 +398,8 @@ class TotPipeline:
             ) from e
         except Exception as e:
             raise TotPipelineCouplingError(
-                f"source extraction failed for rule {rule.doc!r}: {e}"
+                f"source extraction failed for rule {rule.doc!r}: "
+                f"{type(e).__name__}: {e}"
             ) from e
 
     def run_pipeline(self, steps) -> PipelineResult:
