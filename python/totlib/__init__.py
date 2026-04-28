@@ -21,8 +21,8 @@ Example::
     with Tot() as tot:
         tot.set_param("eq:RR", 6.2)
         tot.set_param("tr:DT", 0.01)
-        # tot.run(ntmax=10)            # NOT_IMPL until L-6 fan-out
-        # state = tot.get_state()      # NOT_IMPL until L-6 fan-out
+        tot.run(ntmax=10)
+        state = tot.get_state()
 """
 from .totlib import Tot
 from .state import TotState

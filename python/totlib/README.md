@@ -314,10 +314,13 @@ debugging without losing earlier scalars.
   per-module module variables. Two concurrent `Tot()` handles share
   state; the second `tot_init` resets globals. Use `multiprocessing`
   for parallel sweeps — each worker loads its own `libtotapi.so`.
-- **`run` / `get_state` await L-6.** `tot_init`, `tot_run`,
-  `tot_get_state`, `tot_finalize` currently return `rc=4`
-  (`TotlibNotImplementedError`). L-6 fan-out wires the per-module
-  `*_run` / `*_get_state` chain.
+- **Cross-module coupling lives outside the orchestrator.**
+  `tot_run(ntmax)` advances `tr_api_run` only — `fp/wr/ti` are init'd
+  but their `*_run` is not invoked from the Fortran orchestrator.
+  Multi-module pipelines (e.g. fp driven current → tr) are handled at
+  the Python layer via `totlib.TotPipeline` (L-7a). For a pure-TR
+  transport solve, `Tot()` is enough; for cross-module coupling, use
+  `TotPipeline()`.
 - **No graphics / MPI / OpenMP API.** Graphics symbols are replaced by
   stubs. The loader uses `RTLD_LAZY`, so unreachable symbols never
   resolve.
