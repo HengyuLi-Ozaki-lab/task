@@ -18,8 +18,11 @@ words:
 - `tot.get_state()` returns the **aggregated TR state**
   (`state.tr_present == 1`, `state.ti_present == 0`, ...).
 
-Cross-module coupling such as `wr` -> `tr` (wave heating deposition) and
-`fp` -> `tr` (current drive) is planned for the upcoming Phase L-7.
+Cross-module coupling for `fp` -> `tr` (driven current scalar) is now
+implemented in L-7a as `TotPipeline` (see §3 below). Profile-level
+coupling such as `wr` -> `tr` (wave heating deposition profile) and
+`eq` -> `tr` (q-profile) is scheduled for L-7b and beyond via the
+BPSD broker.
 ```
 
 ```{admonition} About this page
@@ -156,64 +159,75 @@ Expected output:
 
 ---
 
-## 3. Future coupling pipeline (planned for L-7)
+## 3. Multi-module coupling pipeline (L-7a)
 
-In L-7, a pipeline that couples `wr` -> `tr` (RF heating deposition),
-`fp` -> `tr` (RF current drive), `eq` -> `tr` (per-step equilibrium
-update), etc. is envisaged. It is not implemented yet, but sketching
-the client-side shape now will make the L-7 transition smoother.
+L-7a introduces `TotPipeline`, a Python-side orchestrator that composes
+existing per-module wrappers (`Fplib`, `Trlib`, ...) with hardcoded
+scalar coupling rules. It does not use `libtotapi.so`; the legacy `Tot`
+class above continues to handle that path.
 
 ```python
-from totlib import Tot
+from totlib import TotPipeline
 
-# Note: the following is pseudo-code targeting the L-7 implementation.
-# In the current state (L-6), `tot.run()` only advances TR transport.
+with TotPipeline() as tot:
+    # fp side fixture (active drive)
+    tot.set_param("fp:NSAMAX", 2)
+    tot.set_param("fp:E0", 0.001)        # induction E-field [V/m]
 
-def integrated_step(tot: Tot, *, ntmax: int = 1) -> dict:
-    """Pipeline that intends to advance eq + wr + fp + tr in one cycle."""
-    # 1. eq solve (update equilibrium from current plasma current/pressure)
-    # tot.run_module("eq", mode=0)            # <- to be added in L-7
-
-    # 2. wr ray-trace (compute RF deposition profile from current n/T)
-    # tot.run_module("wr", nray=8)            # <- to be added in L-7
-
-    # 3. fp Fokker-Planck (RF deposition -> current drive)
-    # tot.run_module("fp", ntmax=10)          # <- to be added in L-7
-
-    # 4. tr transport (advance one step using the sources above)
-    tot.run(ntmax)                              # <- works in L-6 too
-
-    return tot.get_state().scalars
-
-
-# At present only (4) actually runs:
-with Tot() as tot:
+    # tr side fixture (compute_rjt_volint reads tr:RR / tr:RA)
     tot.set_param("tr:RR", 6.2)
     tot.set_param("tr:RA", 2.0)
     tot.set_param("tr:BB", 5.3)
     tot.set_param("tr:NSMAX", 2)
-    tot.set_param("tr:DT", 0.01)
-    tot.set_param("tr:NTMAX", 100)
-    sc = integrated_step(tot, ntmax=10)
-    print(f"T={sc['T']:.3f}s WPT={sc['WPT']:.3f}MJ BETAN={sc['BETAN']:.4f}")
+
+    result = tot.run_pipeline([
+        ("fp", {"ntmax": 5}),
+        ("tr", {"ntmax": 1}),
+    ])
+    tr_scalars = result.last("tr").scalars
+    print(f"AJT={tr_scalars['AJT']}, coupling={result.last('tr').coupling_applied}")
 ```
 
-Expected output (L-6 stage, TR only):
+`run_pipeline` automatically applies `COUPLING_RULES` between adjacent
+steps. L-7a registers exactly one rule:
+`fp -> tr`'s `compute_rjt_volint(state) -> tr.PLHCD`.
 
-```text
-T=0.100s WPT=10.007MJ BETAN=0.2872
+```{warning}
+**L-7a skeleton coupling:** the sink param `tr.PLHCD` is a
+**dimensionless multiplier** (R3 outcome: `tr_param_registry.f90`
+does not register `PNBCD`, so `PLHCD` is the only `set_param`-accepting
+current-drive scalar). L-7a verifies the **API plumbing**; physical
+fidelity will be addressed in L-7b once a dedicated scalar such as
+`EXTERNAL_DRIVEN_I` is added on the Fortran side. Profile-level
+coupling (RF deposition profile, equilibrium q-profile, ...) is also
+deferred to L-7b via the BPSD broker. The equivalence test
+(`python/totlib/tests/test_pipeline_equiv.py`) pins `1e-10` agreement
+between hand-written and pipeline-driven runs.
 ```
 
-### APIs planned for L-7 (draft)
+If a step raises mid-pipeline, a `TotPipelineRunError` is raised whose
+`partial_result` attribute carries snapshots of the steps that completed
+successfully — so partial analyses are not lost.
 
-| Added API | Role |
-|---|---|
-| `tot.run_module(name, **kwargs)` | Advance a single module only |
-| `tot.run_pipeline(steps)` | Run multiple modules in a specified order for one cycle |
-| `state.{eq,wr,fp,ti}_*` | Aggregated state for each module |
-| `tot.couple(src, dst)` | Declare a source -> sink data flow |
+### Calling from MCP
 
-The specification will be finalized when L-7 work begins.
+The `tot_mcp` server now ships a **`run_pipeline` MCP tool** (see
+`python/mcp-servers/tot_mcp/README.md` §7.1). LLM clients can run the
+same pipeline via:
+
+```json
+{
+  "steps": [
+    {"module": "fp", "kwargs": {"ntmax": 5}},
+    {"module": "tr", "kwargs": {"ntmax": 1}}
+  ],
+  "params": {"fp:NSAMAX": 2, "fp:E0": 0.001, "tr:RR": 6.2, "tr:RA": 2.0}
+}
+```
+
+Every invocation force-closes both the legacy `STATE` (the singleton
+`Tot`) and any prior pipeline, so successive calls always start from a
+clean, isolated state.
 
 ---
 
@@ -223,7 +237,7 @@ The specification will be finalized when L-7 work begins.
 |---|---|
 | **namespaced setup + transport_step** | TR-based steady-state analysis using a single `Tot` (eq geometry is also initialized at the same time) |
 | **transport_step + sweep** | Grid scan such as RR x BB to evaluate TR transport sensitivity |
-| **L-7 pipeline placeholder** | Writing this now means the migration when L-7 ships can be done in one pass |
+| **TotPipeline (L-7a)** | `fp -> tr` driven-current scalar coupling completes in one PR; profile coupling is L-7b and beyond |
 
 For per-sub-module application patterns, see each module's
 `applications.md` (e.g. `docs/sphinx/modules/tr/en/applications.md`,

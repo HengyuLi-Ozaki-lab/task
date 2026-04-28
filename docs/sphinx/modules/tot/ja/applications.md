@@ -16,8 +16,10 @@
 - `tot.get_state()` は **TR の state を集約**して返す
   (`state.tr_present == 1`, `state.ti_present == 0`, ...).
 
-将来の Phase L-7 で `wr` → `tr` (波加熱沈着), `fp` → `tr` (電流駆動)
-等の cross-module coupling が実装される予定です.
+L-7a で `fp` → `tr` (driven current scalar) の coupling が `TotPipeline`
+として実装済みです (本ページ §3 参照). `wr` → `tr` (波加熱沈着 profile),
+`eq` → `tr` (q-profile) 等の profile-level coupling は L-7b 以降で
+BPSD broker 経由の実装が予定されています.
 ```
 
 ```{admonition} このページの位置付け
@@ -152,64 +154,73 @@ with Tot() as tot:
 
 ---
 
-## 3. 将来の coupling pipeline (L-7 予定)
+## 3. 複数モジュール coupling pipeline (L-7a)
 
-L-7 では `wr` → `tr` (RF 加熱沈着), `fp` → `tr` (RF 電流駆動),
-`eq` → `tr` (時刻ごとの平衡更新) 等を coupling する pipeline が想定
-されています. 現状はまだ実装されていませんが, クライアント側のコード
-形を示しておくと L-7 移行が滑らかになります.
+L-7a で `TotPipeline` (Python 側オーケストレータ) が導入され,
+`fp` → `tr` のスカラー coupling (driven current) が動作するように
+なりました. `libtotapi.so` を経由せず, 既存の `Fplib` / `Trlib` 等の
+モジュール wrapper を組み合わせて 1 つの pipeline として実行します.
 
 ```python
-from totlib import Tot
+from totlib import TotPipeline
 
-# 注意: 以下は L-7 で実装される想定の pseudo-code です.
-# 現状 (L-6) の `tot.run()` は TR transport のみを進めます.
+with TotPipeline() as tot:
+    # fp 側 fixture (active drive)
+    tot.set_param("fp:NSAMAX", 2)
+    tot.set_param("fp:E0", 0.001)        # 誘導電場 [V/m]
 
-def integrated_step(tot: Tot, *, ntmax: int = 1) -> dict:
-    """eq + wr + fp + tr を 1 サイクル進める想定の pipeline."""
-    # 1. eq solve (今の plasma current/pressure から平衡更新)
-    # tot.run_module("eq", mode=0)            # ← L-7 で追加予定
-
-    # 2. wr ray-trace (今の n/T から RF 沈着 profile を計算)
-    # tot.run_module("wr", nray=8)            # ← L-7 で追加予定
-
-    # 3. fp Fokker-Planck (RF 沈着 → 電流駆動)
-    # tot.run_module("fp", ntmax=10)          # ← L-7 で追加予定
-
-    # 4. tr transport (上記 source を反映して 1 step 進める)
-    tot.run(ntmax)                              # ← L-6 でも動く
-
-    return tot.get_state().scalars
-
-
-# 現時点では (4) のみ動作:
-with Tot() as tot:
+    # tr 側 fixture (compute_rjt_volint が tr:RR / tr:RA を参照)
     tot.set_param("tr:RR", 6.2)
     tot.set_param("tr:RA", 2.0)
     tot.set_param("tr:BB", 5.3)
     tot.set_param("tr:NSMAX", 2)
-    tot.set_param("tr:DT", 0.01)
-    tot.set_param("tr:NTMAX", 100)
-    sc = integrated_step(tot, ntmax=10)
-    print(f"T={sc['T']:.3f}s WPT={sc['WPT']:.3f}MJ BETAN={sc['BETAN']:.4f}")
+
+    result = tot.run_pipeline([
+        ("fp", {"ntmax": 5}),
+        ("tr", {"ntmax": 1}),
+    ])
+    tr_scalars = result.last("tr").scalars
+    print(f"AJT={tr_scalars['AJT']}, coupling={result.last('tr').coupling_applied}")
 ```
 
-期待される出力 (L-6 段階, TR のみ):
+`run_pipeline` は隣接ステップ間で `COUPLING_RULES` を自動適用します.
+L-7a では 1 件 (`fp → tr` の `compute_rjt_volint(state) → tr.PLHCD`)
+だけが登録されています.
 
-```text
-T=0.100s WPT=10.007MJ BETAN=0.2872
+```{warning}
+**L-7a スケルトン カップリング:** sink param `tr.PLHCD` は **無次元
+multiplier** です (R3 outcome: `tr_param_registry.f90` に `PNBCD` 未登録
+のため代替). L-7a は **API 配線の妥当性検証**が目的で, 物理的忠実度は
+L-7b で `EXTERNAL_DRIVEN_I` のような専用スカラーが Fortran 側に追加
+された時点で対応します. profile-level な coupling (波加熱沈着 profile,
+平衡 q-profile 等) も L-7b 以降で BPSD broker 経由で実装されます.
+等価性テスト (`python/totlib/tests/test_pipeline_equiv.py`) は
+1e-10 の許容誤差で hand-written と pipeline-driven が一致することを
+確認しています.
 ```
 
-### L-7 で追加される予定の API (案)
+mid-pipeline で例外が発生した場合は `TotPipelineRunError` が raise され,
+`partial_result` 属性に成功済ステップの snapshot が保持されます (途中まで
+の解析結果を捨てずに済みます).
 
-| 追加 API | 役割 |
-|---|---|
-| `tot.run_module(name, **kwargs)` | 単一モジュールだけを進める |
-| `tot.run_pipeline(steps)` | 複数モジュールを順序指定で 1 サイクル |
-| `state.{eq,wr,fp,ti}_*` | 各モジュールの aggregated state |
-| `tot.couple(src, dst)` | source → sink のデータフロー宣言 |
+### MCP からの呼び出し
 
-仕様は L-7 着手時に固まります.
+`tot_mcp` サーバには **`run_pipeline` MCP tool** が追加済みです
+(`python/mcp-servers/tot_mcp/README.md §7.1` 参照). LLM クライアントから
+は次の JSON で同じ pipeline を実行できます:
+
+```json
+{
+  "steps": [
+    {"module": "fp", "kwargs": {"ntmax": 5}},
+    {"module": "tr", "kwargs": {"ntmax": 1}}
+  ],
+  "params": {"fp:NSAMAX": 2, "fp:E0": 0.001, "tr:RR": 6.2, "tr:RA": 2.0}
+}
+```
+
+呼び出しごとに既存 `STATE` (legacy `Tot`) と直前の pipeline は force-close
+されるため, 連続呼び出しでも各実行は独立した clean state から始まります.
 
 ---
 
@@ -219,7 +230,7 @@ T=0.100s WPT=10.007MJ BETAN=0.2872
 |---|---|
 | **namespaced setup + transport_step** | `Tot` 1 つで TR ベースの定常解析 (eq の geometry も同時に init される) |
 | **transport_step + sweep** | RR × BB のような格子スキャンで, TR transport の感度を評価 |
-| **L-7 pipeline placeholder** | 現時点で書いておくと, L-7 リリース時の移行が一括で済む |
+| **TotPipeline (L-7a)** | `fp → tr` driven current のスカラー coupling を 1 PR で完結. profile coupling は L-7b 以降 |
 
 各サブモジュール単体の応用パターンは各モジュールの `applications.md`
 (例: `docs/sphinx/modules/tr/ja/applications.md`,
