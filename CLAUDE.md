@@ -15,7 +15,13 @@ comments or trivial 1-line CI tweaks):
 2. **Code review**: launch `Agent(subagent_type="feature-dev:code-reviewer",
    …)` on the diff since the last reviewed commit. Paste its HIGH /
    MED findings back to the user before pushing.
-3. **Write a pre-push marker**: `touch "$(git rev-parse --git-common-dir)/REVIEW_OK_$(git rev-parse HEAD)"`
+3. **Codex independent review**: also launch `Agent(subagent_type="codex:codex-rescue", …)`
+   on the same diff for an independent second opinion. The two reviewers
+   regularly catch different classes of issue (the in-house reviewer
+   anchors on plan adherence; Codex anchors on cross-cutting code-quality
+   and edge cases). Paste its HIGH / MED findings back alongside step 2's.
+   Both can run in parallel — fire both `Agent` calls in the same message.
+4. **Write a pre-push marker**: `touch "$(git rev-parse --git-common-dir)/REVIEW_OK_$(git rev-parse HEAD)"`
    — the pre-push hook blocks push without it. `--git-common-dir`
    resolves to the shared `<main>/.git` from both the main checkout
    and any linked worktrees, so the same command works everywhere.

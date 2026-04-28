@@ -1698,10 +1698,10 @@ Create `python/totlib/tests/test_pipeline_helpers.py`:
 
 ```python
 """Test the compute_rjt_volint helper using a synthetic state object."""
-from unittest.mock import MagicMock
 import math
-import pytest
+
 from unittest.mock import MagicMock
+
 from totlib.pipeline import compute_rjt_volint
 
 
@@ -1719,7 +1719,7 @@ def _fake_state(rjt_values: list[list[float]]):
 
 
 def test_compute_rjt_volint_uniform_single_species():
-    """RJT = 1.0 MA/m^2, uniform across nr=4 cells, R0=3.0, a=1.0 → expected ~3.14159 MA."""
+    """RJT = 1.0 MA/m^2, uniform across nr=4 cells, R0=3.0, a=1.0 → expected ~3.14159e6 A."""
     state = _fake_state([[1.0, 1.0, 1.0, 1.0]])
     # Per R2 helper: total = sum_ns sum_i RJT[ns][i] * 1e6 * 2*pi*rho_mid*a^2*drho
     # rho_mid = (i+0.5)/nr; drho = 1/nr
@@ -1977,7 +1977,10 @@ FP_PARAMS = {"E0": 0.001}
 
 # tr fixture from python/trlib/examples/quickstart.py (validated in R1-b);
 # RR=6.2, RA=2.0 propagate into compute_rjt_volint via the COUPLING_RULES callable.
-TR_PARAMS = {
+# Scalar params are set via set_params(); array params use NAME[i] bracket
+# syntax and are set individually via set_param() (per python/trlib/trlib.py
+# set_params API + python/trlib/examples/quickstart.py).
+TR_SCALAR_PARAMS = {
     "RR": 6.2,
     "RA": 2.0,
     "RKAP": 1.7,
@@ -1985,11 +1988,16 @@ TR_PARAMS = {
     "NSMAX": 2,
     "DT": 0.1,
     "NTSTEP": 10,
-    "PN1": 1.0,
-    "PN2": 1.0,
-    "PT1": 1.5,
-    "PT2": 1.5,
 }
+TR_ARRAY_PARAMS = {
+    "PN[1]": 1.0,
+    "PN[2]": 1.0,
+    "PT[1]": 1.5,
+    "PT[2]": 1.5,
+}
+# Alias for compute_rjt_volint lookups (only needs RR/RA).
+TR_PARAMS = TR_SCALAR_PARAMS
+
 NTMAX_FP = 1
 NTMAX_TR = 1
 
@@ -2008,7 +2016,9 @@ def _baseline():
     fp.close()
 
     tr = Trlib()
-    tr.set_params(**TR_PARAMS)
+    tr.set_params(**TR_SCALAR_PARAMS)
+    for name, val in TR_ARRAY_PARAMS.items():
+        tr.set_param(name, val)
     # R3 confirmed: PNBCD is unregistered; PLHCD is the chosen skeleton param.
     tr.set_param("PLHCD", rjt_volint * 1e-6)
     tr.run(ntmax=NTMAX_TR)
@@ -2019,13 +2029,14 @@ def _baseline():
 
 def _through_pipeline():
     """Pattern Y: run_pipeline."""
-    pipeline_params = (
-        {f"fp:{k}": v for k, v in FP_PARAMS.items()}
-        | {f"tr:{k}": v for k, v in TR_PARAMS.items()}
-    )
     pipe = TotPipeline()
-    for k, v in pipeline_params.items():
-        pipe.set_param(k, v)
+    for k, v in FP_PARAMS.items():
+        pipe.set_param(f"fp:{k}", v)
+    for k, v in TR_SCALAR_PARAMS.items():
+        pipe.set_param(f"tr:{k}", v)
+    # Array params: bracket syntax passes through pipe.set_param verbatim.
+    for k, v in TR_ARRAY_PARAMS.items():
+        pipe.set_param(f"tr:{k}", v)
     result = pipe.run_pipeline([
         ("fp", {"ntmax": NTMAX_FP}),
         ("tr", {"ntmax": NTMAX_TR}),
