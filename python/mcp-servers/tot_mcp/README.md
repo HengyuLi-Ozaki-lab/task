@@ -121,7 +121,7 @@ python -m tot_mcp.server --help
 python -m tot_mcp.server --print-tools
 ```
 
-以下の 9 ツールが並びます。
+以下の 10 ツールが並びます。
 
 ```
 describe_parameters
@@ -131,6 +131,7 @@ get_state
 init
 run
 run_and_get_state
+run_pipeline
 set_param
 set_params
 ```
@@ -275,8 +276,47 @@ LLM は `describe_parameters` を呼び、`parameters["eq"]` を抽出して返�
 | `describe_parameters` | 名前空間ごとのパラメータ一覧・型・説明 | なし |
 | `describe_state_schema` | `get_state` の JSON schema | なし |
 | `run_and_get_state` | init + set + run + get_state を一括 | `params`, `ntmax` |
+| `run_pipeline` | 複数モジュールを連結したスカラーカップリング実行 (L-7a) | `steps`, `params` |
 
 > L-3/L-4/L-5 時点では `init` / `run` / `get_state` / `finalize` の Fortran 側がスタブ (`TOT_ERR_NOT_IMPL`) です。`set_param` / `set_param_str` は端から端まで実装済みなので、パラメータ設定の挙動はいま既に確認できます。L-6 で per-module fan-out が入ると、`run` / `get_state` も自動的に正常応答に切り替わります。
+
+### 7.1. `run_pipeline` ツール (L-7a)
+
+`run_pipeline` は **複数モジュールにまたがるスカラーカップリング**を 1 回の MCP 呼び出しで実行するツールです。`libtotapi.so` ではなく、Python 側の `totlib.TotPipeline` (Phase 1/2 で導入) を使ってモジュール間の値伝搬を行います。
+
+**引数:**
+
+- `steps`: 実行するステップのリスト。各要素は `{"module": "<name>", "kwargs": {...}}` 形式の dict。`module` 名は `fp` / `tr` / `eq` / `wr` / `wrx` / `ti` のいずれか。
+- `params` (省略可): 走らせる前にまとめてセットするパラメータ。`{"<module>:<param>": value, ...}` 形式 (例: `{"fp:NSAMAX": 2, "tr:RR": 6.2}`)。
+
+**戻り値:** `dict` — モジュール名をキーに各ステップの最終 scalar が並び、`_steps` キーに全ステップ (`module` / `scalars` / `coupling_applied`) のタイムラインが入ります。
+
+**現在登録されているカップリング規則 (L-7a):**
+
+- `fp → tr`: `compute_rjt_volint(fp_state)` (A) を `× 1e-6` 変換して `tr.PLHCD` (無次元) にセット。
+
+> **L-7a スケルトン カップリング注記:** `tr.PLHCD` は **無次元 multiplier** です (R3 outcome: `tr_param_registry.f90` に `PNBCD` 未登録のため代替として採用)。L-7a は **API 配線の妥当性検証**が目的で、物理的忠実度は L-7b で `EXTERNAL_DRIVEN_I` のような専用スカラーを Fortran 側に追加した時点で対応します。L-7a 等価性テスト (`python/totlib/tests/test_pipeline_equiv.py`) は 1e-10 の許容誤差で hand-written と pipeline-driven の結果が一致することを保証します。
+
+**呼び出し例 (JSON):**
+
+```json
+{
+  "steps": [
+    {"module": "fp", "kwargs": {"ntmax": 5}},
+    {"module": "tr", "kwargs": {"ntmax": 1}}
+  ],
+  "params": {"fp:NSAMAX": 2, "tr:RR": 6.2, "tr:RA": 2.0}
+}
+```
+
+**force-close ゲート:** `run_pipeline` を呼ぶたびに
+
+- 既存の legacy `STATE` (Tot シングルトン) を `STATE.close()` で閉じる
+- 直前の `PIPELINE_STATE` (もしあれば) も `_force_close_pipeline()` で閉じる
+
+ことで、毎回クリーンな状態から開始します。これは `run_and_get_state` の HIGH 監査パターン (2026-04-22) と同じ思想です。`run_pipeline` 中の例外発生時も `PIPELINE_STATE` は `None` にリセットされるので、次の呼び出しが open ハンドルを引き継ぐことはありません。
+
+**入力検証:** `steps` の各要素は dict であり `"module"` と `"kwargs"` の両キーを持つ必要があります。欠落していると `TotPipelineCouplingError` が **state を変更する前に** raise されるため、不正ペイロードによる副作用はありません。
 
 ## 8. 名前空間プレフィックス（重要）
 
