@@ -81,6 +81,7 @@ except Exception:  # pragma: no cover - MCP SDK not installed
 # ---------------------------------------------------------------------
 from totlib import (  # noqa: E402
     Tot,
+    TotPipeline,
     TotlibError,
     TotlibInitError,
     TotlibInvalidParamError,
@@ -89,6 +90,7 @@ from totlib import (  # noqa: E402
     TotlibNotImplementedError,
 )
 from totlib._ffi import TOT_NAMESPACES  # noqa: E402
+from totlib.errors import TotPipelineCouplingError  # noqa: E402
 
 
 # =====================================================================
@@ -271,6 +273,53 @@ class _ServerState:
 
 
 STATE = _ServerState()
+
+# Module-level pipeline state for L-7a run_pipeline tool.
+PIPELINE_STATE: Optional[TotPipeline] = None
+
+
+def _force_close_pipeline() -> None:
+    """Close PIPELINE_STATE if open and reset it to None.
+
+    Mirrors the HIGH audit pattern used by the legacy STATE wrapper —
+    every run_pipeline call starts from a clean slate so per-call
+    isolation matches the existing run_and_get_state semantics.
+    """
+    global PIPELINE_STATE
+    if PIPELINE_STATE is not None:
+        try:
+            PIPELINE_STATE.close()
+        finally:
+            PIPELINE_STATE = None
+
+
+def _normalize_pipeline_steps(steps: list) -> list:
+    """MCP transports steps as a list of dicts with 'module' and 'kwargs'
+    keys; TotPipeline expects [(name, kwargs), ...] tuples.
+
+    Validates the dict shape upfront — a malformed payload raises
+    TotPipelineCouplingError BEFORE any pipeline construction so the
+    caller sees the validation error directly without partial side
+    effects (matches the spec §6.2 _validate_steps philosophy at the
+    MCP boundary).
+    """
+    normalized = []
+    for i, item in enumerate(steps):
+        if not isinstance(item, dict):
+            raise TotPipelineCouplingError(
+                f"steps[{i}] must be a dict, got {type(item).__name__}"
+            )
+        if "module" not in item:
+            raise TotPipelineCouplingError(
+                f"steps[{i}] missing required key 'module'"
+            )
+        if "kwargs" not in item:
+            raise TotPipelineCouplingError(
+                f"steps[{i}] missing required key 'kwargs' "
+                f"(use {{}} for an empty kwargs dict)"
+            )
+        normalized.append((item["module"], item["kwargs"]))
+    return normalized
 
 
 # =====================================================================
@@ -608,6 +657,48 @@ def handle_run_and_get_state(
         raise _wrap_totlib_error(exc) from exc
 
 
+def handle_run_pipeline(
+    steps: list,
+    params: dict | None = None,
+) -> dict:
+    """Run a multi-module scalar coupling pipeline (L-7a).
+
+    Backed by totlib.TotPipeline. Mutually exclusive with the legacy
+    STATE (Tot) — every invocation force-closes whatever is currently
+    live, so successive calls produce clean, isolated runs.
+
+    Args:
+        steps: list of {"module": "<name>", "kwargs": {...}} dicts.
+            Module names: "fp", "tr", "eq", "wr", "wrx", "ti".
+        params: optional bulk param setter, e.g. {"fp:NSAMAX": 2,
+            "tr:RR": 6.2}.
+
+    Returns:
+        dict: PipelineResult.to_dict() — flat per-module final scalars
+        plus a "_steps" timeline of every step that ran.
+    """
+    global PIPELINE_STATE
+
+    # Validate steps input BEFORE any pipeline construction (pre-flight).
+    # _normalize_pipeline_steps raises TotPipelineCouplingError for
+    # malformed payloads so the caller gets the error without side effects.
+    normalized = _normalize_pipeline_steps(steps)
+
+    # Mutually exclusive with legacy STATE: close the wrapper's inner Tot.
+    # _ServerState.close() is idempotent and DOES NOT null STATE itself;
+    # subsequent legacy tool calls re-open via STATE.ensure_open().
+    STATE.close()
+
+    # Force-close any leftover pipeline from a previous run_pipeline call.
+    _force_close_pipeline()
+
+    PIPELINE_STATE = TotPipeline()
+    if params:
+        for k, v in params.items():
+            PIPELINE_STATE.set_param(k, v)
+    return PIPELINE_STATE.run_pipeline(normalized).to_dict()
+
+
 # =====================================================================
 # FastMCP server wiring.
 #
@@ -773,6 +864,17 @@ def build_server() -> Any:
             return get_state()
         """
         return handle_run_and_get_state(params, ntmax)
+
+    @mcp.tool()
+    def run_pipeline(
+        steps: list,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Run a multi-module scalar coupling pipeline (L-7a).
+
+        See handle_run_pipeline for details.
+        """
+        return handle_run_pipeline(steps=steps, params=params)
 
     return mcp
 
