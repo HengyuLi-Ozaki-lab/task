@@ -461,3 +461,36 @@ def test_coupling_rules_has_fp_to_tr():
     # tr:RR / tr:RA from the params dict.
     assert callable(rule.src_state_key)
     assert "RJT" in rule.doc or "driven current" in rule.doc.lower()
+
+
+def test_coupling_rules_fp_tr_lambda_calls_compute_rjt_volint():
+    """Pin the production fp→tr lambda's behaviour: signature is (state, params),
+    it pulls tr:RR / tr:RA from params, and it routes to compute_rjt_volint.
+    Uses the helper's nr<1 short-circuit so we don't need real RJT arrays."""
+    from totlib.pipeline import COUPLING_RULES
+    rule = COUPLING_RULES[("fp", "tr")][0]
+    state = MagicMock()
+    state.nrmax = 0   # triggers compute_rjt_volint's nr<1 → 0.0 short-circuit
+    state.nsamax = 0
+    out = rule.src_state_key(state, {"tr:RR": 6.2, "tr:RA": 2.0})
+    assert out == 0.0
+    # Transform: 0 A → 0 (sanity); the equivalence test (Task 2.3) covers the
+    # non-zero path with real lib*.so.
+    assert rule.transform(out) == 0.0
+
+
+def test_coupling_rules_fp_tr_lambda_raises_when_tr_RR_missing(patch_wrappers):
+    """If the user forgets pipe.set_param("tr:RR", …), the rule must surface
+    a TotPipelineCouplingError whose message names tr:RR (not the lambda repr).
+    Regression guard for the _extract_source error-routing fix."""
+    pipe = TotPipeline()
+    fp_state = _make_state({"foo": 1.0})
+    fp_state.nrmax = 0
+    fp_state.nsamax = 0
+    patch_wrappers["classes"]["fp"].return_value.get_state.return_value = fp_state
+    with pytest.raises(TotPipelineRunError) as ei:
+        pipe.run_pipeline([("fp", {"ntmax": 1}), ("tr", {"ntmax": 1})])
+    assert isinstance(ei.value.__cause__, TotPipelineCouplingError)
+    assert "tr:RR" in str(ei.value.__cause__), (
+        f"expected 'tr:RR' in error message, got: {ei.value.__cause__!r}"
+    )

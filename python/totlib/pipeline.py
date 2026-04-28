@@ -214,10 +214,10 @@ def compute_rjt_volint(state, *, R0: float, a: float) -> float:
 # ------------------------------------------------------------------
 # Coupling rule registry
 # ------------------------------------------------------------------
-# L-7a scope: only ('fp','tr') is populated. Concrete src_state_key,
-# dst_param, transform are filled in Phase 2 (Equivalence test PR)
-# after R2/R3 outcomes are recorded in the spec.
-# L-7b will add more pairs (('wr','fp'), ('wr','tr'), ('eq','tr'), ...)
+# L-7a: ('fp','tr') is populated below from R2/R3 outcomes (spec §8).
+# tr's PLHCD is dimensionless, so this is a skeleton coupling — physical
+# fidelity (a proper EXTERNAL_DRIVEN_I scalar) is L-7b's scope.
+# L-7b will also add more pairs (('wr','fp'), ('wr','tr'), ('eq','tr'), ...)
 # without changing the orchestrator code.
 
 COUPLING_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
@@ -380,9 +380,15 @@ class TotPipeline:
           and FpState's top-level attribute layout.
         Wraps lookup/computation errors as TotPipelineCouplingError.
         """
-        try:
-            if callable(rule.src_state_key):
+        if callable(rule.src_state_key):
+            try:
                 return float(rule.src_state_key(prev_state, self._params))
+            except Exception as e:
+                raise TotPipelineCouplingError(
+                    f"source extraction failed for rule {rule.doc!r}: "
+                    f"{type(e).__name__}: {e}"
+                ) from e
+        try:
             scalars = _state_to_scalars(prev_state)
             return float(scalars[rule.src_state_key])
         except KeyError as e:
@@ -392,7 +398,8 @@ class TotPipeline:
             ) from e
         except Exception as e:
             raise TotPipelineCouplingError(
-                f"source extraction failed for rule {rule.doc!r}: {e}"
+                f"source extraction failed for rule {rule.doc!r}: "
+                f"{type(e).__name__}: {e}"
             ) from e
 
     def run_pipeline(self, steps) -> PipelineResult:
