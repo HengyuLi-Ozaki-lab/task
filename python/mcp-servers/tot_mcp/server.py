@@ -90,7 +90,7 @@ from totlib import (  # noqa: E402
     TotlibNotImplementedError,
 )
 from totlib._ffi import TOT_NAMESPACES  # noqa: E402
-from totlib.errors import TotPipelineCouplingError  # noqa: E402
+from totlib.errors import TotPipelineCouplingError, TotPipelineRunError  # noqa: E402
 
 
 # =====================================================================
@@ -303,6 +303,10 @@ def _normalize_pipeline_steps(steps: list) -> list:
     effects (matches the spec §6.2 _validate_steps philosophy at the
     MCP boundary).
     """
+    if not steps:
+        raise TotPipelineCouplingError(
+            "steps must be a non-empty list of {'module', 'kwargs'} dicts"
+        )
     normalized = []
     for i, item in enumerate(steps):
         if not isinstance(item, dict):
@@ -504,6 +508,18 @@ def _wrap_totlib_error(exc: Exception) -> "ToolError":  # noqa: F821
             f"L-3/L-4/L-5 ship stub init/run/get_state/finalize; L-6 "
             f"will wire up the per-module fan-out."
         )
+    elif isinstance(exc, TotPipelineRunError):
+        # H2 fix: surface partial_result metadata so MCP clients can recover
+        # earlier-step scalars. The __cause__ chain (via `raise ... from exc`)
+        # retains the original TotPipelineRunError so callers can access
+        # partial_result programmatically via exc.__cause__.partial_result.
+        completed = len(exc.partial_result.steps) if exc.partial_result else 0
+        msg = (
+            f"pipeline run failed at step {exc.failed_step_index} "
+            f"({exc.failed_module}); {completed} step(s) completed before "
+            f"failure. Partial results are accessible via the __cause__ chain. "
+            f"Original error: {exc}"
+        )
     elif isinstance(exc, TotlibInitError):
         msg = f"tot_init failed: {exc}"
     elif isinstance(exc, TotlibError):
@@ -684,11 +700,13 @@ def handle_run_pipeline(
     # caller sees the validation error directly without wrapper noise.
     normalized = _normalize_pipeline_steps(steps)
 
-    # Mutually exclusive with legacy STATE; force-close prior pipeline.
-    STATE.close()
-    _force_close_pipeline()
-
     try:
+        # Cleanup gates inside the try so that failures during STATE.close()
+        # or _force_close_pipeline() are wrapped by _wrap_totlib_error like
+        # every other handler in this file (H1 fix).
+        STATE.close()
+        _force_close_pipeline()
+
         PIPELINE_STATE = TotPipeline()
         if params:
             for k, v in params.items():
@@ -710,7 +728,7 @@ def handle_run_pipeline(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 9 tot tools."""
+    """Build and return a FastMCP server instance with the 10 tot tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -936,6 +954,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "describe_parameters",
                 "describe_state_schema",
                 "run_and_get_state",
+                "run_pipeline",
             ]
         ):
             sys.stdout.write(tool + "\n")

@@ -121,7 +121,7 @@ python -m tot_mcp.server --help
 python -m tot_mcp.server --print-tools
 ```
 
-以下の 9 ツールが並びます。
+以下の 10 ツールが並びます。
 
 ```
 describe_parameters
@@ -131,6 +131,7 @@ get_state
 init
 run
 run_and_get_state
+run_pipeline
 set_param
 set_params
 ```
