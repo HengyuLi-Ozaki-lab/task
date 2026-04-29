@@ -34,8 +34,19 @@ SCALARS = {
     "eq:RDLT": 0.1,
     "eq:RIP":  0.02,
     "eq:BB":   1.5,
-    # eq:PP0 is not yet in eq_param_registry; kept in UNREGISTERED_KEYS
-    # below until it lands. (See trparm comment under &tr.)
+    # eq:PP0 is intentionally absent from this dict.
+    #
+    # The original comment here claimed PP0 was unregistered, but it
+    # is in fact registered (eq_param_registry.f90:118). Adding
+    # `"eq:PP0": 6.4e-6` would therefore compile cleanly — but it does
+    # NOT lift the rc=3 (CALCULATION_FAILED) that tot_run still hits
+    # for this case. The Python pipeline's replay of
+    # tot_ht6m_short.trparm diverges from the standalone tot driver in
+    # a way PP0 alone does not reconcile. Until that divergence is
+    # investigated, ht6m's Layer 1 case stays SKIP'd via the
+    # missing-eqdata-HT6M skipUnless guard in test_equivalence.py, and
+    # CI deliberately does NOT generate the baseline (Layer 1 step
+    # only emits eqdata.demo2014).
 
     # --- &tr block ---
     "tr:MODELG": 3,
@@ -71,8 +82,10 @@ STRINGS = {
 # yet routable through any per-module registry. The ``apply`` helper
 # silently skips these so a partial fixture still works.
 #
-# - eq:PP0 : not yet in eq_param_registry.f90 (geometry pressure
-#   coefficient). Add a CASE in eq_param_registry to migrate it out.
+# Empty today: every namelist key in tot_ht6m_short.{eqparm,trparm}
+# now has a per-module registry entry. (eq:PP0 was the historical
+# entry here; it landed in eq_param_registry.f90:118 and the SCALARS
+# block above documents why we still leave it unset.)
 UNREGISTERED_KEYS: tuple = ()
 
 # Source input files this fixture mirrors (relative to repo root).
