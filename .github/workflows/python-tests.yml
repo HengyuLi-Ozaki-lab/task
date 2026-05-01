@@ -255,36 +255,50 @@ jobs:
           make -C tot libs
           make -C tot tot_api_check_all
 
-      - name: Generate Layer 1 (1e-10 equivalence) eqdata baseline (demo2014)
+      - name: Generate Layer 1 (1e-10 equivalence) eqdata baselines (demo2014 + ht6m)
         # Build the standalone `tot` Fortran binary (graphics-free via
         # the same tot_static_stubs.o gate as the Layer 2 C drivers)
-        # and run the demo2014 short case to produce
-        # test_run/test_output/tot_demo2014_short/eqdata.demo2014. The
-        # Phase 0 metrics.json baseline is already committed under
-        # test_run/baselines/<case>/, so once the eqdata is on disk
-        # python/totlib/tests/test_equivalence.py lifts its skipUnless
-        # guard and runs the 1e-10 comparison automatically as part of
-        # the pytest step below.
+        # and run the two Layer 1 short cases to produce the eqdata
+        # files that test_equivalence.py needs:
+        #   - tot_demo2014_short/eqdata.demo2014  (analytic equilibrium)
+        #   - tot_ht6m_short/eqdata-HT6M          (file-based MODELG=3)
         #
-        # Only tot_demo2014_short is generated. tot_ht6m_short's Python
-        # fixture currently diverges from the standalone tot driver
-        # (rc=3 CALCULATION_FAILED in tot_run even after eq:PP0 is set)
-        # so its baseline is intentionally skipped — pytest auto-SKIPs
-        # the case on missing eqdata-HT6M. Tracked as a follow-up.
+        # The Phase 0 metrics.json baselines are already committed
+        # under test_run/baselines/<case>/, so once the eqdata is on
+        # disk python/totlib/tests/test_equivalence.py lifts its
+        # skipUnless guard and runs the 1e-10 comparison automatically
+        # as part of the pytest step below.
+        #
+        # Why ht6m needs eqparm/trparm staging while demo2014 does
+        # not: the demo2014 .in script supplies the &eq namelist
+        # inline via the eq menu's `p` command, whereas the ht6m .in
+        # script issues the eq/tr menus' `r` (read) command which
+        # makes totmain.f90's eq_parm(1,'eqparm',IERR) /
+        # tr_parm(1,'trparm',IERR) calls read from companion files.
+        # The cp lines below mirror what test_run/run_tests.sh stages
+        # for the standalone driver (tot module branch).
         run: |
           set -eo pipefail
           make -C tot tot
-          case=tot_demo2014_short
-          mkdir -p "test_run/test_output/$case"
-          ( cd "test_run/test_output/$case" && \
-              ../../../tot/tot < "../../inputs/${case}.in" > output.log 2>&1 )
+          for case in tot_demo2014_short tot_ht6m_short; do
+            mkdir -p "test_run/test_output/$case"
+            # Stage namelist companions at the literal names totmain
+            # reads. `|| true` keeps demo2014 (which has neither
+            # companion) silent — same convention as run_tests.sh.
+            cp "test_run/inputs/${case}.eqparm" "test_run/test_output/$case/eqparm" 2>/dev/null || true
+            cp "test_run/inputs/${case}.trparm" "test_run/test_output/$case/trparm" 2>/dev/null || true
+            ( cd "test_run/test_output/$case" && \
+                ../../../tot/tot < "../../inputs/${case}.in" > output.log 2>&1 )
+          done
           # `test -s` (non-zero size) catches the case where the
           # standalone tot exits cleanly but produces a truncated /
           # empty eqdata file — `test -f` alone would let that slip
           # through and surface as a confusing pytest failure later.
-          test -s "test_run/test_output/$case/eqdata.demo2014" \
-            || { echo "ERROR: eqdata.demo2014 not produced or empty"; tail -50 "test_run/test_output/$case/output.log"; exit 1; }
-          ls -l "test_run/test_output/$case/"
+          test -s "test_run/test_output/tot_demo2014_short/eqdata.demo2014" \
+            || { echo "ERROR: eqdata.demo2014 not produced or empty"; tail -50 "test_run/test_output/tot_demo2014_short/output.log"; exit 1; }
+          test -s "test_run/test_output/tot_ht6m_short/eqdata-HT6M" \
+            || { echo "ERROR: eqdata-HT6M not produced or empty"; tail -50 "test_run/test_output/tot_ht6m_short/output.log"; exit 1; }
+          ls -l test_run/test_output/tot_demo2014_short/ test_run/test_output/tot_ht6m_short/
 
       - name: Run pytest (FFI + layout + serialization coverage)
         env:

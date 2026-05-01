@@ -36,17 +36,26 @@ SCALARS = {
     "eq:BB":   1.5,
     # eq:PP0 is intentionally absent from this dict.
     #
-    # The original comment here claimed PP0 was unregistered, but it
-    # is in fact registered (eq_param_registry.f90:118). Adding
-    # `"eq:PP0": 6.4e-6` would therefore compile cleanly — but it does
-    # NOT lift the rc=3 (CALCULATION_FAILED) that tot_run still hits
-    # for this case. The Python pipeline's replay of
-    # tot_ht6m_short.trparm diverges from the standalone tot driver in
-    # a way PP0 alone does not reconcile. Until that divergence is
-    # investigated, ht6m's Layer 1 case stays SKIP'd via the
-    # missing-eqdata-HT6M skipUnless guard in test_equivalence.py, and
-    # CI deliberately does NOT generate the baseline (Layer 1 step
-    # only emits eqdata.demo2014).
+    # PP0 is consumed during the standalone driver's eq menu `r`
+    # (EQCALC) step which computes the equilibrium and writes it to
+    # KNAMEQ='eqdata-HT6M' via `s` (EQSAVE). The Python pipeline never
+    # invokes EQCALC — tot_api_run only advances tr_api_run, which in
+    # MODELG=3 mode loads the already-baked eqdata-HT6M file staged
+    # by the CI workflow before pytest runs. PP0's effect is fully
+    # captured in that file (geometry baked in), so adding
+    # `"eq:PP0": 6.4e-6` here would not change downstream Python
+    # state and is intentionally omitted to keep the fixture minimal.
+    #
+    # PP0 IS in eq_param_registry.f90:118 today, so adding it would
+    # compile cleanly — but the Python pipeline cannot use it (no
+    # path in tot_api_run reaches EQCALC). When/if a future L-7
+    # patch wires eq_api_run into the orchestrator's run loop the
+    # decision can be revisited.
+    #
+    # Layer 1 on this case therefore relies on the CI step that
+    # invokes the standalone driver to produce eqdata-HT6M; without
+    # that file, test_equivalence.py auto-SKIPs via the
+    # eqdata-existence guard.
 
     # --- &tr block ---
     "tr:MODELG": 3,
