@@ -23,6 +23,20 @@ extern "C" {
 #define TR_MAX_NRMAX 500
 #define TR_MAX_NSMAX 8
 
+/*
+ * tr_state_t ABI version. Bumped whenever a field is added/removed/reordered
+ * in tr_state_t (i.e. whenever sizeof(tr_state_t) changes). Out-of-tree
+ * binary consumers should compare TR_STATE_ABI_VERSION at compile time
+ * against any cached layout assumption and recompile when it bumps. In-tree
+ * consumers (tot_api_check_*, python/trlib/_ffi.py) all rebuild from this
+ * header, so they are kept in sync automatically by the build system.
+ *
+ * History:
+ *   1 -> initial layout (Phase L-2)
+ *   2 -> appended AJRFT [MA] (L-7b-i); existing field offsets preserved.
+ */
+#define TR_STATE_ABI_VERSION 2
+
 /* Error codes returned by every tr_* entry point. */
 enum tr_error {
     TR_OK              = 0,
@@ -40,6 +54,9 @@ typedef struct {
     double RT[TR_MAX_NRMAX][TR_MAX_NSMAX];
     double AJ[TR_MAX_NRMAX];
     double QP[TR_MAX_NRMAX];
+    /* L-7b-i: total RF + external driven current [MA]. Mirrors AJRFT in
+       tr_state_c; placed at struct end to preserve existing field offsets. */
+    double AJRFT;
 } tr_state_t;
 
 /*
