@@ -110,7 +110,7 @@ completed: T=..., BETAN=..., retries=1
 - Loosen `EPSLTR` / raise `LMAXTR` together with halving `DT`.
 - Split `NTMAX` into chunks; once past the unstable region, restore
   `DT` to its original value.
-- Accumulate failure history into `failures: List[Dict]` for
+- Accumulate failure history into `failures: list[dict]` for
   postmortem analysis.
 
 ---
@@ -123,17 +123,16 @@ the points that fail.
 
 ```python
 import itertools
-from typing import List, Dict
 from trlib import Trlib
 
 
 def sweep(
     *,
-    rr_values: List[float],
-    bb_values: List[float],
+    rr_values: list[float],
+    bb_values: list[float],
     ntmax: int = 10,
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """Grid scan over RR x BB. Each point runs tr in an independent session.
 
     Returns
@@ -214,7 +213,7 @@ DEVICE_PRESETS = {
 
 def auto_setup(
     device: str = "ITER",
-    extra_params: Dict | None = None,
+    extra_params: dict | None = None,
     eq_file: str | None = None,
 ) -> Trlib:
     """Initialise tr from a device preset and self-check via validate.
