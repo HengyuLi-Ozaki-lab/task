@@ -66,12 +66,14 @@ No new MyST anchor labels are needed.
 ### §3.1 eqdata files (EQDSK and friends)
 
 - `MODELG ∈ {3, 5, 8, 9}` triggers TR's BPSD-side
-  equilibrium pull (`tr/trbpsd.f90:213`). The `eq` module
-  itself only treats `MODELG ∈ {3, 5, 8}` as a real EQDSK
-  load (per `eq/eq_api.f90:105-108`); `MODELG = 9` is a
-  TR-side alias the BPSD pull also accepts. The page
-  documents both numbers so users do not get confused
-  if their `eq` configuration uses `9`.
+  equilibrium pull (`tr/trbpsd.f90:213`). All four values
+  also drive an actual external load on the `eq` side, via
+  different loader routines: `eq/eqfile.f90:108-115`
+  dispatches `MODELG = 3` or `MODELG = 9` to `EQRTSK` (the
+  TASK/EQ binary format), `MODELG = 5` to `EQDSKR` (the
+  community EQDSK format), and `MODELG = 8` to `EQJAEAR`.
+  The page documents the dispatch so users picking
+  `MODELG = 9` do not assume it is a no-op.
 - The path is set via `KNAMEQ` (string parameter) — see
   {doc}`parameter-setting` for how to set string params.
 - The file is read on the `eq` side; `tr` only pulls the
@@ -132,12 +134,15 @@ No new MyST anchor labels are needed.
 
 - The `eq` C-string interface caps `KNAMEQ` (and similar
   string parameters) at 80 bytes. The constant is defined at
-  `python/eqlib/eqlib.py:39`, the docstring stating "up to
-  79 bytes" (the byte budget reserves 1 byte for the
-  trailing NUL) lives at `:47-50`, and the actual length
-  rejection is `EqlibInvalidParamError` at `:67`. The page
-  uses **byte** rather than "character" because the limit
-  applies to encoded bytes, not codepoints.
+  `python/eqlib/eqlib.py:39-41`, and the actual length
+  rejection (`EqlibInvalidParamError` when
+  `len(encoded) > max_bytes`) is at `:66-70`. The Fortran
+  side reads into `CHARACTER(LEN=80)`. The docstring at
+  `:47-50` says "up to 79 bytes"; this is stale (Python
+  permits the full 80) and the implementation step should
+  flag it as a separate cleanup. The page uses **byte**
+  rather than "character" because the limit applies to
+  encoded bytes, not codepoints.
 - Recommended pattern: `chdir` to a working directory that
   holds the eqdata file(s) and pass the bare filename. This
   is what the existing `python/totlib/tests/test_pipeline_*`
@@ -236,12 +241,18 @@ No new MyST anchor labels are needed.
      `double` (or correct C type). The struct definition
      starts at line 49, not 53.
   4. **Populate the field inside `tr_api_get_state`.** This
-     is the step the original draft omitted. The actual
-     copy from TRCOMM into the BIND-C struct lives at
-     `tr/tr_api.f90:263-283` (per-radius / per-species
-     loops) and `:299-315` (scalar copy block). Add the
-     assignment alongside the existing field copies. The
-     `AJRFT` precedent is the model to follow.
+     is the step the original draft omitted. Three blocks
+     exist in `tr/tr_api.f90`: the **zero-initialisation**
+     block at `:263-283` (the new field should be added
+     there too if it has no sensible compute-time-zero
+     baseline), the **scalar copy** block at `:299-315`
+     (where existing scalars like `AJRFT` are copied from
+     TRCOMM into the struct), and the **per-radius / per-
+     species profile loops** at `:321-330`. Add the
+     assignment alongside the existing field copies in
+     whichever block matches the new field's shape. The
+     `AJRFT` precedent in `:299-315` is the model to follow
+     for a scalar.
   5. **Bump `TR_STATE_ABI_VERSION`** at
      `tr/tr_api.h:38`. The current value is `2`; bump to
      `3` (or whatever the next integer is at the time).
@@ -254,9 +265,13 @@ No new MyST anchor labels are needed.
      `python/trlib/state.py`. Two cases:
      - *Scalar field*: add the field name to the
        `SCALAR_FIELDS` list (`python/trlib/state.py:22-28`)
-       and the parser at `:50-72` and `:87-100` will pick
-       it up automatically. The field becomes accessible
-       as `state.scalars["YOUR_FIELD"]`.
+       and the dict-comprehension parser at `:74-87` (the
+       `from_c` body) populates `state.scalars["YOUR_FIELD"]`
+       automatically; the dataclass construction at
+       `:92-100` returns the assembled `TrState`. The new
+       field becomes accessible as
+       `state.scalars["YOUR_FIELD"]` without further code
+       changes.
      - *Array / profile field* (1-D or 2-D, indexed by
        `nrmax` or `nrmax × nsmax`): add a top-level
        attribute on the `TrState` dataclass and the
@@ -380,19 +395,19 @@ Codex), REVIEW_OK marker, push. Reviewer focus:
 4. ✅ ja counterpart of extending-tr exists, structurally aligned.
 5. ✅ `index.md` (en + ja) inserts `input-files` after `parameter-setting` in User guide.
 6. ✅ `index.md` (en + ja) inserts `extending-tr` after `design` in Internals.
-7. ✅ §3.1 cites the MODELG set as `{3, 5, 8, 9}` (per `tr/trbpsd.f90:213`) AND notes that `eq` mode-1 only treats `{3, 5, 8}` as real EQDSK loads (per `eq/eq_api.f90:105-108`); the `9` is a TR-side BPSD-pull alias. (Codex round-1 HIGH 1.)
+7. ✅ §3.1 cites the MODELG set as `{3, 5, 8, 9}` (per `tr/trbpsd.f90:213`) AND walks through the per-MODELG eq dispatch at `eq/eqfile.f90:108-115`: 3 / 9 → `EQRTSK`, 5 → `EQDSKR`, 8 → `EQJAEAR`. All four trigger an actual external load on the eq side. (Codex round-1 HIGH 1 + round-2 HIGH 1.)
 8. ✅ §3.2 lists the reader chain `trufile.f90:70-77` → `tr_ufile_task.f90:7` → `tr_ufile_topics.f90:7`; `MDLUF` default `0` cited at `tr/trinit.f90:641-648`. **Explicitly states `KUFDIR` / `KUFDEV` / `KUFDCG` are namelist-only, not `tr_set_param`-reachable** (per `tr/tr_param_registry.f90:184-186` "future additions" comment + `tr/trparm.f90:108-112` namelist input). (Codex round-1 HIGH 2.)
 9. ✅ §3.3 states explicitly that no runtime `trmodels/`-style directory is currently consumed (Codex verified: `tr/trmodels.f90` calls compiled-in driver routines `mbgb_driver` / `mmm95_driver` / `mmm71_driver` directly with no `OPEN`/`READ` from a runtime directory). Runtime external data is limited to eqdata + ufiles only.
-10. ✅ §3.4 names the 80-byte path limit AND cites all three loci in `python/eqlib/eqlib.py`: the constant at `:39`, the docstring at `:47-50`, and the rejection check at `:67`. The page uses "byte" rather than "character" for accuracy. (Codex round-1 MED 4.)
+10. ✅ §3.4 names the 80-byte path limit (Python permits 80 bytes; Fortran reads `CHARACTER(LEN=80)`) and cites the constant at `python/eqlib/eqlib.py:39-41` and rejection at `:66-70`. The `:47-50` docstring saying "up to 79 bytes" is flagged as stale. The page uses "byte" rather than "character" for accuracy. (Codex round-1 MED 4 + round-2 MED 2.)
 11. ✅ §4.1 walkthrough cites `tr/tr_param_registry.f90:76` for the SELECT CASE entry and `:101-106` for the array-pattern (`PA[i]` / `PN[i]` etc.). `tr_set_param` confirmed string-keyed via `tr/tr_api.f90:124-128,136-148`.
 12. ✅ §4.2 walkthrough cites the `SELECT CASE(MDLKAI)` at `tr/trcoef_turbulence.f90:400` (the dispatch — NOT line 64 which only sets graph labels) and reproduces the numbering convention verbatim from the source comments at `:392-398`.
 13. ✅ §4.3 walkthrough has **8 steps** (was 7 in the original draft; Codex round-1 HIGH 7 caught the missing Fortran population step inside `tr_api_get_state`). Line ranges are correct:
     - Step 2: `tr/tr_state.f90:43-67` (was incorrectly :43-60)
     - Step 3: `tr/tr_api.h:49-60` (struct starts at :49, not :53)
-    - Step 4 (NEW): Fortran population at `tr/tr_api.f90:263-283` (loops) + `:299-315` (scalar block)
+    - Step 4 (NEW): Fortran population at `tr/tr_api.f90:263-283` (zero-init), `:299-315` (scalar copy block — AJRFT precedent), `:321-330` (per-radius / per-species profile loops)
     - Step 5: `tr/tr_api.h:38` ABI version (verified `= 2`)
     - Step 6: `python/trlib/_ffi.py:94-120` (was vague "around 95-120")
-    - Step 7: `python/trlib/state.py:22-28` (`SCALAR_FIELDS` list) + `:50-72` and `:87-100` (parser) — the original draft missed this entire mechanism.
+    - Step 7: `python/trlib/state.py:22-28` (`SCALAR_FIELDS` list) + `:74-87` (`from_c` scalar dict-comprehension parser) + `:92-100` (dataclass construction). (Round-1 HIGH 7 introduced the mechanism; round-2 LOW 1 corrected the parser line ranges.)
     The `AJRFT` worked-example claim ties to L-7b-i with verified PR `#187` + commit `e049a1e4`. The §4.3 also includes a **Fortran/C array-order trap warning** for 2-D fields (Codex round-1 MED 10.2).
 14. ✅ All `{doc}` cross-references resolve.
 15. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
