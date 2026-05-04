@@ -73,9 +73,12 @@ in symbolic form. For derivations consult a transport textbook.
 
 ## Equations TR can solve
 
-TR has seven transport-equation switches, each independently
-ON/OFF at the registry level (the `MDLEQ*` set). The defaults
-below come from `tr/trinit.f90:687-695`:
+TR has seven transport-equation switches (the `MDLEQ*` set),
+each toggling one balance equation independently. **None of
+these flags are exposed in `tr/tr_param_registry.f90`**: they
+are compile-time defaults set in `tr/trinit.f90:687-695`
+(also settable via the legacy Fortran namelist input). The
+defaults are:
 
 | Flag | Quantity | Default | Notes |
 |---|---|---|---|
@@ -90,8 +93,11 @@ below come from `tr/trinit.f90:687-695`:
 **The default ON set is `{MDLEQB, MDLEQT}`** — out of the box,
 TR evolves current and temperature only; particles, rotation,
 impurities, and neutrals are *not* evolved unless their flag is
-turned on. Cross-link to {doc}`parameters` for the user-facing
-controls.
+turned on. To change the set you must either edit
+`tr/trinit.f90` and rebuild, or supply a `&TRN`-style namelist
+that overrides the defaults. The same registry-versus-source
+distinction applies to `MDLKNC` and `MDNCLS` discussed in
+"Transport-model selector landscape" below.
 
 ---
 
