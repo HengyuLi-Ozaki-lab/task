@@ -67,9 +67,12 @@ Content:
   of the radial profiles (density, temperature, current, q
   profile, etc.).
 - The equations are assembled and the matrix is solved
-  implicitly per time step (cite `tr/trcalc.f90:TRCALC` for
-  source / coefficient assembly, `tr/trexec.f90:65` 'Solve
-  matrix equation' for the implicit step).
+  implicitly per time step. Cite `tr/trcalc.f90:TRCALC` for
+  source / coefficient assembly, and `tr/trexec.f90:67-99` for
+  the implicit-step solver calls (`BANDRD` at line 69, the
+  LAPACK band-solver path `DGBTRF`/`DGBTRS`/`DGBSV` at lines
+  81 / 86 / 96 — the `'Solve matrix equation'` comment block
+  at line 65 sits just above this).
 - The page deliberately does NOT write the differential
   equations in symbolic form — readers should consult a
   tokamak transport textbook for derivations (see "Further
@@ -154,7 +157,7 @@ indexed by a single radial coordinate. The 2-D equilibrium
 geometry comes from the `eq` module via the BPSD broker:
 `tr_bpsd_get` (`tr/trbpsd.f90:160-183`) pulls device + plasma
 quantities, and the equilibrium / metric pull at
-`tr/trbpsd.f90:213-235` only fires for the geometry-aware
+`tr/trbpsd.f90:213-245` only fires for the geometry-aware
 `MODELG` settings (the analytic-equilibrium path skips it).
 The combined picture is "1.5-D" (1-D transport on top of 2-D
 equilibrium), the standard transport-code style.
@@ -376,7 +379,7 @@ REVIEW_OK marker, push. Reviewer focus:
 5. ✅ §3.2 table lists all 7 `MDLEQ*` flags with names and defaults that match `tr/trinit.f90:687-695` byte-for-byte. The `MDLEQE` row explicitly notes the 0/1/2 mode and the dependency on `MDLEQN = 1` (Codex MED 1).
 6. ✅ §3.2 explicitly states the default ON set is `{MDLEQB, MDLEQT}`.
 7. ✅ §3.3c names `MDLKAI` (turbulent heat), `MDLETA` (resistivity), `MDLAD` (particle-diffusion **model selector** — incl. Hinton-Hazeltine, NOT solely 'anomalous'), `MDLAVK` (thermal pinch — explicitly NOT a neoclassical selector), and separately `MDLKNC` / `MDNCLS` for neoclassical handling. The misidentification of `MDLAVK` as the neoclassical knob (Codex HIGH 1 against the original draft) is fixed. The page additionally states which selectors are exposed in `tr/tr_param_registry.f90:43-49,124-128` (i.e. user-settable) versus which exist only as compile-time defaults in `tr/trinit.f90` (i.e. `MDLKNC` / `MDNCLS`).
-8. ✅ §3.3a cites `tr_bpsd_get` at `tr/trbpsd.f90:160-183` for the device / plasma pull and `tr/trbpsd.f90:213-235` for the equilibrium / metric pull (only fires for relevant `MODELG`) — Codex MED 2.
+8. ✅ §3.3a cites `tr_bpsd_get` at `tr/trbpsd.f90:160-183` for the device / plasma pull and `tr/trbpsd.f90:213-245` for the equilibrium / metric pull (only fires for relevant `MODELG`) — Codex MED 2.
 9. ✅ §3.4 distinguishes "TR resolves with simplified models" (sawtooth via `MDLST` / `TRSAWT` — header at `tr/trcalc.f90:1072`, redistribution at `tr/trcalc.f90:1127-1150`; ELM reduction via `MDLELM`) from "TR does NOT model at all" (full MHD / pedestal / 3-D / gyrokinetic) — Codex HIGH 2 from the first design review, with the redistribution line range corrected per Codex re-review MED 1.
 10. ✅ §3.5 lists ≥ 3 standard tokamak-transport textbooks as bibliographic pointers, with publisher / year deliberately omitted to avoid asserting unverified bibliographic claims (Codex LOW 1).
 11. ✅ All `{doc}` cross-references resolve to existing files in both `en/` and `ja/`.
