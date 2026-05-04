@@ -70,6 +70,7 @@ testing
 
 appendix-mdlkai
 appendix-sensitivity
+limitations-and-references
 ```
 
 ## 読みすすめ方
