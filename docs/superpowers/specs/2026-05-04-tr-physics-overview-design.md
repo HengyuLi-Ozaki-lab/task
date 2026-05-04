@@ -273,9 +273,9 @@ Content:
 - Pointers (author + title + edition only; no publisher or
   year — these are reading-list starting points, not
   authoritative bibliographic citations the page is asserting):
-  - J. Wesson, *Tokamaks* (Oxford University Press, 4th
-    edition) — encyclopedic textbook covering equilibrium,
-    transport, stability, heating, diagnostics.
+  - J. Wesson, *Tokamaks* (4th edition) — encyclopedic
+    textbook covering equilibrium, transport, stability,
+    heating, diagnostics.
   - R. D. Hazeltine & J. D. Meiss, *Plasma Confinement* —
     focused on the transport theory underlying codes like TR.
   - J. P. Freidberg, *Ideal Magnetohydrodynamics* —

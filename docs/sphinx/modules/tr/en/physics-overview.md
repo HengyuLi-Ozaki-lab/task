@@ -151,10 +151,12 @@ registry** (cannot be set from `tr.set_param`; retain compile-
 time defaults from `tr/trinit.f90`):
 
 - **`MDLKNC` — neoclassical heat / resistivity treatment.**
-  Default at `tr/trinit.f90:306`.
+  Default at `tr/trinit.f90:324` (`MDLKNC = 1`); the
+  documentation header for this selector sits a few lines
+  above at `tr/trinit.f90:306`.
 - **`MDNCLS` — NCLASS module toggle** (the standard NCLASS
-  neoclassical library). Defaults at `tr/trinit.f90:324` and
-  `tr/trinit.f90:717`.
+  neoclassical library). Default at `tr/trinit.f90:717`
+  (`MDNCLS = 0`).
 
 These two are the actual neoclassical knobs in TR but they are
 not exposed for `tr.set_param`. Advanced users who need to
@@ -228,7 +230,7 @@ exist and the page does not assert which one the reader uses.
 These are reading-list starting points, not authoritative
 bibliographic citations.
 
-- J. Wesson, *Tokamaks* (Oxford University Press, 4th edition)
+- J. Wesson, *Tokamaks* (4th edition)
   — encyclopedic textbook covering equilibrium, transport,
   stability, heating, diagnostics.
 - R. D. Hazeltine & J. D. Meiss, *Plasma Confinement* —

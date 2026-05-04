@@ -134,19 +134,20 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
   なく **モデルファミリ** の選択です.
 - **`MDLAVK` — thermal pinch.** 熱 pinch (内向き熱流の
   対流成分) モデルを選択. 文献では "anomalous V_K" / thermal
-  pinch と呼ばれるもの. *これは neoclassical の selector では
-  ない* — 過去のドラフトで紛らわしい命名から誤認していた
-  経緯がある (`tr/trinit.f90:296-308`, `parameters.md` の
-  該当エントリで意味確認).
+  pinch と呼ばれるモデルファミリ. **neoclassical の selector
+  ではありません** (`tr/trinit.f90:296-308` と既存の
+  `parameters.md` 該当エントリで確認).
 
 **Fortran ソースのみ (`tr/trinit.f90` のコンパイル時デフォルト
 で固定)**:
 
 - **`MDLKNC` — neoclassical 熱伝導 / 抵抗率の処理.**
-  デフォルトは `tr/trinit.f90:306`.
+  デフォルトは `tr/trinit.f90:324` (`MDLKNC = 1`).
+  この selector の文書 header は数行上の `tr/trinit.f90:306`
+  にあります.
 - **`MDNCLS` — NCLASS スタイルの neoclassical モジュールを
   ON/OFF** (標準的な NCLASS 新古典ライブラリ). デフォルトは
-  `tr/trinit.f90:324` と `tr/trinit.f90:717`.
+  `tr/trinit.f90:717` (`MDNCLS = 0`).
 
 これら 2 つが TR で実際の neoclassical の knob ですが,
 `tr.set_param` からは触れません. 変えたい上級ユーザは
@@ -216,9 +217,8 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
 authoritative な bibliographic citation ではなく, 読書出発点
 として扱ってください.
 
-- J. Wesson, *Tokamaks* (Oxford University Press, 4th
-  edition) — equilibrium, 輸送, 安定性, 加熱, 診断を網羅
-  する百科全書的教科書.
+- J. Wesson, *Tokamaks* (4th edition) — equilibrium, 輸送,
+  安定性, 加熱, 診断を網羅する百科全書的教科書.
 - R. D. Hazeltine & J. D. Meiss, *Plasma Confinement* —
   TR のようなコードの背後にある輸送理論に集中.
 - J. P. Freidberg, *Ideal Magnetohydrodynamics* — equilibrium
