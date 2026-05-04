@@ -68,10 +68,12 @@ are at <https://github.com/ats-fukuyama>. For publications,
 consult that group's bibliography directly — this page does not
 list specific paper citations.
 
-### Related open transport codes
+### Related transport codes
 
-The table below summarises a few open transport codes alongside
-TASK/tr to help orient new users. Non-TASK rows reflect public
+The table below summarises a few transport codes alongside
+TASK/tr to help orient new users. The codes have varying access
+models — some are open-source, some are collaboration-based, and
+some are consortium-restricted. Non-TASK rows reflect public
 documentation as of the page's date; for the authoritative scope
 and access policy of each code, consult the linked sources.
 
