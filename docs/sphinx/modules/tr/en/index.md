@@ -34,6 +34,7 @@ For Fortran-side design and parameter-registry details see
 ```{toctree}
 :maxdepth: 1
 
+physics-overview
 build
 hello-world
 parameters

@@ -34,6 +34,7 @@ Fortran 設計・パラメータレジストリの詳細は
 ```{toctree}
 :maxdepth: 1
 
+physics-overview
 build
 hello-world
 parameters
