@@ -114,9 +114,10 @@ relative-residual checks live at `tr/trexec.f90:112-128` (per
 species, per radial cell). The exit-on-iteration-budget guard
 is at `tr/trexec.f90:141`: when `L >= LMAXTR` the loop exits
 *without* setting `IERR`, so the run **continues** with
-whatever residual was reached rather than aborting. The
-`--Inner ...` lines in tr2 console output flag non-convergent
-steps. Defaults (`EPSLTR = 0.001`, `LMAXTR = 10`) are
+whatever residual was reached rather than aborting. There is
+no console message or per-step flag at saturation (the loop
+exits silently); detection requires inspecting profile-level
+diagnostics. Defaults (`EPSLTR = 0.001`, `LMAXTR = 10`) are
 conservative. For aggressive studies where `LMAXTR` is
 saturated, raise `LMAXTR` first; only loosen `EPSLTR` if
 profile-level diagnostics confirm the residual is local
@@ -143,8 +144,10 @@ Two paragraphs:
   2. Halve `DT` and retry (use {doc}`applications`
      `StableTrRunner`). If the failure was a numerical
      stiffness / inner-iteration symptom, this often clears it.
-  3. Inspect tr2 console output for `Inner not converged` lines
-     and diverging energies (see §3.2.5).
+  3. Inspect tr2 console output for diverging energies and
+     profile drift (see §3.2.5). Inner-iteration saturation is
+     NOT visible in the console (per §3.1.3 above), so it has
+     to be inferred from profile-level signals.
   4. Cross-check {doc}`parameters` and {doc}`parameter-setting`
      for parameter ranges and inter-parameter constraints that
      `validate()` may not catch.
@@ -155,38 +158,54 @@ Three subsections.
 
 **5. Reading tr2 console output**
 
-Pointer-style 4–6 lines, NOT a verbatim format dump. The
-text references `tr/trrslt_print.f90:57,89,266` for callers
-who need the exact format strings. Each per-step line carries
-the time-evolution scalars described in {doc}`state` —
-specifically `T` (current time [s]), `WPT` (stored energy [MJ]),
-`TAUE1`/`TAUE2` (energy confinement times [s]), `Q0` (axis
-safety factor), and `AJT` (total current [MA]). Episode summary
-lines additionally print device-shape parameters and integrated
-beam/RF powers. The exact layout depends on the print mode
-(`MDLPRT`); the canonical format is the 5-block layout in
-`trrslt_print.f90`.
+Pointer-style 4–6 lines, NOT a verbatim format dump. The text
+references `tr/trrslt_print.f90` for callers who need the exact
+format strings. Per-step blocks (`trrslt_print.f90:266-269`,
+KID 7/8 modes) print `T`, `WPT`, `TAUE1`, `TAUE2` — the four
+fastest signals for an unhealthy run. Episode-summary blocks
+(`trrslt_print.f90:280-284` and surrounding) add device-shape
+parameters, `Q0`, `AJTTOR` (NOT `AJT` — both fields exist in
+the print blocks and they are distinct), and integrated beam /
+RF powers. The exact layout depends on the print mode
+(`MDLPRT`).
 
 **6. `validate()` output mapping (`TrDiagCode`)**
 
 A subsection per `TrDiagCode` value, taken verbatim from the
 enum at `tr/tr_api.h:69-75` (mirrored in
-`python/trlib/_ffi.py:58-62`):
+`python/trlib/_ffi.py:58-62`).
+
+The page must clarify upfront that the enum has 5 reserved
+slots but the **current `tr_api_validate` implementation only
+emits two of them** (`OUT_OF_RANGE` and `FILE_MISSING`); the
+other three are reserved for future categories (per
+`tr/tr_api.f90:365-378`). Group the bullets accordingly:
+
+Currently emitted:
 
 - **`OUT_OF_RANGE`** — a parameter value sits outside the
-  registry's allowed range (e.g. `NSMAX > 8`). One-line typical
-  cause + corrective action.
-- **`INCONSISTENT_PAIR`** — two related parameters disagree
-  (e.g. `EXTERNAL_DRIVEN_I != 0` with `EXTERNAL_DRIVEN_RW <= 0`).
-  Cross-link to {doc}`parameters` for affected pairs.
-- **`OUT_OF_RANGE_AFTER_DEP`** — a parameter sits inside its
-  registry range but conflicts with a runtime-deduced bound
-  (e.g. `NRMAX` after equilibrium load).
+  range that `tr_api_validate` checks (the validate-side range,
+  not necessarily the registry's). Example: `NSMAX = 5` is
+  reported because validate compares against `NSM = 4`
+  (`tr/tr_api.f90:402-403`); values beyond the registry's own
+  bound (e.g. `NSMAX > 8`) are rejected by `set_param` *before*
+  validate runs (`tr/tr_param_registry.f90:95-97`) and
+  therefore never appear in the diagnostic list.
 - **`FILE_MISSING`** — required file path is empty / missing
   (e.g. `MODELG ∈ {3,5,7,8}` + empty `KNAMEQ`).
-- **`MISSING_REQUIRED`** — a required parameter is unset.
-  Distinct from `OUT_OF_RANGE` because the absence is the
-  problem, not the value.
+
+Reserved (no current emissions):
+
+- **`INCONSISTENT_PAIR`** — reserved. Note: the
+  `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` check
+  is currently emitted as `OUT_OF_RANGE`, not as a pair-level
+  diagnostic (`tr/tr_api.f90:419-425`).
+- **`OUT_OF_RANGE_AFTER_DEP`** — reserved. Intended for
+  parameters that pass declared range but conflict with a
+  runtime-deduced bound (e.g. `NRMAX` after equilibrium load).
+- **`MISSING_REQUIRED`** — reserved. Intended for required
+  parameters that were never set (distinct from `OUT_OF_RANGE`
+  because the absence is the problem, not the value).
 
 The page must NOT fabricate which validate codes fire for which
 parameters beyond what is verifiable in the registry; it can
@@ -301,9 +320,9 @@ marker, push. Reviewer focus:
 5. ✅ The §3.1.2 fixture table is grounded in the actual fixture files with file:line citations: `tot_demo2014_params.py:74` (NTMAX inherits DT default from `tr/trinit.f90:374`) and `tot_ht6m_params.py:63-64` (overrides both).
 6. ✅ The §3.1.3 inner-iteration paragraph cites the convergence-check loop at `tr/trexec.f90:112-128` and the LMAXTR exit at `tr/trexec.f90:141`.
 7. ✅ The §3.1.4 `ierr=3` paragraph correctly attributes the umbrella code to `tr/tr_api.f90:227-245`.
-8. ✅ The §3.2.5 tr2-output paragraph references `tr/trrslt_print.f90:57,89,266` for the canonical per-step / summary format strings.
-9. ✅ The §3.2.6 TrDiagCode subsection cites `tr/tr_api.h:69-75` (enum) and `python/trlib/_ffi.py:58-62` (mirror).
-10. ✅ All 5 `TrDiagCode` values in §3.2.6 match the enum byte-for-byte.
+8. ✅ The §3.2.5 tr2-output paragraph cites the per-step block at `tr/trrslt_print.f90:266-269` (T/WPT/TAUE1/TAUE2 only) and the episode-summary block at `tr/trrslt_print.f90:280-284` (Q0/AJTTOR — NOT AJT — and friends), distinguishing them.
+9. ✅ The §3.2.6 TrDiagCode subsection cites `tr/tr_api.h:69-75` (enum) and `python/trlib/_ffi.py:58-62` (mirror), AND distinguishes the 2 currently-emitted categories (`OUT_OF_RANGE` / `FILE_MISSING`) from the 3 reserved ones (`INCONSISTENT_PAIR` / `OUT_OF_RANGE_AFTER_DEP` / `MISSING_REQUIRED`) per the implementation note at `tr/tr_api.f90:365-378`.
+10. ✅ All 5 `TrDiagCode` values appear in §3.2.6 and match the enum byte-for-byte (the section notes which 2 are currently emitted vs which 3 are reserved).
 11. ✅ All "rule-of-thumb" claims in §3.2.7 are explicitly hedged.
 12. ✅ All `{doc}` cross-references resolve.
 13. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.

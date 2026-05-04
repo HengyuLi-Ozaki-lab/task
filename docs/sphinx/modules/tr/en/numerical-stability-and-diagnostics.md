@@ -75,18 +75,21 @@ Each time step runs an inner iteration that converges toward
 `EPSLTR` (relative residual threshold). The convergence checks
 live at `tr/trexec.f90:112-128` (per species, per radial
 cell). The exit-on-iteration-budget guard sits at
-`tr/trexec.f90:141`: when the iteration counter reaches
-`LMAXTR` the loop exits *without* setting `IERR`, so the run
-**continues** with whatever residual was reached rather than
-aborting. The `--Inner ...` lines that appear in tr2 console
-output flag time steps where this happened.
+`tr/trexec.f90:138-141`: when the iteration counter reaches
+`LMAXTR` the loop exits *without* setting `IERR` and *without*
+writing a console diagnostic, so the run **silently continues**
+with whatever residual was reached. There is no per-step flag
+to detect saturation; the only signal is whether profile-level
+diagnostics (e.g. drift in `WPT` or `Q0`, see below) start to
+look unphysical.
 
 Defaults are `EPSLTR = 0.001` and `LMAXTR = 10`, which is
-conservative. For aggressive studies that saturate `LMAXTR`,
-raise `LMAXTR` first; only loosen `EPSLTR` if profile-level
-diagnostics confirm that the residual is local (e.g. confined
-to one species or one radial cell) rather than a sign of an
-underlying numerical problem.
+conservative. If you suspect that runs are saturating `LMAXTR`,
+the lightweight check is to raise `LMAXTR` and re-run: if
+results change, the previous setting was insufficient. Only
+loosen `EPSLTR` if profile-level diagnostics confirm that the
+residual is local (e.g. confined to one species or one radial
+cell) rather than a sign of an underlying numerical problem.
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) diagnosis
 
@@ -108,9 +111,12 @@ Diagnostic recipe:
 2. Halve `DT` and retry (use `StableTrRunner` in
    {doc}`applications`). If the failure was a numerical
    stiffness or inner-iteration symptom, this often clears it.
-3. Inspect tr2 console output for `Inner not converged` lines
-   and diverging energies (see "Reading tr2 console output"
-   below).
+3. Inspect tr2 console output for diverging energies and
+   profile drift (see "Reading tr2 console output" below).
+   Note that inner-iteration saturation does *not* surface
+   in the console (see §"Inner-iteration convergence"
+   above), so its presence has to be inferred from
+   profile-level signals.
 4. Cross-check {doc}`parameters` and {doc}`parameter-setting`
    for parameter ranges and inter-parameter constraints that
    `validate()` may not catch.
@@ -124,54 +130,86 @@ Diagnostic recipe:
 The standalone `tr2` driver prints a per-step block plus
 periodic episode summaries via the `WRITE(6, …)` statements in
 `tr/trrslt_print.f90`. The full set of formats lives in that
-file (see e.g. lines 57, 89, 266 for representative blocks);
-the layout depends on the print mode (`MDLPRT`). The signals
-most users care about are the per-step scalars:
+file; the layout depends on the print mode (`MDLPRT`).
+
+The compact per-step block (`tr/trrslt_print.f90:266-269`,
+KID 7/8 modes) prints four scalars:
 
 - `T` — current simulation time [s]
 - `WPT` — total stored energy [MJ]
 - `TAUE1` / `TAUE2` — energy confinement times [s]
+
+These are the fastest signals for spotting an unhealthy run.
+Episode-summary blocks
+(`tr/trrslt_print.f90:280-284` and surrounding) add the
+device-shape parameters and current-related scalars:
+
 - `Q0` — axis safety factor
-- `AJT` — total plasma current [MA]
+- `AJTTOR` — total plasma current including the toroidal
+  component (note: this is `AJTTOR`, not `AJT`; both fields
+  exist in the print blocks and they are not the same
+  quantity)
+- Integrated beam / RF powers
 
-These are exactly the fields exposed via `tr.get_state()` (see
-{doc}`state`); reading the console line is therefore a quick
-way to sanity-check what `get_state()` will return.
-
-Episode summary blocks additionally print device-shape
-parameters and integrated beam / RF powers. For the exact
-layout of each block, consult `tr/trrslt_print.f90`.
+These map onto the fields populated by `tr.get_state()` (see
+{doc}`state`), so reading the console output is a quick way
+to sanity-check what `get_state()` will return — but match
+the variable name carefully when comparing console scalars
+against `TrState` attributes.
 
 ### `validate()` output mapping (`TrDiagCode`)
 
 `tr.validate()` returns a list of diagnostics, each carrying
 one of five `TrDiagCode` values from the enum at
 `tr/tr_api.h:69-75` (mirrored in `python/trlib/_ffi.py:58-62`).
-Each value has a distinct physical meaning:
+The enum reserves five categories, but the **current
+implementation** of `tr_api_validate` only emits two of them:
+`OUT_OF_RANGE` and `FILE_MISSING`. The other three
+(`INCONSISTENT_PAIR`, `OUT_OF_RANGE_AFTER_DEP`,
+`MISSING_REQUIRED`) are reserved for future categories — the
+slots exist in the enum so the API surface is stable, but the
+checks have not been wired up yet (`tr/tr_api.f90:365-378`
+documents this).
+
+The two currently-emitted categories:
 
 - **`OUT_OF_RANGE`** — a parameter value sits outside the
-  registry's allowed range. Typical example: `NSMAX = 10` is
-  rejected because the compile-time bound is `TR_MAX_NSMAX = 8`.
-  Fix: clamp the value to a valid range before calling `run()`.
+  range that `tr_api_validate` checks. Validate's `NSMAX`
+  check, for example, compares against the run-time species
+  bound `NSM = 4` (not the compile-time C ABI bound
+  `TR_MAX_NSMAX = 8`), so `NSMAX = 5` reaches `validate()`
+  and is reported here (`tr/tr_api.f90:402-403`). Note: values
+  beyond the registry's own range — e.g. `NSMAX > 8` — are
+  rejected by `set_param` *before* validate runs
+  (`tr/tr_param_registry.f90:95-97`), so you will not see
+  them in the diagnostic list. Validate's job is to catch the
+  values the registry accepted but the run-time still cannot
+  use.
 
-- **`INCONSISTENT_PAIR`** — two related parameters disagree.
-  Typical example: `EXTERNAL_DRIVEN_I != 0` paired with
-  `EXTERNAL_DRIVEN_RW <= 0` would silently no-op in `trprf` —
-  validate catches the pair. See {doc}`parameters` for the
-  affected pairs.
-
-- **`OUT_OF_RANGE_AFTER_DEP`** — a parameter sits inside its
-  registry-declared range but conflicts with a runtime-deduced
-  bound. Typical example: `NRMAX` after equilibrium load may be
-  capped by the equilibrium grid.
-
-- **`FILE_MISSING`** — a required file path is empty or points
-  at a file the library cannot open. Typical example:
+- **`FILE_MISSING`** — a required file path is empty or
+  points at a file the library cannot open. Typical example:
   `MODELG ∈ {3, 5, 7, 8}` paired with empty `KNAMEQ`.
 
-- **`MISSING_REQUIRED`** — a required parameter was never set.
-  Distinct from `OUT_OF_RANGE` because the *absence* is the
-  problem, not the value.
+The reserved categories (no emissions in the current
+implementation):
+
+- **`INCONSISTENT_PAIR`** — reserved for future use, intended
+  for pairs of parameters that individually pass range checks
+  but jointly form an invalid configuration. Note that the
+  `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` check
+  is currently emitted as `OUT_OF_RANGE` rather than as a
+  pair-level diagnostic
+  (`tr/tr_api.f90:419-425`).
+
+- **`OUT_OF_RANGE_AFTER_DEP`** — reserved for future use,
+  intended for parameters that pass their declared range but
+  conflict with a bound deduced at runtime (e.g. `NRMAX`
+  capped by the equilibrium grid).
+
+- **`MISSING_REQUIRED`** — reserved for future use, intended
+  to flag required parameters that were never set
+  (distinguished from `OUT_OF_RANGE` because the *absence* is
+  the problem, not the value).
 
 The recommended workflow is to call `validate()` after
 `set_params()` and before `run()`, which is exactly what
