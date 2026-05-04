@@ -54,13 +54,17 @@ Four subsections.
 **1. Time-stepping scheme**
 
 One paragraph stating TR uses an implicit scheme, citing
-`tr/trexec.f90:494-498`. The advancement coefficient is `FADV`
-(NOT `THETA` — that name is reserved elsewhere): `FADV = 0.5`
-is Crank-Nicolson, `FADV = 1.0` is fully implicit. The default
-in `tr/trinit.f90` is `FADV = 1.D0` — TR runs fully implicit
-out of the box. Concrete consequence: a strict CFL condition
-does NOT apply. Time-step selection is governed by truncation
-error and inner-iteration convergence, not by an advection-style
+`tr/trexec.f90:494-498` for the scheme-selector comments and
+the assignment. The advancement coefficient is `FADV` (NOT
+`THETA` — that name is reserved elsewhere): `FADV = 0.5` is
+Crank-Nicolson, `FADV = 1.0` is fully implicit. **The value
+is hard-coded inside the time-step routine itself**: at
+`tr/trexec.f90:498` `FADV = 1.D0` is assigned unconditionally,
+so TR runs fully implicit out of the box and there is no
+public knob to switch to Crank-Nicolson without editing the
+source. Concrete consequence: a strict CFL condition does NOT
+apply; time-step selection is governed by truncation error
+and inner-iteration convergence, not by an advection-style
 stability bound.
 
 **2. Time-step selection guidance**
@@ -69,9 +73,12 @@ One paragraph + small reference table. Practical rules:
 
 - Smaller `DT` → smaller truncation error per step but more
   steps for the same total time.
-- The default `DT = 0.01 s` (`tr_param_registry.f90`) suits
-  equilibrium-scale runs; sub-millisecond `DT` is rarely
-  required for transport-time-scale studies.
+- The defaults are `DT = 0.01 s` (`tr/trinit.f90:374`) and
+  `NTMAX = 100` (`tr/trinit.f90:376`), which together advance
+  the simulation by 1.0 s. These suit equilibrium-scale runs;
+  sub-millisecond `DT` is rarely required for transport-time-
+  scale studies but is sometimes necessary for source-driven
+  transients (see the ht6m row below).
 - For divergent / unstable cases, halve `DT` and retry — the
   recipe is implemented as `StableTrRunner` in
   {doc}`applications`.
@@ -83,24 +90,34 @@ Example (fixture-grounded, no fabricated typical values):
 | `tot_demo2014_short` (Layer 1 baseline) | 0.01 s | 100 | 1.0 s |
 | `tot_ht6m_short` (Layer 1 baseline) | 0.0001 s | 1000 | 0.1 s |
 
-Both rows verified at design time against the fixture files
-(`python/totlib/tests/fixtures/tot_demo2014_params.py` and
-`python/totlib/tests/fixtures/tot_ht6m_params.py`); the
-defaults flow through `tr/trinit.f90:374-376`. The ht6m fixture
-runs 100× more steps at 100× smaller `DT` because its physical
-time scale (sub-second) and resolution requirements differ —
-demonstrating the wide range of `(DT, NTMAX)` pairs that
-"equilibrium-scale" can mean in practice.
+Both rows verified at design time against the fixture files:
+
+- demo2014 sets only `NTMAX = 100`
+  (`python/totlib/tests/fixtures/tot_demo2014_params.py:74`)
+  and inherits `DT = 0.01` from the trinit defaults
+  (`tr/trinit.f90:374`).
+- ht6m overrides both:
+  `tr:DT = 0.0001` and `tr:NTMAX = 1000` at
+  `python/totlib/tests/fixtures/tot_ht6m_params.py:63-64`.
+
+The ht6m fixture runs 100× more steps at 100× smaller `DT`
+because its physical time scale (sub-second) and resolution
+requirements differ — demonstrating the wide range of
+`(DT, NTMAX)` pairs that "equilibrium-scale" can mean in
+practice.
 
 **3. Inner-iteration convergence (`EPSLTR`, `LMAXTR`)**
 
 One paragraph + parameter recap. Behaviour: each time step runs
-an inner iteration that converges toward `EPSLTR`. If the
-iteration does not converge within `LMAXTR` steps, the run
-**continues** with whatever residual is reached (rather than
-aborting). The `--Inner ...` lines in tr2 console output flag
-non-convergent steps. Defaults (`EPSLTR=0.001`, `LMAXTR=10`)
-are conservative. For aggressive studies where `LMAXTR` is
+an inner iteration that converges toward `EPSLTR` — the
+relative-residual checks live at `tr/trexec.f90:112-128` (per
+species, per radial cell). The exit-on-iteration-budget guard
+is at `tr/trexec.f90:141`: when `L >= LMAXTR` the loop exits
+*without* setting `IERR`, so the run **continues** with
+whatever residual was reached rather than aborting. The
+`--Inner ...` lines in tr2 console output flag non-convergent
+steps. Defaults (`EPSLTR = 0.001`, `LMAXTR = 10`) are
+conservative. For aggressive studies where `LMAXTR` is
 saturated, raise `LMAXTR` first; only loosen `EPSLTR` if
 profile-level diagnostics confirm the residual is local
 (e.g. confined to one species or one radial cell).
@@ -153,7 +170,8 @@ beam/RF powers. The exact layout depends on the print mode
 **6. `validate()` output mapping (`TrDiagCode`)**
 
 A subsection per `TrDiagCode` value, taken verbatim from the
-enum in `tr/tr_api.h` and the tr-side wrapper:
+enum at `tr/tr_api.h:69-75` (mirrored in
+`python/trlib/_ffi.py:58-62`):
 
 - **`OUT_OF_RANGE`** — a parameter value sits outside the
   registry's allowed range (e.g. `NSMAX > 8`). One-line typical
@@ -279,9 +297,13 @@ marker, push. Reviewer focus:
 1. ✅ `docs/sphinx/modules/tr/en/numerical-stability-and-diagnostics.md` exists with all 7 subsections.
 2. ✅ ja counterpart exists with structurally aligned content.
 3. ✅ Both `index.md` files include `numerical-stability-and-diagnostics` in the Appendix toctree (after `limitations-and-references`).
-4. ✅ The §3.1.1 paragraph correctly states TR is implicit, names the `FADV` advancement coefficient (NOT `THETA`), and cites the default `FADV = 1.D0` (fully implicit) from `tr/trinit.f90` together with the scheme-selector comments at `tr/trexec.f90:494-498`.
-5. ✅ The §3.1.2 fixture table is grounded in the actual fixture files (`tot_demo2014_short`: `DT=0.01`, `NTMAX=100`, total `1.0s`; `tot_ht6m_short`: `DT=0.0001`, `NTMAX=1000`, total `0.1s`).
-6. ✅ All 5 `TrDiagCode` values in §3.2.6 match the enum in `tr/tr_api.h`.
-7. ✅ All "rule-of-thumb" claims in §3.2.7 are explicitly hedged.
-8. ✅ All `{doc}` cross-references resolve.
-9. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
+4. ✅ The §3.1.1 paragraph correctly states TR is implicit, names `FADV` (NOT `THETA`), and cites that `FADV = 1.D0` is hard-coded at `tr/trexec.f90:498` rather than user-configurable from a registry knob.
+5. ✅ The §3.1.2 fixture table is grounded in the actual fixture files with file:line citations: `tot_demo2014_params.py:74` (NTMAX inherits DT default from `tr/trinit.f90:374`) and `tot_ht6m_params.py:63-64` (overrides both).
+6. ✅ The §3.1.3 inner-iteration paragraph cites the convergence-check loop at `tr/trexec.f90:112-128` and the LMAXTR exit at `tr/trexec.f90:141`.
+7. ✅ The §3.1.4 `ierr=3` paragraph correctly attributes the umbrella code to `tr/tr_api.f90:227-245`.
+8. ✅ The §3.2.5 tr2-output paragraph references `tr/trrslt_print.f90:57,89,266` for the canonical per-step / summary format strings.
+9. ✅ The §3.2.6 TrDiagCode subsection cites `tr/tr_api.h:69-75` (enum) and `python/trlib/_ffi.py:58-62` (mirror).
+10. ✅ All 5 `TrDiagCode` values in §3.2.6 match the enum byte-for-byte.
+11. ✅ All "rule-of-thumb" claims in §3.2.7 are explicitly hedged.
+12. ✅ All `{doc}` cross-references resolve.
+13. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
