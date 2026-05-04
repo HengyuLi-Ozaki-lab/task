@@ -130,7 +130,7 @@ Content:
   | `MDLEQU` | Rotation | 0 (OFF) | |
   | `MDLEQZ` | Impurity | 0 (OFF) | |
   | `MDLEQ0` | Neutral | 0 (OFF) | |
-  | `MDLEQE` | Electron density (mode 0 / 1 / 2) | 0 (OFF) | per `tr/trinit.f90:693-694` this is a 0/1/2 mode (not a boolean), and per `tr/trprep.f90:202-203` it is only meaningful when `MDLEQN = 1` |
+  | `MDLEQE` | Electron density handling — 0 / 1 / 2 mode (not boolean) | 0 (OFF) | each mode maps to a distinct electron / ion density-equation handling (`tr/trprep.f90:407-415`, `tr/trexec.f90:180-201`); only meaningful when `MDLEQN = 1` (`tr/trprep.f90:202-203`). For the per-mode behaviour see those source locations. |
 
 - Default-out-of-the-box ON set is `{MDLEQB, MDLEQT}` →
   TR by default evolves current and temperature only;
@@ -169,36 +169,52 @@ scenarios where the equilibrium evolves rapidly (transient
 disruption studies, etc.) need to either re-run `eq` more
 frequently or accept the approximation.
 
-**c. Anomalous and neoclassical transport selectors**
+**c. Transport-model selector landscape**
 
 TR's transport coefficients come from several independent
 sources, each with its own model selector. The actual flag
-layout (verified at design time against `tr/trinit.f90`):
+layout (verified at design time against `tr/trinit.f90` and
+`tr/tr_param_registry.f90`):
 
-- **Turbulent (anomalous) heat transport — `MDLKAI`**:
-  selects the turbulent transport model (CDBM, IFS-PPPL,
-  GLF23, mixed Bohm/gyro-Bohm, and others — see
-  {doc}`appendix-mdlkai` for the full list).
-- **Anomalous particle diffusion — `MDLAD`**: separate ad-hoc
-  additive particle-diffusion contribution. Not the same axis
-  as `MDLKAI`; it covers particle transport rather than heat.
-- **Thermal pinch — `MDLAVK`**: selects the heat-pinch model,
-  i.e. the inward convective component of the heat flux.
-  *This is NOT a neoclassical selector* — `MDLAVK` is widely
-  named in tokamak transport codes for "anomalous V_K" /
-  "thermal pinch" and the TR documentation in
-  `tr/trinit.f90:296-308` and `parameters.md:213-216`
-  confirms this meaning.
-- **Neoclassical transport — `MDLKNC` and `MDNCLS`**:
-  separate from the above. `MDLKNC` selects a neoclassical
-  transport model and `MDNCLS` toggles the NCLASS-style
-  neoclassical handling. These are the actual neoclassical
-  knobs in TR.
+Selectors that are **exposed in the public parameter
+registry** (`tr/tr_param_registry.f90:43-49,124-128`) — i.e.
+settable from `tr.set_param`:
+
+- **Turbulent heat transport — `MDLKAI`**: selects the
+  turbulent (anomalous) heat-transport model (CDBM,
+  IFS-PPPL, GLF23, mixed Bohm/gyro-Bohm, and others — see
+  {doc}`appendix-mdlkai`).
+- **Resistivity model — `MDLETA`**: selects the resistivity
+  model used for current diffusion.
+- **Particle diffusion — `MDLAD`**: selects the particle-
+  diffusion model. Multiple variants are available, including
+  the Hinton-Hazeltine analytical form
+  (`tr/trinit.f90:290-295`, `tr/trcoef_adhoc.f90:35-45`); it
+  is a *model-family* selector, not a single ad-hoc switch.
+- **Thermal pinch — `MDLAVK`**: selects the heat-pinch
+  (inward heat-flux convective) model. *This is NOT a
+  neoclassical selector* — `MDLAVK` stands for the
+  "anomalous V_K" / thermal-pinch model family, confirmed
+  by `tr/trinit.f90:296-308` and `parameters.md:213-216`.
+
+Selectors **present in the Fortran source but NOT in the
+public parameter registry** — i.e. they cannot be changed at
+run time from `tr.set_param`, and retain their compile-time
+defaults from `tr/trinit.f90`:
+
+- **Neoclassical transport handling — `MDLKNC` and
+  `MDNCLS`**: `MDLKNC` selects a neoclassical heat /
+  resistivity treatment, and `MDNCLS` toggles the NCLASS
+  module. These are the actual neoclassical knobs but they
+  are *not* registered for `tr.set_param`; advanced users who
+  need to change them must edit `tr/trinit.f90` and rebuild.
 
 The page's role is to give readers a map of the selector
 landscape so they know which knob targets which physics —
-not to document each selector exhaustively. For specific
-values, see {doc}`parameters` and {doc}`appendix-mdlkai`.
+not to document each selector exhaustively. For the runtime-
+settable selectors see {doc}`parameters` and
+{doc}`appendix-mdlkai`. For the non-registered selectors,
+{doc}`design` is the entry point.
 
 ### §3.4 Section "Where TR fits"
 
@@ -215,10 +231,11 @@ Content:
   these are reduced models, not first-principles MHD):
   - **Sawtooth oscillation** — `MDLST` selector
     (`tr/trinit.f90:392-402`); the actual mixing is
-    implemented in `TRSAWT`, called from `tr/trloop.f90:59-65`,
-    with the redistribution step at `tr/trcalc.f90:1072-1086`.
-    This is a phenomenological reconnection / mixing model,
-    not a kink-mode solve.
+    implemented in `TRSAWT` (header at `tr/trcalc.f90:1072`,
+    called from `tr/trloop.f90:59-65`), with the temperature /
+    density / q redistribution step at
+    `tr/trcalc.f90:1127-1150`. This is a phenomenological
+    reconnection / mixing model, not a kink-mode solve.
   - **ELM reduction** — `MDLELM` selector
     (`tr/trinit.f90:720-729`). Again a reduced ELM-frequency
     / ELM-energy-loss model rather than a first-principles
@@ -358,9 +375,9 @@ REVIEW_OK marker, push. Reviewer focus:
 4. ✅ §3.1.5 documents the radial coordinate, `NRMAX`, the inner / outer boundary handling, and the evolved-vs-parameterized distinction.
 5. ✅ §3.2 table lists all 7 `MDLEQ*` flags with names and defaults that match `tr/trinit.f90:687-695` byte-for-byte. The `MDLEQE` row explicitly notes the 0/1/2 mode and the dependency on `MDLEQN = 1` (Codex MED 1).
 6. ✅ §3.2 explicitly states the default ON set is `{MDLEQB, MDLEQT}`.
-7. ✅ §3.3c names `MDLKAI` (turbulent heat), `MDLAD` (anomalous particle diffusion), `MDLAVK` (thermal pinch — explicitly NOT a neoclassical selector), and `MDLKNC` / `MDNCLS` (neoclassical handling). The misidentification of `MDLAVK` as the neoclassical knob (Codex HIGH 1 against the original draft) is fixed.
+7. ✅ §3.3c names `MDLKAI` (turbulent heat), `MDLETA` (resistivity), `MDLAD` (particle-diffusion **model selector** — incl. Hinton-Hazeltine, NOT solely 'anomalous'), `MDLAVK` (thermal pinch — explicitly NOT a neoclassical selector), and separately `MDLKNC` / `MDNCLS` for neoclassical handling. The misidentification of `MDLAVK` as the neoclassical knob (Codex HIGH 1 against the original draft) is fixed. The page additionally states which selectors are exposed in `tr/tr_param_registry.f90:43-49,124-128` (i.e. user-settable) versus which exist only as compile-time defaults in `tr/trinit.f90` (i.e. `MDLKNC` / `MDNCLS`).
 8. ✅ §3.3a cites `tr_bpsd_get` at `tr/trbpsd.f90:160-183` for the device / plasma pull and `tr/trbpsd.f90:213-235` for the equilibrium / metric pull (only fires for relevant `MODELG`) — Codex MED 2.
-9. ✅ §3.4 distinguishes "TR resolves with simplified models" (sawtooth via `MDLST` / `TRSAWT`; ELM reduction via `MDLELM`) from "TR does NOT model at all" (full MHD / pedestal / 3-D / gyrokinetic) — Codex HIGH 2.
+9. ✅ §3.4 distinguishes "TR resolves with simplified models" (sawtooth via `MDLST` / `TRSAWT` — header at `tr/trcalc.f90:1072`, redistribution at `tr/trcalc.f90:1127-1150`; ELM reduction via `MDLELM`) from "TR does NOT model at all" (full MHD / pedestal / 3-D / gyrokinetic) — Codex HIGH 2 from the first design review, with the redistribution line range corrected per Codex re-review MED 1.
 10. ✅ §3.5 lists ≥ 3 standard tokamak-transport textbooks as bibliographic pointers, with publisher / year deliberately omitted to avoid asserting unverified bibliographic claims (Codex LOW 1).
 11. ✅ All `{doc}` cross-references resolve to existing files in both `en/` and `ja/`.
 12. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
