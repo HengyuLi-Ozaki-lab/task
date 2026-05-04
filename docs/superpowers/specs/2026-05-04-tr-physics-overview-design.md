@@ -75,6 +75,42 @@ Content:
   tokamak transport textbook for derivations (see "Further
   reading" below).
 
+### §3.1.5 Section "Spatial grid and boundary conditions"
+
+~15 lines. One paragraph + 1–2 short bullets.
+
+Content (Codex review LOW 4 fill-in):
+
+- **Radial coordinate.** TR's grid is one-dimensional in a
+  flux-surface label (rho-like normalised radius). The cell
+  count is set by `NRMAX` (default in
+  `tr/trinit.f90`) and bounded at compile time by
+  `TR_MAX_NRMAX = 500` (`tr/tr_api.h`). The mesh layout —
+  which arrays live on cell centres vs cell edges — is
+  documented in {doc}`design`; this page only orients
+  readers to "there is a single radial axis" and "all
+  radial profiles are arrays of length `NRMAX`".
+- **Inner boundary.** At the magnetic axis (`NR = 1` in
+  the array indexing), regularity / symmetry conditions
+  apply automatically; users do not configure these.
+- **Outer boundary.** At the plasma edge (`NR = NRMAX`),
+  values are imposed via the registry parameters (e.g.
+  edge-pinning of profiles); see {doc}`parameters` for the
+  configurable surface values. TR does NOT solve a
+  separate edge / SOL transport problem (see §3.4 below).
+- **Evolved vs parameterized.** The transport coefficients
+  (turbulent + neoclassical contributions, see §3.3) are
+  computed *once per inner iteration* from the current
+  profiles and held constant during that step's matrix
+  solve; what *evolves in time* is the profile arrays
+  (density / temperature / current). Heating sources, NB
+  beam deposition, RF power profiles, etc. enter as source
+  terms also recomputed each step.
+
+This subsection is intentionally short and orientation-only;
+specific array layouts and edge-condition mechanics belong
+in {doc}`design` and {doc}`parameters`.
+
 ### §3.2 Section "Equations TR can solve"
 
 ~30 lines. One paragraph plus a table.
@@ -94,7 +130,7 @@ Content:
   | `MDLEQU` | Rotation | 0 (OFF) | |
   | `MDLEQZ` | Impurity | 0 (OFF) | |
   | `MDLEQ0` | Neutral | 0 (OFF) | |
-  | `MDLEQE` | Electron density (separate flag) | 0 (OFF) | turn on for electron-density evolution distinct from `MDLEQN` |
+  | `MDLEQE` | Electron density (mode 0 / 1 / 2) | 0 (OFF) | per `tr/trinit.f90:693-694` this is a 0/1/2 mode (not a boolean), and per `tr/trprep.f90:202-203` it is only meaningful when `MDLEQN = 1` |
 
 - Default-out-of-the-box ON set is `{MDLEQB, MDLEQT}` →
   TR by default evolves current and temperature only;
@@ -115,10 +151,13 @@ that don't exist in source.
 
 TR is "1-D" in the sense that all profile quantities are
 indexed by a single radial coordinate. The 2-D equilibrium
-geometry comes from the `eq` module via the BPSD broker: see
-`tr/trbpsd.f90` for the pull side. The combined picture is
-"1.5-D" (1-D transport on top of 2-D equilibrium), the
-standard transport-code style.
+geometry comes from the `eq` module via the BPSD broker:
+`tr_bpsd_get` (`tr/trbpsd.f90:160-183`) pulls device + plasma
+quantities, and the equilibrium / metric pull at
+`tr/trbpsd.f90:213-235` only fires for the geometry-aware
+`MODELG` settings (the analytic-equilibrium path skips it).
+The combined picture is "1.5-D" (1-D transport on top of 2-D
+equilibrium), the standard transport-code style.
 
 **b. Quasi-stationary equilibrium**
 
@@ -130,22 +169,36 @@ scenarios where the equilibrium evolves rapidly (transient
 disruption studies, etc.) need to either re-run `eq` more
 frequently or accept the approximation.
 
-**c. Neoclassical-vs-turbulent transport split**
+**c. Anomalous and neoclassical transport selectors**
 
-Transport coefficients are assembled from three sources, each
-with its own model selector (cite `tr/tr_param_registry.f90`):
+TR's transport coefficients come from several independent
+sources, each with its own model selector. The actual flag
+layout (verified at design time against `tr/trinit.f90`):
 
-- Turbulent (anomalous) transport: `MDLKAI` selects the
-  model (CDBM, IFS-PPPL, GLF23, mixed Bohm/gyro-Bohm, etc.;
-  see {doc}`appendix-mdlkai`).
-- Neoclassical transport: `MDLAVK` selects the model.
-- Residual / ad-hoc anomalous diffusion: `MDLAD` (a
-  separate ad-hoc additive term; not the
-  neoclassical-vs-turbulent split itself).
+- **Turbulent (anomalous) heat transport — `MDLKAI`**:
+  selects the turbulent transport model (CDBM, IFS-PPPL,
+  GLF23, mixed Bohm/gyro-Bohm, and others — see
+  {doc}`appendix-mdlkai` for the full list).
+- **Anomalous particle diffusion — `MDLAD`**: separate ad-hoc
+  additive particle-diffusion contribution. Not the same axis
+  as `MDLKAI`; it covers particle transport rather than heat.
+- **Thermal pinch — `MDLAVK`**: selects the heat-pinch model,
+  i.e. the inward convective component of the heat flux.
+  *This is NOT a neoclassical selector* — `MDLAVK` is widely
+  named in tokamak transport codes for "anomalous V_K" /
+  "thermal pinch" and the TR documentation in
+  `tr/trinit.f90:296-308` and `parameters.md:213-216`
+  confirms this meaning.
+- **Neoclassical transport — `MDLKNC` and `MDNCLS`**:
+  separate from the above. `MDLKNC` selects a neoclassical
+  transport model and `MDNCLS` toggles the NCLASS-style
+  neoclassical handling. These are the actual neoclassical
+  knobs in TR.
 
-The implementation step verifies these flag names against
-`tr/tr_param_registry.f90`; if any flag is misnamed in the
-spec, the implementation corrects to the actual source name.
+The page's role is to give readers a map of the selector
+landscape so they know which knob targets which physics —
+not to document each selector exhaustively. For specific
+values, see {doc}`parameters` and {doc}`appendix-mdlkai`.
 
 ### §3.4 Section "Where TR fits"
 
@@ -158,18 +211,31 @@ Content:
   seconds (consistent with the defaults at
   `tr/trinit.f90:374,376` — `DT = 0.01s`, `NTMAX = 100`,
   total `1.0s`). Faster phenomena are not resolved.
-- **What TR does NOT model:** bulleted list, each item one
-  line:
-  - Sawtooth instabilities (no internal-kink mode in core)
-  - Edge / pedestal physics (no ETB-specific model;
-    boundary conditions are imposed at the outer radial cell)
-  - MHD instabilities (kink, tearing, ELMs)
+- **What TR resolves with simplified models** (caveat:
+  these are reduced models, not first-principles MHD):
+  - **Sawtooth oscillation** — `MDLST` selector
+    (`tr/trinit.f90:392-402`); the actual mixing is
+    implemented in `TRSAWT`, called from `tr/trloop.f90:59-65`,
+    with the redistribution step at `tr/trcalc.f90:1072-1086`.
+    This is a phenomenological reconnection / mixing model,
+    not a kink-mode solve.
+  - **ELM reduction** — `MDLELM` selector
+    (`tr/trinit.f90:720-729`). Again a reduced ELM-frequency
+    / ELM-energy-loss model rather than a first-principles
+    pedestal-stability calculation.
+- **What TR does NOT model at all:**
+  - Edge / pedestal physics in any first-principles sense
+    (no ETB-specific transport-barrier solve; boundary
+    conditions are imposed at the outer radial cell).
+  - General MHD instabilities (kink, tearing, NTM, RWM, etc.)
+    — only the simplified sawtooth and ELM-reduction switches
+    above are present.
   - 3-D effects (stellarator geometry, resonant magnetic
     perturbations) — TR assumes axisymmetry through the
-    flux-surface averaging
-  - Fast (gyrokinetic-scale) fluctuations — these enter only
-    via the turbulent transport models, as transport
-    coefficients
+    flux-surface averaging.
+  - Fast (gyrokinetic-scale) fluctuations directly — these
+    enter only via the turbulent transport models, as
+    transport coefficients.
 - **Comparison with other codes:** see the comparison table
   in {doc}`limitations-and-references`.
 
@@ -184,22 +250,24 @@ Content:
   field for the first time. TASK-specific publications and
   the comparison with related open codes are in
   {doc}`limitations-and-references`.
-- Pointers (no page numbers — the reader is expected to use
-  these as starting points, not as citations the page is
-  asserting):
-  - J. Wesson, *Tokamaks* (Oxford, 4th edition, 2011) —
-    encyclopedic textbook covering equilibrium, transport,
-    stability, heating, diagnostics.
-  - R. D. Hazeltine & J. D. Meiss, *Plasma Confinement*
-    (Dover, 2003) — focused on the transport theory
-    underlying codes like TR.
-  - J. P. Freidberg, *Ideal Magnetohydrodynamics* (Springer,
-    1987) — equilibrium and stability foundation; the
-    flux-surface coordinates TR uses come from here.
+- Pointers (author + title + edition only; no publisher or
+  year — these are reading-list starting points, not
+  authoritative bibliographic citations the page is asserting):
+  - J. Wesson, *Tokamaks* (Oxford University Press, 4th
+    edition) — encyclopedic textbook covering equilibrium,
+    transport, stability, heating, diagnostics.
+  - R. D. Hazeltine & J. D. Meiss, *Plasma Confinement* —
+    focused on the transport theory underlying codes like TR.
+  - J. P. Freidberg, *Ideal Magnetohydrodynamics* —
+    equilibrium and stability foundation; the flux-surface
+    coordinates TR uses come from this style of analysis.
 
 The page does NOT cite specific equations or page numbers
-from these books — they are bibliographic pointers, not
-authoritative claims.
+from these books — they are bibliographic pointers. The
+4th-edition designation for Wesson is the well-known one;
+publisher / year fields are deliberately omitted because
+multiple editions and reprints exist and the page does not
+assert which one the reader uses.
 
 ## §4. Bilingual content
 
@@ -284,14 +352,15 @@ REVIEW_OK marker, push. Reviewer focus:
 
 ## §9. Acceptance criteria
 
-1. ✅ `docs/sphinx/modules/tr/en/physics-overview.md` exists with all 5 sections.
+1. ✅ `docs/sphinx/modules/tr/en/physics-overview.md` exists with sections §3.1, §3.1.5, §3.2, §3.3, §3.4, §3.5 (six sections after the Codex LOW 4 fill-in).
 2. ✅ ja counterpart exists with structurally aligned content.
 3. ✅ Both `index.md` files prepend `physics-overview` to the User guide toctree (before `build`).
-4. ✅ §3.2 table lists all 7 `MDLEQ*` flags with names and defaults that match `tr/trinit.f90:687-695` byte-for-byte.
-5. ✅ §3.2 explicitly states the default ON set is `{MDLEQB, MDLEQT}`.
-6. ✅ §3.3 names `MDLKAI`, `MDLAVK`, `MDLAD` and cites `tr/tr_param_registry.f90` for them; flag names verified to exist in source.
-7. ✅ §3.3 cites `tr/trbpsd.f90` for the eq → tr BPSD pull side.
-8. ✅ §3.4 explicitly lists items TR does NOT model (sawtooth / pedestal / MHD / 3-D / gyrokinetic-scale).
-9. ✅ §3.5 lists ≥ 3 standard tokamak-transport textbooks as bibliographic pointers (no page numbers, no fabricated quotes).
-10. ✅ All `{doc}` cross-references resolve to existing files in both `en/` and `ja/`.
-11. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
+4. ✅ §3.1.5 documents the radial coordinate, `NRMAX`, the inner / outer boundary handling, and the evolved-vs-parameterized distinction.
+5. ✅ §3.2 table lists all 7 `MDLEQ*` flags with names and defaults that match `tr/trinit.f90:687-695` byte-for-byte. The `MDLEQE` row explicitly notes the 0/1/2 mode and the dependency on `MDLEQN = 1` (Codex MED 1).
+6. ✅ §3.2 explicitly states the default ON set is `{MDLEQB, MDLEQT}`.
+7. ✅ §3.3c names `MDLKAI` (turbulent heat), `MDLAD` (anomalous particle diffusion), `MDLAVK` (thermal pinch — explicitly NOT a neoclassical selector), and `MDLKNC` / `MDNCLS` (neoclassical handling). The misidentification of `MDLAVK` as the neoclassical knob (Codex HIGH 1 against the original draft) is fixed.
+8. ✅ §3.3a cites `tr_bpsd_get` at `tr/trbpsd.f90:160-183` for the device / plasma pull and `tr/trbpsd.f90:213-235` for the equilibrium / metric pull (only fires for relevant `MODELG`) — Codex MED 2.
+9. ✅ §3.4 distinguishes "TR resolves with simplified models" (sawtooth via `MDLST` / `TRSAWT`; ELM reduction via `MDLELM`) from "TR does NOT model at all" (full MHD / pedestal / 3-D / gyrokinetic) — Codex HIGH 2.
+10. ✅ §3.5 lists ≥ 3 standard tokamak-transport textbooks as bibliographic pointers, with publisher / year deliberately omitted to avoid asserting unverified bibliographic claims (Codex LOW 1).
+11. ✅ All `{doc}` cross-references resolve to existing files in both `en/` and `ja/`.
+12. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
