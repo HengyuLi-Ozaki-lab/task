@@ -264,14 +264,16 @@ No new MyST anchor labels are needed.
   7. **Surface in the Python `TrState` dataclass** at
      `python/trlib/state.py`. Two cases:
      - *Scalar field*: add the field name to the
-       `SCALAR_FIELDS` list (`python/trlib/state.py:22-28`)
-       and the dict-comprehension parser at `:74-87` (the
-       `from_c` body) populates `state.scalars["YOUR_FIELD"]`
-       automatically; the dataclass construction at
-       `:92-100` returns the assembled `TrState`. The new
-       field becomes accessible as
-       `state.scalars["YOUR_FIELD"]` without further code
-       changes.
+       `SCALAR_FIELDS` list (`python/trlib/state.py:22-28`).
+       Inside `from_c` (which starts at `:74`), the scalar
+       dict-comprehension at `:87` walks `SCALAR_FIELDS` and
+       populates `state.scalars["YOUR_FIELD"]` automatically;
+       the dimension dict-comprehension at `:81-84` is a
+       separate stage that handles `nrmax` / `nsmax` etc.
+       The dataclass construction at `:92-100` then returns
+       the assembled `TrState`. The new field becomes
+       accessible as `state.scalars["YOUR_FIELD"]` without
+       further code changes.
      - *Array / profile field* (1-D or 2-D, indexed by
        `nrmax` or `nrmax × nsmax`): add a top-level
        attribute on the `TrState` dataclass and the
@@ -407,7 +409,7 @@ Codex), REVIEW_OK marker, push. Reviewer focus:
     - Step 4 (NEW): Fortran population at `tr/tr_api.f90:263-283` (zero-init), `:299-315` (scalar copy block — AJRFT precedent), `:321-330` (per-radius / per-species profile loops)
     - Step 5: `tr/tr_api.h:38` ABI version (verified `= 2`)
     - Step 6: `python/trlib/_ffi.py:94-120` (was vague "around 95-120")
-    - Step 7: `python/trlib/state.py:22-28` (`SCALAR_FIELDS` list) + `:74-87` (`from_c` scalar dict-comprehension parser) + `:92-100` (dataclass construction). (Round-1 HIGH 7 introduced the mechanism; round-2 LOW 1 corrected the parser line ranges.)
+    - Step 7: `python/trlib/state.py:22-28` (`SCALAR_FIELDS` list); `from_c` starts at `:74`; the dimension dict-comprehension is at `:81-84` and the scalar dict-comprehension at `:87`; the dataclass construction at `:92-100` returns the assembled `TrState`. (Round-1 HIGH 7 introduced the mechanism; round-2 LOW 1 + round-3 LOW 1 progressively tightened the parser line ranges.)
     The `AJRFT` worked-example claim ties to L-7b-i with verified PR `#187` + commit `e049a1e4`. The §4.3 also includes a **Fortran/C array-order trap warning** for 2-D fields (Codex round-1 MED 10.2).
 14. ✅ All `{doc}` cross-references resolve.
 15. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
