@@ -54,11 +54,14 @@ Four subsections.
 **1. Time-stepping scheme**
 
 One paragraph stating TR uses an implicit scheme, citing
-`tr/trexec.f90:495-496` (`THETA = 0.5 → Crank-Nicolson`,
-`1.0 → fully implicit`). Concrete consequence: a strict CFL
-condition does NOT apply. Time-step selection is governed by
-truncation error and inner-iteration convergence, not by an
-advection-style stability bound.
+`tr/trexec.f90:494-498`. The advancement coefficient is `FADV`
+(NOT `THETA` — that name is reserved elsewhere): `FADV = 0.5`
+is Crank-Nicolson, `FADV = 1.0` is fully implicit. The default
+in `tr/trinit.f90` is `FADV = 1.D0` — TR runs fully implicit
+out of the box. Concrete consequence: a strict CFL condition
+does NOT apply. Time-step selection is governed by truncation
+error and inner-iteration convergence, not by an advection-style
+stability bound.
 
 **2. Time-step selection guidance**
 
@@ -78,12 +81,16 @@ Example (fixture-grounded, no fabricated typical values):
 | Fixture | `DT` | `NTMAX` | Total time |
 |---|---|---|---|
 | `tot_demo2014_short` (Layer 1 baseline) | 0.01 s | 100 | 1.0 s |
-| `tot_ht6m_short` (Layer 1 baseline) | (verify at impl) | (verify at impl) | (verify at impl) |
+| `tot_ht6m_short` (Layer 1 baseline) | 0.0001 s | 1000 | 0.1 s |
 
-(Implementation step verifies the second row from
-`python/totlib/tests/fixtures/tot_ht6m_params.py`; if it
-diverges from `(0.01, 100, 1.0)`, document accordingly. If
-inaccessible, drop that row rather than fabricate.)
+Both rows verified at design time against the fixture files
+(`python/totlib/tests/fixtures/tot_demo2014_params.py` and
+`python/totlib/tests/fixtures/tot_ht6m_params.py`); the
+defaults flow through `tr/trinit.f90:374-376`. The ht6m fixture
+runs 100× more steps at 100× smaller `DT` because its physical
+time scale (sub-second) and resolution requirements differ —
+demonstrating the wide range of `(DT, NTMAX)` pairs that
+"equilibrium-scale" can mean in practice.
 
 **3. Inner-iteration convergence (`EPSLTR`, `LMAXTR`)**
 
@@ -102,17 +109,28 @@ profile-level diagnostics confirm the residual is local
 
 Two paragraphs:
 
-- *Common causes:* `DT` too large for the prescribed source
-  terms (NB, EC, etc.); inconsistent parameter combinations
-  (`MODELG=3` with empty `KNAMEQ` — caught by `validate()`);
-  source-term stiffness (e.g. extreme `EXTERNAL_DRIVEN_I`).
+- *What `ierr=3` means at the API boundary:* `tr_api_run`
+  (`tr/tr_api.f90:227-245`) returns `TR_ERR_CALC_FAILED` for
+  **any** non-zero result code from the underlying
+  `tr_prep` / `tr_loop` routines. The wrapper deliberately
+  collapses the full set of downstream failure classes into a
+  single ABI code; `ierr=3` is therefore an umbrella signal that
+  "something downstream did not finish cleanly" rather than a
+  diagnosis of which subsystem failed. Narrowing it down is the
+  user's job, via the recipe below.
 - *Diagnostic recipe:*
   1. Run `validate()` first; if any blocking diagnostic
      (`FILE_MISSING`, `MISSING_REQUIRED`) is present, fix it.
-  2. Halve `DT` (use {doc}`applications` `StableTrRunner`).
-  3. Inspect tr2 console output for `Inner not converged` /
-     diverging energies (see §3.2.5 below).
-  4. Verify {doc}`parameters` table for parameter ranges.
+     This is the cheapest way to rule out classes of failure
+     before the run.
+  2. Halve `DT` and retry (use {doc}`applications`
+     `StableTrRunner`). If the failure was a numerical
+     stiffness / inner-iteration symptom, this often clears it.
+  3. Inspect tr2 console output for `Inner not converged` lines
+     and diverging energies (see §3.2.5).
+  4. Cross-check {doc}`parameters` and {doc}`parameter-setting`
+     for parameter ranges and inter-parameter constraints that
+     `validate()` may not catch.
 
 ### §3.2 Section "Diagnostics & observability"
 
@@ -166,9 +184,12 @@ described in {doc}`state` and stating *what to look for*:
   a quasi-steady state should plateau; an unbounded rise
   suggests source/sink imbalance.
 - *q-profile peaking:* `Q0` (axis safety factor) below 1 is a
-  rule-of-thumb threshold for sawtooth instability in tokamaks
-  (TR does not model sawteeth, so dropping below 1 means the
-  resulting profile is non-physical at the axis).
+  rule-of-thumb threshold for sawtooth instability in tokamaks.
+  TR does not model sawteeth, so persistent `Q0 < 1` may
+  indicate that the resulting profile is non-physical at the
+  axis — but the magnitude of the drift, and whether it
+  matters for the diagnostic the user actually cares about,
+  depend on the scenario.
 - *Current relaxation:* the time over which `AJT` settles after
   a change in `EXTERNAL_DRIVEN_I` is a rule-of-thumb estimate of
   the resistive current relaxation time. Order-of-seconds for
@@ -242,14 +263,24 @@ marker, push. Reviewer focus:
   not exhaustively map every parameter to a code).
 - An `MDLPRT` print-mode reference table (separate possible PR;
   this page just notes the variable's existence).
+- Mesh / radial-resolution (`NRMAX`) sensitivity guidance.
+  Codex design-stage review (LOW 9) flagged this as a topic
+  readers might expect; deferring to a future "tutorials"
+  cluster (D in the menu).
+- Singular-matrix / negative-temperature recovery paths inside
+  `tr_loop`. Same Codex flag; this is internals territory and
+  belongs in `design.md` if it is documented at all.
+- Restart / checkpoint diagnostics. TR has no built-in
+  checkpoint API at the L-7 baseline, so this is moot for the
+  current page.
 
 ## §9. Acceptance criteria
 
 1. ✅ `docs/sphinx/modules/tr/en/numerical-stability-and-diagnostics.md` exists with all 7 subsections.
 2. ✅ ja counterpart exists with structurally aligned content.
 3. ✅ Both `index.md` files include `numerical-stability-and-diagnostics` in the Appendix toctree (after `limitations-and-references`).
-4. ✅ The §3.1.1 paragraph correctly states TR is implicit (Crank-Nicolson / fully implicit), with `tr/trexec.f90:495-496` cited.
-5. ✅ The §3.1.2 fixture table is grounded in actual fixture files; the second row is verified at implementation time or dropped.
+4. ✅ The §3.1.1 paragraph correctly states TR is implicit, names the `FADV` advancement coefficient (NOT `THETA`), and cites the default `FADV = 1.D0` (fully implicit) from `tr/trinit.f90` together with the scheme-selector comments at `tr/trexec.f90:494-498`.
+5. ✅ The §3.1.2 fixture table is grounded in the actual fixture files (`tot_demo2014_short`: `DT=0.01`, `NTMAX=100`, total `1.0s`; `tot_ht6m_short`: `DT=0.0001`, `NTMAX=1000`, total `0.1s`).
 6. ✅ All 5 `TrDiagCode` values in §3.2.6 match the enum in `tr/tr_api.h`.
 7. ✅ All "rule-of-thumb" claims in §3.2.7 are explicitly hedged.
 8. ✅ All `{doc}` cross-references resolve.
