@@ -65,10 +65,15 @@ No new MyST anchor labels are needed.
 
 ### §3.1 eqdata files (EQDSK and friends)
 
-- `MODELG ∈ {3, 5, 7, 8}` triggers the `eq` module to load an
-  external equilibrium file (the canonical "EQDSK"-shaped
-  flow). The path is set via `KNAMEQ` (string parameter) —
-  see {doc}`parameter-setting` for how to set string params.
+- `MODELG ∈ {3, 5, 8, 9}` triggers TR's BPSD-side
+  equilibrium pull (`tr/trbpsd.f90:213`). The `eq` module
+  itself only treats `MODELG ∈ {3, 5, 8}` as a real EQDSK
+  load (per `eq/eq_api.f90:105-108`); `MODELG = 9` is a
+  TR-side alias the BPSD pull also accepts. The page
+  documents both numbers so users do not get confused
+  if their `eq` configuration uses `9`.
+- The path is set via `KNAMEQ` (string parameter) — see
+  {doc}`parameter-setting` for how to set string params.
 - The file is read on the `eq` side; `tr` only pulls the
   resulting equilibrium / metric data via the BPSD broker.
   Cite `tr/trbpsd.f90:213-245` (the geometry-aware pull is
@@ -86,12 +91,25 @@ No new MyST anchor labels are needed.
   profile data (density, temperature, q-profile snapshots
   etc.). TR can ingest these to drive interpretive runs.
 - Reading is controlled by `MDLUF` (default `0` — OFF; set
-  to non-zero to enable) and the directory parameters
-  `KUFDIR` / `KUFDEV` / `KUFDCG` (string parameters; see
-  {doc}`parameter-setting`).
-- The reader chain is `tr/trufile.f90` →
-  `tr/tr_ufile_task.f90` (TASK-side dispatch) →
-  `tr/tr_ufile_topics.f90` (per-topic decoders).
+  to non-zero to enable). `MDLUF` IS exposed in
+  `tr/tr_param_registry.f90` and can be set from
+  `tr.set_param("MDLUF", ...)`; default verified at
+  `tr/trinit.f90:641-648`.
+- **The directory parameters `KUFDIR` / `KUFDEV` / `KUFDCG`
+  are namelist-only.** They appear in the legacy `&trn`
+  namelist input (`tr/trparm.f90:108-112`) but are NOT
+  exposed in `tr_param_registry.f90` (the registry has a
+  comment marking them as "future additions" at
+  `tr/tr_param_registry.f90:184-186`). Setting them via
+  `tr.set_param_str` will fail. Users who need to point
+  TR at a non-default ufile directory must either run from
+  the legacy namelist-driven `tr2` driver or set up the
+  directory via Fortran-side defaults / source edit until
+  these get added to the registry.
+- The reader chain is `tr/trufile.f90:70-77` (dispatch
+  stub) → `tr/tr_ufile_task.f90:7` (`TR_TIME_UFILE` /
+  `TR_STEADY_UFILE` entry points) → `tr/tr_ufile_topics.f90:7`
+  (`TR_TIME_UFILE_TOPICS` per-topic decoders).
 - For most users running prescribed-profile or
   analytic-geometry scenarios, ufiles are NOT needed —
   the default `MDLUF = 0` is correct. The entry exists to
@@ -113,9 +131,13 @@ No new MyST anchor labels are needed.
 ### §3.4 File placement and path constraints
 
 - The `eq` C-string interface caps `KNAMEQ` (and similar
-  string parameters) at 80 bytes (verified during the
-  L-7b-ii session: longer absolute paths were rejected by
-  `EqlibInvalidParamError` at `python/eqlib/eqlib.py:67`).
+  string parameters) at 80 bytes. The constant is defined at
+  `python/eqlib/eqlib.py:39`, the docstring stating "up to
+  79 bytes" (the byte budget reserves 1 byte for the
+  trailing NUL) lives at `:47-50`, and the actual length
+  rejection is `EqlibInvalidParamError` at `:67`. The page
+  uses **byte** rather than "character" because the limit
+  applies to encoded bytes, not codepoints.
 - Recommended pattern: `chdir` to a working directory that
   holds the eqdata file(s) and pass the bare filename. This
   is what the existing `python/totlib/tests/test_pipeline_*`
@@ -194,7 +216,9 @@ No new MyST anchor labels are needed.
 - This is the most invasive walkthrough. Adding a field to
   `tr_state_t` changes the C ABI, so external binary
   consumers may need to be rebuilt or version-checked.
-- Recipe (7 steps):
+- Recipe (8 steps — Codex review caught that the original
+  7-step draft omitted the Fortran-side population step
+  and underspecified the Python parser side):
   1. **Compute the quantity.** If the value is not already
      in TRCOMM, add a TRCOMM variable in the appropriate
      `tr/trcomm*.f90` module and assign it in the routine
@@ -202,29 +226,67 @@ No new MyST anchor labels are needed.
      would go into `tr/trrslt_globals.f90` or `trrslt_print.f90`).
   2. **Add the C-side field** — append a
      `REAL(C_DOUBLE)` (or appropriate kind) to the
-     `tr_state_c` derived type in `tr/tr_state.f90:43-60`.
-     Place it at the **end** of the struct so existing
+     `tr_state_c` derived type at `tr/tr_state.f90:43-67`
+     (the type definition runs through line 67, not the
+     :43-60 range the original draft cited). Place the
+     new field at the **end** of the type so existing
      field offsets stay stable; this minimises the breakage
      surface for binary consumers.
-  3. **Mirror in `tr/tr_api.h:53-60`** as a matching
-     `double` (or correct C type).
-  4. **Bump `TR_STATE_ABI_VERSION`** at
-     `tr/tr_api.h:38`. Version 2 is the current value;
-     bump to 3 (or whatever is next).
-  5. **Mirror in the ctypes side** at
+  3. **Mirror in `tr/tr_api.h:49-60`** as a matching
+     `double` (or correct C type). The struct definition
+     starts at line 49, not 53.
+  4. **Populate the field inside `tr_api_get_state`.** This
+     is the step the original draft omitted. The actual
+     copy from TRCOMM into the BIND-C struct lives at
+     `tr/tr_api.f90:263-283` (per-radius / per-species
+     loops) and `:299-315` (scalar copy block). Add the
+     assignment alongside the existing field copies. The
+     `AJRFT` precedent is the model to follow.
+  5. **Bump `TR_STATE_ABI_VERSION`** at
+     `tr/tr_api.h:38`. The current value is `2`; bump to
+     `3` (or whatever the next integer is at the time).
+  6. **Mirror in the ctypes side** at
      `python/trlib/_ffi.py` — append a tuple to
-     `TrStateC._fields_` (around line 95-120).
-  6. **Surface in the Python `TrState` dataclass** at
-     `python/trlib/state.py` — add the attribute and the
-     parser line.
-  7. **Update {doc}`state`** with the new attribute.
+     `TrStateC._fields_` at `python/trlib/_ffi.py:94-120`.
+     Use the same field order as the BIND-C struct so the
+     two layouts stay byte-compatible.
+  7. **Surface in the Python `TrState` dataclass** at
+     `python/trlib/state.py`. Two cases:
+     - *Scalar field*: add the field name to the
+       `SCALAR_FIELDS` list (`python/trlib/state.py:22-28`)
+       and the parser at `:50-72` and `:87-100` will pick
+       it up automatically. The field becomes accessible
+       as `state.scalars["YOUR_FIELD"]`.
+     - *Array / profile field* (1-D or 2-D, indexed by
+       `nrmax` or `nrmax × nsmax`): add a top-level
+       attribute on the `TrState` dataclass and the
+       corresponding `from_c` parser line by hand,
+       mirroring how `AJ` / `RN` / `RT` are handled.
+  8. **Update {doc}`state`** with the new attribute or
+     scalar key.
+- **Trap for 2-D fields — Fortran/C array order mirroring.**
+  Fortran is column-major and C is row-major. The existing
+  `RN` / `RT` fields handle this by *transposing* the
+  index order between the Fortran declaration
+  (`RN(TR_MAX_NSMAX, TR_MAX_NRMAX)` at
+  `tr/tr_state.f90:60-61`) and the C declaration
+  (`RN[TR_MAX_NRMAX][TR_MAX_NSMAX]` at
+  `tr/tr_api.h:53-54`). The ctypes mirror at
+  `python/trlib/_ffi.py:112-113` follows the C layout. Any
+  new 2-D field must follow the same transposition pattern
+  or the bytes will be reinterpreted incorrectly.
 - Test plan: rebuild `libtrapi.so`, smoke-test that
   `Trlib().get_state()` returns the new field with a
   reasonable value; run the canonical pytest sweep
   (`python/trlib/tests/`) to confirm no regression.
 - Worked example: the L-7b-i precedent. The `AJRFT`
-  field was added via this same recipe; cite the L-7b-i
-  PR (`#187`, merged commit `e049a1e4`) as a reference.
+  field was added via this same recipe; cite PR
+  [#187](https://github.com/k-yoshimi/task/pull/187),
+  merged commit `e049a1e4`. The actual touch points to
+  imitate are: `tr/tr_state.f90:64-66` (BIND-C field),
+  `tr/tr_api.h:57-59` (C field), `python/trlib/_ffi.py:116-119`
+  (ctypes field), `python/trlib/state.py:27` (scalar
+  registration).
 
 ### §4.4 Cross-references
 
@@ -318,12 +380,19 @@ Codex), REVIEW_OK marker, push. Reviewer focus:
 4. ✅ ja counterpart of extending-tr exists, structurally aligned.
 5. ✅ `index.md` (en + ja) inserts `input-files` after `parameter-setting` in User guide.
 6. ✅ `index.md` (en + ja) inserts `extending-tr` after `design` in Internals.
-7. ✅ §3.1 cites `tr/trbpsd.f90:213-245` for the MODELG-conditional equilibrium pull.
-8. ✅ §3.2 lists the reader chain `trufile.f90` → `tr_ufile_task.f90` → `tr_ufile_topics.f90` and `MDLUF` default `0`.
-9. ✅ §3.3 either documents the `trmodels/` convention (if it exists) OR states explicitly that no runtime model-side directory is currently consumed (whichever is verifiable from source).
-10. ✅ §3.4 names the 80-byte path limit and cites `python/eqlib/eqlib.py:67` (or the current line — verify at impl).
-11. ✅ §4.1 walkthrough cites `tr/tr_param_registry.f90:76+` and the array-pattern at `:101-106` (or the current lines — verify).
-12. ✅ §4.2 walkthrough cites the `SELECT CASE(MDLKAI)` at `tr/trcoef_turbulence.f90:400+` and reproduces the numbering convention from the source comments at `:392-398`.
-13. ✅ §4.3 walkthrough's 7 steps cite the right files at the right line ranges: `tr/tr_state.f90:43-60`, `tr/tr_api.h:38`, `tr/tr_api.h:53-60`, `python/trlib/_ffi.py` (verified line for `TrStateC._fields_`), `python/trlib/state.py`. The `AJRFT` worked-example claim ties to L-7b-i (commit `e049a1e4` per memory; verify PR # and SHA at impl).
+7. ✅ §3.1 cites the MODELG set as `{3, 5, 8, 9}` (per `tr/trbpsd.f90:213`) AND notes that `eq` mode-1 only treats `{3, 5, 8}` as real EQDSK loads (per `eq/eq_api.f90:105-108`); the `9` is a TR-side BPSD-pull alias. (Codex round-1 HIGH 1.)
+8. ✅ §3.2 lists the reader chain `trufile.f90:70-77` → `tr_ufile_task.f90:7` → `tr_ufile_topics.f90:7`; `MDLUF` default `0` cited at `tr/trinit.f90:641-648`. **Explicitly states `KUFDIR` / `KUFDEV` / `KUFDCG` are namelist-only, not `tr_set_param`-reachable** (per `tr/tr_param_registry.f90:184-186` "future additions" comment + `tr/trparm.f90:108-112` namelist input). (Codex round-1 HIGH 2.)
+9. ✅ §3.3 states explicitly that no runtime `trmodels/`-style directory is currently consumed (Codex verified: `tr/trmodels.f90` calls compiled-in driver routines `mbgb_driver` / `mmm95_driver` / `mmm71_driver` directly with no `OPEN`/`READ` from a runtime directory). Runtime external data is limited to eqdata + ufiles only.
+10. ✅ §3.4 names the 80-byte path limit AND cites all three loci in `python/eqlib/eqlib.py`: the constant at `:39`, the docstring at `:47-50`, and the rejection check at `:67`. The page uses "byte" rather than "character" for accuracy. (Codex round-1 MED 4.)
+11. ✅ §4.1 walkthrough cites `tr/tr_param_registry.f90:76` for the SELECT CASE entry and `:101-106` for the array-pattern (`PA[i]` / `PN[i]` etc.). `tr_set_param` confirmed string-keyed via `tr/tr_api.f90:124-128,136-148`.
+12. ✅ §4.2 walkthrough cites the `SELECT CASE(MDLKAI)` at `tr/trcoef_turbulence.f90:400` (the dispatch — NOT line 64 which only sets graph labels) and reproduces the numbering convention verbatim from the source comments at `:392-398`.
+13. ✅ §4.3 walkthrough has **8 steps** (was 7 in the original draft; Codex round-1 HIGH 7 caught the missing Fortran population step inside `tr_api_get_state`). Line ranges are correct:
+    - Step 2: `tr/tr_state.f90:43-67` (was incorrectly :43-60)
+    - Step 3: `tr/tr_api.h:49-60` (struct starts at :49, not :53)
+    - Step 4 (NEW): Fortran population at `tr/tr_api.f90:263-283` (loops) + `:299-315` (scalar block)
+    - Step 5: `tr/tr_api.h:38` ABI version (verified `= 2`)
+    - Step 6: `python/trlib/_ffi.py:94-120` (was vague "around 95-120")
+    - Step 7: `python/trlib/state.py:22-28` (`SCALAR_FIELDS` list) + `:50-72` and `:87-100` (parser) — the original draft missed this entire mechanism.
+    The `AJRFT` worked-example claim ties to L-7b-i with verified PR `#187` + commit `e049a1e4`. The §4.3 also includes a **Fortran/C array-order trap warning** for 2-D fields (Codex round-1 MED 10.2).
 14. ✅ All `{doc}` cross-references resolve.
 15. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
