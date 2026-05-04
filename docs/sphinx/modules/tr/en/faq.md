@@ -24,6 +24,7 @@ Keys containing `__` (two underscores) are explicitly rejected as
 likely typos for the array syntax. The correct form is
 `tr.set_param("PN[1]", 1.0)`.
 
+(faq-singleton)=
 ## Q4. Can I create two `Trlib()` instances in the same process?
 
 **No, you cannot.** Since #171, `Trlib` enforces the singleton

@@ -136,6 +136,7 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! axis Zeff
 
 For physical meanings, see the table in {doc}`state`.
 
+(reinit-constraints)=
 ## Re-initialisation constraints
 
 If you repeat `tr_finalize` → `tr_init` in the same process, parts

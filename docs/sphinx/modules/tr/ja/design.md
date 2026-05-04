@@ -128,6 +128,7 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! 軸上 Zeff
 
 物理的意味は {doc}`state` の表を参照.
 
+(reinit-constraints)=
 ## 再初期化の制約
 
 `tr_finalize` → `tr_init` を同一プロセスで繰り返すと, モジュールレベルの
