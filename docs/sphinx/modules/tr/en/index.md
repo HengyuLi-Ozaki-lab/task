@@ -71,6 +71,7 @@ testing
 appendix-mdlkai
 appendix-sensitivity
 limitations-and-references
+numerical-stability-and-diagnostics
 ```
 
 ## Suggested reading order
