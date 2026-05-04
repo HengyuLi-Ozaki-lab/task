@@ -39,6 +39,7 @@ build
 hello-world
 parameters
 parameter-setting
+input-files
 state
 context-manager
 faq
@@ -60,6 +61,7 @@ api-reference
 :maxdepth: 1
 
 design
+extending-tr
 mcp
 testing
 ```
