@@ -108,7 +108,8 @@ TAUE1 = ...
   `tr.run(...)` 呼び出しで BPSD ブローカーのプル
   が `RR`/`RA`/`BB`/`RIP`/`RKAP`/`RDLT` を平衡
   デバイスから上書きするため,
-  `set_param("RR", ...)` は no-op になります.
+  `set_param("RR", ...)` で指定した値は受理された後に
+  上書きされます (実質 no-op).
 - **`RIPS × RIPE`** (プラズマ電流ランプスイープ):
   同じ BPSD プルが `RIPS`/`RIPE` をメトリク由来の
   電流値で再校正するため, ユーザー上書きは消えます.
@@ -124,11 +125,13 @@ TAUE1 = ...
 構築し, BPSD のプラズマプルは `RN`/`RT` のみに書き
 込み (`PN`/`PT` には触らず), `tr_set_metric` も
 プロファイルパラメータ配列には触れません. `WPT` は
-プラズマ蓄積エネルギー総量で, 概ね
-`Σ_s ∫(3/2) n_s T_s dV` (バルク粒子種すべて, 電子 +
-イオン; この fixture では `MDLUF=0` なので高速粒子
-テイル成分はゼロ), よって heatmap の物理的意味は
-明快です.
+プラズマ蓄積エネルギー総量で, 一般には
+`WPT = Σ_s ∫(3/2) n_s T_s dV  +  WTAILT` —
+バルクの和は全粒子種 (電子 + イオン) で,
+`WTAILT` は高速粒子テイル成分です. この fixture では
+`MDLUF=0` なので `WTAILT = 0` となり, heatmap は
+バルク蓄積エネルギーを純粋に映し, 物理的意味は明快
+です.
 
 **配列要素の添字構文.** `tr.set_param("PT[1]", 1.0)`
 が配列 `PT` の 1 番目要素をセットする標準形式です.
@@ -139,8 +142,14 @@ Fortran `CASE` ブロックに振り分けられます. `PN`,
 書き方が通ります.
 
 ```python
+import os
 from trlib import Trlib
 from trlib.tests.fixtures import tr_iter01_params
+
+# Same cwd requirement as T1: KNAMEQ is bare "eqdata.ITER01"
+# inside the fixture (80-byte limit), so we must run from the
+# directory that holds the binary file.
+os.chdir("python/eqlib/tests/fixtures")
 
 PT1_VALUES = [0.7, 1.0, 1.5]   # keV — axis ion temperature
 PN1_VALUES = [0.5, 0.7, 1.0]   # 10^20 m^-3 — axis ion density

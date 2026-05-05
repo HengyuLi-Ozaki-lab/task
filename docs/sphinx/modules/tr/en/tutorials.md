@@ -125,11 +125,13 @@ under the ITER01 fixture's `MODELG=3`:
 to build the radial profile arrays `RN`/`RT`; the BPSD
 plasma pull writes only `RN`/`RT` (not `PN`/`PT`); and
 `tr_set_metric` does not touch the profile parameter
-arrays. `WPT` is the total stored plasma energy,
-approximately `Σ_s ∫(3/2) n_s T_s dV` over all bulk
-species (electrons + ions; `MDLUF=0` in this fixture so
-the fast-particle tail is zero), so the heatmap has a
-clean physical interpretation.
+arrays. `WPT` is the total stored plasma energy:
+`WPT = Σ_s ∫(3/2) n_s T_s dV  +  WTAILT` — the bulk
+sum runs over all species (electrons + ions) and
+`WTAILT` is the fast-particle tail energy. In this
+fixture `MDLUF=0`, so `WTAILT = 0` and the heatmap
+reflects pure bulk stored energy with a clean physical
+interpretation.
 
 **Array-element subscript syntax.** `tr.set_param("PT[1]", 1.0)`
 is the canonical form for setting array element 1 of
@@ -139,8 +141,14 @@ is the canonical form for setting array element 1 of
 and the other registered array parameters.
 
 ```python
+import os
 from trlib import Trlib
 from trlib.tests.fixtures import tr_iter01_params
+
+# Same cwd requirement as T1: KNAMEQ is bare "eqdata.ITER01"
+# inside the fixture (80-byte limit), so we must run from the
+# directory that holds the binary file.
+os.chdir("python/eqlib/tests/fixtures")
 
 PT1_VALUES = [0.7, 1.0, 1.5]   # keV — axis ion temperature
 PN1_VALUES = [0.5, 0.7, 1.0]   # 10^20 m^-3 — axis ion density
