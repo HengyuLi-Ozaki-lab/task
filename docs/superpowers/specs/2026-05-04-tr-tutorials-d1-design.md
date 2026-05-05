@@ -20,8 +20,10 @@ Add a single bilingual page to the TR Sphinx chapter — the
 
 - **Tutorial T1** — ITER-like single-run scenario using the
   `eqdata.ITER01` fixture
-- **Tutorial T3** — Parameter sweep (`RR × BB`) with
-  matplotlib heatmap output
+- **Tutorial T3** — Parameter sweep
+  (`RIPS × PNBR0` — plasma-current start × NB heating
+  amplitude, two tr-side knobs not overwritten by the
+  BPSD geometry pull) with matplotlib heatmap output
 
 This is the "D1" half of the multi-scenario tutorials menu
 item (memory `project_tr_proper_manual.md`). The originally-
@@ -121,15 +123,16 @@ Outline:
    "run this and read the values yourself."
 5. **Extensions.** Two short extension suggestions:
    - Vary `RIPS` (initial plasma current) over
-     `{1.5, 2.0, 2.5}` and observe the trend in `BETAN`
-     (forward-pointer to T3 sweep style).
+     `{1.5, 2.0, 2.5}` as a single-axis warm-up before
+     T3, which extends this to a 2-axis
+     `RIPS × PNBR0` sweep.
    - Compare against a `MODELG=2` analytic equilibrium
      (no eqdata file needed).
 
 ### §3.2 Tutorial T3 — Parameter sweep with heatmap (~80 lines)
 
-**Goal:** Run a 3×3 `RR × BB` sweep and plot the resulting
-`WPT` field as a heatmap.
+**Goal:** Run a 3×3 `RIPS × PNBR0` sweep and plot the
+resulting `WPT` field as a heatmap.
 
 Outline:
 
@@ -137,17 +140,30 @@ Outline:
    {doc}`applications` §2 — the existing `sweep()`
    wrapper. T3 does NOT redefine the wrapper; it imports
    the pattern by reference.
-2. **The sweep.**
-   `RR ∈ {3.0, 5.0, 6.5}` × `BB ∈ {3.0, 5.0, 7.0}`,
-   `ntmax = 20` (short enough to be quick on a laptop;
-   long enough that scalars stabilise).
+2. **The sweep.** `RIPS ∈ {1.5, 2.0, 2.5}` (MA, plasma-
+   current start; centered on the ITER01 fixture base
+   `RIPS=2.0`) × `PNBR0 ∈ {0.0, 5.0, 10.0}` (MW, NB
+   heating amplitude; centered on fixture base
+   `PNBR0=0.0`), `ntmax = 20` (short enough to be quick
+   on a laptop; long enough for scalars to start
+   responding). The page MUST explicitly explain why the
+   sweep is NOT over `RR × BB`: under `MODELG=3` the BPSD
+   broker pull
+   (`tr/trbpsd.f90:171-178`, called from
+   `tr_set_metric` in `tr/trmetric.f90:46`) overwrites
+   `RR` / `RA` / `BB` / `RIP` / `RKAP` / `RDLT` from the
+   EQDSK device at `tr_init` time, silently clobbering
+   any user `set_param("RR", ...)` call. `RIPS` and
+   `PNBR0` are not in the BPSD-device overwrite list, so
+   sweep overrides take effect; geometry knobs would
+   not.
 3. **Conversion.** Convert the resulting list-of-dicts
    into a 3×3 NumPy array of `WPT` values
    (`np.array(...).reshape(3, 3)`).
 4. **Plot + expected output.** matplotlib heatmap with
    `plt.imshow(...)` + `colorbar()` + `xticks` /
-   `yticks` labelled with the actual `RR` / `BB` values.
-   Save to a PNG (or display interactively). The
+   `yticks` labelled with the actual `RIPS` / `PNBR0`
+   values. Save to a PNG (or display interactively). The
    "expected output" block in the rendered page uses
    placeholder text (e.g., `WPT shape: (3, 3); values
    placeholder — run locally to populate`) rather than
@@ -158,8 +174,11 @@ Outline:
    - Parallelise with `multiprocessing.Pool` (cross-link
      {doc}`faq` Q4 — the singleton constraint requires
      process-level isolation).
-   - Sweep `RKAP × RDLT` instead of `RR × BB` for
-     shape-optimisation studies.
+   - For shape-optimisation studies (`RKAP × RDLT` or
+     `RR × BB`), switch to `MODELG=2` (analytic
+     equilibrium) so geometry knobs survive — under
+     `MODELG=3` the BPSD pull would clobber them
+     (see step 2 above).
 
 The page notes matplotlib is an optional dependency
 (`pip install matplotlib`) and the script gracefully
@@ -258,6 +277,13 @@ Same as G / E / A / F / audits: 2 reviewers in parallel
 - **matplotlib gracefully optional.** The T3 code block
   does not crash if matplotlib is missing; falls back to
   a printed table.
+- **Sweep axes survive BPSD pull.** T3 sweeps `RIPS`
+  and `PNBR0` (NOT `RR`/`BB`) and the page explicitly
+  explains why: `tr/trbpsd.f90:171-178` overwrites
+  `RR`/`RA`/`BB`/`RIP`/`RKAP`/`RDLT` from the EQDSK
+  device at `tr_init`. Verify the page contains this
+  caveat and that neither sweep axis is in the
+  overwrite list.
 
 ## §8. Out of scope (deferred)
 
@@ -289,6 +315,7 @@ Same as G / E / A / F / audits: 2 reviewers in parallel
 6. ✅ §3.2 cross-links {doc}`applications` for the `sweep()` pattern rather than redefining it.
 7. ✅ §3.2 code uses PEP 604 / 585 builtins (no `from typing import` lines, no capital `List` / `Dict` in code) — consistent with audit (b).
 8. ✅ §3.2 includes a graceful fallback path when matplotlib is missing (printed table instead of plot).
+8a. ✅ §3.2 sweep axes are `RIPS × PNBR0` (NOT `RR × BB`); the page explicitly explains that under `MODELG=3` the BPSD broker pull at `tr/trbpsd.f90:171-178` overwrites `RR`/`RA`/`BB`/`RIP`/`RKAP`/`RDLT` from the EQDSK device, so geometry sweeps via `set_param` would be silently clobbered.
 9. ✅ Both T1 and T3 use placeholder text (`WPT = …` etc.) for "expected output" — no concrete numeric values asserted.
 10. ✅ §3.3 mentions T2/T4/T5/T6 as D2 follow-up items.
 11. ✅ All `{doc}` cross-references resolve.
