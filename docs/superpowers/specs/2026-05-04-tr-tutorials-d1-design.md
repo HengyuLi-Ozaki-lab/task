@@ -160,10 +160,11 @@ Outline:
    to be quick on a laptop; long enough for `WPT` to
    start responding). The array-element subscript
    syntax `tr.set_param("PT[1]", 1.0)` is the canonical
-   Trlib pattern (`tr/tr_param_registry.f90:101-106` —
-   `parse_array_subscript` parses the `name[idx]`
-   form); the page introduces this in a 1-paragraph
-   side-bar.
+   Trlib pattern (`PT` and `PN` registered as array
+   `CASE` entries at `tr/tr_param_registry.f90:101-106`;
+   `parse_array_subscript` is called at line 74 and
+   implemented at `:209-230`); the page introduces this
+   in a 1-paragraph side-bar.
 
    **Why `PT[1] × PN[1]` and not other axes — explicit
    gotcha section the page MUST include.** Three
@@ -173,8 +174,11 @@ Outline:
      (`tr/trbpsd.f90:171-178`, called from
      `tr_set_metric` at `tr/trmetric.f90:46` on the
      first `tr_run` call) overwrites
-     `RR`/`RA`/`BB`/`RIP`/`RKAP`/`RDLT` from the EQDSK
-     device, clobbering any user `set_param("RR", ...)`.
+     `RR`/`RA`/`BB`/`RIP`/`RKAP`/`RDLT` from the loaded
+     equilibrium device (TASK/EQ binary under
+     `MODELG=3`, dispatched via `EQRTSK` —
+     `eq/eqfile.f90:108-115`), clobbering any user
+     `set_param("RR", ...)`.
    - `RIPS × RIPE` (plasma-current ramp sweep): the
      same BPSD pull recalibrates `RIPS` and `RIPE` from
      the metric-derived current at
@@ -190,13 +194,20 @@ Outline:
      visible NB knob in the fixture but is a deposition
      center, not an amplitude.
 
-   `PT[1]` and `PN[1]` survive: `tr_prof`
-   (`tr/trprof.f90:227-228`) reads `PN`/`PT` to build
-   `RN`/`RT`, the BPSD plasma pull
+   `PT[1]` and `PN[1]` survive: `tr_prof` reads `PN` →
+   `RN` at `tr/trprof.f90:227-228` and `PT` → `RT` at
+   `:230-231`, the BPSD plasma pull
    (`tr/trbpsd.f90:183-204`) writes only `RN`/`RT` (not
    `PN`/`PT`), and `tr_set_metric` does not touch
-   profile parameter arrays. `WPT` ≈ ∫(3/2)nT dV so the
-   heatmap has a clean physical interpretation.
+   profile parameter arrays. `WPT` is the total stored
+   plasma energy, approximately
+   `Σ_s ∫(3/2) n_s T_s dV` over all bulk species
+   (electrons + ions; computed from `WST(1:NSM)` at
+   `tr/trrslt_globals.f90:115-127`), plus fast-particle
+   tail energy `WTAILT` when `MDLUF≠0`
+   (`tr/trrslt_globals.f90:315-322`); `MDLUF=0` in the
+   ITER01 fixture so the tail is zero. The heatmap thus
+   has a clean physical interpretation.
 3. **Conversion.** Convert the resulting list-of-dicts
    into a 3×3 NumPy array of `WPT` values
    (`np.array(...).reshape(3, 3)`).
