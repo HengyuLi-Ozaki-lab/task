@@ -226,6 +226,76 @@ results.
 The LLM calls `describe_parameters` and filters by `group ==
 "transport"`.
 
+## Usage scenarios — somewhat deeper workflows
+
+The "Provided tools" list alone makes the practical shape of an
+MCP-driven TR workflow hard to picture, so two typical analysis
+flows are walked through in detail below.
+
+### Scenario A: vary device parameters and inspect the energy balance
+
+User prompt:
+
+> Run 100 steps for ITER-like settings (RR=6.2, BB=5.3, RIP=15)
+> and tell me the stored energy WPT and the normalised β (BETAN).
+> Then compare with RIP=12 and RIP=18.
+
+The tool calls the LLM makes internally:
+
+```text
+1. run_and_get_state(params={RR=6.2, BB=5.3, RIP=15.0, NSMAX=2}, ntmax=100)
+   → read state.scalars["WPT"], state.scalars["BETAN"]
+2. run_and_get_state(params={RR=6.2, BB=5.3, RIP=12.0, NSMAX=2}, ntmax=100)
+   (init/finalize between runs is automatic on the MCP server)
+3. run_and_get_state(params={RR=6.2, BB=5.3, RIP=18.0, NSMAX=2}, ntmax=100)
+4. Return as a table:
+     | RIP   | WPT   | BETAN |
+     |-------|-------|-------|
+     | 12 MA | ...   | ...   |
+     | 15 MA | ...   | ...   |
+     | 18 MA | ...   | ...   |
+```
+
+Key points:
+
+- The LLM checks names with `describe_parameters` before issuing
+  `run_and_get_state`, so parameter-name typos are unlikely.
+- Results do not persist across processes, so each
+  `run_and_get_state` starts from a clean independent state.
+- Asking for the physical interpretation alongside the table
+  (see {doc}`appendix-sensitivity` for the rule of thumb that
+  `RIP ↑` correlates with `BETAN ↓`) gets the output close to a
+  short analysis report.
+
+### Scenario B: let the LLM repair errors via validate
+
+User prompt:
+
+> Run 10 steps with MODELG=3 reading `eqdata.MISSING`. If an
+> error fires, guess a sensible file and retry.
+
+What the LLM does:
+
+```text
+1. run_and_get_state(params={MODELG: 3, ...}, string_params={KNAMEQ: "eqdata.MISSING"})
+   → error (FILE_MISSING)
+2. Call validate and inspect the diagnostic
+3. Suggest known eqdata filenames (eqdata.ITER01, eqdata.JET, ...)
+4. Either confirm with the user, or automatically retry with
+   the most likely candidate
+```
+
+How aggressive the LLM gets with auto-fixes is up to the LLM's
+instructions:
+
+- **Conservative**: call only `validate` and report the result;
+  let the user act.
+- **Aggressive**: speculatively retry with a guessed correction.
+
+The same pattern can be reached from the Python wrapper side
+(see {doc}`applications` §3 validate-driven setup) by having the
+LLM call that wrapper instead.
+
 ## Architectural notes
 
 ### Singleton constraint
