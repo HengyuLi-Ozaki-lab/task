@@ -144,7 +144,7 @@ to the `wrx` module.
 
 ### Possible extensions
 
-- Accumulate a failure history in `failures: List[Dict]` for later
+- Accumulate a failure history in `failures: list[dict]` for later
   analysis
 - Trap `WrlibParamError` (`ierr=1`) the same way to report names not
   in the registry as typos
@@ -162,17 +162,16 @@ This has the same shape as the 3x3 grid pattern in
 
 ```python
 import itertools
-from typing import List, Dict
 from wrlib import Wrlib
 from wrlib.tests.fixtures import wr_iter_lhcd_params as base
 
 
 def sweep(
     *,
-    rfin_values: List[float],
-    angphin_values: List[float],
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    rfin_values: list[float],
+    angphin_values: list[float],
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """Grid scan of RFIN x ANGPHIN. Each point runs wr in an independent session.
 
     At each point we start from the ITER-LHCD fixture, shrink to NRAYMAX=1,
@@ -267,7 +266,6 @@ a device preset and check the physical reasonableness of the launch
 geometry / frequency before any `set_param` call.
 
 ```python
-from typing import Dict, List
 from wrlib import Wrlib
 
 
@@ -308,7 +306,7 @@ DEVICE_PRESETS = {
 }
 
 
-def preflight(scalars: Dict, arrays: Dict) -> List[str]:
+def preflight(scalars: dict, arrays: dict) -> list[str]:
     """In-house validate for `wr`. Returns the list of issues (empty means healthy).
 
     Reproduces the equivalent of the `tr` / `eq` `validate()` on the

@@ -116,7 +116,7 @@ with StableTiRunner() as runner:
 
 - `EPSLOOP` や `MAXLOOP` も併せて緩める / 増やす
 - `NTMAX` を分割して, 安定化点を抜けたら `DT` を元に戻す
-- 失敗履歴を `failures: List[Dict]` に蓄積して後で分析
+- 失敗履歴を `failures: list[dict]` に蓄積して後で分析
 
 ---
 
@@ -129,17 +129,16 @@ with StableTiRunner() as runner:
 
 ```python
 import itertools
-from typing import List, Dict
 from tilib import TiLib
 
 
 def sweep(
     *,
-    rr_values: List[float],
-    bb_values: List[float],
+    rr_values: list[float],
+    bb_values: list[float],
     ntmax: int = 10,
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """RR × BB の格子スキャン. 各点で TI を 1 セッション独立実行.
 
     Returns
@@ -216,7 +215,6 @@ for r in results:
 **species 辞書 → 配列展開ヘルパー** をかぶせます.
 
 ```python
-from typing import Dict, List, Tuple
 from tilib import TiLib
 
 
@@ -244,7 +242,7 @@ SPECIES_PRESETS = {
 }
 
 
-def _apply_species(ti: TiLib, species: Dict[int, Dict[str, float]]) -> None:
+def _apply_species(ti: TiLib, species: dict[int, dict[str, float]]) -> None:
     """``{ns: {'A','Z','n','T'}}`` 形式の辞書を ``PA[i]/PZ[i]/PN[i]/PT[i]``
     の 1-origin 配列に展開して TiLib に流し込む.
 
@@ -261,9 +259,9 @@ def _apply_species(ti: TiLib, species: Dict[int, Dict[str, float]]) -> None:
 
 
 def hand_validate(
-    species: Dict[int, Dict[str, float]],
+    species: dict[int, dict[str, float]],
     nsmax: int,
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """``ti`` には native validate が無いので, よくあるミスを Python 側で検査.
 
     返り値は ``(対象, メッセージ)`` のリスト. 空なら問題なし.
@@ -274,7 +272,7 @@ def hand_validate(
       * 各 species 辞書に ``A / Z / n / T`` が全て存在
       * Species 番号が 1-origin で連続している (1, 2, ..., NSMAX)
     """
-    diags: List[Tuple[str, str]] = []
+    diags: list[tuple[str, str]] = []
     if nsmax < 1:
         diags.append(("NSMAX", f"NSMAX={nsmax} は 1 未満"))
     if len(species) != nsmax:
@@ -299,7 +297,7 @@ def hand_validate(
 def auto_setup(
     device: str = "ITER",
     species_preset: str = "DD",
-    extra_params: Dict | None = None,
+    extra_params: dict | None = None,
 ) -> TiLib:
     """装置プリセット + species プリセットで TI を初期化し, hand-rolled
     validate でセルフチェック.

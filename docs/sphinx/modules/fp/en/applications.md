@@ -123,7 +123,7 @@ cases. If the cause is an extremely coarse velocity-space mesh
 
 - Also relax `EPSFP` or raise `LMAXFP` on retry
 - Split `NTMAX`, restoring `DELT` once you re-enter a stable regime
-- Accumulate failure history into `failures: List[Dict]` for later
+- Accumulate failure history into `failures: list[dict]` for later
   analysis
 
 ---
@@ -137,17 +137,16 @@ handled automatically. The model here is the 3x3 sweep in
 
 ```python
 import itertools
-from typing import List, Dict
 from fplib import Fplib
 
 
 def sweep(
     *,
-    rr_values: List[float],
-    bb_values: List[float],
+    rr_values: list[float],
+    bb_values: list[float],
     ntmax: int = 10,
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """RR x BB grid scan. Each point runs fp in an independent session.
 
     Returns
@@ -243,7 +242,6 @@ wrapper that performs a **hand-rolled preflight check**. Use it to
 ITER / JET / JT60SA.
 
 ```python
-from typing import Dict, List, Tuple
 from fplib import Fplib
 
 
@@ -257,7 +255,7 @@ DEVICE_PRESETS = {
 }
 
 
-def validate_fp_params(params: Dict) -> List[Tuple[str, str]]:
+def validate_fp_params(params: dict) -> list[tuple[str, str]]:
     """Preflight-check fp inputs and return a list of `(param, message)`.
 
     Since `fp` has no C-ABI `validate()`, we catch only the typical
@@ -269,7 +267,7 @@ def validate_fp_params(params: Dict) -> List[Tuple[str, str]]:
     * `NRMAX > 5` (the radial gradient of the distribution function cannot
       be resolved at low radial resolution)
     """
-    diags: List[Tuple[str, str]] = []
+    diags: list[tuple[str, str]] = []
     nsmax = int(params.get("NSMAX", 1))
     if nsmax < 1:
         diags.append(("NSMAX", f"NSMAX={nsmax} must be >= 1"))
@@ -290,7 +288,7 @@ def validate_fp_params(params: Dict) -> List[Tuple[str, str]]:
 
 def auto_setup(
     device: str = "ITER",
-    extra_params: Dict | None = None,
+    extra_params: dict | None = None,
 ) -> Fplib:
     """Initialise fp with a device preset and self-check via validate_fp_params.
 

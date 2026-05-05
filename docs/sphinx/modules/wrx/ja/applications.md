@@ -31,14 +31,13 @@ trajectory が境界を越えられない, など). 数値積分の失敗では�
 `safe_run` が実用的です.
 
 ```python
-from typing import Dict, List
 from wrxlib import Wrxlib
 from wrxlib.errors import WrxlibRunError
 
 
-def _ray_sanity(ray: Dict, *, rr: float, ra: float, rb: float) -> List[str]:
+def _ray_sanity(ray: dict, *, rr: float, ra: float, rb: float) -> list[str]:
     """1 本のレイの入力を軽くチェックして問題点リストを返す."""
-    issues: List[str] = []
+    issues: list[str] = []
     rpi = ray.get("RPI")
     if rpi is None:
         issues.append("RPI 未指定")
@@ -55,8 +54,8 @@ def _ray_sanity(ray: Dict, *, rr: float, ra: float, rb: float) -> List[str]:
     return issues
 
 
-def safe_run(wrx: Wrxlib, rays: List[Dict], *,
-             rr: float, ra: float, rb: float) -> Dict:
+def safe_run(wrx: Wrxlib, rays: list[dict], *,
+             rr: float, ra: float, rb: float) -> dict:
     """`wrx.run()` を実行. 失敗時は ray-launch sanity report を返す."""
     # 1. preflight (純 Python; ライブラリには触れない)
     report = {"preflight": [], "run_ok": False, "error": None}
@@ -139,7 +138,7 @@ run_ok = False, error = "WrxlibRunError('wrx_run(0): ierr=3')"
 
 - `MODELP[i]`, `NCMIN[i]`, `NCMAX[i]` の整合性も preflight で見る
   (例: `MODELP=206` (relativistic) なのに `NCMAX < 1` だと吸収ゼロ)
-- 失敗履歴を `failures: List[Dict]` に蓄積して後で分析
+- 失敗履歴を `failures: list[dict]` に蓄積して後で分析
 - 大規模 fan で 1 本だけ失敗するケースは, **そのレイを除外して再試行**
   するロジックを足す (`NRAYMAX -= 1`, レイ配列を詰め直し)
 
@@ -152,11 +151,10 @@ run_ok = False, error = "WrxlibRunError('wrx_run(0): ierr=3')"
 `_apply_rays` ヘルパに切り出すと, レイ数を変えるだけで再利用できます.
 
 ```python
-from typing import Dict, List
 from wrxlib import Wrxlib
 
 
-def _apply_rays(wrx: Wrxlib, rays: List[Dict]) -> None:
+def _apply_rays(wrx: Wrxlib, rays: list[dict]) -> None:
     """List-of-dict 形式のレイを 1-origin の配列要素に書き込む.
 
     `rays[k]` の各キー (RF, RPI, ZPI, ANGPHI, ANGT, MODEW, UU)
@@ -177,9 +175,9 @@ def _apply_rays(wrx: Wrxlib, rays: List[Dict]) -> None:
         wrx.set_param(f"MODEWIN[{i}]", float(merged["MODEW"]))
 
 
-def fan_sweep(angles: List[float], *, base_params: Dict,
-              species_params: List, rpi: float = 8.0,
-              freq_hz: float = 170.0e3) -> Dict:
+def fan_sweep(angles: list[float], *, base_params: dict,
+              species_params: list, rpi: float = 8.0,
+              freq_hz: float = 170.0e3) -> dict:
     """ANGTIN を `angles` で振った fan 1 発. `pwr_tot` と `pwr_nsa` を集計."""
     rays = [{"RF": freq_hz, "RPI": rpi, "ZPI": 0.0, "ANGT": a} for a in angles]
     with Wrxlib() as wrx:
@@ -236,7 +234,6 @@ pwr_nsa      = [1.9122187578892103, 0.0]
 分けて持ち, 設計時の差分管理がしやすい構造に.
 
 ```python
-from typing import Dict, List
 from wrxlib import Wrxlib
 
 
@@ -260,9 +257,9 @@ DEVICE_PRESETS = {
 }
 
 
-def _hand_validate(shape: Dict, rays: List[Dict]) -> List[str]:
+def _hand_validate(shape: dict, rays: list[dict]) -> list[str]:
     """`wrx` 用 validate 代替. ブロッキング問題のリストを返す."""
-    diags: List[str] = []
+    diags: list[str] = []
     nsmax = int(shape.get("NSMAX", 0))
     if nsmax < 1:
         diags.append(f"[NSMAX] NSMAX={nsmax} は >= 1 が必要")
@@ -276,8 +273,8 @@ def _hand_validate(shape: Dict, rays: List[Dict]) -> List[str]:
 
 
 def auto_setup(device: str = "ITER_LHCD_2ray",
-               extra_shape: Dict | None = None,
-               extra_rays: List[Dict] | None = None) -> Wrxlib:
+               extra_shape: dict | None = None,
+               extra_rays: list[dict] | None = None) -> Wrxlib:
     """装置プリセットで wrx を初期化し, hand-rolled validate でセルフチェック."""
     preset = DEVICE_PRESETS[device]
     shape = {**preset["shape"], **(extra_shape or {})}

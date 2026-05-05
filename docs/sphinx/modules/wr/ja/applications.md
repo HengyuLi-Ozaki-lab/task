@@ -141,7 +141,7 @@ WrlibRunError: wr_run(1): ierr=3
 
 ### 拡張案
 
-- 失敗履歴を `failures: List[Dict]` に蓄積して後で分析
+- 失敗履歴を `failures: list[dict]` に蓄積して後で分析
 - `WrlibParamError` (`ierr=1`) も同様にトラップして, レジストリに無い
   名前を typo として報告する
 - `RKR0` を符号反転して再試行する版 (低域混成では入射方向が反対になる
@@ -157,17 +157,16 @@ WrlibRunError: wr_run(1): ierr=3
 
 ```python
 import itertools
-from typing import List, Dict
 from wrlib import Wrlib
 from wrlib.tests.fixtures import wr_iter_lhcd_params as base
 
 
 def sweep(
     *,
-    rfin_values: List[float],
-    angphin_values: List[float],
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    rfin_values: list[float],
+    angphin_values: list[float],
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """RFIN × ANGPHIN の格子スキャン. 各点で wr を 1 セッション独立実行.
 
     各点では ITER-LHCD fixture をベースに NRAYMAX=1 に縮め,
@@ -262,7 +261,6 @@ NSTPMAX)`) より小さい点は **早期に積分が終端した** ことを意
 パターンです.
 
 ```python
-from typing import Dict, List
 from wrlib import Wrlib
 
 
@@ -303,7 +301,7 @@ DEVICE_PRESETS = {
 }
 
 
-def preflight(scalars: Dict, arrays: Dict) -> List[str]:
+def preflight(scalars: dict, arrays: dict) -> list[str]:
     """`wr` 用の自前 validate. 一覧で問題を返す (空なら健全).
 
     `tr` / `eq` の `validate()` 相当を Python 側で再現. `[REQUIRED]`

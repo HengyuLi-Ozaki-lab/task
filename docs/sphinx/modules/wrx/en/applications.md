@@ -34,14 +34,13 @@ geometry check before execution and logs the failing ray indices and
 suspect inputs is much more useful.
 
 ```python
-from typing import Dict, List
 from wrxlib import Wrxlib
 from wrxlib.errors import WrxlibRunError
 
 
-def _ray_sanity(ray: Dict, *, rr: float, ra: float, rb: float) -> List[str]:
+def _ray_sanity(ray: dict, *, rr: float, ra: float, rb: float) -> list[str]:
     """Lightly check one ray's inputs and return a list of issues."""
-    issues: List[str] = []
+    issues: list[str] = []
     rpi = ray.get("RPI")
     if rpi is None:
         issues.append("RPI not specified")
@@ -58,8 +57,8 @@ def _ray_sanity(ray: Dict, *, rr: float, ra: float, rb: float) -> List[str]:
     return issues
 
 
-def safe_run(wrx: Wrxlib, rays: List[Dict], *,
-             rr: float, ra: float, rb: float) -> Dict:
+def safe_run(wrx: Wrxlib, rays: list[dict], *,
+             rr: float, ra: float, rb: float) -> dict:
     """Run `wrx.run()`. On failure return a ray-launch sanity report."""
     # 1. preflight (pure Python; does not touch the library)
     report = {"preflight": [], "run_ok": False, "error": None}
@@ -143,7 +142,7 @@ empty list, `run_ok=True`, and `state.scalars["pwr_tot"] ~ 0.78`.
 - Have preflight also check the consistency of `MODELP[i]`, `NCMIN[i]`,
   and `NCMAX[i]` (e.g. `MODELP=206` (relativistic) with `NCMAX < 1`
   yields zero absorption).
-- Accumulate failure history in `failures: List[Dict]` for later analysis.
+- Accumulate failure history in `failures: list[dict]` for later analysis.
 - For large fans where only a single ray fails, add logic that
   **excludes that ray and retries** (`NRAYMAX -= 1`, repack the ray
   array).
@@ -158,11 +157,10 @@ absorption. Factoring the ray-array assembly into an `_apply_rays`
 helper makes the code reusable when only the ray count changes.
 
 ```python
-from typing import Dict, List
 from wrxlib import Wrxlib
 
 
-def _apply_rays(wrx: Wrxlib, rays: List[Dict]) -> None:
+def _apply_rays(wrx: Wrxlib, rays: list[dict]) -> None:
     """Write list-of-dict rays into the 1-origin array elements.
 
     Each key (RF, RPI, ZPI, ANGPHI, ANGT, MODEW, UU) of `rays[k]`
@@ -183,9 +181,9 @@ def _apply_rays(wrx: Wrxlib, rays: List[Dict]) -> None:
         wrx.set_param(f"MODEWIN[{i}]", float(merged["MODEW"]))
 
 
-def fan_sweep(angles: List[float], *, base_params: Dict,
-              species_params: List, rpi: float = 8.0,
-              freq_hz: float = 170.0e3) -> Dict:
+def fan_sweep(angles: list[float], *, base_params: dict,
+              species_params: list, rpi: float = 8.0,
+              freq_hz: float = 170.0e3) -> dict:
     """Single fan with ANGTIN swept over `angles`. Aggregates `pwr_tot` and `pwr_nsa`."""
     rays = [{"RF": freq_hz, "RPI": rpi, "ZPI": 0.0, "ANGT": a} for a in angles]
     with Wrxlib() as wrx:
@@ -246,7 +244,6 @@ to obtain per-ray absorption, sum `pwr_nsa_nray[i][isa]` instead.
 diffs stay manageable.
 
 ```python
-from typing import Dict, List
 from wrxlib import Wrxlib
 
 
@@ -270,9 +267,9 @@ DEVICE_PRESETS = {
 }
 
 
-def _hand_validate(shape: Dict, rays: List[Dict]) -> List[str]:
+def _hand_validate(shape: dict, rays: list[dict]) -> list[str]:
     """Stand-in `validate` for `wrx`. Returns a list of blocking issues."""
-    diags: List[str] = []
+    diags: list[str] = []
     nsmax = int(shape.get("NSMAX", 0))
     if nsmax < 1:
         diags.append(f"[NSMAX] NSMAX={nsmax} must be >= 1")
@@ -286,8 +283,8 @@ def _hand_validate(shape: Dict, rays: List[Dict]) -> List[str]:
 
 
 def auto_setup(device: str = "ITER_LHCD_2ray",
-               extra_shape: Dict | None = None,
-               extra_rays: List[Dict] | None = None) -> Wrxlib:
+               extra_shape: dict | None = None,
+               extra_rays: list[dict] | None = None) -> Wrxlib:
     """Initialise wrx from a device preset and self-check via the hand-rolled validate."""
     preset = DEVICE_PRESETS[device]
     shape = {**preset["shape"], **(extra_shape or {})}

@@ -85,16 +85,15 @@ with Eq() as eq:
 
 ```python
 import itertools
-from typing import List, Dict
 from eqlib import Eq
 
 
 def sweep(
     *,
-    rr_values: List[float],
-    bb_values: List[float],
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    rr_values: list[float],
+    bb_values: list[float],
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """RR × BB の格子スキャン. 各点で eq を 1 セッション独立実行.
 
     Returns
@@ -180,7 +179,7 @@ DEVICE_PRESETS = {
 
 def auto_setup(
     device: str = "ITER",
-    extra_params: Dict | None = None,
+    extra_params: dict | None = None,
     eq_file: str | None = None,
 ) -> Eq:
     """装置プリセットで eq を初期化し validate でセルフチェック.

@@ -120,7 +120,7 @@ ill-conditioned になる場合) では `[retry]` ログが混じり, `再試行
 
 - `EPSFP` を緩めたり `LMAXFP` を増やすことで併せて再試行
 - `NTMAX` を分割し, 安定領域に入ったら `DELT` を元に戻す
-- 失敗履歴を `failures: List[Dict]` に蓄積して後で分析
+- 失敗履歴を `failures: list[dict]` に蓄積して後で分析
 
 ---
 
@@ -132,17 +132,16 @@ ill-conditioned になる場合) では `[retry]` ログが混じり, `再試行
 
 ```python
 import itertools
-from typing import List, Dict
 from fplib import Fplib
 
 
 def sweep(
     *,
-    rr_values: List[float],
-    bb_values: List[float],
+    rr_values: list[float],
+    bb_values: list[float],
     ntmax: int = 10,
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """RR × BB の格子スキャン. 各点で fp を 1 セッション独立実行.
 
     Returns
@@ -233,7 +232,6 @@ for r in results:
 JT60SA を備えます.
 
 ```python
-from typing import Dict, List, Tuple
 from fplib import Fplib
 
 
@@ -247,7 +245,7 @@ DEVICE_PRESETS = {
 }
 
 
-def validate_fp_params(params: Dict) -> List[Tuple[str, str]]:
+def validate_fp_params(params: dict) -> list[tuple[str, str]]:
     """fp 入力を preflight チェックし `(param, message)` のリストを返す.
 
     `fp` には C ABI 経由の `validate()` がないので, 典型的なミスだけ
@@ -258,7 +256,7 @@ def validate_fp_params(params: Dict) -> List[Tuple[str, str]]:
       Fokker-Planck 演算子が無意味)
     * `NRMAX > 5` (径方向解像度が低すぎると分布関数の空間勾配が解けない)
     """
-    diags: List[Tuple[str, str]] = []
+    diags: list[tuple[str, str]] = []
     nsmax = int(params.get("NSMAX", 1))
     if nsmax < 1:
         diags.append(("NSMAX", f"NSMAX={nsmax} は 1 以上必要"))
@@ -279,7 +277,7 @@ def validate_fp_params(params: Dict) -> List[Tuple[str, str]]:
 
 def auto_setup(
     device: str = "ITER",
-    extra_params: Dict | None = None,
+    extra_params: dict | None = None,
 ) -> Fplib:
     """装置プリセットで fp を初期化し validate_fp_params でセルフチェック.
 

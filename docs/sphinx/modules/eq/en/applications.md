@@ -88,16 +88,15 @@ list of dicts. Because each point uses the analytic G-S solve
 
 ```python
 import itertools
-from typing import List, Dict
 from eqlib import Eq
 
 
 def sweep(
     *,
-    rr_values: List[float],
-    bb_values: List[float],
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    rr_values: list[float],
+    bb_values: list[float],
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """Grid scan over RR x BB. Each point runs eq in an independent session.
 
     Returns
@@ -187,7 +186,7 @@ DEVICE_PRESETS = {
 
 def auto_setup(
     device: str = "ITER",
-    extra_params: Dict | None = None,
+    extra_params: dict | None = None,
     eq_file: str | None = None,
 ) -> Eq:
     """Initialise eq from a device preset and self-check via validate.

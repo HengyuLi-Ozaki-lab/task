@@ -118,7 +118,7 @@ finished: T=..., T0=..., retries=1
 
 - Loosen / increase `EPSLOOP` and `MAXLOOP` together
 - Split `NTMAX` and restore `DT` once the unstable region is past
-- Accumulate failure history into `failures: List[Dict]` for later analysis
+- Accumulate failure history into `failures: list[dict]` for later analysis
 
 ---
 
@@ -131,17 +131,16 @@ with `StableTiRunner` to dodge the occasional failure case automatically.
 
 ```python
 import itertools
-from typing import List, Dict
 from tilib import TiLib
 
 
 def sweep(
     *,
-    rr_values: List[float],
-    bb_values: List[float],
+    rr_values: list[float],
+    bb_values: list[float],
     ntmax: int = 10,
-    fixed_params: Dict | None = None,
-) -> List[Dict]:
+    fixed_params: dict | None = None,
+) -> list[dict]:
     """RR x BB grid scan. Each point runs TI in an independent session.
 
     Returns
@@ -218,7 +217,6 @@ add a **species-dict-to-array expander helper** so callers do not have
 to remember the 1-origin arrays ``PA[i] / PZ[i] / PN[i] / PT[i]``.
 
 ```python
-from typing import Dict, List, Tuple
 from tilib import TiLib
 
 
@@ -246,7 +244,7 @@ SPECIES_PRESETS = {
 }
 
 
-def _apply_species(ti: TiLib, species: Dict[int, Dict[str, float]]) -> None:
+def _apply_species(ti: TiLib, species: dict[int, dict[str, float]]) -> None:
     """Expand a ``{ns: {'A','Z','n','T'}}`` dict into the 1-origin arrays
     ``PA[i]/PZ[i]/PN[i]/PT[i]`` and feed them to TiLib.
 
@@ -263,9 +261,9 @@ def _apply_species(ti: TiLib, species: Dict[int, Dict[str, float]]) -> None:
 
 
 def hand_validate(
-    species: Dict[int, Dict[str, float]],
+    species: dict[int, dict[str, float]],
     nsmax: int,
-) -> List[Tuple[str, str]]:
+) -> list[tuple[str, str]]:
     """Since ``ti`` has no native validate, check common mistakes on the Python side.
 
     Returns a list of ``(target, message)`` tuples. Empty means no problems.
@@ -276,7 +274,7 @@ def hand_validate(
       * Each species dict has all of ``A / Z / n / T``
       * Species numbers are 1-origin and contiguous (1, 2, ..., NSMAX)
     """
-    diags: List[Tuple[str, str]] = []
+    diags: list[tuple[str, str]] = []
     if nsmax < 1:
         diags.append(("NSMAX", f"NSMAX={nsmax} is less than 1"))
     if len(species) != nsmax:
@@ -301,7 +299,7 @@ def hand_validate(
 def auto_setup(
     device: str = "ITER",
     species_preset: str = "DD",
-    extra_params: Dict | None = None,
+    extra_params: dict | None = None,
 ) -> TiLib:
     """Initialize TI with a device preset + species preset and self-check
     via the hand-rolled validate.
