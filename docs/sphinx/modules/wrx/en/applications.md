@@ -8,7 +8,7 @@ it much more practical. This page presents three typical patterns.
 
 What follows are **application patterns for using `wrxlib` from Python**.
 For scenarios where an LLM client drives the library through natural
-language, see the "Usage scenarios" section of {doc}`mcp`.
+language, see {doc}`mcp`.
 ```
 
 ```{note}
@@ -364,8 +364,7 @@ RuntimeError: 1 issue(s) still need to be fixed
 - Carry `RBRADAIN[i]` / `RCURVAIN[i]` as additional keys in `rays[i]`
   so that beam-tracing-specific beam shapes can also be presetted.
 - When invoked from an LLM, hand the output of `_hand_validate` straight
-  to the LLM to receive correction suggestions (see "Usage scenarios"
-  in {doc}`mcp`).
+  to the LLM to receive correction suggestions (see {doc}`mcp`).
 
 ---
 

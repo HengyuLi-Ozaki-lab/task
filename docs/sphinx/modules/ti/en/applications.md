@@ -8,7 +8,7 @@ much more practical. Below are three typical patterns.
 
 What this page covers is **application patterns for using `tilib` from
 Python**. For scenarios where an LLM client drives it via natural
-language, see the "Usage scenarios" section of {doc}`mcp`.
+language, see {doc}`mcp`.
 ```
 
 ```{admonition} Runtime prerequisite (ADPOST / ADF11 data)
@@ -375,7 +375,7 @@ RuntimeError: 1 problem(s) need to be fixed
   NZMIN_NS[i] / NZMAX_NS[i]`` as well (see ``examples/parameter_sweep.py``
   for an Ar setup)
 - When called from an LLM, hand the validate output straight to the LLM
-  and it will suggest fixes (see "Usage scenarios" in {doc}`mcp`)
+  and it will suggest fixes (see {doc}`mcp`)
 
 ---
 

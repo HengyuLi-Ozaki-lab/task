@@ -8,7 +8,7 @@ more practical. Three typical patterns are shown below.
 
 What follows are **application patterns for using `wrlib` from Python**.
 For natural-language scenarios driving the library from an LLM client,
-see the "Usage scenarios" section in {doc}`mcp`.
+see {doc}`mcp`.
 
 Note that, unlike `tr`, `wr` has **no continuous parameter such as the
 time step `DT`**, so when `run()` returns `WrlibRunError(ierr=3)` there
@@ -447,8 +447,7 @@ RuntimeError: 1 blocking issue(s) remain to be fixed
   `preflight()` with `wr.validate()` (see issue #143's batch
   validation)
 - When called from an LLM, you can hand the preflight output straight
-  to the LLM and it will return a fix proposal (see "Usage scenarios"
-  in {doc}`mcp`)
+  to the LLM and it will return a fix proposal (see {doc}`mcp`)
 
 ---
 

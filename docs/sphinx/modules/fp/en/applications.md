@@ -9,7 +9,7 @@ patterns.
 
 What follows are **application patterns for using `fplib` from Python**.
 For scenarios that drive the library from an LLM client through natural
-language, see the "Usage scenarios" section of {doc}`mcp`.
+language, see {doc}`mcp`.
 ```
 
 ---
@@ -372,8 +372,7 @@ RuntimeError: 1 issue(s) need to be fixed
   (`python/fplib/tests/fixtures/`) directly as the base of `auto_setup`
   to reproduce a realistic ITER01 physics case
 - When called from an LLM, hand the output of `validate_fp_params`
-  straight to the LLM and let it suggest fixes (see the "Usage
-  scenarios" section of {doc}`mcp`)
+  straight to the LLM and let it suggest fixes (see {doc}`mcp`)
 
 ---
 

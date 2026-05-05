@@ -8,7 +8,7 @@ it considerably more practical. This page shows three typical patterns.
 
 What you see here are **application patterns for using `eqlib` from
 Python**. For scenarios that drive `eq` from an LLM client in natural
-language, see the "Usage scenarios" section of {doc}`mcp`.
+language, see {doc}`mcp`.
 ```
 
 ---
@@ -271,8 +271,7 @@ If you want to block on it, add it to the `blocking` predicate.)
 - Auto-clamp on `OUT_OF_RANGE` (e.g. round `NRMAX=9999` down to
   `NRMAX=1001`).
 - When called from an LLM, pass the `validate` output straight to the
-  LLM and you will get a corrective suggestion back (see "Usage
-  scenarios" in {doc}`mcp`).
+  LLM and you will get a corrective suggestion back (see {doc}`mcp`).
 
 ---
 

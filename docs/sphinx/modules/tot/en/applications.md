@@ -30,7 +30,7 @@ BPSD broker.
 
 What is shown here are **application patterns for using `totlib` from
 Python**. For scenarios where an LLM client drives it via natural
-language, see the "Usage scenarios" section of {doc}`mcp`.
+language, see {doc}`mcp`.
 ```
 
 ---

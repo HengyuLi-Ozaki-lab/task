@@ -7,8 +7,8 @@
 :class: note
 
 ここで紹介するのは **`tilib` を Python から使う応用パターン** です.
-LLM クライアントから自然言語で操作するシナリオは {doc}`mcp` の
-「使用シナリオ」節を参照してください.
+LLM クライアントから自然言語で操作するシナリオは {doc}`mcp` を
+参照してください.
 ```
 
 ```{admonition} 実行前提 (ADPOST / ADF11 データ)
@@ -373,7 +373,7 @@ RuntimeError: 修正が必要な問題が 1 件あります
   ``_apply_species`` に拡張 (Ar セットアップは ``examples/parameter_sweep.py``
   が参考)
 - LLM から呼ぶときは, validate の出力をそのまま LLM に渡せば修正提案が
-  返ってくる ({doc}`mcp` の「使用シナリオ」参照)
+  返ってくる ({doc}`mcp` 参照)
 
 ---
 
