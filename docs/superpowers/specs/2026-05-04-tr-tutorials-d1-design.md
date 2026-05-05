@@ -75,26 +75,46 @@ Outline:
    fixture lives at
    `python/eqlib/tests/fixtures/eqdata.ITER01`.
 2. **The script.** A self-contained Python block (~30
-   lines) using `Trlib` directly: `set_param` for the
-   geometry knobs, `set_param("MODELG", 3)`,
-   `set_param_str("KNAMEQ", "eqdata.ITER01")`, then
-   `validate()` to confirm the preconditions, then
+   lines) using `Trlib` directly. The base parameters are
+   applied via `tr_iter01_params.apply(tr)` (the same
+   helper used by
+   `python/trlib/tests/test_sweep.py:90`), which sets
+   `MODELG=3`, `NSMAX=4`,
+   `set_param_str("KNAMEQ", "eqdata.ITER01")`, `RIPS` /
+   `RIPE`, plasma profile arrays (`PN` / `PNS` / `PT` /
+   `PTS`), and heating-source scalars. The script then
+   calls `validate()` to confirm preconditions,
    `run(ntmax=100)`, then `get_state().scalars` for
-   `WPT`, `BETAN`, `Q0`, `TAUE1`.
-3. **Parameter values.** The geometry parameters come
-   verbatim from the fixture
-   `python/eqlib/tests/fixtures/eq_iter01_params.py:24-32`
-   (`RR=6.2`, `RA=2.0`, `RKAP=1.7`, `RDLT=0.33`, `RB=2.1`,
-   `BB=5.3`, `RIP=15.0`). The page does NOT invent new
-   values; it cross-links the fixture.
+   `WPT`, `BETAN`, `Q0`, `TAUE1`. Geometry (`RR`, `RA`,
+   `RKAP`, `RDLT`, `BB`) is loaded from the EQDSK file at
+   `tr_init` time — the script does NOT set them
+   explicitly; cross-link {doc}`input-files` for the
+   EQDSK loader path.
+3. **Parameter values.** All non-geometry knobs come
+   verbatim from the tr-side fixture
+   `python/trlib/tests/fixtures/tr_iter01_params.py`
+   (SCALARS at lines 21-47, ARRAYS at lines 51-56,
+   STRINGS at lines 60-62). Highlights cited in the
+   page: `MODELG=3`, `NSMAX=4`, `RIPS=2.0`, `RIPE=7.0`,
+   `DT=0.02`, `KNAMEQ="eqdata.ITER01"`. The fixture
+   mirrors the namelist in `test_run/inputs/tr_iter01.in`.
+   Geometry is loaded from the EQDSK binary
+   (`python/eqlib/tests/fixtures/eqdata.ITER01`); the
+   page does NOT invent or assert geometry numbers, and
+   in particular does NOT cite the eq-side namelist
+   parameters (`RR=6.2`, `RB=2.1`, `RIP=15.0`, …) because
+   tr's registry differs from eq's — tr has `RIPS` /
+   `RIPE` instead of `RIP`, and no `RB` (see
+   `tr/tr_param_registry.f90:78-115`).
 4. **Output.** The `expected output:` block uses
    placeholder text (`WPT = …`, etc.) rather than concrete
    numbers, because the exact values depend on the build
    configuration and could drift. The page tells the reader
    "run this and read the values yourself."
 5. **Extensions.** Two short extension suggestions:
-   - Vary `RIP` over `{12, 15, 18}` and observe the trend
-     in `BETAN` (forward-pointer to T3 sweep style).
+   - Vary `RIPS` (initial plasma current) over
+     `{1.5, 2.0, 2.5}` and observe the trend in `BETAN`
+     (forward-pointer to T3 sweep style).
    - Compare against a `MODELG=2` analytic equilibrium
      (no eqdata file needed).
 
@@ -116,10 +136,15 @@ Outline:
 3. **Conversion.** Convert the resulting list-of-dicts
    into a 3×3 NumPy array of `WPT` values
    (`np.array(...).reshape(3, 3)`).
-4. **Plot.** matplotlib heatmap with
+4. **Plot + expected output.** matplotlib heatmap with
    `plt.imshow(...)` + `colorbar()` + `xticks` /
    `yticks` labelled with the actual `RR` / `BB` values.
-   Save to a PNG (or display interactively).
+   Save to a PNG (or display interactively). The
+   "expected output" block in the rendered page uses
+   placeholder text (e.g., `WPT shape: (3, 3); values
+   placeholder — run locally to populate`) rather than
+   a concrete 3×3 numeric matrix, for the same drift-
+   resistance reason as T1 (§3.1 step 4).
 5. **Extensions.** Three short extension suggestions:
    - Switch to `pandas.DataFrame` for tabular output.
    - Parallelise with `multiprocessing.Pool` (cross-link
@@ -179,8 +204,9 @@ around them is translated).
   handles the full broken-ref check).
 - Manual: render and visually verify both the en and ja
   pages slot into the User guide toctree right after
-  `applications`, and that the four `{doc}` cross-links
-  resolve.
+  `applications`, and that all `{doc}` cross-links
+  resolve (`input-files`, `applications`, `faq`,
+  `api-reference`, `parameters`, `physics-overview`).
 - The Python code blocks themselves are not executed at
   build time — readers run them locally. The implementation
   step verifies the code blocks compile (`python -c "..."`
@@ -194,11 +220,19 @@ around them is translated).
 Same as G / E / A / F / audits: 2 reviewers in parallel
 (in-house + Codex), REVIEW_OK marker, push. Reviewer focus:
 
-- **Factual accuracy.** ITER01 fixture parameters
-  (`RR=6.2`, `RA=2.0`, `RKAP=1.7`, `RDLT=0.33`, `RB=2.1`,
-  `BB=5.3`, `RIP=15.0`) match
-  `python/eqlib/tests/fixtures/eq_iter01_params.py:24-32`
-  byte-for-byte.
+- **Factual accuracy.** Tr-side ITER01 parameters
+  (`MODELG=3`, `NSMAX=4`, `RIPS=2.0`, `RIPE=7.0`,
+  `DT=0.02`, profile arrays, heating-source scalars)
+  match
+  `python/trlib/tests/fixtures/tr_iter01_params.py`
+  (lines 21-47, 51-56, 60-62) byte-for-byte. Geometry is
+  loaded from the EQDSK binary
+  (`python/eqlib/tests/fixtures/eqdata.ITER01`) at
+  `tr_init` time; the page does NOT assert any geometry
+  numbers and does NOT cite the eq-side namelist
+  fixture (`eq_iter01_params.py`) because tr's registry
+  differs from eq's (no `RIP` / `RB` in tr — see
+  `tr/tr_param_registry.f90:78-115`).
 - **No fabrication.** The "expected output" block uses
   placeholder values (`WPT = …`) — verify the page does
   NOT assert any specific numeric output.
@@ -239,7 +273,7 @@ Same as G / E / A / F / audits: 2 reviewers in parallel
 1. ✅ `docs/sphinx/modules/tr/en/tutorials.md` exists with sections §3.1, §3.2, §3.3.
 2. ✅ ja counterpart exists with structurally aligned content.
 3. ✅ Both `index.md` files insert `tutorials` into the User guide toctree, after `applications`.
-4. ✅ §3.1 ITER parameters match `python/eqlib/tests/fixtures/eq_iter01_params.py:24-32` byte-for-byte (`RR=6.2`, `RA=2.0`, `RKAP=1.7`, `RDLT=0.33`, `RB=2.1`, `BB=5.3`, `RIP=15.0`).
+4. ✅ §3.1 ITER parameters match `python/trlib/tests/fixtures/tr_iter01_params.py` (SCALARS at lines 21-47, ARRAYS at lines 51-56, STRINGS at lines 60-62) byte-for-byte (`MODELG=3`, `NSMAX=4`, `RIPS=2.0`, `RIPE=7.0`, `DT=0.02`, plus profile arrays and heating scalars). The page does NOT cite the eq-side namelist fixture `eq_iter01_params.py` because tr's registry has `RIPS` / `RIPE` (not `RIP`) and no `RB` (see `tr/tr_param_registry.f90:78-115`).
 5. ✅ §3.1 cites `eqdata.ITER01` lives at `python/eqlib/tests/fixtures/eqdata.ITER01` and references {doc}`input-files` for the 80-byte path constraint.
 6. ✅ §3.2 cross-links {doc}`applications` for the `sweep()` pattern rather than redefining it.
 7. ✅ §3.2 code uses PEP 604 / 585 builtins (no `from typing import` lines, no capital `List` / `Dict` in code) — consistent with audit (b).
