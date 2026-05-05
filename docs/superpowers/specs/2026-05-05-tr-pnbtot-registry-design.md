@@ -293,9 +293,8 @@ For the single push at the end of this work:
 | `tr2` build fails in current env (gfortran, BPSD patches) | The `tr2` target predates this work and produced the existing baseline; if it fails today, fix the build (don't bypass the baseline regen step) |
 | Existing untracked files (`.worktrees/`, `docs/doc-design/`, `tr/libtrapi.so`, etc.) accidentally staged | Use explicit `git add <path>` for each touched file; never `git add -A` |
 | `test_iter01` SKIP due to missing `eqdata.ITER01` under `test_run/test_output/tr_iter01/` | The Phase-0 runner (§8.2) populates that directory as a side effect; running it before pytest is the canonical workaround per `test_equivalence.py:179–184` |
-| **BPSD-driven SIGABRT during `make -C tr libtrapi.so`** (heap corruption observed historically when BPSD patches drift, per `feedback_use_valgrind.md` and PR #140 history) | If build links clean but `./test_run/run_tests.sh tr_iter01` crashes with SIGABRT, re-run under `valgrind` (installed); BPSD patches under `docs/external-patches/bpsd/` should auto-apply in CI but local tree may need a `git clean -df bpsd/` + re-patch cycle. Do NOT proceed to baseline regen on an unstable libtrapi.so |
-| `extract_tr_metrics.py` silent parse failure if `tr_regress.dat` schema changes (e.g. column count drift between tr2 versions) | The script raises `SystemExit` on header-field mismatch (`extract_tr_metrics.py` lines 60–67); read its `--help`-less stderr if the regenerated metrics.json is missing scalars |
-| `compare_metrics.py` 1e-10 tolerance on near-zero→finite scalars (e.g. `WPT` going 0 → ~50 MJ once NBI engages; relative error becomes meaningless) | The compare script uses absolute-OR-relative; verify by inspecting `compare_metrics.py` output on first regen — if any field reports "div-by-zero", switch to absolute-only for that key |
+| **BPSD-driven SIGABRT during `make -C tr libtrapi.so`** (heap corruption observed historically when BPSD patches drift, per `$CLAUDE_MEMORY_DIR/memory/feedback_use_valgrind.md` and PR #140 / `project_bpsd_species_kid_oob_patch.md`) | If build links clean but `./test_run/run_tests.sh tr_iter01` crashes with SIGABRT, re-run under `valgrind` (installed); BPSD patches under `docs/external-patches/bpsd/` should auto-apply in CI but local tree may need a `git clean -df bpsd/` + re-patch cycle. Do NOT proceed to baseline regen on an unstable libtrapi.so |
+| `extract_tr_metrics.py` silently drops unknown scalar keys if a future `tr_regress.dat` schema adds them (the SCALAR_KEYS allowlist on line 18-21 filters; unknown keys are skipped with `pass`) — header-field mismatch DOES raise `SystemExit` (lines 60-67) | If `metrics.json` is missing a newly-added scalar, check the `SCALAR_KEYS` set in `extract_tr_metrics.py:18` and extend it. Surface argparse / SystemExit messages on non-zero exit code |
 
 ## 11. Out-of-scope follow-ups (do not include here)
 
@@ -310,11 +309,22 @@ For the single push at the end of this work:
 
 - [ ] `make -C tr libtrapi.so` builds clean
 - [ ] `make -C tr tr2` builds clean
-- [ ] **Direct registry confirmation**: `python -c "from trlib import
-      Trlib; tr=Trlib(); tr.set_param('PNBTOT', 25.0); tr.close()"`
-      runs without raising — proves the registry CASE is wired and
-      a value travels through `tr_param_set` end-to-end (independent
-      of the equivalence run)
+- [ ] **Direct registry-and-consumption confirmation**:
+      ```
+      python -c "
+      from trlib import Trlib
+      tr = Trlib()
+      tr.set_param('PNBTOT', 25.0)
+      tr.run(0)        # exercise tr_prep → trpnb.f90:46 PNBTOT consumer
+      tr.close()
+      "
+      ```
+      runs without raising. `set_param` proves the registry CASE is
+      wired (raises `TrlibParamError` on unknown keys per
+      `errors.py:46`); `run(0)` reaches `trpnb.f90:46`'s
+      `IF (PNBTOT.LE.0.D0) RETURN` branch with PNBTOT=25 → the value
+      travels through to the NBI consumer. Independent of the
+      equivalence run (§8.3) which is the true correctness contract
 - [ ] `test_run/inputs/tr_iter01.in` contains `PNBTOT=25.D0`
       (`grep PNBTOT test_run/inputs/tr_iter01.in` returns one hit)
 - [ ] `./test_run/run_tests.sh tr_iter01` completes; diff of
