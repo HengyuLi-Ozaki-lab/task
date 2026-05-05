@@ -44,6 +44,7 @@ state
 context-manager
 faq
 applications
+tutorials
 ```
 
 ## リファレンス
