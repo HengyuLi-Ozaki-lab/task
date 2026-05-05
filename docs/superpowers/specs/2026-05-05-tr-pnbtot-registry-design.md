@@ -1,7 +1,9 @@
 # PNBTOT Registry Extension — Design Spec
 
 **Date**: 2026-05-05
-**Branch**: `chore/pre-push-hook-worktree-compat` (continuing from HEAD `28a996f1`)
+**Branch**: `chore/pre-push-hook-worktree-compat` (continuing from
+HEAD `20d87da0` after the CI hot-fix; PNBTOT diff to be reviewed
+as `20d87da0..HEAD` at push time)
 **Author**: Kazuyoshi Yoshimi
 **Status**: Approved scope; pending implementation plan
 
@@ -210,6 +212,17 @@ make -C tr libtrapi.so 2>&1 | tail -20    # registry change compiles
 make -C tr tr2          2>&1 | tail -20    # baseline-gen binary builds
 ```
 
+`tr/Makefile` line 535 has an explicit dep
+`$(OBJDIR)/tr_param_registry.o : tr_param_registry.f90 trcomm.f90 ...`
+for the non-PIC build, so adding `PNBTOT` to the USE list triggers
+a rebuild for `tr2`. The PIC variant (`$(OBJDIR_PIC)/...`, used by
+`libtrapi.so`) goes through the generic
+`$(OBJDIR_PIC)/%.o: %.f90` rule (line 257) and does **not** track
+inter-module deps explicitly; if a stale `mod_pic/trcomm.mod` is
+suspected (e.g. if `libtrapi.so` builds clean but
+`set_param("PNBTOT", ...)` returns `INVALID`), do
+`make -C tr clean && make -C tr libtrapi.so` and retry.
+
 ### 8.2 Phase-0 baseline regeneration
 
 ```
@@ -221,9 +234,11 @@ extractor turns the dump into `metrics.json`:
 
 ```
 python test_run/scripts/extract_tr_metrics.py \
-    --output test_run/baselines/tr_iter01/metrics.json \
-    test_run/test_output/tr_iter01
+    test_run/test_output/tr_iter01/tr_regress.dat \
+    > test_run/baselines/tr_iter01/metrics.json
 ```
+(Same form as §4.4. The script takes a positional `tr_regress.dat`
+path and writes JSON to stdout — there is no `--output` flag.)
 
 Diff `git diff test_run/baselines/tr_iter01/metrics.json` should show
 non-trivial drift on `WPT`, `BETAN`, `TAUE1`, etc. (NBI on changes
@@ -256,8 +271,11 @@ freshly-regenerated baseline.
 For the single push at the end of this work:
 
 1. **Local pytest** (8.3) green at 1e-10.
-2. **In-house code review**: `Agent(subagent_type="feature-dev:code-reviewer")`
-   on diff `28a996f1..HEAD`.
+2. **In-house code review**: `Agent(subagent_type="superpowers:code-reviewer")`
+   on diff `20d87da0..HEAD` (PNBTOT-only diff, excluding the CI hot-fix
+   which is already pushed). CLAUDE.md still references the legacy
+   `feature-dev:code-reviewer` name; the actually-available agent in
+   this session is `superpowers:code-reviewer`.
 3. **Codex independent review**: `Agent(subagent_type="codex:codex-rescue")`
    on the same diff. (Both reviewers fired in parallel in one message.)
 4. **Marker file**:
@@ -275,6 +293,9 @@ For the single push at the end of this work:
 | `tr2` build fails in current env (gfortran, BPSD patches) | The `tr2` target predates this work and produced the existing baseline; if it fails today, fix the build (don't bypass the baseline regen step) |
 | Existing untracked files (`.worktrees/`, `docs/doc-design/`, `tr/libtrapi.so`, etc.) accidentally staged | Use explicit `git add <path>` for each touched file; never `git add -A` |
 | `test_iter01` SKIP due to missing `eqdata.ITER01` under `test_run/test_output/tr_iter01/` | The Phase-0 runner (§8.2) populates that directory as a side effect; running it before pytest is the canonical workaround per `test_equivalence.py:179–184` |
+| **BPSD-driven SIGABRT during `make -C tr libtrapi.so`** (heap corruption observed historically when BPSD patches drift, per `feedback_use_valgrind.md` and PR #140 history) | If build links clean but `./test_run/run_tests.sh tr_iter01` crashes with SIGABRT, re-run under `valgrind` (installed); BPSD patches under `docs/external-patches/bpsd/` should auto-apply in CI but local tree may need a `git clean -df bpsd/` + re-patch cycle. Do NOT proceed to baseline regen on an unstable libtrapi.so |
+| `extract_tr_metrics.py` silent parse failure if `tr_regress.dat` schema changes (e.g. column count drift between tr2 versions) | The script raises `SystemExit` on header-field mismatch (`extract_tr_metrics.py` lines 60–67); read its `--help`-less stderr if the regenerated metrics.json is missing scalars |
+| `compare_metrics.py` 1e-10 tolerance on near-zero→finite scalars (e.g. `WPT` going 0 → ~50 MJ once NBI engages; relative error becomes meaningless) | The compare script uses absolute-OR-relative; verify by inspecting `compare_metrics.py` output on first regen — if any field reports "div-by-zero", switch to absolute-only for that key |
 
 ## 11. Out-of-scope follow-ups (do not include here)
 
@@ -289,6 +310,13 @@ For the single push at the end of this work:
 
 - [ ] `make -C tr libtrapi.so` builds clean
 - [ ] `make -C tr tr2` builds clean
+- [ ] **Direct registry confirmation**: `python -c "from trlib import
+      Trlib; tr=Trlib(); tr.set_param('PNBTOT', 25.0); tr.close()"`
+      runs without raising — proves the registry CASE is wired and
+      a value travels through `tr_param_set` end-to-end (independent
+      of the equivalence run)
+- [ ] `test_run/inputs/tr_iter01.in` contains `PNBTOT=25.D0`
+      (`grep PNBTOT test_run/inputs/tr_iter01.in` returns one hit)
 - [ ] `./test_run/run_tests.sh tr_iter01` completes; diff of
       regenerated `metrics.json` shows expected NBI-on deltas on
       `WPT/BETAN/TAUE1` (sanity-check the magnitude is non-trivial)
