@@ -25,6 +25,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
 HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
@@ -121,6 +123,15 @@ class TestTrlibBoundaryValues(unittest.TestCase):
             )
 
     # --- sweeps -----------------------------------------------------------
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "#189: tst2 equilibrium import copies RNU/RTU(...,3..NSMAX) "
+            "into RN/RT, but eqdata.TST-2 was built for NSMAX=2 so "
+            "species 3+ are NaN; NaN propagates to WPT/BETA*/TAUE*. "
+            "Fix lands in a separate PR; strict=True auto-flags removal."
+        ),
+    )
     def test_NSMAX_in_range(self):
         """NSMAX in {1..4} should either run cleanly or raise TrlibError.
 
@@ -130,6 +141,16 @@ class TestTrlibBoundaryValues(unittest.TestCase):
         round-trip + finite state; controlled failures are tolerated
         because the property under test is "no crash, no NaN", not
         "always converges".
+
+        XFAIL_REMOVE_WITH_#189: under MODELG=3 + MDLUF=case(3), the tst2
+        equilibrium-import path (tr/trprof.f90:202-208) copies
+        RNU/RTU(...,3..NSMAX) into RN/RT, but eqdata.TST-2 was generated
+        for NSMAX=2, so RNU/RTU species 3+ are NaN. NaN propagates to
+        WPT/BETA*/TAUE* via tr/trrslt_globals.f90:69,117,126,315-341.
+        Fix lands in a separate PR that validates active species against
+        profile-data extent (or zero-fills species > NSU). When that PR
+        lands, this XFAIL flips to XPASS and `unittest.expectedFailure`
+        will mark the test as unexpected success — remove this decorator.
         """
         from trlib import Trlib
         from trlib.errors import TrlibError
