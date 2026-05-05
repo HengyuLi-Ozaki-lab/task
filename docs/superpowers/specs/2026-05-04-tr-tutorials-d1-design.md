@@ -64,7 +64,10 @@ No new MyST anchor labels are needed.
 ### §3.1 Tutorial T1 — ITER-like single-run scenario (~80 lines)
 
 **Goal:** Walk a reader through a single 100-step run using
-the shipped `eqdata.ITER01` EQDSK fixture, and show how to
+the shipped `eqdata.ITER01` equilibrium fixture (TASK/EQ
+binary format, loaded via `EQRTSK` under `MODELG=3` —
+see `eq/eqfile.f90:108-115` and {doc}`input-files` for the
+`MODELG ∈ {3, 5, 8, 9}` dispatch table), and show how to
 read the resulting `TrState`.
 
 Outline:
@@ -77,19 +80,22 @@ Outline:
 2. **The script.** A self-contained Python block (~30
    lines) using `Trlib` directly. The base parameters are
    applied via `tr_iter01_params.apply(tr)` (the same
-   helper used by
-   `python/trlib/tests/test_sweep.py:90`), which sets
-   `MODELG=3`, `NSMAX=4`,
+   helper called from
+   `python/trlib/tests/test_sweep.py:90`; the sweep test
+   then immediately overrides `RR` / `BB`, but T1
+   intentionally does NOT — it lets the equilibrium load
+   set them), which sets `MODELG=3`, `NSMAX=4`,
    `set_param_str("KNAMEQ", "eqdata.ITER01")`, `RIPS` /
    `RIPE`, plasma profile arrays (`PN` / `PNS` / `PT` /
    `PTS`), and heating-source scalars. The script then
    calls `validate()` to confirm preconditions,
    `run(ntmax=100)`, then `get_state().scalars` for
    `WPT`, `BETAN`, `Q0`, `TAUE1`. Geometry (`RR`, `RA`,
-   `RKAP`, `RDLT`, `BB`) is loaded from the EQDSK file at
-   `tr_init` time — the script does NOT set them
+   `RKAP`, `RDLT`, `BB`) is loaded from the TASK/EQ binary
+   file at `tr_init` time via the BPSD broker pull
+   (`tr/trbpsd.f90:213`) — the script does NOT set them
    explicitly; cross-link {doc}`input-files` for the
-   EQDSK loader path.
+   `MODELG`-vs-loader dispatch table.
 3. **Parameter values.** All non-geometry knobs come
    verbatim from the tr-side fixture
    `python/trlib/tests/fixtures/tr_iter01_params.py`
@@ -98,14 +104,16 @@ Outline:
    page: `MODELG=3`, `NSMAX=4`, `RIPS=2.0`, `RIPE=7.0`,
    `DT=0.02`, `KNAMEQ="eqdata.ITER01"`. The fixture
    mirrors the namelist in `test_run/inputs/tr_iter01.in`.
-   Geometry is loaded from the EQDSK binary
+   Geometry is loaded from the TASK/EQ binary file
    (`python/eqlib/tests/fixtures/eqdata.ITER01`); the
    page does NOT invent or assert geometry numbers, and
    in particular does NOT cite the eq-side namelist
    parameters (`RR=6.2`, `RB=2.1`, `RIP=15.0`, …) because
    tr's registry differs from eq's — tr has `RIPS` /
-   `RIPE` instead of `RIP`, and no `RB` (see
-   `tr/tr_param_registry.f90:78-115`).
+   `RIPE` instead of `RIP` (registered at
+   `tr/tr_param_registry.f90:114-115`), and no `RB`
+   anywhere in the registry's geometry block
+   (`tr/tr_param_registry.f90:78-84`).
 4. **Output.** The `expected output:` block uses
    placeholder text (`WPT = …`, etc.) rather than concrete
    numbers, because the exact values depend on the build
@@ -226,13 +234,16 @@ Same as G / E / A / F / audits: 2 reviewers in parallel
   match
   `python/trlib/tests/fixtures/tr_iter01_params.py`
   (lines 21-47, 51-56, 60-62) byte-for-byte. Geometry is
-  loaded from the EQDSK binary
+  loaded from the TASK/EQ binary file
   (`python/eqlib/tests/fixtures/eqdata.ITER01`) at
-  `tr_init` time; the page does NOT assert any geometry
-  numbers and does NOT cite the eq-side namelist
-  fixture (`eq_iter01_params.py`) because tr's registry
-  differs from eq's (no `RIP` / `RB` in tr — see
-  `tr/tr_param_registry.f90:78-115`).
+  `tr_init` time via the BPSD broker pull
+  (`tr/trbpsd.f90:213`); the page does NOT assert any
+  geometry numbers and does NOT cite the eq-side
+  namelist fixture (`eq_iter01_params.py`) because tr's
+  registry has `RIPS` / `RIPE`
+  (`tr/tr_param_registry.f90:114-115`) and no `RIP` /
+  `RB` in the geometry block
+  (`tr/tr_param_registry.f90:78-84`).
 - **No fabrication.** The "expected output" block uses
   placeholder values (`WPT = …`) — verify the page does
   NOT assert any specific numeric output.
@@ -273,7 +284,7 @@ Same as G / E / A / F / audits: 2 reviewers in parallel
 1. ✅ `docs/sphinx/modules/tr/en/tutorials.md` exists with sections §3.1, §3.2, §3.3.
 2. ✅ ja counterpart exists with structurally aligned content.
 3. ✅ Both `index.md` files insert `tutorials` into the User guide toctree, after `applications`.
-4. ✅ §3.1 ITER parameters match `python/trlib/tests/fixtures/tr_iter01_params.py` (SCALARS at lines 21-47, ARRAYS at lines 51-56, STRINGS at lines 60-62) byte-for-byte (`MODELG=3`, `NSMAX=4`, `RIPS=2.0`, `RIPE=7.0`, `DT=0.02`, plus profile arrays and heating scalars). The page does NOT cite the eq-side namelist fixture `eq_iter01_params.py` because tr's registry has `RIPS` / `RIPE` (not `RIP`) and no `RB` (see `tr/tr_param_registry.f90:78-115`).
+4. ✅ §3.1 ITER parameters match `python/trlib/tests/fixtures/tr_iter01_params.py` (SCALARS at lines 21-47, ARRAYS at lines 51-56, STRINGS at lines 60-62) byte-for-byte (`MODELG=3`, `NSMAX=4`, `RIPS=2.0`, `RIPE=7.0`, `DT=0.02`, plus profile arrays and heating scalars). The page does NOT cite the eq-side namelist fixture `eq_iter01_params.py` because tr's registry has `RIPS` / `RIPE` at `tr/tr_param_registry.f90:114-115` (no `RIP`) and no `RB` in the geometry block at `tr/tr_param_registry.f90:78-84`.
 5. ✅ §3.1 cites `eqdata.ITER01` lives at `python/eqlib/tests/fixtures/eqdata.ITER01` and references {doc}`input-files` for the 80-byte path constraint.
 6. ✅ §3.2 cross-links {doc}`applications` for the `sweep()` pattern rather than redefining it.
 7. ✅ §3.2 code uses PEP 604 / 585 builtins (no `from typing import` lines, no capital `List` / `Dict` in code) — consistent with audit (b).
