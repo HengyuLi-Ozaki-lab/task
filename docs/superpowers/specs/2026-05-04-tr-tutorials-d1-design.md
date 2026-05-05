@@ -21,9 +21,11 @@ Add a single bilingual page to the TR Sphinx chapter — the
 - **Tutorial T1** — ITER-like single-run scenario using the
   `eqdata.ITER01` fixture
 - **Tutorial T3** — Parameter sweep
-  (`RIPS × PNBR0` — plasma-current start × NB heating
-  amplitude, two tr-side knobs not overwritten by the
-  BPSD geometry pull) with matplotlib heatmap output
+  (`PT[1] × PN[1]` — axis ion temperature × axis ion
+  density, two array-element initial-profile knobs that
+  survive the BPSD plasma pull because BPSD writes
+  `RN`/`RT` rather than `PN`/`PT`) with matplotlib
+  heatmap output
 
 This is the "D1" half of the multi-scenario tutorials menu
 item (memory `project_tr_proper_manual.md`). The originally-
@@ -84,9 +86,10 @@ Outline:
    applied via `tr_iter01_params.apply(tr)` (the same
    helper called from
    `python/trlib/tests/test_sweep.py:90`; the sweep test
-   then immediately overrides `RR` / `BB`, but T1
-   intentionally does NOT — it lets the equilibrium load
-   set them), which sets `MODELG=3`, `NSMAX=4`,
+   then overrides `RR` / `BB`, but those overrides are
+   silently clobbered — see §3.2 step 2 — so T1
+   intentionally does NOT override geometry), which sets
+   `MODELG=3`, `NSMAX=4`,
    `set_param_str("KNAMEQ", "eqdata.ITER01")`, `RIPS` /
    `RIPE`, plasma profile arrays (`PN` / `PNS` / `PT` /
    `PTS`), and heating-source scalars. The script then
@@ -94,10 +97,13 @@ Outline:
    `run(ntmax=100)`, then `get_state().scalars` for
    `WPT`, `BETAN`, `Q0`, `TAUE1`. Geometry (`RR`, `RA`,
    `RKAP`, `RDLT`, `BB`) is loaded from the TASK/EQ binary
-   file at `tr_init` time via the BPSD broker pull
-   (`tr/trbpsd.f90:213`) — the script does NOT set them
-   explicitly; cross-link {doc}`input-files` for the
-   `MODELG`-vs-loader dispatch table.
+   file on the first `tr_run` call (the chain is
+   `tr_run` → `tr_prep` → `tr_set_metric` → `eq_load` +
+   `tr_bpsd_get`; see `tr/tr_api.f90:223,228`,
+   `tr/trprep.f90:83`, `tr/trmetric.f90:41,46`) — the
+   script does NOT set geometry explicitly; cross-link
+   {doc}`input-files` for the `MODELG`-vs-loader
+   dispatch table.
 3. **Parameter values.** All non-geometry knobs come
    verbatim from the tr-side fixture
    `python/trlib/tests/fixtures/tr_iter01_params.py`
@@ -122,17 +128,21 @@ Outline:
    configuration and could drift. The page tells the reader
    "run this and read the values yourself."
 5. **Extensions.** Two short extension suggestions:
-   - Vary `RIPS` (initial plasma current) over
-     `{1.5, 2.0, 2.5}` as a single-axis warm-up before
-     T3, which extends this to a 2-axis
-     `RIPS × PNBR0` sweep.
+   - Vary `PT[1]` (axis ion temperature) over
+     `{0.7, 1.0, 1.5}` (keV) as a single-axis warm-up
+     before T3, which extends this to a 2-axis
+     `PT[1] × PN[1]` sweep. Note: `RIPS` looks like an
+     obvious alternative single-axis knob but is
+     silently overwritten by the BPSD broker
+     (`tr/trbpsd.f90:370-374`); see §3.2 step 2.
    - Compare against a `MODELG=2` analytic equilibrium
      (no eqdata file needed).
 
 ### §3.2 Tutorial T3 — Parameter sweep with heatmap (~80 lines)
 
-**Goal:** Run a 3×3 `RIPS × PNBR0` sweep and plot the
-resulting `WPT` field as a heatmap.
+**Goal:** Run a 3×3 `PT[1] × PN[1]` sweep (axis ion
+temperature × axis ion density) and plot the resulting
+`WPT` field as a heatmap.
 
 Outline:
 
@@ -140,29 +150,59 @@ Outline:
    {doc}`applications` §2 — the existing `sweep()`
    wrapper. T3 does NOT redefine the wrapper; it imports
    the pattern by reference.
-2. **The sweep.** `RIPS ∈ {1.5, 2.0, 2.5}` (MA, plasma-
-   current start; centered on the ITER01 fixture base
-   `RIPS=2.0`) × `PNBR0 ∈ {0.0, 5.0, 10.0}` (MW, NB
-   heating amplitude; centered on fixture base
-   `PNBR0=0.0`), `ntmax = 20` (short enough to be quick
-   on a laptop; long enough for scalars to start
-   responding). The page MUST explicitly explain why the
-   sweep is NOT over `RR × BB`: under `MODELG=3` the BPSD
-   broker pull
-   (`tr/trbpsd.f90:171-178`, called from
-   `tr_set_metric` in `tr/trmetric.f90:46`) overwrites
-   `RR` / `RA` / `BB` / `RIP` / `RKAP` / `RDLT` from the
-   EQDSK device at `tr_init` time, silently clobbering
-   any user `set_param("RR", ...)` call. `RIPS` and
-   `PNBR0` are not in the BPSD-device overwrite list, so
-   sweep overrides take effect; geometry knobs would
-   not.
+2. **The sweep.** `PT[1] ∈ {0.7, 1.0, 1.5}` (keV, axis
+   ion temperature; centered on the ITER01 fixture base
+   `PT[1]=1.0` from
+   `python/trlib/tests/fixtures/tr_iter01_params.py:54`)
+   × `PN[1] ∈ {0.5, 0.7, 1.0}` (10²⁰ m⁻³, axis ion
+   density; centered on fixture base `PN[1]=0.7` from
+   `tr_iter01_params.py:52`), `ntmax = 20` (short enough
+   to be quick on a laptop; long enough for `WPT` to
+   start responding). The array-element subscript
+   syntax `tr.set_param("PT[1]", 1.0)` is the canonical
+   Trlib pattern (`tr/tr_param_registry.f90:101-106` —
+   `parse_array_subscript` parses the `name[idx]`
+   form); the page introduces this in a 1-paragraph
+   side-bar.
+
+   **Why `PT[1] × PN[1]` and not other axes — explicit
+   gotcha section the page MUST include.** Three
+   alternatives a reader might try first all fail
+   silently under the ITER01 fixture's `MODELG=3`:
+   - `RR × BB` (geometry sweep): the BPSD broker pull
+     (`tr/trbpsd.f90:171-178`, called from
+     `tr_set_metric` at `tr/trmetric.f90:46` on the
+     first `tr_run` call) overwrites
+     `RR`/`RA`/`BB`/`RIP`/`RKAP`/`RDLT` from the EQDSK
+     device, clobbering any user `set_param("RR", ...)`.
+   - `RIPS × RIPE` (plasma-current ramp sweep): the
+     same BPSD pull recalibrates `RIPS` and `RIPE` from
+     the metric-derived current at
+     `tr/trbpsd.f90:370-374`, again clobbering user
+     overrides.
+   - `PNBTOT × <anything>` (NBI total-power sweep):
+     `PNBTOT` (the actual NB amplitude in MW —
+     `tr/trinit.f90:419`) is **not** in
+     `tr/tr_param_registry.f90`, so `set_param("PNBTOT",
+     ...)` raises `INVALID`. Worth flagging in the page
+     because `PNBR0` (`tr/trinit.f90:420`, "RADIAL
+     POSITION OF NBI POWER DEPOSITION (M)") is the
+     visible NB knob in the fixture but is a deposition
+     center, not an amplitude.
+
+   `PT[1]` and `PN[1]` survive: `tr_prof`
+   (`tr/trprof.f90:227-228`) reads `PN`/`PT` to build
+   `RN`/`RT`, the BPSD plasma pull
+   (`tr/trbpsd.f90:183-204`) writes only `RN`/`RT` (not
+   `PN`/`PT`), and `tr_set_metric` does not touch
+   profile parameter arrays. `WPT` ≈ ∫(3/2)nT dV so the
+   heatmap has a clean physical interpretation.
 3. **Conversion.** Convert the resulting list-of-dicts
    into a 3×3 NumPy array of `WPT` values
    (`np.array(...).reshape(3, 3)`).
 4. **Plot + expected output.** matplotlib heatmap with
    `plt.imshow(...)` + `colorbar()` + `xticks` /
-   `yticks` labelled with the actual `RIPS` / `PNBR0`
+   `yticks` labelled with the actual `PT[1]` / `PN[1]`
    values. Save to a PNG (or display interactively). The
    "expected output" block in the rendered page uses
    placeholder text (e.g., `WPT shape: (3, 3); values
@@ -178,7 +218,10 @@ Outline:
      `RR × BB`), switch to `MODELG=2` (analytic
      equilibrium) so geometry knobs survive — under
      `MODELG=3` the BPSD pull would clobber them
-     (see step 2 above).
+     (see step 2 above). For NBI-amplitude sweeps,
+     `PNBTOT` first needs registry registration (a
+     separate planned change tracked outside this
+     tutorial).
 
 The page notes matplotlib is an optional dependency
 (`pip install matplotlib`) and the script gracefully
@@ -254,12 +297,15 @@ Same as G / E / A / F / audits: 2 reviewers in parallel
   `python/trlib/tests/fixtures/tr_iter01_params.py`
   (lines 21-47, 51-56, 60-62) byte-for-byte. Geometry is
   loaded from the TASK/EQ binary file
-  (`python/eqlib/tests/fixtures/eqdata.ITER01`) at
-  `tr_init` time via the BPSD broker pull
-  (`tr/trbpsd.f90:213`); the page does NOT assert any
-  geometry numbers and does NOT cite the eq-side
-  namelist fixture (`eq_iter01_params.py`) because tr's
-  registry has `RIPS` / `RIPE`
+  (`python/eqlib/tests/fixtures/eqdata.ITER01`) on the
+  first `tr_run` call via the
+  `tr_run` → `tr_prep` → `tr_set_metric` → `eq_load` +
+  `tr_bpsd_get` chain (`tr/tr_api.f90:223,228`,
+  `tr/trprep.f90:83`, `tr/trmetric.f90:41,46`); the page
+  does NOT assert any geometry numbers and does NOT
+  cite the eq-side namelist fixture
+  (`eq_iter01_params.py`) because tr's registry has
+  `RIPS` / `RIPE`
   (`tr/tr_param_registry.f90:114-115`) and no `RIP` /
   `RB` in the geometry block
   (`tr/tr_param_registry.f90:78-84`).
@@ -277,13 +323,16 @@ Same as G / E / A / F / audits: 2 reviewers in parallel
 - **matplotlib gracefully optional.** The T3 code block
   does not crash if matplotlib is missing; falls back to
   a printed table.
-- **Sweep axes survive BPSD pull.** T3 sweeps `RIPS`
-  and `PNBR0` (NOT `RR`/`BB`) and the page explicitly
-  explains why: `tr/trbpsd.f90:171-178` overwrites
-  `RR`/`RA`/`BB`/`RIP`/`RKAP`/`RDLT` from the EQDSK
-  device at `tr_init`. Verify the page contains this
-  caveat and that neither sweep axis is in the
-  overwrite list.
+- **Sweep axes survive BPSD pull.** T3 sweeps `PT[1]`
+  and `PN[1]` (NOT `RR`/`BB`, NOT `RIPS`, NOT `PNBTOT`)
+  and the page explicitly enumerates the three
+  rejected alternatives with their failure mechanism:
+  `RR`/`BB` clobbered by `tr/trbpsd.f90:171-178`,
+  `RIPS`/`RIPE` clobbered by `tr/trbpsd.f90:370-374`,
+  `PNBTOT` not in `tr/tr_param_registry.f90`. Verify
+  `PN`/`PT` are NOT touched by the BPSD plasma pull
+  (`tr/trbpsd.f90:183-204` writes `RN`/`RT`, not
+  `PN`/`PT`).
 
 ## §8. Out of scope (deferred)
 
@@ -315,8 +364,8 @@ Same as G / E / A / F / audits: 2 reviewers in parallel
 6. ✅ §3.2 cross-links {doc}`applications` for the `sweep()` pattern rather than redefining it.
 7. ✅ §3.2 code uses PEP 604 / 585 builtins (no `from typing import` lines, no capital `List` / `Dict` in code) — consistent with audit (b).
 8. ✅ §3.2 includes a graceful fallback path when matplotlib is missing (printed table instead of plot).
-8a. ✅ §3.2 sweep axes are `RIPS × PNBR0` (NOT `RR × BB`); the page explicitly explains that under `MODELG=3` the BPSD broker pull at `tr/trbpsd.f90:171-178` overwrites `RR`/`RA`/`BB`/`RIP`/`RKAP`/`RDLT` from the EQDSK device, so geometry sweeps via `set_param` would be silently clobbered.
-9. ✅ Both T1 and T3 use placeholder text (`WPT = …` etc.) for "expected output" — no concrete numeric values asserted.
-10. ✅ §3.3 mentions T2/T4/T5/T6 as D2 follow-up items.
-11. ✅ All `{doc}` cross-references resolve.
-12. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
+9. ✅ §3.2 sweep axes are `PT[1] × PN[1]` (NOT `RR × BB`, NOT `RIPS × *`, NOT `PNBTOT × *`); the page explicitly enumerates all three rejected alternatives with their failure mechanism (BPSD geometry pull at `tr/trbpsd.f90:171-178`, BPSD current recalibration at `tr/trbpsd.f90:370-374`, `PNBTOT` missing from `tr/tr_param_registry.f90`).
+10. ✅ Both T1 and T3 use placeholder text (`WPT = …` etc.) for "expected output" — no concrete numeric values asserted.
+11. ✅ §3.3 mentions T2/T4/T5/T6 as D2 follow-up items.
+12. ✅ All `{doc}` cross-references resolve.
+13. ✅ Both reviewers (in-house + Codex) post-implementation report no HIGH findings.
