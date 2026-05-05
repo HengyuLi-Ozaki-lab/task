@@ -124,12 +124,18 @@ class TestTrlibBoundaryValues(unittest.TestCase):
 
     # --- sweeps -----------------------------------------------------------
     @pytest.mark.xfail(
-        strict=True,
+        # CLAUDE.md narrow exception: failure is environment-dependent
+        # (CI passes, local libtrapi.so build fails on NSMAX=3,4 with
+        # WPT=NaN). strict=True would XPASS-fail CI; strict=False
+        # tolerates both outcomes. Removal trigger: grep
+        # XFAIL_REMOVE_WITH_#189 in this file when #189 lands.
+        strict=False,
         reason=(
             "#189: tst2 equilibrium import copies RNU/RTU(...,3..NSMAX) "
             "into RN/RT, but eqdata.TST-2 was built for NSMAX=2 so "
             "species 3+ are NaN; NaN propagates to WPT/BETA*/TAUE*. "
-            "Fix lands in a separate PR; strict=True auto-flags removal."
+            "Fix lands in a separate PR; environment-dependent failure "
+            "so strict=False per CLAUDE.md narrow exception."
         ),
     )
     def test_NSMAX_in_range(self):
@@ -149,8 +155,8 @@ class TestTrlibBoundaryValues(unittest.TestCase):
         WPT/BETA*/TAUE* via tr/trrslt_globals.f90:69,117,126,315-341.
         Fix lands in a separate PR that validates active species against
         profile-data extent (or zero-fills species > NSU). When that PR
-        lands, this XFAIL flips to XPASS and `unittest.expectedFailure`
-        will mark the test as unexpected success — remove this decorator.
+        lands, the failure mode disappears; remove this decorator (grep
+        XFAIL_REMOVE_WITH_#189 to locate).
         """
         from trlib import Trlib
         from trlib.errors import TrlibError
