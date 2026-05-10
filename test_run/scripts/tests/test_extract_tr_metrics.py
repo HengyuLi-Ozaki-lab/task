@@ -29,6 +29,8 @@ class ExtractTrMetricsTest(unittest.TestCase):
         self.assertEqual(data["scalars"]["Q0"], 0.579)
         self.assertIn("BETA0", data["scalars"])
         self.assertIn("ALI", data["scalars"])
+        self.assertIn("AJRFT", data["scalars"])
+        self.assertEqual(data["scalars"]["AJRFT"], 0.0)
 
     def test_extracts_profile_rows(self):
         data = run_extract(FIXTURE)
