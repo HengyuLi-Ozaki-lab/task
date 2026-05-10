@@ -435,6 +435,15 @@ def handle_set_param_str(name: str, value: str) -> str:
         raise _wrap_eqlib_error(exc) from exc
 
 
+def handle_save(path: str) -> str:
+    try:
+        eq = STATE.ensure_open()
+        eq.save(path)
+        return f"saved equilibrium to {path}"
+    except Exception as exc:
+        raise _wrap_eqlib_error(exc) from exc
+
+
 def handle_set_params(params: Dict[str, SupportedValue]) -> str:
     if not isinstance(params, dict):
         raise ToolError(  # type: ignore[call-arg]
@@ -551,7 +560,7 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 11 eq tools."""
+    """Build and return a FastMCP server instance with the 12 eq tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -603,6 +612,19 @@ def build_server() -> Any:
         KNAMFO, KNAMPF`` (CHARACTER(LEN=80) on the Fortran side).
         """
         return handle_set_param_str(name, value)
+
+    @mcp.tool()
+    def save(path: str) -> str:
+        """Save the current equilibrium to a TASK-binary file at ``path``.
+
+        The path is set as KNAMEQ before calling eq_save. The file is
+        consumable by tr_mcp via ``set_param_str("KNAMEQ", path)`` plus
+        ``MODELG=3``. Note: the underlying Fortran ``EQSAVE`` silently
+        swallows FWOPEN failures (blank KNAMEQ, missing directory,
+        permission denied) — callers should verify file existence after
+        the call.
+        """
+        return handle_save(path)
 
     @mcp.tool()
     def set_params(params: Dict[str, Any]) -> str:
@@ -730,6 +752,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "init",
                 "set_param",
                 "set_param_str",
+                "save",
                 "set_params",
                 "run",
                 "get_state",

@@ -430,7 +430,7 @@ class TestMainCliFlags(unittest.TestCase):
         rc = self._run_quiet(["--print-tools"])
         self.assertEqual(rc, 0)
 
-    def test_print_tools_output_contains_all_eleven(self) -> None:
+    def test_print_tools_output_contains_all_twelve(self) -> None:
         import io
         import contextlib
 
@@ -439,11 +439,12 @@ class TestMainCliFlags(unittest.TestCase):
             rc = srv.main(["--print-tools"])
         self.assertEqual(rc, 0)
         lines = [ln for ln in buf.getvalue().splitlines() if ln]
-        self.assertEqual(len(lines), 11)
+        self.assertEqual(len(lines), 12)
         for t in (
             "init",
             "set_param",
             "set_param_str",
+            "save",
             "set_params",
             "run",
             "get_state",
