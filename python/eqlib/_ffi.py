@@ -222,6 +222,13 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     except AttributeError:  # pragma: no cover - only on pre-#143 builds
         pass
 
+    # eq_save: () -> int
+    try:
+        lib.eq_save.argtypes = []
+        lib.eq_save.restype = ctypes.c_int
+    except AttributeError:  # pragma: no cover - only on pre-Task-1.1 builds
+        pass
+
     lib.eq_finalize.restype = ctypes.c_int
     lib.eq_finalize.argtypes = []
     return lib

@@ -294,6 +294,33 @@ class Eq:
         rc = self._lib.eq_run(int(mode))
         raise_for_rc(f"eq_run({mode})", rc)
 
+    def save(self, path: str) -> None:
+        """Save the current equilibrium state to a TASK-binary file.
+
+        Sets KNAMEQ to ``path`` then calls ``eq_save``. The file is
+        readable by TR via ``set_param_str("KNAMEQ", path)`` plus
+        ``MODELG=3``.
+
+        Note: ``eq_save`` (and the underlying Fortran ``EQSAVE``) may
+        silently return ``EQ_OK`` even when the file was not written
+        (e.g. blank KNAMEQ, missing directory, permission denied) — the
+        Fortran wrapper swallows FWOPEN failures. This method raises on
+        non-zero return codes, but callers should verify file existence
+        after the call if a silent failure is a concern.
+        """
+        if self._closed:
+            raise EqlibError("save on closed Eq")
+        try:
+            fn = self._lib.eq_save
+        except AttributeError as exc:
+            raise EqlibError(
+                "libeqapi.so does not export eq_save; "
+                "rebuild the shared library after the Task 1.1 PR."
+            ) from exc
+        self.set_param_str("KNAMEQ", path)
+        rc = fn()
+        raise_for_rc("eq_save", rc)
+
     def get_state(self) -> EqState:
         """Copy the current EQ state into an :class:`EqState`."""
         if self._closed:
