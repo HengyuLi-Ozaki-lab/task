@@ -21,6 +21,7 @@
 !
       SUBROUTINE EQCALQ(IERR)
 
+      USE libspl1d
       USE plcomm
       USE eqcom0_mod
       USE eqcom1_mod
@@ -70,6 +71,30 @@
 
       CALL EQSETS_RHO(IERR)
       CALL EQSETS(IERR)
+!
+!     ----- Project per-NR QPS onto the PSIPS (psi-surface) grid
+!           to populate QQPS, mirroring how PPPS / TTPS live on
+!           PSIPS. EQRTSK (MODELG=3 binary) does not store QQPS in
+!           the file (eq/eqfile.f90 EQRTSK skips it), so without
+!           this loop QQPS stays at the zero-initialised COMMON
+!           value and the C-API getter returns all zeros for the
+!           psi-surface q profile. UQPS was just built above by
+!           SPL1D(PSIP,QPS,...) so SPL1DF gives the same q profile
+!           as profile[].QPS, just resampled onto PSIPS.
+!           Failures are logged but non-fatal (per CLAUDE.md:
+!           library-reachable STOP would abort the host process);
+!           callers that need QQPS see the warning and fall back
+!           to profile[].QPS.
+!
+      IERR_SAVE = IERR
+      DO NPS=1,NPSMAX
+         CALL SPL1DF(PSIPS(NPS),QQPS(NPS),PSIP,UQPS,NRMAX,IERR)
+         IF(IERR.NE.0) THEN
+            WRITE(6,*) 'XX SPL1DF for QQPS at NPS=',NPS,' IERR=',IERR
+            QQPS(NPS) = 0.D0
+         END IF
+      END DO
+      IERR = IERR_SAVE
 !
 !     ----- Phase L-0 regression dump (env-guarded, no-op unless
 !           EQ_REGRESS_DUMP=1). Hook here so every successful R/RUN
