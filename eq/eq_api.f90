@@ -58,7 +58,7 @@ MODULE eq_api
   PRIVATE
   PUBLIC :: eq_api_init, eq_api_run, eq_api_get_state, &
             eq_api_set_param, eq_api_set_param_str, eq_api_finalize, &
-            eq_api_validate
+            eq_api_validate, eq_api_save
 
   ! Error codes. Must match eq_api.h.
   INTEGER(C_INT), PARAMETER :: EQ_OK              = 0
@@ -489,5 +489,27 @@ CONTAINS
     END SUBROUTINE push_diag
 
   END FUNCTION eq_api_validate
+
+  !=====================================================================
+  ! eq_save : C-ABI wrapper around eqfile::EQSAVE.
+  !
+  !   - Writes the current EQ state (PSIRZ, profiles, scalars) to the
+  !     TASK-internal binary file at the path stored in module-level
+  !     KNAMEQ. Caller MUST set KNAMEQ via eq_set_param_str before
+  !     calling this. EQ_OK is returned unconditionally because EQSAVE
+  !     itself does not propagate errors; FWOPEN failures inside
+  !     EQSAVE (blank KNAMEQ, missing directory, permission denied)
+  !     silently produce no file. The caller is expected to verify
+  !     the file's existence after the call.
+  !=====================================================================
+  FUNCTION eq_api_save() RESULT(ierr) BIND(C, NAME="eq_save")
+    INTEGER(C_INT) :: ierr
+    IF (.NOT. g_initialized) THEN
+       ierr = EQ_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL EQSAVE
+    ierr = EQ_OK
+  END FUNCTION eq_api_save
 
 END MODULE eq_api
