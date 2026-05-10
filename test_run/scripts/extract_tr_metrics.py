@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 SCALAR_KEYS = {
-    "T", "WPT", "AJT", "Q0", "BETA0", "BETAP0", "BETAA", "BETAN",
+    "T", "WPT", "AJT", "AJRFT", "Q0", "BETA0", "BETAP0", "BETAA", "BETAN",
     "TAUE1", "TAUE2", "ZEFF0", "ALI", "RQ1",
 }
 RE_PROFILE_HEADER = re.compile(r"^#\s*profile columns:")
