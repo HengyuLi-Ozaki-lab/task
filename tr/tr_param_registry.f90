@@ -49,7 +49,7 @@ MODULE tr_param_registry
        MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF, &
        MODELG, MDLIMP, NGTSTP, NGRSTP, &
        PROFN1, PROFN2, PNC, &
-       PNBR0, PNBRW, PNBENG, PNBRTG, &
+       PNBTOT, PNBR0, PNBRW, PNBENG, PNBRTG, &
        PICCD, PICR0, PICRW, PICNPR, &
        PECCD, PECR0, PECRW, PECNPR, &
        PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT, &
@@ -142,6 +142,7 @@ CONTAINS
     CASE ("MDLUF");  MDLUF  = INT(value)
     ! --- heating / current-drive scalars ---------------------------
     !     NBI
+    CASE ("PNBTOT"); PNBTOT = value
     CASE ("PNBR0");  PNBR0  = value
     CASE ("PNBRW");  PNBRW  = value
     CASE ("PNBENG"); PNBENG = value
