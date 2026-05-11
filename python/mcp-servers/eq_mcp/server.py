@@ -435,10 +435,50 @@ else:  # Linux
 _libc.fflush.argtypes = [ctypes.c_void_p]
 _libc.fflush.restype = ctypes.c_int
 
+# Make C-level stdout fully unbuffered so Fortran WRITE(6,...) emits
+# immediately. Combined with the redirect window, this eliminates the
+# race where buffered Fortran output flushes into the MCP pipe AFTER
+# the redirect has been torn down.
+#
+# setvbuf(FILE *stream, char *buf, int mode, size_t size)
+#   _IONBF = 2 on glibc and macOS libc.
+_libc.setvbuf.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_size_t]
+_libc.setvbuf.restype = ctypes.c_int
+_IONBF = 2
+_libc.setvbuf(_c_stdout, None, _IONBF, 0)
+
+# Flush Fortran's own I/O buffer for unit 6 (stdout).
+#
+# gfortran maintains its own Fortran-level I/O buffer (separate from libc's
+# C FILE* buffer). fflush(c_stdout) only drains the C buffer; Fortran output
+# can still be pending in gfortran's internal buffer after the Fortran call
+# returns. Calling _gfortran_flush_i4(&unit) flushes unit 6 at the Fortran
+# level — forcing the write to cross the fd boundary — before we restore
+# fd 1 to the JSON-RPC pipe.
+#
+# On Linux the symbol is in the process via libgfortran loaded by libtrapi.so;
+# we locate it through ctypes.CDLL(None) (RTLD_DEFAULT). On macOS the path is
+# explicit because RTLD_DEFAULT does not search already-loaded dylibs on all
+# macOS releases.
+_libgfortran_path = "/opt/local/lib/libgcc/libgfortran.5.dylib"  # macOS (MacPorts)
+_libgfortran_linux = "libgfortran.so.5"
+try:
+    if platform.system() == "Darwin":
+        _libgfortran = ctypes.CDLL(_libgfortran_path)
+    else:
+        _libgfortran = ctypes.CDLL(_libgfortran_linux)
+    _gfortran_flush = _libgfortran["_gfortran_flush_i4"]
+    _gfortran_flush.argtypes = [ctypes.POINTER(ctypes.c_int32)]
+    _gfortran_flush.restype = None
+    _FORTRAN_UNIT6 = ctypes.c_int32(6)
+    _HAS_GFORTRAN_FLUSH = True
+except Exception:  # pragma: no cover — libgfortran not found; fall back to C fflush
+    _HAS_GFORTRAN_FLUSH = False
+
 
 @contextlib.contextmanager
 def _redirect_fortran_stdout_to_stderr():
-    """Redirect fd 1 to stderr; flush Fortran's libc buffer before restoring fd 1.
+    """Redirect fd 1 to stderr; flush all Fortran I/O buffers before restoring.
 
     The Fortran library writes per-step diagnostics via WRITE(6,...), which
     maps to OS fd 1 (the MCP JSON-RPC pipe). Without protection, any line
@@ -448,11 +488,12 @@ def _redirect_fortran_stdout_to_stderr():
     1. Save a dup of fd 1.
     2. Redirect fd 1 → fd 2 (stderr) so Fortran writes go there.
     3. Yield to the Fortran call.
-    4. fflush the C-level stdout FILE* so any pending Fortran output drains
-       into stderr while fd 1 is still pointed there. We use fflush on the
-       specific stdout FILE* (NOT fflush(NULL)) because fflush(NULL) on
-       macOS also flushes the Python asyncio write buffer, sending JSON-RPC
-       responses to the wrong fd.
+    4. Flush Fortran's own I/O buffer for unit 6 (_gfortran_flush_i4), then
+       fflush the C-level stdout FILE* — both while fd 1 still points to
+       stderr. This drains all pending Fortran output into stderr before the
+       MCP pipe is reconnected. We use fflush on the specific stdout FILE*
+       (NOT fflush(NULL)) because fflush(NULL) on macOS also flushes Python's
+       asyncio write buffer, sending JSON-RPC responses to the wrong fd.
     5. Restore fd 1 → the original MCP pipe.
     """
     stdout_fd = sys.stdout.fileno()
@@ -460,9 +501,10 @@ def _redirect_fortran_stdout_to_stderr():
     try:
         os.dup2(sys.stderr.fileno(), stdout_fd)
         yield
-        # Drain Fortran's libc stdout buffer to stderr (which fd 1 currently
-        # points to). Does NOT affect Python's asyncio buffer because Python
-        # writes via syscalls, not via C's stdout FILE*.
+        # 1. Flush Fortran's internal I/O buffer for unit 6.
+        if _HAS_GFORTRAN_FLUSH:
+            _gfortran_flush(ctypes.byref(_FORTRAN_UNIT6))
+        # 2. Flush C-level stdout FILE* (defense in depth).
         _libc.fflush(_c_stdout)
     finally:
         os.dup2(saved_fd, stdout_fd)
