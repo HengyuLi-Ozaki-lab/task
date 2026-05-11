@@ -131,6 +131,79 @@ is required — the wrapper forwards names verbatim.
 
 Unknown names return ierr=1 (raised as `TrlibParamError`).
 
+## External driven current
+
+For pipelines where another module computes a total driven current
+(e.g. fp's RJT volume integral) and tr should consume it, set:
+
+| Param                | Unit             | Default | Meaning                               |
+|----------------------|------------------|---------|---------------------------------------|
+| `EXTERNAL_DRIVEN_I`  | MA               | 0.0     | Total externally-driven current       |
+| `EXTERNAL_DRIVEN_R0` | normalized rho   | 0.0     | Gaussian profile center (axis-peaked) |
+| `EXTERNAL_DRIVEN_RW` | normalized rho   | 0.3     | Gaussian profile width                |
+
+`EXTERNAL_DRIVEN_I = 0.0` means no external drive (no-op; existing
+regression baselines are unaffected).
+
+```python
+from trlib import Trlib
+
+with Trlib() as tr:
+    tr.set_param("RR", 8.5)
+    tr.set_param("RA", 2.0)
+    # ... other parameters ...
+    tr.set_param("EXTERNAL_DRIVEN_I",  1.0)   # 1 MA externally driven
+    tr.set_param("EXTERNAL_DRIVEN_R0", 0.0)
+    tr.set_param("EXTERNAL_DRIVEN_RW", 0.3)
+    tr.run(ntmax=10)
+    state = tr.get_state()
+    print("AJRFT:", state.scalars["AJRFT"])   # ≈ 1.0 (matches injected I)
+```
+
+The injected current is added to `AJRF(NR)` in `trprf.f90`'s `TRPWRF`
+via a Gaussian profile, normalized so the integral over the plasma
+cross-section equals `EXTERNAL_DRIVEN_I [MA]` exactly.
+
+`tr.validate()` returns an `OUT_OF_RANGE` diagnostic if you set
+`EXTERNAL_DRIVEN_I != 0` together with `EXTERNAL_DRIVEN_RW <= 0`
+(which would silently no-op in trprf otherwise).
+
+## BPSD ブローカー pull 検証 (`Trlib.check_bpsd_pull`)
+
+`Trlib.check_bpsd_pull()` は L-7b-ii で追加した非破壊ヘルパで、tr 側
+の BPSD インスタンスから `device` / `equ1D` / `metric1D` の 3 スロット
+を pull できるか (= 各 `ierr == 0` か) のみを返す。`plasmaf` は tr
+自身の BPSD 出力 (`tr_bpsd_put` で push する側) なので意図的に対象外。
+
+```python
+from trlib import Trlib
+
+with Trlib() as tr:
+    if not tr.check_bpsd_pull():
+        # equ1D/metric1D を tr の BPSD に push してくれる相手が
+        # まだ走っていない、もしくは別 .so の BPSD に書いてしまっている
+        # (後述) 状態。tr.run() を呼ぶと既定 / 古い equilibrium で
+        # 走ってしまう可能性がある。
+        raise RuntimeError("BPSD broker missing equilibrium data")
+    tr.run(ntmax=10)
+```
+
+ノート:
+
+- **非破壊**: ローカルの捨て型に pull するだけで TRCOMM は変えない。
+  `tr.run()` の前後どちらで呼んでも安全。
+- **粒度は bool 1 つ**: スロット単位の詳細 ierr は出さない (将来拡張)。
+- **plasmaf 除外の理由**: tr が自身で put する側のスロットなので、
+  「fresh init で False を返す」想定が崩れないようにするため。
+- **L-7b-ii 時点での scope 制約 (重要)**: `libtrapi.so` は自分自身の
+  `bpsd_equ1D` モジュール変数を持つため、別 .so (例えば
+  `libeqapi.so`) で `bpsd_put_equ1D` しても tr 側からは見えない。
+  `check_bpsd_pull` は **同じ libtrapi.so 内** で push されたスロット
+  だけが True になる。`Tot` / `libtotapi.so` 経由 (eq+tr+bpsd 同梱)
+  なら期待どおり機能するが、`TotPipeline` (per-module .so) では
+  現状 push 経路がないため fresh init では常に False。詳細は
+  `python/totlib/README.md` の Coupling rules 節を参照。
+
 ## `TrState` fields
 
 Matches `tr_state_t` in `tr/tr_api.h`. Full dict layout is available
@@ -142,14 +215,15 @@ format so `compare_metrics.py` can diff wrapper vs `tr2` output).
 | `nt` | int | current time-step index |
 | `nrmax` | int | radial points actually in use |
 | `nsmax` | int | species actually in use |
-| `scalars` | dict[str, float] | 13 plasma scalars (see below) |
+| `scalars` | dict[str, float] | 14 plasma scalars (see below) |
 | `RN` | list[list[float]] | `[nrmax][nsmax]` density profile |
 | `RT` | list[list[float]] | `[nrmax][nsmax]` temperature profile |
 | `AJ` | list[float] | `[nrmax]` current density profile |
 | `QP` | list[float] | `[nrmax]` safety-factor profile |
 
 Scalars (canonical order): `T`, `WPT`, `AJT`, `Q0`, `BETA0`,
-`BETAP0`, `BETAA`, `BETAN`, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`.
+`BETAP0`, `BETAA`, `BETAN`, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`,
+`AJRFT` (total RF + external driven current [MA]).
 
 ## Exceptions
 

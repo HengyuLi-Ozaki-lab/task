@@ -113,6 +113,10 @@ class TrStateC(ctypes.Structure):
         ("RT", (ctypes.c_double * TR_MAX_NSMAX) * TR_MAX_NRMAX),
         ("AJ", ctypes.c_double * TR_MAX_NRMAX),
         ("QP", ctypes.c_double * TR_MAX_NRMAX),
+        # L-7b-i: total RF + external driven current [MA]. Mirrors AJRFT
+        # in tr_state_c (Fortran) and tr_state_t (C). Placed at struct end
+        # to preserve existing field offsets.
+        ("AJRFT", ctypes.c_double),
     ]
 
 
@@ -190,6 +194,18 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
 
     lib.tr_finalize.restype = ctypes.c_int
     lib.tr_finalize.argtypes = []
+
+    # L-7b-ii: BPSD broker round-trip verification (non-mutating).
+    # Best-effort: older builds of libtrapi.so may not export this
+    # symbol yet (predate L-7b-ii). Mirror tr_validate's try/except
+    # pattern -- defer the failure to first call (Trlib.check_bpsd_pull
+    # surfaces it as an AttributeError) so unrelated tr_* APIs on
+    # the same .so remain usable.
+    try:
+        lib.tr_check_bpsd_pull.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        lib.tr_check_bpsd_pull.restype = None
+    except AttributeError:  # pragma: no cover - only on pre-L-7b-ii builds
+        pass
     return lib
 
 

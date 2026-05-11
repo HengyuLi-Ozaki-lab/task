@@ -81,10 +81,10 @@ with Tot() as tot:
         "eq:RIP": 1.5,
     })
 
-    # Once L-6 fan-out lands these become real; today they raise
-    # TotlibNotImplementedError.
-    # tot.run(ntmax=10)
-    # state = tot.get_state()
+    # L-6 fan-out is wired: tot.run advances tr_api_run; tot.get_state
+    # aggregates the TR-authoritative scalars (T, WPT, BETAN, ...).
+    tot.run(ntmax=10)
+    state = tot.get_state()
 ```
 
 See `examples/` for runnable scripts (all support `--dry-run`):
@@ -102,10 +102,10 @@ calls `tot_finalize`. Only one live instance per process is meaningful
 (TOT backend holds global COMMON-block plus per-module module-variable
 state).
 
-> **L-3/L-4 stub note:** `tot_init` and `tot_finalize` currently return
-> `TOT_ERR_NOT_IMPL`. The wrapper accepts both `OK` and `NOT_IMPL` as
-> "library opened" so `set_param` testing works today; once L-6 wires
-> real fan-out, the `OK` path takes over automatically.
+> **L-6 fan-out wired:** `tot_init` brings up tr + ti + fp + wr (with
+> rollback on per-module init failure); `tot_finalize` tears them down
+> in reverse order. The wrapper accepts both `OK` and `NOT_IMPL` returns
+> for forward compatibility, but the live path is `OK` end-to-end.
 
 ### `Tot.set_param(name, value) -> None`
 
@@ -134,17 +134,24 @@ Each key passes through the same guard as `set_param`.
 
 ### `Tot.run(ntmax: int) -> None`
 
-Advance the integrated simulation by `ntmax` steps. At L-3/L-4 this is
-a stub returning `rc=4`; the wrapper raises
-`TotlibNotImplementedError`. L-6 fan-out will make it succeed.
+Advance the integrated simulation by `ntmax` steps. L-6 fan-out
+invokes `tr_api_run(ntmax)` (the dominant solver and the one whose
+state is exposed in `tot_state_t`). `fp_api_run` and `wr_api_run` are
+intentionally NOT called here; the cross-module coupling (wr → tr
+power deposition, fp → tr current source, etc.) lives in
+`totlib.TotPipeline` (L-7a, Python-side) instead of inside
+`libtotapi.so`.
 
 ### `Tot.get_state() -> TotState`
 
 Snapshot current TOT state into a `TotState` dataclass. Profile arrays
 are trimmed to the active runtime slice (`[0:nrmax]` / `[0:nsmax]`),
 so trailing zero padding (up to `TOT_MAX_*`) never reaches callers. At
-L-3/L-4 this raises `TotlibNotImplementedError`; L-6 fan-out wires it
-up.
+L-6 the orchestrator aggregates the TR-authoritative slots; `ti_present`
+/ `fp_present` / `wr_present` stay `0` because those modules are init'd
+but their `*_run` is not invoked from `tot_api_run` (the per-module
+state is reachable via the per-module wrappers — `from trlib import
+Trlib` etc. — or via the L-7a `TotPipeline` orchestrator).
 
 ### `Tot.close() -> None`
 
@@ -239,16 +246,118 @@ Spec-style aliases (`TotLibError`, `TotLibInvalidParam`,
 The wrapper does **not** wrap graphics, file output, or the
 interactive menu — those live in `tot/tot` only.
 
+## TotPipeline (L-7a — Python-side scalar coupling)
+
+`TotPipeline` is a thin orchestrator that composes existing per-module
+wrappers (`Fplib`, `Trlib`, …) with a hardcoded scalar coupling
+registry. It does **not** use `libtotapi.so` — that path is handled by
+the legacy `Tot` class above and is left untouched at L-7a.
+
+**When to use which:**
+
+- TR-only transport solver, regression tests against `libtotapi.so` →
+  `Tot`
+- Multi-module scalar coupling pipelines (e.g. fp driven current → tr) →
+  `TotPipeline`
+- Direct module access without coupling → `from <mod>lib import <Mod>`
+
+**Same-process coexistence with `Tot` is undefined** — both call
+`tr_init` internally on the same Fortran modules. Pick one orchestrator
+per process; if you need both, fork via `multiprocessing` or use the
+`tot_mcp` `run_pipeline` MCP tool, which force-closes the legacy `Tot`
+state on every invocation.
+
+**Example:**
+
+```python
+from totlib import TotPipeline
+
+with TotPipeline() as tot:
+    tot.set_param("fp:NSAMAX", 2)
+    tot.set_param("fp:E0", 0.001)        # active-drive fixture (R3)
+    tot.set_param("tr:RR", 6.2)
+    tot.set_param("tr:RA", 2.0)
+    result = tot.run_pipeline([
+        ("fp", {"ntmax": 5}),
+        ("tr", {"ntmax": 1}),
+    ])
+    print(result.last("tr").scalars)
+    print(result.last("tr").coupling_applied)
+```
+
+**Coupling rules:**
+
+- `fp → tr`: fp's RJT volume integral [A] → tr's `EXTERNAL_DRIVEN_I` [MA]
+  (transform `× 1e-6`).
+
+**Rule kinds (L-7b-ii):**
+
+`CouplingRule` には 2 種類がある。`__post_init__` でフィールド検証を行う:
+
+- `kind="transfer"` (デフォルト, L-7a 互換): `src_state_key` →
+  `transform` → `set_param` の流れで前段モジュールの状態をスカラー値
+  として後段へ渡す。`src_state_key`/`dst_param`/`transform` の 3 つが必須。
+- `kind="verify"` (L-7b-ii 新設): 前段ステップ完了後、後段モジュールの
+  `verify(curr_inst)` を呼んで真偽値を返す。
+  `False` 返却時 → `TotPipelineRunError.__cause__ =
+  TotPipelineCouplingError` の **2 段** チェイン
+  (元例外がないため `__cause__.__cause__` は None)。
+  `verify` 内で例外が送出された場合 → `TotPipelineRunError.__cause__ =
+  TotPipelineCouplingError`、`__cause__.__cause__ = 元例外` の
+  **3 段** チェイン。`verify` のみ必須。
+
+`("eq","tr")` の verify ルール (BPSD ブローカー経由の equilibrium
+受け渡し検証) について — **本リリースでは登録を保留**。
+原因: `libeqapi.so` と `libtrapi.so` は別個の共有ライブラリとして
+ロードされ、それぞれが BPSD の module-level state
+(`___bpsd_equ1d_MOD_equ1dx` ほか) を private に持つため、libeqapi.so
+側で `bpsd_put_equ1D` しても libtrapi.so 側の `bpsd_get_equ1D` には
+反映されない (`nm` で確認済み)。spec が想定した「BPSD = 共有ブローカー」
+の前提が現アーキテクチャでは成立しない。
+verify ディスパッチ機構そのものは Layer A モックテストで網羅済みで、
+共有 .so / IPC / RTLD_GLOBAL+weak symbols 等の解決方針が決まり次第、
+`COUPLING_RULES` に 1 行追加するだけでルールが有効化できる骨組みは
+整っている。
+レガシーの `Tot` / `libtotapi.so` 経路は eq+tr+bpsd を 1 つの .so に
+co-link するため本制約の影響を受けない。
+
+The fp side computes the total driven current via
+`compute_rjt_volint(state, R0, a)` (volume integral of `RJT[NSA][NR]`
+over the plasma cross-section). The result [A] is converted to MA and
+pushed into tr's `EXTERNAL_DRIVEN_I` scalar; tr injects that current
+into the transport equation via a Gaussian radial profile
+(`EXTERNAL_DRIVEN_R0`, `EXTERNAL_DRIVEN_RW` — defaults 0.0 / 0.3:
+axis-peaked, width 30% of minor radius). The Gaussian is normalized
+so the integral of AJRF's external contribution equals
+`EXTERNAL_DRIVEN_I [MA]` exactly.
+
+Verify the injected total via `tr.get_state().scalars["AJRFT"]`
+(total RF + external driven current [MA], includes the
+`EXTERNAL_DRIVEN_I` contribution).
+
+**Failure handling:** If a step raises mid-pipeline, the exception is
+wrapped as `TotPipelineRunError` whose `partial_result` carries the
+steps that completed before the failure. Useful for mid-pipeline
+debugging without losing earlier scalars.
+
+**Spec / plan:**
+
+- Spec: `docs/superpowers/specs/2026-04-28-l7a-cross-module-coupling-design.md`
+- Plan: `docs/superpowers/plans/2026-04-28-l7a-cross-module-coupling.md`
+
 ## Known limitations
 
 - **Single instance per process.** TOT backend uses COMMON blocks plus
   per-module module variables. Two concurrent `Tot()` handles share
   state; the second `tot_init` resets globals. Use `multiprocessing`
   for parallel sweeps — each worker loads its own `libtotapi.so`.
-- **`run` / `get_state` await L-6.** `tot_init`, `tot_run`,
-  `tot_get_state`, `tot_finalize` currently return `rc=4`
-  (`TotlibNotImplementedError`). L-6 fan-out wires the per-module
-  `*_run` / `*_get_state` chain.
+- **Cross-module coupling lives outside the orchestrator.**
+  `tot_run(ntmax)` advances `tr_api_run` only — `fp/wr/ti` are init'd
+  but their `*_run` is not invoked from the Fortran orchestrator.
+  Multi-module pipelines (e.g. fp driven current → tr) are handled at
+  the Python layer via `totlib.TotPipeline` (L-7a). For a pure-TR
+  transport solve, `Tot()` is enough; for cross-module coupling, use
+  `TotPipeline()`.
 - **No graphics / MPI / OpenMP API.** Graphics symbols are replaced by
   stubs. The loader uses `RTLD_LAZY`, so unreachable symbols never
   resolve.

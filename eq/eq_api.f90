@@ -92,20 +92,26 @@ CONTAINS
   END FUNCTION eq_api_init
 
   !-------------------------------------------------------------------
-  ! eq_run : L-3 dispatch.
+  ! eq_run : dispatch on `mode` to the analytic or file-load path.
   !
-  !   mode == 0 : run the full calc (eqcalc / eqcalq / ...).
-  !               Not yet implemented in L-3 because eqcalc has no
-  !               ierr-returning shape; a wrapper arrives in L-4.
+  !   mode == 0 : run the analytic Grad-Shafranov solver (EQCALC).
+  !               Mirrors the legacy `eqx2` CLI's `R` command and is
+  !               the natural run path when MODELG=2 (the default,
+  !               analytic toroidal geometry). EQCALC reads
+  !               PP*/PJ*/FF*/PT*/PV* coefficients from the EQCOMM
+  !               module and solves the fixed-boundary Grad-Shafranov
+  !               problem; callers set those via eq_set_param
+  !               beforehand.
   !   mode == 1 : load equilibrium from the file pointed to by KNAMEQ,
   !               then run eq_bpsd_init / eqcalq / eq_bpsd_put via
-  !               equnit::eq_load.
+  !               equnit::eq_load. Mirrors the legacy `L` command.
+  !               Requires MODELG ∈ {3, 5, 8} and a valid KNAMEQ.
   !   other     : EQ_ERR_NOT_IMPL (reserved for future modes).
   !-------------------------------------------------------------------
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
     INTEGER(C_INT), VALUE, INTENT(IN) :: mode
     INTEGER(C_INT) :: ierr
-    INTEGER :: load_ierr
+    INTEGER :: calc_ierr, load_ierr
     CHARACTER(LEN=80) :: knameq_local
     ! Contract: NOT_INIT takes precedence over INVALID (mirrors tr_api_run).
     ! So callers that hit an uninitialised library always see the same
@@ -120,6 +126,26 @@ CONTAINS
     END IF
 
     SELECT CASE (mode)
+    CASE (0)
+       ! Analytic Grad-Shafranov solve via EQCALC, then post-process
+       ! via EQCALQ to populate the ψ-surface profile + scalar
+       ! diagnostics (qaxis/qsurf/betat/betap/pvol). EQCALC alone
+       ! solves the fixed-boundary GS equation but doesn't compute the
+       ! flux-surface averaged quantities; EQCALQ (also called by the
+       ! `L` path after EQ_READ) computes the metric and reduces the
+       ! 2D ψ-grid to 1D ψ-surface arrays. Mirrors the legacy CLI's
+       ! `R` then `F` workflow.
+       CALL EQCALC(calc_ierr)
+       IF (calc_ierr /= 0) THEN
+          ierr = EQ_ERR_CALC_FAILED
+          RETURN
+       END IF
+       CALL EQCALQ(calc_ierr)
+       IF (calc_ierr /= 0) THEN
+          ierr = EQ_ERR_CALC_FAILED
+          RETURN
+       END IF
+       ierr = EQ_OK
     CASE (1)
        ! EQDSK-based load via equnit::eq_load(MODELG, KNAMEQ, ierr).
        ! MODELG and KNAMEQ come from plcomm_parm; callers are expected

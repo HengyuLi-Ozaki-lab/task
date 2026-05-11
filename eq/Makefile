@@ -445,11 +445,28 @@ $(OBJDIR_PIC)/eq_api.o:            $(OBJDIR_PIC)/eq_state.o $(OBJDIR_PIC)/eq_par
 # libg3d-gfc64.a into the .so. eqfile.f90 was moved into SRCS_CORE
 # (only its draw_cross calls MOVE2D / DRAW2D, both stubbed in
 # eq_graphics_stubs.f90) so EQLOAD is now defined in the .so.
+# Platform-aware ld flags: Apple ld (macOS) rejects GNU-ld-only flags
+# (-soname / --start-group / --end-group / --unresolved-symbols).
+# Apple ld resolves cycles automatically; -install_name is the SONAME
+# equivalent; `-undefined dynamic_lookup` is the macOS counterpart of
+# Linux's --unresolved-symbols=ignore-all (defer to runtime).
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  SO_SONAME = -Wl,-install_name,@rpath/libeqapi.so
+  SO_GROUP_BEGIN =
+  SO_GROUP_END =
+  SO_UNDEFINED = -Wl,-undefined,dynamic_lookup
+else
+  SO_SONAME = -Wl,-soname,libeqapi.so
+  SO_GROUP_BEGIN = -Wl,--start-group
+  SO_GROUP_END = -Wl,--end-group
+  SO_UNDEFINED = -Wl,--unresolved-symbols=ignore-all
+endif
+
 libeqapi.so: $(OBJ_LIBEQAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC)
-	$(FCFREE) -shared -fPIC -Wl,-soname,libeqapi.so \
-	    -Wl,--unresolved-symbols=ignore-all \
+	$(FCFREE) -shared -fPIC $(SO_SONAME) $(SO_UNDEFINED) \
 	    $(OBJ_LIBEQAPI) $(OBJBPSD_PIC) $(LIBMTX_PIC) \
-	    -Wl,--start-group $(LIBS_PIC) -Wl,--end-group \
+	    $(SO_GROUP_BEGIN) $(LIBS_PIC) $(SO_GROUP_END) \
 	    -o libeqapi.so
 
 .PHONY: libeqapi_inspect

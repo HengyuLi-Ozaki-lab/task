@@ -21,11 +21,13 @@ Examples::
         tot.run(ntmax=10)
         state = tot.get_state()
 
-L-4 stub status: ``tot_init`` / ``tot_run`` / ``tot_get_state`` /
-``tot_finalize`` all return ``TOT_ERR_NOT_IMPL`` (rc=4) until L-6 wires
-up the per-module fan-out. The wrapper therefore raises
-:class:`~totlib.errors.TotlibNotImplementedError` from each of those
-methods today, while ``set_param`` / ``set_param_str`` work in full.
+L-6 fan-out is wired: ``tot_init`` brings up tr + ti + fp + wr (with
+rollback on per-module init failure); ``tot_run`` advances the
+TR-authoritative loop only — cross-module coupling lives in
+:class:`~totlib.pipeline.TotPipeline` (L-7a, Python-side) instead of
+inside ``libtotapi.so``. The wrapper still accepts ``TOT_ERR_NOT_IMPL``
+returns alongside ``TOT_OK`` for forward compatibility, but the live
+path is OK end-to-end on a built ``libtotapi.so``.
 """
 from __future__ import annotations
 
@@ -132,10 +134,10 @@ class Tot:
         if not self._closed:
             return
         rc = self._lib.tot_init()
-        # tot_init is a stub at L-3/L-4 (returns TOT_ERR_NOT_IMPL); we
-        # accept both OK and NOT_IMPL as "the library opened" so the
-        # wrapper is usable today for set_param dispatch testing while
-        # remaining correct once L-6 wires up real init.
+        # L-6 fan-out: tot_init returns TOT_OK on success. We still
+        # accept TOT_ERR_NOT_IMPL for forward compat with older .so
+        # builds (pre-L-6) where the stubs were live; harmless on
+        # current builds where the live path returns TOT_OK.
         if rc not in (_ffi.TOT_OK, _ffi.TOT_ERR_NOT_IMPL):
             raise_for_rc("tot_init", rc)
         self._closed = False
@@ -298,12 +300,12 @@ class Tot:
     def run(self, ntmax: int) -> None:
         """Advance the integrated simulation ``ntmax`` time-steps.
 
-        At L-3 / L-4 ``tot_run`` is a stub that returns
-        ``TOT_ERR_NOT_IMPL`` regardless of ``ntmax``. The wrapper
-        surfaces this as :class:`~totlib.errors.TotlibNotImplementedError`
-        so callers know to wait for L-6 fan-out before scripting real
-        time-advancement. Once L-6 lands, this method will silently
-        succeed for valid ``ntmax``.
+        L-6 fan-out: ``tot_run`` dispatches to ``tr_api_run(ntmax)``
+        (the dominant solver and the only one whose state is exposed
+        via ``tot_state_t``). ``fp_api_run`` and ``wr_api_run`` are
+        intentionally NOT invoked; cross-module coupling lives in
+        :class:`~totlib.pipeline.TotPipeline` (L-7a, Python-side)
+        instead of inside ``libtotapi.so``.
         """
         if self._closed:
             raise TotlibError("run on closed Tot")
@@ -313,12 +315,13 @@ class Tot:
     def get_state(self) -> TotState:
         """Copy the current TOT state into a :class:`TotState`.
 
-        At L-3 / L-4 ``tot_get_state`` zeros the struct and returns
-        ``TOT_ERR_NOT_IMPL``. The wrapper raises
-        :class:`~totlib.errors.TotlibNotImplementedError` in that
-        case. Once L-6 wires up the per-module ``*_get_state``
-        fan-out, this method will return a populated
-        :class:`TotState`.
+        L-6 aggregates the TR-authoritative slots (``tr_present=1``,
+        plus all 13 integrated scalars and the RN/RT/AJ/QP profiles).
+        ``ti_present`` / ``fp_present`` / ``wr_present`` stay 0
+        because those modules are init'd but not advanced from
+        ``tot_run``; their state is reachable via per-module wrappers
+        (``from trlib import Trlib`` etc.) or via
+        :class:`~totlib.pipeline.TotPipeline` (L-7a).
         """
         if self._closed:
             raise TotlibError("get_state on closed Tot")

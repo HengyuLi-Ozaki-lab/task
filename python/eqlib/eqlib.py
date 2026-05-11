@@ -275,13 +275,19 @@ class Eq:
         """Run the EQ solver.
 
         Args:
-            mode: Solver mode. ``1`` (default) triggers a real EQDSK
-                load via ``equnit::eq_load`` using the current
-                ``MODELG`` and ``KNAMEQ`` — this is currently the only
-                implemented mode. ``0`` is reserved for an
-                EQCALQ-style direct solve and currently returns
-                ``EQ_ERR_NOT_IMPL``. Any other value also returns
-                ``EQ_ERR_NOT_IMPL``.
+            mode: Solver mode.
+
+                * ``1`` (default) triggers a real EQDSK load via
+                  ``equnit::eq_load`` using the current ``MODELG`` and
+                  ``KNAMEQ`` (requires ``MODELG in {3, 5, 8}``).
+                * ``0`` runs the in-process analytic Grad-Shafranov
+                  solve (``EQCALC`` + ``EQCALQ``); use it with
+                  ``MODELG=2`` and the basic geometry parameters
+                  (``RR``, ``RA``, ``BB``, ``RIP``, ``RKAP``,
+                  ``RDLT``, ...) to produce a self-consistent
+                  equilibrium without any external EQDSK file.
+
+                Other values return ``EQ_ERR_NOT_IMPL``.
         """
         if self._closed:
             raise EqlibError("run on closed Eq")

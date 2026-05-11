@@ -2,9 +2,14 @@ name: python-tests
 
 on:
   pull_request:
-    branches: [develop, master]
+    # `chore/pre-push-hook-worktree-compat` is the de-facto main line on
+    # this fork (765+ commits ahead of master). Without it here, PRs
+    # targeting that branch (i.e. every recent feature PR) silently
+    # bypass GitHub Actions — the appearance of a passing pipeline on
+    # PRs #178-#183 came from Cursor Bugbot, not this workflow.
+    branches: [develop, master, chore/pre-push-hook-worktree-compat]
   push:
-    branches: [develop, master]
+    branches: [develop, master, chore/pre-push-hook-worktree-compat]
 
 # Cancel superseded runs on the same branch to save minutes
 concurrency:
@@ -203,6 +208,79 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Run orchestrator Layer 2 + Layer 4 C ABI checks (tot_api_check_all)
+        # Phase L-6 composite target. Builds and runs every C ABI driver:
+        #   tot_api_check    -> test_smoke + test_param  (Layer 3 dispatcher)
+        #   tot_api_check_so -> test_run_so via dlopen   (Layer 4)
+        #   test_negative                                (Layer 6 negative)
+        #   test_full_cycle                              (Layer 6 happy path)
+        #
+        # The static-link drivers (smoke / param / negative / full_cycle)
+        # need the non-PIC archive chain (libtask.a / libgrf.a /
+        # libmds.a / libtr2.a / libeq.a / libpl.a / ...) plus per-module
+        # API .o files. tot/Makefile's $(LIBS) prerequisite list is
+        # *unordered* — make is free to build ../tr/libtr2.a before
+        # ../lib/libtask.a, and tr's compile then fails because
+        # lib/mod/libitp.mod (produced by the non-PIC libtask build) is
+        # not yet present. The `make -C tot libs` target encodes the
+        # correct topological order in a single shell recipe, so we run
+        # it first to seed the non-PIC chain. tot_api_check_all then
+        # links against an already-bootstrapped tree.
+        #
+        # graphics-symbol resolution is handled by tot/tot_static_stubs.f90
+        # (~100 GSAF no-op stubs) so the `GFLIBS=` empty workflow
+        # variant links cleanly without libgsp / libg3d. Runs before
+        # pytest so a broken orchestrator surfaces here instead of as a
+        # cascade of confusing pytest failures.
+        run: |
+          make -C tot libs
+          make -C tot tot_api_check_all
+
+      - name: Generate Layer 1 (1e-10 equivalence) eqdata baselines (demo2014 + ht6m)
+        # Build the standalone `tot` Fortran binary (graphics-free via
+        # the same tot_static_stubs.o gate as the Layer 2 C drivers)
+        # and run the two Layer 1 short cases to produce the eqdata
+        # files that test_equivalence.py needs:
+        #   - tot_demo2014_short/eqdata.demo2014  (analytic equilibrium)
+        #   - tot_ht6m_short/eqdata-HT6M          (file-based MODELG=3)
+        #
+        # The Phase 0 metrics.json baselines are already committed
+        # under test_run/baselines/<case>/, so once the eqdata is on
+        # disk python/totlib/tests/test_equivalence.py lifts its
+        # skipUnless guard and runs the 1e-10 comparison automatically
+        # as part of the pytest step below.
+        #
+        # Why ht6m needs eqparm/trparm staging while demo2014 does
+        # not: the demo2014 .in script supplies the &eq namelist
+        # inline via the eq menu's `p` command, whereas the ht6m .in
+        # script issues the eq/tr menus' `r` (read) command which
+        # makes totmain.f90's eq_parm(1,'eqparm',IERR) /
+        # tr_parm(1,'trparm',IERR) calls read from companion files.
+        # The cp lines below mirror what test_run/run_tests.sh stages
+        # for the standalone driver (tot module branch).
+        run: |
+          set -eo pipefail
+          make -C tot tot
+          for case in tot_demo2014_short tot_ht6m_short; do
+            mkdir -p "test_run/test_output/$case"
+            # Stage namelist companions at the literal names totmain
+            # reads. `|| true` keeps demo2014 (which has neither
+            # companion) silent — same convention as run_tests.sh.
+            cp "test_run/inputs/${case}.eqparm" "test_run/test_output/$case/eqparm" 2>/dev/null || true
+            cp "test_run/inputs/${case}.trparm" "test_run/test_output/$case/trparm" 2>/dev/null || true
+            ( cd "test_run/test_output/$case" && \
+                ../../../tot/tot < "../../inputs/${case}.in" > output.log 2>&1 )
+          done
+          # `test -s` (non-zero size) catches the case where the
+          # standalone tot exits cleanly but produces a truncated /
+          # empty eqdata file — `test -f` alone would let that slip
+          # through and surface as a confusing pytest failure later.
+          test -s "test_run/test_output/tot_demo2014_short/eqdata.demo2014" \
+            || { echo "ERROR: eqdata.demo2014 not produced or empty"; tail -50 "test_run/test_output/tot_demo2014_short/output.log"; exit 1; }
+          test -s "test_run/test_output/tot_ht6m_short/eqdata-HT6M" \
+            || { echo "ERROR: eqdata-HT6M not produced or empty"; tail -50 "test_run/test_output/tot_ht6m_short/output.log"; exit 1; }
+          ls -l test_run/test_output/tot_demo2014_short/ test_run/test_output/tot_ht6m_short/
+
       - name: Run pytest (FFI + layout + serialization coverage)
         env:
           PYTHONDONTWRITEBYTECODE: "1"
@@ -244,21 +322,6 @@ jobs:
             --tb=short \
             -ra \
             --maxfail=50
-
-      # Deferred: "Run C ABI check drivers (per-module integration)"
-      # The <mod>_api_check_all Makefile targets recompile wrcomm.f90
-      # etc. in non-PIC form, which needs a parallel non-PIC mtxp build
-      # (commpi.mod). The CI workflow only builds the PIC chain today;
-      # resolving this properly is a separate follow-up that either
-      # extends the workflow with non-PIC builds, or links the C
-      # driver binaries against the PIC .so directly.
-      - name: _noop_placeholder_for_deferred_c_abi_step
-        if: false
-        run: |
-          true
-          # unreachable — left in place so the file structure documents
-          # the intended future step. Remove when the follow-up lands.
-          # for mod in wr; do make -C "$mod" "${mod}_api_check_all"; done
 
       - name: Show collected vs skipped summary
         if: always()

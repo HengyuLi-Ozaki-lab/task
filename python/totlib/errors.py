@@ -87,6 +87,41 @@ def raise_for_rc(func: str, rc: int) -> None:
 raise_for_ierr = raise_for_rc
 
 
+class TotPipelineError(TotlibError):
+    """Base for TotPipeline-specific errors. Inherits TotlibError so existing
+    `except TotlibError` callers continue to catch pipeline errors too."""
+
+
+class TotPipelineUnknownModuleError(TotPipelineError):
+    """A run_pipeline step references a module name not in _MODULE_REGISTRY."""
+
+
+class TotPipelineCouplingError(TotPipelineError):
+    """Coupling rule application failed (source key missing, transform raised,
+    or pre-flight step validation failed). Original exception is on __cause__."""
+
+
+class TotPipelineLifecycleError(TotPipelineError):
+    """Operation attempted on a closed TotPipeline instance."""
+
+
+class TotPipelineRunError(TotPipelineError):
+    """Per-module exception during run_pipeline execution. Wraps the original
+    error (on __cause__) and exposes the partial result up to the failure point.
+
+    Attributes:
+        partial_result: PipelineResult with steps completed before the failure.
+        failed_step_index: Index in the steps list where the failure occurred.
+        failed_module: Module name of the failed step.
+    """
+
+    def __init__(self, message, partial_result, failed_step_index, failed_module):
+        super().__init__(message)
+        self.partial_result = partial_result
+        self.failed_step_index = failed_step_index
+        self.failed_module = failed_module
+
+
 __all__ = [
     "TotlibError",
     "TotlibInitError",
@@ -99,6 +134,11 @@ __all__ = [
     "TotLibNotInitialized",
     "TotLibCalculationFailed",
     "TotLibNotImplemented",
+    "TotPipelineError",
+    "TotPipelineUnknownModuleError",
+    "TotPipelineCouplingError",
+    "TotPipelineLifecycleError",
+    "TotPipelineRunError",
     "raise_for_rc",
     "raise_for_ierr",
 ]

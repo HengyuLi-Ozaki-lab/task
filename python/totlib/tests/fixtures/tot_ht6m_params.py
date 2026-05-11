@@ -34,8 +34,28 @@ SCALARS = {
     "eq:RDLT": 0.1,
     "eq:RIP":  0.02,
     "eq:BB":   1.5,
-    # eq:PP0 is not yet in eq_param_registry; kept in UNREGISTERED_KEYS
-    # below until it lands. (See trparm comment under &tr.)
+    # eq:PP0 is intentionally absent from this dict.
+    #
+    # PP0 is consumed during the standalone driver's eq menu `r`
+    # (EQCALC) step which computes the equilibrium and writes it to
+    # KNAMEQ='eqdata-HT6M' via `s` (EQSAVE). The Python pipeline never
+    # invokes EQCALC — tot_api_run only advances tr_api_run, which in
+    # MODELG=3 mode loads the already-baked eqdata-HT6M file staged
+    # by the CI workflow before pytest runs. PP0's effect is fully
+    # captured in that file (geometry baked in), so adding
+    # `"eq:PP0": 6.4e-6` here would not change downstream Python
+    # state and is intentionally omitted to keep the fixture minimal.
+    #
+    # PP0 IS in eq_param_registry.f90:118 today, so adding it would
+    # compile cleanly — but the Python pipeline cannot use it (no
+    # path in tot_api_run reaches EQCALC). When/if a future L-7
+    # patch wires eq_api_run into the orchestrator's run loop the
+    # decision can be revisited.
+    #
+    # Layer 1 on this case therefore relies on the CI step that
+    # invokes the standalone driver to produce eqdata-HT6M; without
+    # that file, test_equivalence.py auto-SKIPs via the
+    # eqdata-existence guard.
 
     # --- &tr block ---
     "tr:MODELG": 3,
@@ -71,8 +91,10 @@ STRINGS = {
 # yet routable through any per-module registry. The ``apply`` helper
 # silently skips these so a partial fixture still works.
 #
-# - eq:PP0 : not yet in eq_param_registry.f90 (geometry pressure
-#   coefficient). Add a CASE in eq_param_registry to migrate it out.
+# Empty today: every namelist key in tot_ht6m_short.{eqparm,trparm}
+# now has a per-module registry entry. (eq:PP0 was the historical
+# entry here; it landed in eq_param_registry.f90:118 and the SCALARS
+# block above documents why we still leave it unset.)
 UNREGISTERED_KEYS: tuple = ()
 
 # Source input files this fixture mirrors (relative to repo root).

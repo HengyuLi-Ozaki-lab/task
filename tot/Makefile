@@ -53,6 +53,25 @@ SRCS      = $(SRCS_CORE) $(SRCS_MENU)
 OBJS     = $(SRCS:.f90=.o)
 OBJ_API  = $(SRCS_API:.f90=.o)
 
+# Phase L-6 (Layer 2 follow-up): static-link C driver targets need
+# graphics-symbol stubs that cover the ~100 GSAF primitives the full
+# archive chain (libgrf.a + per-module libX.a) references. tot_graphics_
+# stubs.f90 (already linked into libtotapi.so) only ships the minimal
+# 7-stub safety net; tot_static_stubs.f90 is the orchestrator-level
+# union of every static-link-only stub. NOT linked into libtotapi.so —
+# only into the four C ABI driver binaries below.
+#
+# Gated on GFLIBS being empty so production-graphics builds (where the
+# real libgsp / libg3d are linked via $(FLIBS)) never silently substitute
+# the no-op stubs for the real implementations. CI's generated
+# make.header sets GFLIBS= empty, which is the only configuration this
+# target is intended to run under today.
+ifeq ($(strip $(GFLIBS)),)
+TOT_STATIC_STUBS_OBJ = tot_static_stubs.o
+else
+TOT_STATIC_STUBS_OBJ =
+endif
+
 # Phase L-3: per-module param_registry .o files (NOT in the static
 # libs, because every per-module Makefile keeps SRCS_API out of its
 # libX.a). The tot_api_check link needs them explicitly.
@@ -157,8 +176,16 @@ libs:
 	make totmenu.o
 	make totregress.o
 
-tot : $(LIB_MTX) $(LIBS) totmenu.o totregress.o totmain.o
-	$(FLINKER) totmenu.o totregress.o totmain.o -o $@ $(FFLAGS) $(LIBS) $(FLIBS) $(LIBX_MTX)
+# Phase L-6 (Layer 1 follow-up): the standalone `tot` binary uses the
+# same graphics-stub gate as the Layer 2 C ABI drivers — when GFLIBS is
+# empty (CI / no-graphics build), tot_static_stubs.o satisfies the ~100
+# GSAF symbols that libgrf.a + per-module libX.a otherwise leave
+# unresolved. With GFLIBS populated (production-graphics build) the
+# stub is omitted and the link uses the real graphics chain.
+# This lets test_run/run_tests.sh produce the eqdata baselines that
+# Layer 1 (test_equivalence.py at 1e-10 tolerance) needs.
+tot : $(LIB_MTX) $(LIBS) totmenu.o totregress.o totmain.o $(TOT_STATIC_STUBS_OBJ)
+	$(FLINKER) totmenu.o totregress.o totmain.o $(TOT_STATIC_STUBS_OBJ) -o $@ $(FFLAGS) $(LIBS) $(FLIBS) $(LIBX_MTX)
 
 # ---------------------------------------------------------------------
 # Phase L-3: orchestrator C ABI check (independent of default `tot`)
@@ -215,11 +242,11 @@ $(TOT_API_PARAM_O): $(TOT_API_PARAM_C) tot_api.h
 # param_registry + per-module api/state .o files + backing libs.
 # gfortran drives the link so the libgfortran runtime is pulled in
 # automatically.
-$(TOT_API_SMOKE_BIN): $(TOT_API_SMOKE_O) $(OBJ_API) $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB)
-	$(FLINKER) -o $(TOT_API_SMOKE_BIN) $(TOT_API_SMOKE_O) $(OBJ_API) \
+$(TOT_API_SMOKE_BIN): $(TOT_API_SMOKE_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB)
+	$(FLINKER) -o $(TOT_API_SMOKE_BIN) $(TOT_API_SMOKE_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) \
 	    $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
-$(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB)
-	$(FLINKER) -o $(TOT_API_PARAM_BIN) $(TOT_API_PARAM_O) $(OBJ_API) \
+$(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB)
+	$(FLINKER) -o $(TOT_API_PARAM_BIN) $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) \
 	    $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
 # Each per-module registry .o / api .o / state .o is built by the
@@ -292,21 +319,31 @@ totregress.o: totregress.f90
 tot_state.o : tot_state.f90
 # Phase L-3: tot_param_registry USEs tr_param_registry, fp_param_registry,
 # ti_param_registry, wrx_param_registry, eq_param_registry. Those .mod
-# files are produced under ../tr/mod, ../fp/mod, ../ti/mod, ../wrx/mod
-# and ../eq/mod respectively (all already on MODINCLUDE). We therefore
-# depend on the owning module's libX.a so the .mod files are present
-# before this source is compiled.
+# files are produced as a side-effect of compiling each owning module's
+# *_param_registry.o (NOT included in libX.a — see SRCS_API note in each
+# module's Makefile). Depending on the lib*.a alone is therefore
+# insufficient: make may compile this file before the per-module
+# *_param_registry.o, leaving the USE statements unresolvable. List the
+# per-module .o files explicitly so make orders the build correctly.
 tot_param_registry.o : tot_param_registry.f90 \
                        ../tr/libtr2.a ../fp/libfp.a ../ti/libti.a \
-                       ../wrx/libwr.a ../eq/libeq.a
+                       ../wrx/libwr.a ../eq/libeq.a \
+                       ../tr/obj/tr_param_registry.o \
+                       ../fp/obj/fp_param_registry.o \
+                       ../ti/ti_param_registry.o \
+                       ../wrx/obj/wrx_param_registry.o \
+                       ../eq/eq_param_registry.o
 # tot_api.o USEs tr_api / ti_api / fp_api / wrx_api (in addition to
-# tot_state + tot_param_registry). Those .mod files are emitted by
-# each per-module Makefile's SRCS_API target into ../<mod>/mod/ — the
-# same tree MODINCLUDE already pulls in. Depending on each owner's
-# static archive is the cheapest way to force the .mod files to be
-# present before this compile step.
+# tot_state + tot_param_registry). The corresponding .mod files are
+# emitted by each module's *_api.o build, NOT by lib*.a. Same reasoning
+# as tot_param_registry.o above: depend on the per-module *_state.o /
+# *_api.o explicitly so make compiles them first.
 tot_api.o   : tot_api.f90 tot_state.f90 tot_state.o tot_param_registry.o \
-              ../tr/libtr2.a ../ti/libti.a ../fp/libfp.a ../wrx/libwr.a
+              ../tr/libtr2.a ../ti/libti.a ../fp/libfp.a ../wrx/libwr.a \
+              ../tr/obj/tr_state.o ../tr/obj/tr_api.o \
+              ../ti/ti_state.o ../ti/ti_api.o \
+              ../fp/obj/fp_state.o ../fp/obj/fp_api.o \
+              ../wrx/obj/wrx_state.o ../wrx/obj/wrx_api.o
 
 # =====================================================================
 # Phase L-4: libtotapi.so composite shared library build
@@ -447,12 +484,35 @@ $(OBJS_PIC): | $(LIBS_PIC_SO)
 # libtotapi.so excludes graphics so none of the gsaf calls are
 # reachable; leaving GFLIBS in triggers R_X86_64_PC32 relocation errors
 # when ld tries to copy non-PIC .text from libg3d-gfc64.a into the .so.
+# Platform-aware ld flags. macOS notes:
+#   - Apple ld uses -install_name instead of -soname.
+#   - Apple ld resolves archive cycles automatically (no group flags).
+#   - `-undefined dynamic_lookup` is macOS's counterpart of Linux's
+#     --unresolved-symbols=ignore-all (defer to runtime).
+#   - `@loader_path/...` is macOS's counterpart of Linux's `$ORIGIN/...`
+#     for relative rpath, telling dyld to look in sibling module dirs
+#     for libtrapi.so / libeqapi.so / etc.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  SO_SONAME = -Wl,-install_name,@rpath/libtotapi.so
+  SO_GROUP_BEGIN =
+  SO_GROUP_END =
+  SO_UNDEFINED = -Wl,-undefined,dynamic_lookup
+  SO_RPATH = -Wl,-rpath,@loader_path/../tr -Wl,-rpath,@loader_path/../fp \
+             -Wl,-rpath,@loader_path/../ti -Wl,-rpath,@loader_path/../wr \
+             -Wl,-rpath,@loader_path/../wrx -Wl,-rpath,@loader_path/../eq
+else
+  SO_SONAME = -Wl,-soname,libtotapi.so
+  SO_GROUP_BEGIN = -Wl,--start-group
+  SO_GROUP_END = -Wl,--end-group
+  SO_UNDEFINED = -Wl,--unresolved-symbols=ignore-all
+  SO_RPATH = -Wl,-rpath,'$$ORIGIN/../tr:$$ORIGIN/../fp:$$ORIGIN/../ti:$$ORIGIN/../wr:$$ORIGIN/../wrx:$$ORIGIN/../eq'
+endif
+
 libtotapi.so: $(OBJS_PIC) $(LIBS_PIC_SO)
-	$(FCFREE) -shared -fPIC -Wl,-soname,libtotapi.so \
-	    -Wl,--unresolved-symbols=ignore-all \
-	    -Wl,-rpath,'$$ORIGIN/../tr:$$ORIGIN/../fp:$$ORIGIN/../ti:$$ORIGIN/../wr:$$ORIGIN/../wrx:$$ORIGIN/../eq' \
+	$(FCFREE) -shared -fPIC $(SO_SONAME) $(SO_UNDEFINED) $(SO_RPATH) \
 	    $(OBJS_PIC) \
-	    -Wl,--start-group $(LIBS_PIC_SO) -Wl,--end-group \
+	    $(SO_GROUP_BEGIN) $(LIBS_PIC_SO) $(SO_GROUP_END) \
 	    -o libtotapi.so
 
 .PHONY: libtotapi_inspect
@@ -528,8 +588,8 @@ $(TOT_API_NEG_O): $(TOT_API_NEG_C) tot_api.h
 # (for init/run/get_state/finalize) directly via OBJ_API + per-module
 # *_param_registry.o + per-module api/state .o + backing libs. No
 # dlopen, no libdl.
-$(TOT_API_NEG_BIN): $(TOT_API_NEG_O) $(OBJ_API) $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB)
-	$(FLINKER) -o $(TOT_API_NEG_BIN) $(TOT_API_NEG_O) $(OBJ_API) \
+$(TOT_API_NEG_BIN): $(TOT_API_NEG_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB)
+	$(FLINKER) -o $(TOT_API_NEG_BIN) $(TOT_API_NEG_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) \
 	    $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
 # Phase L-6: full-cycle C driver that exercises the new init -> run ->
@@ -543,8 +603,8 @@ TOT_API_FULL_BIN = $(TOT_API_SMOKE_DIR)/test_full_cycle
 $(TOT_API_FULL_O): $(TOT_API_FULL_C) tot_api.h
 	$(CC) $(CFLAGS_API) -I. -c -o $(TOT_API_FULL_O) $(TOT_API_FULL_C)
 
-$(TOT_API_FULL_BIN): $(TOT_API_FULL_O) $(OBJ_API) $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB)
-	$(FLINKER) -o $(TOT_API_FULL_BIN) $(TOT_API_FULL_O) $(OBJ_API) \
+$(TOT_API_FULL_BIN): $(TOT_API_FULL_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB)
+	$(FLINKER) -o $(TOT_API_FULL_BIN) $(TOT_API_FULL_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) \
 	    $(TOT_L3_DEPS_OBJ) $(TOT_L6_API_OBJ) $(TOT_L3_DEPS_LIB) $(FFLAGS) $(FLIBS) $(LIBX_MTX)
 
 .PHONY: tot_api_check_all

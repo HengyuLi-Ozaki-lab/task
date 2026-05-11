@@ -34,6 +34,8 @@ MODULE tr_api
        NRMAX, NSMAX, NT, T, NTMAX, MODELG, KNAMEQ, &
        WPT, AJT, Q0, BETA0, BETAP0, BETAA, BETAN, &
        TAUE1, TAUE2, ZEFF0, ALI, RQ1, RN, RT, AJ, QP, &
+       AJRFT, &
+       EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_RW, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
   USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str
   USE plinit,            ONLY: pl_init
@@ -45,7 +47,8 @@ MODULE tr_api
   PRIVATE
   PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, &
             tr_api_set_param, tr_api_set_param_str, tr_api_finalize, &
-            tr_api_validate
+            tr_api_validate, &
+            tr_check_bpsd_pull
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -277,6 +280,7 @@ CONTAINS
     state%RT     = 0.0_C_DOUBLE
     state%AJ     = 0.0_C_DOUBLE
     state%QP     = 0.0_C_DOUBLE
+    state%AJRFT  = 0.0_C_DOUBLE     ! L-7b-i
 
     IF (.NOT. g_initialized) THEN
        ierr = TR_ERR_NOT_INIT
@@ -308,6 +312,7 @@ CONTAINS
     state%ZEFF0  = ZEFF0
     state%ALI    = ALI
     state%RQ1    = RQ1
+    state%AJRFT  = AJRFT             ! L-7b-i: includes EXTERNAL_DRIVEN_I contribution
 
     ! Profiles: only populate when TRCOMM arrays are allocated (they are
     ! after ALLOCATE_TRCOMM succeeds during tr_api_init). The transpose
@@ -411,6 +416,15 @@ CONTAINS
        END IF
     END IF
 
+    ! ---- L-7b-i: OUT_OF_RANGE: EXTERNAL_DRIVEN_I requires positive width.
+    !      Non-zero I with non-positive RW would silently normalize to zero
+    !      in trprf, leaving AJRF unchanged. Surface this so callers know
+    !      their setting was no-op rather than physically applied.
+    IF (EXTERNAL_DRIVEN_I /= 0.D0 .AND. EXTERNAL_DRIVEN_RW <= 0.D0) THEN
+       CALL push_diag("EXTERNAL_DRIVEN_RW", TR_DIAG_OUT_OF_RANGE, &
+            "non-positive width with non-zero EXTERNAL_DRIVEN_I; profile cannot be normalized (silent no-op)")
+    END IF
+
     ndiag = nlocal
     IF (nlocal == 0) THEN
        ierr = TR_OK
@@ -463,5 +477,39 @@ CONTAINS
     END SUBROUTINE push_diag
 
   END FUNCTION tr_api_validate
+
+  ! ----- L-7b-ii: BPSD broker round-trip verification -------------
+  ! Non-mutating: pulls the 3 eq-pushed BPSD slots (device, equ1D,
+  ! metric1D) into LOCAL discardable types and reports ok = 1 iff
+  ! all three per-slot ierr == 0. plasmaf is intentionally NOT
+  ! checked; it is tr's own BPSD output (tr_bpsd_put), absent on a
+  ! fresh eq->tr pipeline. Each local %nrmax is set to 0 to trigger
+  ! BPSD's self-allocation path (per ../../bpsd/bpsd_equ1D.f90:143).
+  SUBROUTINE tr_check_bpsd_pull(ok) BIND(C, NAME="tr_check_bpsd_pull")
+    USE iso_c_binding, ONLY: c_int
+    USE bpsd, ONLY: bpsd_get_data
+    USE bpsd_types, ONLY: bpsd_device_type, bpsd_equ1D_type, &
+                          bpsd_metric1D_type
+    INTEGER(c_int), INTENT(OUT) :: ok
+    TYPE(bpsd_device_type)    :: dev_local
+    TYPE(bpsd_equ1D_type)     :: eq_local
+    TYPE(bpsd_metric1D_type)  :: met_local
+    INTEGER :: ierr_dev, ierr_eq, ierr_met
+
+    ! Initialize size fields to 0 so BPSD allocates internally
+    ! (mode=0 path in bpsd_get_*). bpsd_device_type has no nrmax.
+    eq_local%nrmax  = 0
+    met_local%nrmax = 0
+
+    CALL bpsd_get_data(dev_local, ierr_dev)
+    CALL bpsd_get_data(eq_local,  ierr_eq)
+    CALL bpsd_get_data(met_local, ierr_met)
+
+    IF (ierr_dev == 0 .AND. ierr_eq == 0 .AND. ierr_met == 0) THEN
+      ok = 1
+    ELSE
+      ok = 0
+    END IF
+  END SUBROUTINE tr_check_bpsd_pull
 
 END MODULE tr_api

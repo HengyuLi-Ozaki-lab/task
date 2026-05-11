@@ -396,10 +396,27 @@ $(OBJ_LIBWRXAPI): | libs_pic_prereq
 # when ld tries to copy non-PIC .text from libg3d-gfc64.a into the .so.
 # MDSLIB/LIBLA are unused at our default config (MDSPLUS=nomdsplus.f,
 # LAPACK=nolapack.f) so dropping them is safe.
+# Platform-aware ld flags: Apple ld (macOS) rejects GNU-ld-only flags
+# (-soname / --start-group / --end-group) but resolves cycles
+# automatically and uses -install_name. `-undefined dynamic_lookup`
+# defers unresolved imports to runtime so dlopen succeeds on macOS.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  SO_SONAME = -Wl,-install_name,@rpath/libwrxapi.so
+  SO_GROUP_BEGIN =
+  SO_GROUP_END =
+  SO_UNDEFINED = -Wl,-undefined,dynamic_lookup
+else
+  SO_SONAME = -Wl,-soname,libwrxapi.so
+  SO_GROUP_BEGIN = -Wl,--start-group
+  SO_GROUP_END = -Wl,--end-group
+  SO_UNDEFINED =
+endif
+
 libwrxapi.so: $(OBJ_LIBWRXAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC)
-	$(FCFREE) -shared -fPIC -Wl,-soname,libwrxapi.so \
+	$(FCFREE) -shared -fPIC $(SO_SONAME) $(SO_UNDEFINED) \
 	    $(OBJ_LIBWRXAPI) $(OBJBPSD_PIC) $(LIBMTX_PIC) \
-	    -Wl,--start-group $(LIBS_PIC) -Wl,--end-group \
+	    $(SO_GROUP_BEGIN) $(LIBS_PIC) $(SO_GROUP_END) \
 	    -o libwrxapi.so
 
 # ---------------------------------------------------------------------

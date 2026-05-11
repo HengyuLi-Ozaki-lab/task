@@ -346,6 +346,13 @@ class TestHandlersWithMockedState(unittest.TestCase):
         srv.handle_run()
         self.assertEqual(self.mock_eq.run_calls, [1])
 
+    def test_handle_run_mode_zero(self) -> None:
+        # mode=0 = analytic Grad-Shafranov solve (EQCALC + EQCALQ);
+        # the handler must forward mode through to eq.run unchanged.
+        msg = srv.handle_run(0)
+        self.assertIn("mode=0", msg)
+        self.assertEqual(self.mock_eq.run_calls, [0])
+
     def test_handle_get_state(self) -> None:
         out = srv.handle_get_state()
         self.assertIn("NRGMAX", out)

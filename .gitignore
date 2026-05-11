@@ -157,7 +157,10 @@ tot/mod_pic/
 tot/tests/c_abi/test_smoke
 tot/tests/c_abi/test_param
 tot/tests/c_abi/test_run_so
+tot/tests/c_abi/test_negative
+tot/tests/c_abi/test_full_cycle
 tot/tests/c_abi/*.o
+tot/tot_static_stubs.o
 
 # Python
 __pycache__/
@@ -175,3 +178,11 @@ docs/manual/*.lof
 docs/manual/*.lot
 docs/manual/*.bbl
 docs/manual/*.blg
+
+# External dependencies cloned at the repo root by scripts/setup.sh.
+# bpsd is sibling-cloned to ../bpsd by setup.sh, so the in-repo path
+# only matters if a user manually clones it inside the worktree.
+# gsaf is also an external dependency (https://github.com/ats-fukuyama/gsaf)
+# that may be cloned in-tree during local development.
+/bpsd/
+/gsaf/

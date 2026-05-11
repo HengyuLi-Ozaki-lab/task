@@ -557,7 +557,7 @@ class TestMainCliFlags(unittest.TestCase):
         rc = self._run_quiet(["--print-tools"])
         self.assertEqual(rc, 0)
 
-    def test_print_tools_lists_all_nine(self) -> None:
+    def test_print_tools_lists_all_ten(self) -> None:
         import io
         import contextlib
 
@@ -565,12 +565,12 @@ class TestMainCliFlags(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             srv.main(["--print-tools"])
         listed = [line.strip() for line in buf.getvalue().splitlines() if line.strip()]
-        # 9 canonical tools, sorted alphabetically.
-        self.assertEqual(len(listed), 9)
+        # 10 canonical tools (run_pipeline added in Phase 3), sorted alphabetically.
+        self.assertEqual(len(listed), 10)
         for tool in (
             "init", "set_param", "set_params", "run",
             "get_state", "finalize", "describe_parameters",
-            "describe_state_schema", "run_and_get_state",
+            "describe_state_schema", "run_and_get_state", "run_pipeline",
         ):
             self.assertIn(tool, listed)
 

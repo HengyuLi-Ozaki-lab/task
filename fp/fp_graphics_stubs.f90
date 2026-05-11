@@ -45,3 +45,47 @@ END SUBROUTINE GUDATE
 SUBROUTINE GUFLSH
   IMPLICIT NONE
 END SUBROUTINE GUFLSH
+
+! ----------------------------------------------------------------------
+! Additional stubs for the macOS shared-library build. Apple's dlopen
+! does eager symbol resolution; any unresolved import causes dlopen to
+! fail. These no-op stubs satisfy the eager check; the .so init / run /
+! finalize path never reaches them.
+! ----------------------------------------------------------------------
+
+SUBROUTINE MOVE2D(X, Y)
+  IMPLICIT NONE
+  REAL, INTENT(IN) :: X, Y
+END SUBROUTINE MOVE2D
+
+SUBROUTINE DRAW2D(X, Y)
+  IMPLICIT NONE
+  REAL, INTENT(IN) :: X, Y
+END SUBROUTINE DRAW2D
+
+SUBROUTINE EQGOUT(MODE)
+  IMPLICIT NONE
+  INTEGER, INTENT(IN) :: MODE
+END SUBROUTINE EQGOUT
+
+MODULE grd1d_mod
+  IMPLICIT NONE
+  PRIVATE
+  PUBLIC :: grd1d
+CONTAINS
+  SUBROUTINE GRD1D(NGP, FX, FY, NXM, NXMAX, NLMAX)
+    INTEGER, INTENT(IN) :: NGP, NXM, NXMAX, NLMAX
+    REAL, INTENT(IN) :: FX(*), FY(*)
+  END SUBROUTINE GRD1D
+END MODULE grd1d_mod
+
+MODULE grd2d_mod
+  IMPLICIT NONE
+  PRIVATE
+  PUBLIC :: grd2d
+CONTAINS
+  SUBROUTINE GRD2D(NGP, FX, FY, FF, NXM, NXMAX, NYMAX)
+    INTEGER, INTENT(IN) :: NGP, NXM, NXMAX, NYMAX
+    REAL, INTENT(IN) :: FX(*), FY(*), FF(*)
+  END SUBROUTINE GRD2D
+END MODULE grd2d_mod
