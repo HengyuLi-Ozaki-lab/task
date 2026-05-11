@@ -34,6 +34,8 @@ PFC-coil arrays + ~60 scalar registry entries).
 """
 from __future__ import annotations
 
+import contextlib
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -409,6 +411,40 @@ def _wrap_eqlib_error(exc: Exception) -> "ToolError":  # noqa: F821
 # suite can exercise the same code without spinning up the MCP
 # transport.
 # =====================================================================
+@contextlib.contextmanager
+def _redirect_fortran_stdout_to_stderr():
+    """Redirect OS file descriptor 1 (Fortran stdout) to stderr during EQ calls.
+
+    The Fortran EQ library writes diagnostics via ``WRITE(6,...)``, which
+    maps to OS fd 1 (process stdout). The MCP server uses the same fd for
+    JSON-RPC framing, so any Fortran line corrupts the channel.
+
+    This context manager:
+    1. Saves a dup of fd 1 (the JSON-RPC pipe).
+    2. Redirects fd 1 → fd 2 (stderr) so Fortran ``WRITE(6,...)`` goes to
+       the subprocess errlog.
+    3. Restores fd 1 → the original pipe.
+
+    Note: we intentionally do NOT call fflush(NULL) here. While that would
+    flush the C-level stdout buffer while fd 1 points to stderr (ensuring any
+    buffered Fortran output goes to stderr), fflush(NULL) on macOS/Python
+    also triggers a flush of the Python-level asyncio write buffer, which
+    while fd 1 still points to stderr would send pending JSON-RPC response
+    data to stderr instead of the MCP pipe — causing "Connection closed".
+    Fortran's WRITE(6,...) output is line-buffered and typically flushed by
+    the newline at end-of-line, so the explicit fflush is not needed in
+    practice for the diagnostics to reach stderr before fd 1 is restored.
+    """
+    stdout_fd = sys.stdout.fileno()
+    saved_fd = os.dup(stdout_fd)
+    try:
+        os.dup2(sys.stderr.fileno(), stdout_fd)
+        yield
+    finally:
+        os.dup2(saved_fd, stdout_fd)
+        os.close(saved_fd)
+
+
 def handle_init() -> str:
     try:
         STATE.ensure_open()
@@ -438,7 +474,8 @@ def handle_set_param_str(name: str, value: str) -> str:
 def handle_save(path: str) -> str:
     try:
         eq = STATE.ensure_open()
-        eq.save(path)
+        with _redirect_fortran_stdout_to_stderr():
+            eq.save(path)
         return f"saved equilibrium to {path}"
     except Exception as exc:
         raise _wrap_eqlib_error(exc) from exc
@@ -482,7 +519,8 @@ def handle_set_params(params: Dict[str, SupportedValue]) -> str:
 def handle_run(mode: int = 1) -> str:
     try:
         eq = STATE.ensure_open()
-        eq.run(int(mode))
+        with _redirect_fortran_stdout_to_stderr():
+            eq.run(int(mode))
         return f"eq_run completed (mode={mode})"
     except Exception as exc:
         raise _wrap_eqlib_error(exc) from exc
@@ -569,7 +607,8 @@ def handle_run_and_get_state(
         eq = STATE.ensure_open()
         if params:
             _apply_bulk_params(eq, params)
-        eq.run(int(mode))
+        with _redirect_fortran_stdout_to_stderr():
+            eq.run(int(mode))
         return eq.get_state().to_dict()
     except Exception as exc:
         raise _wrap_eqlib_error(exc) from exc

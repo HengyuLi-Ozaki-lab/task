@@ -23,6 +23,7 @@ matter of copying this file and swapping the backing library.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -403,10 +404,44 @@ def handle_set_params(params: Dict[str, SupportedValue]) -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+@contextlib.contextmanager
+def _redirect_fortran_stdout_to_stderr():
+    """Redirect OS file descriptor 1 (Fortran stdout) to stderr during TR run.
+
+    The Fortran TR library writes per-step diagnostics via ``WRITE(6,...)``,
+    which maps to OS fd 1 (process stdout).  The MCP server uses the same fd
+    for JSON-RPC framing, so any Fortran line corrupts the channel and causes
+    ``Connection closed`` errors on the client side.
+
+    This context manager:
+    1. Saves a dup of fd 1 (the JSON-RPC pipe).
+    2. Redirects fd 1 → fd 2 (stderr) so Fortran ``WRITE(6,...)`` goes to
+       the subprocess errlog (visible in the parent's log, harmless to JSON-RPC).
+    3. Restores fd 1 → the original pipe.
+
+    Note: we intentionally do NOT call fflush(NULL) here. While that would
+    flush the C-level stdout buffer while fd 1 points to stderr, fflush(NULL)
+    on macOS/Python also triggers a flush of the Python-level asyncio write
+    buffer, sending pending JSON-RPC response data to stderr instead of the
+    MCP pipe and causing "Connection closed". Fortran's WRITE(6,...) output is
+    line-buffered so diagnostics reach stderr before fd 1 is restored.
+    """
+    stdout_fd = sys.stdout.fileno()
+    saved_fd = os.dup(stdout_fd)
+    try:
+        os.dup2(sys.stderr.fileno(), stdout_fd)
+        yield
+    finally:
+        # Restore fd 1 → pipe; JSON-RPC writes resume on the correct fd.
+        os.dup2(saved_fd, stdout_fd)
+        os.close(saved_fd)
+
+
 def handle_run(ntmax: int = 1) -> str:
     try:
         tr = STATE.ensure_open()
-        tr.run(int(ntmax))
+        with _redirect_fortran_stdout_to_stderr():
+            tr.run(int(ntmax))
         return f"advanced {ntmax} time step(s)"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -464,7 +499,8 @@ def handle_run_and_get_state(
         tr = STATE.ensure_open()
         if params:
             _apply_bulk_params(tr, params)
-        tr.run(int(ntmax))
+        with _redirect_fortran_stdout_to_stderr():
+            tr.run(int(ntmax))
         return tr.get_state().to_dict()
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
