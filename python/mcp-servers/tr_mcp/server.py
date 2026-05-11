@@ -140,6 +140,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MDLNF":  {"type": "int", "group": "modules", "description": "neutron/fusion module"},
     "MDLUF":  {"type": "int", "group": "modules", "description": "UFILE I/O mode"},
     # --- heating / current-drive scalars ---------------------------
+    "PNBTOT": {"type": "float", "group": "nbi",  "description": "NBI total input power [MW]"},
     "PNBR0":  {"type": "float", "group": "nbi",  "description": "NBI deposition center [m]"},
     "PNBRW":  {"type": "float", "group": "nbi",  "description": "NBI deposition width [m]"},
     "PNBENG": {"type": "float", "group": "nbi",  "description": "NBI beam energy [keV]"},

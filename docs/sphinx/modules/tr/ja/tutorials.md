@@ -113,13 +113,6 @@ TAUE1 = ...
 - **`RIPS × RIPE`** (プラズマ電流ランプスイープ):
   同じ BPSD プルが `RIPS`/`RIPE` をメトリク由来の
   電流値で再校正するため, ユーザー上書きは消えます.
-- **`PNBTOT × <anything>`** (NBI 総出力スイープ):
-  `PNBTOT` は本来の NB 振幅 (MW 単位) ですが, tr の
-  パラメータレジストリに **未登録** です —
-  `set_param("PNBTOT", ...)` は `INVALID` を投げます.
-  fixture で見える `PNBR0` は NBI 堆積の半径 *位置*
-  (m) で振幅ではない, という罠もあります.
-
 `PT[1]` と `PN[1]` は生き残ります: `tr_prof` が
 `PN`/`PT` を読んで半径方向プロファイル `RN`/`RT` を
 構築し, BPSD のプラズマプルは `RN`/`RT` のみに書き
@@ -224,9 +217,8 @@ WPT shape: (3, 3); values placeholder — run locally to populate
 - 形状最適化研究 (`RKAP × RDLT` や `RR × BB`) は
   `MODELG=2` (解析平衡) に切り替えれば geometry が
   生き残ります — `MODELG=3` だと BPSD プルが上書き
-  します. NBI 振幅スイープは, 先に `PNBTOT` を
-  レジストリ登録する必要があります (本チュートリアル
-  とは別管理の作業).
+  します. NBI 総電力は本 PR より `set_param("PNBTOT",
+  <MW>)` で操作可能になりました.
 
 ## 次のステップ
 

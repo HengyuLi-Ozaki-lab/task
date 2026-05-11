@@ -113,14 +113,6 @@ under the ITER01 fixture's `MODELG=3`:
   same BPSD pull recalibrates `RIPS`/`RIPE` from the
   metric-derived current; user overrides are
   overwritten.
-- **`PNBTOT × <anything>`** (NBI total-power sweep).
-  `PNBTOT` is the actual NB amplitude in MW but is
-  **not** in the tr parameter registry —
-  `set_param("PNBTOT", ...)` raises `INVALID`. The
-  visible knob `PNBR0` looks tempting but is the radial
-  *position* of NB deposition in metres, not an
-  amplitude.
-
 `PT[1]` and `PN[1]` survive: `tr_prof` reads `PN`/`PT`
 to build the radial profile arrays `RN`/`RT`; the BPSD
 plasma pull writes only `RN`/`RT` (not `PN`/`PT`); and
@@ -224,10 +216,9 @@ WPT shape: (3, 3); values placeholder — run locally to populate
 - For shape-optimisation studies (`RKAP × RDLT` or
   `RR × BB`), switch to `MODELG=2` (analytic
   equilibrium) so geometry knobs survive — under
-  `MODELG=3` the BPSD pull would clobber them. For
-  NBI-amplitude sweeps, `PNBTOT` first needs registry
-  registration (a planned change tracked outside this
-  tutorial).
+  `MODELG=3` the BPSD pull would clobber them. NBI
+  total power is now driven via `set_param("PNBTOT",
+  <MW>)` (registered as of this PR).
 
 ## What's next
 
