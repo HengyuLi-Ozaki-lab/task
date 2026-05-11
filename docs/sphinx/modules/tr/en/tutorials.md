@@ -101,8 +101,8 @@ a heatmap. The pattern follows {doc}`applications` §2
 array-element subscript syntax (`PT[1]`, `PN[1]`) does
 not pass through `set_params(**kwargs)`.
 
-**Why these axes — explicit gotcha.** Three intuitive
-sweep axes a reader might try first all fail silently
+**Why these axes — explicit gotcha.** Two intuitive
+sweep axes a reader might try first both fail silently
 under the ITER01 fixture's `MODELG=3`:
 
 - **`RR × BB`** (geometry sweep). The BPSD broker pull
@@ -113,6 +113,7 @@ under the ITER01 fixture's `MODELG=3`:
   same BPSD pull recalibrates `RIPS`/`RIPE` from the
   metric-derived current; user overrides are
   overwritten.
+
 `PT[1]` and `PN[1]` survive: `tr_prof` reads `PN`/`PT`
 to build the radial profile arrays `RN`/`RT`; the BPSD
 plasma pull writes only `RN`/`RT` (not `PN`/`PT`); and
