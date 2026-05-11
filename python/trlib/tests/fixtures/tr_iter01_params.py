@@ -7,7 +7,8 @@ replay the same physics case via ``libtrapi.so`` without shelling out to
 
 Registered in ``tr/tr_param_registry.f90``:
   - L-3 initial set: NSMAX, DT, NTSTEP, NTMAX, RIPS, RIPE, PN/PNS/PT/PTS
-  - L-6 extension:   MODELG, PROFN2, MDLNF, PNBR0/PNBRW/PNBENG/PNBRTG,
+  - L-6 extension:   MODELG, PROFN2, MDLNF,
+                     PNBTOT/PNBR0/PNBRW/PNBENG/PNBRTG,
                      PIC*, PEC*, PLH* scalars, and KNAMEQ via
                      ``tr_param_set_str``.
 
@@ -23,6 +24,7 @@ SCALARS = {
     "NSMAX":  4,
     "PROFN2": 0.15,
     "MDLNF":  1,
+    "PNBTOT": 25.0,
     "PNBR0":  0.0,
     "PNBRW":  1.0,
     "PNBENG": 1000.0,
