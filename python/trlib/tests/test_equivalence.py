@@ -38,11 +38,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
 BASELINES_DIR = REPO / "test_run" / "baselines"
 TEST_OUTPUT_DIR = REPO / "test_run" / "test_output"
+FIXTURES_DIR = HERE.parent / "fixtures"
 COMPARE_SCRIPT = REPO / "test_run" / "scripts" / "compare_metrics.py"
 DEFAULT_SO = REPO / "tr" / "libtrapi.so"
 
@@ -176,13 +179,23 @@ class TestEquivalence(unittest.TestCase):
         knameq = getattr(fixture_module, "STRINGS", {}).get("KNAMEQ")
         if knameq:
             candidate = TEST_OUTPUT_DIR / fixture_module.BASELINE_NAME
-            if not (candidate / knameq).exists():
+            if (candidate / knameq).exists():
+                # Prefer dev-generated eqdata (Phase-0 runner output)
+                # so local-regen-then-test workflows see their freshly
+                # generated data instead of the committed reference.
+                cwd = candidate
+            elif (FIXTURES_DIR / knameq).exists():
+                # CI / fresh checkout: fall back to the committed
+                # fixture so the equivalence test runs instead of
+                # silently skipping (CLAUDE.md §Test-suite discipline,
+                # feedback_equivalence_must_pass.md).
+                cwd = FIXTURES_DIR
+            else:
                 self.skipTest(
-                    f"eqdata '{knameq}' missing under {candidate}; "
-                    "run `./test_run/run_tests.sh "
-                    f"{fixture_module.BASELINE_NAME}` first."
+                    f"eqdata '{knameq}' missing under {candidate} or "
+                    f"{FIXTURES_DIR}; run "
+                    f"`./test_run/run_tests.sh {fixture_module.BASELINE_NAME}` first."
                 )
-            cwd = candidate
         actual = _run_case(fixture_module.apply, ntmax=fixture_module.NTMAX, cwd=cwd)
         _compare_with_baseline(actual, fixture_module.BASELINE_NAME, self.TOLERANCE)
 
@@ -192,6 +205,16 @@ class TestEquivalence(unittest.TestCase):
         from trlib.tests.fixtures import tr_iter01_params as f
         self._check_case(f)
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "#190: tr_tst2 baseline at test_run/baselines/tr_tst2/metrics.json "
+            "is missing AJRFT (pre-AJRFT 13-scalar shape). PR #187 added AJRFT "
+            "to TR's dump path; #193 regenerated tr_iter01 baseline but tr_tst2 "
+            "baseline regen is blocked by upstream eq_tst2 drift (~3e-9 > 1e-10). "
+            "Remove this xfail when #190 closes."
+        ),
+    )
     def test_tst2(self):
         from trlib.tests.fixtures import tr_tst2_params as f
         self._check_case(f)
