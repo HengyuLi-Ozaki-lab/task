@@ -31,8 +31,58 @@ This mirrors the ``tr_mcp`` / ``wrx_mcp`` reference implementations
 as closely as possible; the main eq-specific additions are the
 validate tool and the broader namelist surface (PSIB[0..5] + the
 PFC-coil arrays + ~60 scalar registry entries).
+
+fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC)
+-----------------------------------------------
+Fortran WRITE(6,...) targets OS fd 1, which is also the JSON-RPC write
+pipe to the MCP client parent.  Any Fortran diagnostic line corrupts the
+pipe and causes "Connection closed" on the client side.
+
+Fix: at startup (BEFORE any mcp/logging import touches sys.stdout):
+  1. dup fd 1 (JSON-RPC write pipe) to a fresh fd; redirect fd 1 → stderr
+     so Fortran WRITE(6,...) goes to the subprocess stderr (backend log).
+  2. Rebuild sys.stdout around the saved fd so the MCP framework's stdio
+     transport still writes to the correct pipe.
+
+After this:
+  - Fortran WRITE(6,...) → fd 1 → stderr (harmless backend log)
+  - MCP sys.stdout.write → saved fd → original JSON-RPC write pipe
+
+NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the Fortran
+library uses stdin internally; redirecting it increases crash rates.
+
+The _redirect_fortran_stdout_to_stderr context manager below is kept as
+belt-and-suspenders but is effectively a no-op: dup2(2,1) when fd 1 is
+already fd 2 is harmless, and the flushes are harmless too.
 """
 from __future__ import annotations
+
+import os as _os
+import sys as _sys
+
+# Skip the redirect dance for --print-tools / --help / similar one-shot
+# modes that print to the terminal.
+_ONESHOT_FLAGS = {"--print-tools", "--help", "-h", "--version"}
+_is_oneshot = any(a in _ONESHOT_FLAGS for a in _sys.argv[1:])
+
+if not _is_oneshot:
+    # ---------- fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC) ----------
+    # fd 1 originally points at the parent's JSON-RPC write pipe. Fortran
+    # WRITE(6,...) also targets fd 1, corrupting the pipe. We dup the pipe
+    # to a fresh fd and redirect fd 1 → stderr so Fortran writes go to the
+    # subprocess stderr (visible in backend log; harmless to JSON-RPC).
+    #
+    # The MCP framework writes via sys.stdout, so we rebuild sys.stdout to
+    # write to the saved (original-pipe) fd. Line buffering keeps JSON-RPC
+    # records flushing per-message.
+    #
+    # NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the
+    # Fortran library uses stdin internally; redirecting it increases crash
+    # rates (~20% → ~50%).
+    _mcp_pipe_fd = _os.dup(1)
+    _os.dup2(2, 1)
+    _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
+    # ----------------------------------------------------------------------
 
 import contextlib
 import ctypes
@@ -475,31 +525,41 @@ try:
 except Exception:  # pragma: no cover — libgfortran not found; fall back to C fflush
     _HAS_GFORTRAN_FLUSH = False
 
+# With the permanent fd-isolation, fd 1 is already stderr for the lifetime of
+# the process.  Calling _gfortran_flush_i4 after eq.run() is unnecessary
+# (Fortran already wrote to fd 1 = stderr; there is nothing to drain into the
+# MCP pipe) and is actively harmful: _gfortran_flush_i4 on this build of
+# libgfortran/libeqapi.so triggers SIGABRT ~10-40% of the time due to an
+# internal heap-corruption bug in the gfortran I/O library triggered by the
+# flush sequence.  Disable it when the permanent redirect is active.
+if not _is_oneshot:
+    _HAS_GFORTRAN_FLUSH = False
+
 
 @contextlib.contextmanager
 def _redirect_fortran_stdout_to_stderr():
-    """Redirect fd 1 to stderr; flush all Fortran I/O buffers before restoring.
+    """Belt-and-suspenders: ensure fd 1 points at stderr around Fortran calls.
 
-    The Fortran library writes per-step diagnostics via WRITE(6,...), which
-    maps to OS fd 1 (the MCP JSON-RPC pipe). Without protection, any line
-    corrupts the channel and causes "Connection closed" on the client.
+    With the permanent fd-isolation applied at module load time (see the
+    module docstring), fd 1 already points at stderr for the lifetime of the
+    process.  This context manager is now effectively a no-op:
+    dup2(2, 1) when fd 1 is already fd 2 is harmless, and the flushes are
+    harmless too.
 
-    Sequence:
-    1. Save a dup of fd 1.
-    2. Redirect fd 1 → fd 2 (stderr) so Fortran writes go there.
-    3. Yield to the Fortran call.
-    4. Flush Fortran's own I/O buffer for unit 6 (_gfortran_flush_i4), then
-       fflush the C-level stdout FILE* — both while fd 1 still points to
-       stderr. This drains all pending Fortran output into stderr before the
-       MCP pipe is reconnected. We use fflush on the specific stdout FILE*
-       (NOT fflush(NULL)) because fflush(NULL) on macOS also flushes Python's
-       asyncio write buffer, sending JSON-RPC responses to the wrong fd.
-    5. Restore fd 1 → the original MCP pipe.
+    We keep it so that any call sites that were added before the permanent
+    fix continue to work correctly — and as extra insurance if the process
+    ever runs without the startup dance (e.g. direct import in tests).
+
+    NOTE: We target fd 1 directly (not sys.stdout.fileno()) because after
+    the permanent redirect sys.stdout wraps the *saved* pipe fd, not fd 1.
+    Calling sys.stdout.fileno() would redirect the MCP pipe to stderr,
+    which is the opposite of what we want.
     """
-    stdout_fd = sys.stdout.fileno()
-    saved_fd = os.dup(stdout_fd)
+    # fd 1 is already stderr after module-load redirect; save it anyway
+    # (dup2(2,1) is idempotent — this is purely belt-and-suspenders).
+    saved_fd = os.dup(1)
     try:
-        os.dup2(sys.stderr.fileno(), stdout_fd)
+        os.dup2(sys.stderr.fileno(), 1)
         yield
         # 1. Flush Fortran's internal I/O buffer for unit 6.
         if _HAS_GFORTRAN_FLUSH:
@@ -507,7 +567,8 @@ def _redirect_fortran_stdout_to_stderr():
         # 2. Flush C-level stdout FILE* (defense in depth).
         _libc.fflush(_c_stdout)
     finally:
-        os.dup2(saved_fd, stdout_fd)
+        # Restore fd 1 (no-op if it was already pointing at stderr).
+        os.dup2(saved_fd, 1)
         os.close(saved_fd)
 
 
@@ -924,7 +985,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     server = build_server()
     # FastMCP >=0.9 exposes .run() for stdio transport by default.
     server.run()
-    return 0
+    # Skip Python teardown (Eq.__del__ → eq_finalize → potential SIGABRT) by
+    # using os._exit.  The MCP session is complete at this point; clean
+    # Fortran shutdown is not required.  Flush sys.stdout (the saved
+    # JSON-RPC pipe fd) before bypassing Python teardown.
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
+    os._exit(0)
 
 
 if __name__ == "__main__":
