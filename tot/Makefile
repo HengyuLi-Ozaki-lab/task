@@ -572,12 +572,12 @@ libtotapi_inspect: libtotapi.so
 # for the planned follow-up (unified tot_graphics_stubs_mono.f90).
 #
 # IMPORTANT: these variables use deferred ('=') assignment instead of
-# immediate (':='). The wildcards must be re-expanded AFTER each
-# per-module .so build (driven by `mono_pic_prereqs`) populates the
-# obj/pic/ trees on a fresh checkout. With ':=' the wildcards would
-# expand at Make parse time, see empty obj/pic/ dirs, and silently
-# produce a broken mono .so. The link recipe additionally guards
-# against empty expansions via an explicit `test -n` check.
+# immediate (':='). The wildcards must be re-expanded AFTER the
+# $(LIBS_PIC_SO) prereq populates each module's obj/pic/ tree on a
+# fresh checkout. With ':=' the wildcards would expand at Make parse
+# time, see empty obj/pic/ dirs, and silently produce a broken mono
+# .so. The link recipe additionally guards against empty expansions
+# via an explicit `test -n` check.
 #
 # Make's filter-out only honors the FIRST '%' in a pattern, so the
 # bpsd-exclusion pattern anchors the literal prefix on the left.
@@ -619,14 +619,6 @@ else
   SO_SONAME_MONO = -Wl,-soname,libtotapi_mono.so
 endif
 
-# Force per-module PIC objects to be present + up-to-date by triggering
-# each module's libXXapi.so build. We do not link those .so files into
-# libtotapi_mono.so (that's the whole point of the monolithic build);
-# we only need the side-effects (PIC .o + .mod under <mod>/obj/pic/
-# and <mod>/mod_pic/).
-.PHONY: mono_pic_prereqs
-mono_pic_prereqs: $(LIBS_PIC_SO)
-
 # tot's own PIC objects MINUS tot_graphics_stubs.o. The mono build
 # uses fp_graphics_stubs.o instead, which is a strict superset of
 # tot's stub set for the symbols both provide (guclip_, gudate_,
@@ -634,11 +626,22 @@ mono_pic_prereqs: $(LIBS_PIC_SO)
 # eqgout_/move2d_ that some module code paths reference.
 OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o,$(OBJS_PIC))
 
-libtotapi_mono.so: $(OBJS_PIC) mono_pic_prereqs
+# libtotapi_mono.so depends on the per-module .so files (LIBS_PIC_SO)
+# as real-file prerequisites — the same prereq pattern as
+# libtotapi.so on line 530. We do NOT link those .so files into
+# libtotapi_mono.so (that's the whole point of the monolithic build);
+# we use them as the dependency proxy because:
+#   1. Building each per-module .so populates its obj/pic/ tree with
+#      the PIC objects we DO link (side-effect we need).
+#   2. Make's standard mtime-based incremental rebuild then works:
+#      libtotapi_mono.so only re-links if a per-module .so is newer.
+# Using a .PHONY prereq target here would force unconditional re-link
+# on every invocation (Bugbot LOW finding on PR #202, 2026-05-14).
+libtotapi_mono.so: $(OBJS_PIC) $(LIBS_PIC_SO)
 	@if [ -z "$(strip $(EQ_PIC_OBJS_MONO))" ] || [ -z "$(strip $(TR_PIC_OBJS_MONO))" ] || \
 	    [ -z "$(strip $(FP_PIC_OBJS_MONO))" ] || [ -z "$(strip $(TI_PIC_OBJS_MONO))" ] || \
 	    [ -z "$(strip $(WRX_PIC_OBJS_MONO))" ] || [ -z "$(strip $(OBJBPSD_PIC_MONO))" ]; then \
-	  echo "ERROR: one or more per-module obj/pic/ trees are empty. Per-module PIC objects must exist before the mono link runs. The mono_pic_prereqs dependency should have built them; if you reached this, try a clean rebuild: 'make -C tot clean_pic && make -C tot libtotapi_mono.so'." >&2; \
+	  echo "ERROR: one or more per-module obj/pic/ trees are empty. Per-module PIC objects must exist before the mono link runs. The LIBS_PIC_SO prereq should have built them; if you reached this, try a clean rebuild: 'make -C tot clean_pic && make -C tot libtotapi_mono.so'." >&2; \
 	  exit 1; \
 	fi
 	$(FCFREE) -shared -fPIC $(SO_SONAME_MONO) $(SO_UNDEFINED) \
