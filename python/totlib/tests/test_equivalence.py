@@ -45,6 +45,7 @@ HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
 BASELINES_DIR = REPO / "test_run" / "baselines"
+FIXTURES_DIR = HERE.parent / "fixtures"
 COMPARE_SCRIPT = REPO / "test_run" / "scripts" / "compare_metrics.py"
 
 # Make ``import totlib`` work whether tests are launched from the repo
@@ -90,6 +91,14 @@ def _isolated_cwd_with_eqdata(case_name: str):
     (e.g. tot_demo2014_short which generates its own via the eq prep
     path) still benefit from the isolated cwd because totregress's
     dump file does not pollute the repo root.
+
+    Two-tier eqdata source (mirrors eqlib/trlib test_equivalence):
+    prefer dev-generated eqdata under ``test_run/test_output/<case>/``,
+    fall back to the committed fixture under ``FIXTURES_DIR``. This
+    keeps the local-regen-then-test loop honoring fresh data while
+    letting CI / fresh checkouts run without depending on the upstream
+    ``tot/tot`` staging step (CLAUDE.md §Test-suite discipline,
+    feedback_equivalence_must_pass.md).
     """
     src = REPO / "test_run" / "test_output" / case_name
     prev_cwd = Path.cwd()
@@ -98,6 +107,12 @@ def _isolated_cwd_with_eqdata(case_name: str):
             for pat in ("eqdata-*", "eqdata.*"):
                 for f in src.glob(pat):
                     shutil.copy2(f, Path(tmpd) / f.name)
+        if FIXTURES_DIR.is_dir():
+            for pat in ("eqdata-*", "eqdata.*"):
+                for f in FIXTURES_DIR.glob(pat):
+                    target = Path(tmpd) / f.name
+                    if not target.exists():
+                        shutil.copy2(f, target)
         try:
             os.chdir(tmpd)
             yield Path(tmpd)
@@ -183,11 +198,14 @@ class TestEquivalence(unittest.TestCase):
         The fixture module must expose ``apply`` / ``NTMAX`` /
         ``BASELINE_NAME`` (see :mod:`fixtures.tot_demo2014_params`).
 
-        When the fixture references a KNAMEQ eqdata file, skip cleanly
-        if the baseline directory's eqdata is missing — same pattern as
-        ``trlib/tests/test_equivalence.py``. Without this guard CI
-        without the baseline data SIGABRTs deep inside eq_load and
-        crashes the pytest-forked worker, producing an
+        When the fixture references a KNAMEQ eqdata file, accept it
+        from either ``test_run/test_output/<case>/`` (dev-generated,
+        preferred) or ``FIXTURES_DIR`` (committed fallback); skip
+        cleanly only if both locations are missing. Same two-tier
+        pattern as ``trlib/tests/test_equivalence.py`` and
+        ``eqlib/tests/test_equivalence.py``. Without this guard CI
+        without baseline data would SIGABRT deep inside eq_load and
+        crash the pytest-forked worker, producing an
         ``INTERNALERROR>`` instead of an actionable skip.
         """
         # Look for any KNAMEQ entry in STRINGS (eq:KNAMEQ or tr:KNAMEQ);
@@ -200,10 +218,23 @@ class TestEquivalence(unittest.TestCase):
                 break
         if knameq:
             candidate = REPO / "test_run" / "test_output" / fixture_module.BASELINE_NAME
-            if not (candidate / knameq).exists():
+            if (candidate / knameq).exists():
+                # Prefer dev-generated eqdata (Phase-0 runner output)
+                # so local-regen-then-test workflows see their freshly
+                # generated data instead of the committed reference.
+                pass
+            elif (FIXTURES_DIR / knameq).exists():
+                # CI / fresh checkout: fall back to the committed
+                # fixture so the equivalence test runs instead of
+                # silently skipping (CLAUDE.md §Test-suite discipline,
+                # feedback_equivalence_must_pass.md). Verbatim structural
+                # mirror of eqlib/trlib test_equivalence two-tier gate.
+                pass
+            else:
                 self.skipTest(
-                    f"eqdata '{knameq}' missing under {candidate}; "
-                    f"run `./test_run/run_tests.sh "
+                    f"eqdata '{knameq}' missing under {candidate} or "
+                    f"{FIXTURES_DIR}; run "
+                    f"`./test_run/run_tests.sh "
                     f"{fixture_module.BASELINE_NAME}` first."
                 )
         actual = _run_case(
