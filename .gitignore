@@ -189,3 +189,6 @@ docs/manual/*.blg
 # that may be cloned in-tree during local development.
 /bpsd/
 /gsaf/
+
+# Downstream task-web worktrees (created under .worktrees/ by task-web dev flow)
+.worktrees/
