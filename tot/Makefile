@@ -305,7 +305,7 @@ clean:
 	-rm -f $(TOT_API_FULL_O) $(TOT_API_FULL_BIN)
 
 clean_pic:
-	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libtotapi.so
+	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) libtotapi.so libtotapi_mono.so
 	-rm -f $(TOT_API_SO_O) $(TOT_API_SO_BIN)
 
 veryclean: clean
@@ -527,6 +527,151 @@ libtotapi_inspect: libtotapi.so
 	@nm -D libtotapi.so | grep ' U ' | wc -l
 	@echo "=== non-libc/gfortran undefined ==="
 	@nm -D libtotapi.so | grep ' U ' | grep -vE '@(GLIBC|GCC|GFORTRAN)' | head -40
+
+# ---------------------------------------------------------------------
+# L-7b-ii PoC: monolithic libtotapi_mono.so
+#
+# The default libtotapi.so links eq/tr/fp/ti/wrx as five separate
+# runtime shared libraries (LIBS_PIC_SO). Each of those .so files
+# carries its own private copy of BPSD module-level storage
+# (___bpsd_*_MOD_*x*), so writes through libeqapi.so's broker do NOT
+# reach reads through libtrapi.so's broker. This is the
+# orchestrator-level isolation documented in
+# docs/superpowers/specs/2026-05-03-l7b-ii-bpsd-broker-coupling-design.md §0
+# that blocks the ('eq','tr') coupling rule from being registered.
+#
+# libtotapi_mono.so is a co-link build: every per-module PIC object
+# (excluding each module's local bpsd/ subdir) plus a SINGLE bpsd PIC
+# object set are linked into one runtime image. The shared library
+# therefore exports one canonical bpsd_*_MOD_*x storage symbol, and
+# eq -> tr coupling through the BPSD broker works by construction.
+#
+# Status: PoC. The default build path remains libtotapi.so; mono is
+# opt-in via `make -C tot libtotapi_mono.so`. TotPipeline activation
+# of the ('eq','tr') rule against libtotapi_mono.so is a follow-up.
+
+# Per-module non-bpsd PIC objects + ONE module's graphics stubs.
+#
+# bpsd deduplication: each module's obj/pic/bpsd/ holds an identical
+# copy of the bpsd PIC objects; we keep ONLY eq's set (chosen
+# arbitrarily) as the single canonical bpsd in OBJBPSD_PIC_MONO and
+# filter out the bpsd/ subdirs from the other 4 modules' wildcards.
+# This is the central trick that resolves the BPSD broker isolation
+# problem documented in spec §0 — all module code now references the
+# same set of ___bpsd_*_MOD_*x storage symbols.
+#
+# graphics_stubs: each module's <mod>_graphics_stubs.o has a slightly
+# different and partly-overlapping symbol set (e.g. getkgt_/getkrt_
+# unique to tr, text_/move_/numbd_ unique to ti, contX_/r2w2b_ unique
+# to wrx, grd1d_mod common to fp/ti/wrx). Including more than one
+# produces duplicate-symbol link errors; including only fp's (broadest
+# non-conflicting set) is sufficient for the BUILD to succeed but
+# leaves a handful of symbols undefined at dlopen time. This is the
+# remaining hurdle for full equivalence-test validation — see
+# docs/superpowers/specs/2026-05-14-l7b-ii-monolithic-poc-findings.md
+# for the planned follow-up (unified tot_graphics_stubs_mono.f90).
+#
+# IMPORTANT: these variables use deferred ('=') assignment instead of
+# immediate (':='). The wildcards must be re-expanded AFTER the
+# $(LIBS_PIC_SO) prereq populates each module's obj/pic/ tree on a
+# fresh checkout. With ':=' the wildcards would expand at Make parse
+# time, see empty obj/pic/ dirs, and silently produce a broken mono
+# .so. The link recipe additionally guards against empty expansions
+# via an explicit `test -n` check.
+#
+# Make's filter-out only honors the FIRST '%' in a pattern, so the
+# bpsd-exclusion pattern anchors the literal prefix on the left.
+EQ_PIC_OBJS_MONO_RAW  = $(wildcard ../eq/obj/pic/*.o ../eq/obj/pic/*/*.o)
+TR_PIC_OBJS_MONO_RAW  = $(wildcard ../tr/obj/pic/*.o ../tr/obj/pic/*/*.o)
+FP_PIC_OBJS_MONO_RAW  = $(wildcard ../fp/obj/pic/*.o ../fp/obj/pic/*/*.o)
+TI_PIC_OBJS_MONO_RAW  = $(wildcard ../ti/obj/pic/*.o ../ti/obj/pic/*/*.o)
+WRX_PIC_OBJS_MONO_RAW = $(wildcard ../wrx/obj/pic/*.o ../wrx/obj/pic/*/*.o)
+
+EQ_PIC_OBJS_MONO  = $(filter-out ../eq/obj/pic/bpsd/% ../eq/obj/pic/eq_graphics_stubs.o,$(EQ_PIC_OBJS_MONO_RAW))
+TR_PIC_OBJS_MONO  = $(filter-out ../tr/obj/pic/bpsd/% ../tr/obj/pic/tr_graphics_stubs.o,$(TR_PIC_OBJS_MONO_RAW))
+FP_PIC_OBJS_MONO  = $(filter-out ../fp/obj/pic/bpsd/%,$(FP_PIC_OBJS_MONO_RAW))
+TI_PIC_OBJS_MONO  = $(filter-out ../ti/obj/pic/bpsd/% ../ti/obj/pic/ti_graphics_stubs.o,$(TI_PIC_OBJS_MONO_RAW))
+WRX_PIC_OBJS_MONO = $(filter-out ../wrx/obj/pic/bpsd/% ../wrx/obj/pic/wrx_graphics_stubs.o,$(WRX_PIC_OBJS_MONO_RAW))
+
+# Single canonical bpsd PIC set. eq's copy is picked arbitrarily; all
+# five module dirs build the same upstream bpsd sources with the same
+# flags, so any one is equivalent. Deferred for the same reason as
+# the per-module wildcards above.
+OBJBPSD_PIC_MONO = $(wildcard ../eq/obj/pic/bpsd/*.o)
+
+# Transitive PIC archives + mtxp objects (one copy each). Per-module
+# .so builds resolve dp/ob/adf11/adpost via the per-module LIBS_PIC
+# transitively; the monolithic build needs them listed directly.
+# eq/libeq_pic.a is intentionally OMITTED here because EQ_PIC_OBJS_MONO
+# already covers eq's full PIC object set; adding libeq_pic.a would
+# duplicate the eqcom*/eqcalc*/... symbols.
+LIBS_PIC_MONO   := ../pl/libpl_pic.a ../lib/libtask_pic.a ../lib/libmds_pic.a \
+                   ../dp/libdp_pic.a ../ob/libob_pic.a \
+                   ../open-adas/adf11/adf11-lib/lib-adf11_pic.a \
+                   ../adpost/lib-adpost_pic.a
+LIBMTX_PIC_MONO := ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o
+
+# Platform-aware install_name for the mono .so so it doesn't collide
+# with libtotapi.so if both are present in a process at once.
+ifeq ($(UNAME_S),Darwin)
+  SO_SONAME_MONO = -Wl,-install_name,@rpath/libtotapi_mono.so
+else
+  SO_SONAME_MONO = -Wl,-soname,libtotapi_mono.so
+endif
+
+# tot's own PIC objects MINUS tot_graphics_stubs.o. The mono build
+# uses fp_graphics_stubs.o instead, which is a strict superset of
+# tot's stub set for the symbols both provide (guclip_, gudate_,
+# guflsh_, gutime_, pagee_, pages_) plus grd1d_mod/grd2d_mod/draw2d_/
+# eqgout_/move2d_ that some module code paths reference.
+OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o,$(OBJS_PIC))
+
+# libtotapi_mono.so depends on the per-module .so files (LIBS_PIC_SO)
+# as real-file prerequisites — the same prereq pattern as
+# libtotapi.so on line 530. We do NOT link those .so files into
+# libtotapi_mono.so (that's the whole point of the monolithic build);
+# we use them as the dependency proxy because:
+#   1. Building each per-module .so populates its obj/pic/ tree with
+#      the PIC objects we DO link (side-effect we need).
+#   2. Make's standard mtime-based incremental rebuild then works:
+#      libtotapi_mono.so only re-links if a per-module .so is newer.
+# Using a .PHONY prereq target here would force unconditional re-link
+# on every invocation (Bugbot LOW finding on PR #202, 2026-05-14).
+libtotapi_mono.so: $(OBJS_PIC) $(LIBS_PIC_SO)
+	@if [ -z "$(strip $(EQ_PIC_OBJS_MONO))" ] || [ -z "$(strip $(TR_PIC_OBJS_MONO))" ] || \
+	    [ -z "$(strip $(FP_PIC_OBJS_MONO))" ] || [ -z "$(strip $(TI_PIC_OBJS_MONO))" ] || \
+	    [ -z "$(strip $(WRX_PIC_OBJS_MONO))" ] || [ -z "$(strip $(OBJBPSD_PIC_MONO))" ]; then \
+	  echo "ERROR: one or more per-module obj/pic/ trees are empty. Per-module PIC objects must exist before the mono link runs. The LIBS_PIC_SO prereq should have built them; if you reached this, try a clean rebuild: 'make -C tot clean_pic && make -C tot libtotapi_mono.so'." >&2; \
+	  exit 1; \
+	fi
+	$(FCFREE) -shared -fPIC $(SO_SONAME_MONO) $(SO_UNDEFINED) \
+	    $(OBJS_PIC_MONO) \
+	    $(EQ_PIC_OBJS_MONO) $(TR_PIC_OBJS_MONO) $(FP_PIC_OBJS_MONO) \
+	    $(TI_PIC_OBJS_MONO) $(WRX_PIC_OBJS_MONO) \
+	    $(OBJBPSD_PIC_MONO) \
+	    $(LIBMTX_PIC_MONO) \
+	    $(SO_GROUP_BEGIN) $(LIBS_PIC_MONO) $(SO_GROUP_END) \
+	    -o libtotapi_mono.so
+
+.PHONY: libtotapi_mono_inspect
+libtotapi_mono_inspect: libtotapi_mono.so
+	@echo "=== file ==="
+	@file libtotapi_mono.so
+	@echo "=== link deps (should NOT contain any lib*api.so dependency) ==="
+	@( ldd libtotapi_mono.so 2>/dev/null || otool -L libtotapi_mono.so ) | grep -vE '^libtotapi_mono\.so:' | grep -iE 'libtotapi_mono|api\.so|bpsd|lib' | head -20
+	@echo "=== bpsd MOD-private storage symbols (must be 1 set, not 5) ==="
+	@nm libtotapi_mono.so | grep -E '__bpsd_.*_MOD_.*x_init_flag' | sort -u
+	@echo "=== bpsd storage symbol count check (must be 8: device + equ1d + metric1d + plasmaf + shot + species + trmatrix + trsource) ==="
+	@count=$$(nm libtotapi_mono.so | grep -E '__bpsd_.*_MOD_.*x_init_flag' | sort -u | wc -l | tr -d ' '); \
+	if [ "$$count" != "8" ]; then \
+	  echo "  FAIL: expected 8 unique bpsd storage symbols, found $$count"; exit 1; \
+	else \
+	  echo "  OK: 8 unique bpsd storage symbols (one per bpsd module type)"; \
+	fi
+	@echo "=== exported tot_* symbols ==="
+	@nm libtotapi_mono.so | grep -E ' T _?tot_' | head -10
+	@echo "=== size ==="
+	@ls -la libtotapi_mono.so
 
 # ---------------------------------------------------------------------
 # Phase L-4: tot_api_check_so
