@@ -28,6 +28,8 @@ eqdata*
 !python/trlib/tests/fixtures/eqdata.ITER01
 !python/eqlib/tests/fixtures/eqdata.TST-2
 !python/eqlib/tests/fixtures/eqdata.ITER01
+!python/totlib/tests/fixtures/eqdata-HT6M
+!python/totlib/tests/fixtures/eqdata.demo2014
 trdata*
 make.header
 lib/testbes

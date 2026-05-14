@@ -245,10 +245,11 @@ jobs:
         #   - tot_ht6m_short/eqdata-HT6M          (file-based MODELG=3)
         #
         # The Phase 0 metrics.json baselines are already committed
-        # under test_run/baselines/<case>/, so once the eqdata is on
-        # disk python/totlib/tests/test_equivalence.py lifts its
-        # skipUnless guard and runs the 1e-10 comparison automatically
-        # as part of the pytest step below.
+        # under test_run/baselines/<case>/. The Python test prefers
+        # this CI-generated eqdata over the committed fixtures under
+        # python/totlib/tests/fixtures/ (see _isolated_cwd_with_eqdata),
+        # so a fresh standalone-binary build is the strongest current
+        # signal; the fixtures are the silent-SKIP safety net only.
         #
         # Why ht6m needs eqparm/trparm staging while demo2014 does
         # not: the demo2014 .in script supplies the &eq namelist
