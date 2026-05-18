@@ -474,20 +474,58 @@ jobs:
         run: |
           make -C tot libtotapi_mono.so
 
-      - name: Inspect libtotapi_mono.so (8-bpsd invariant hard-gated)
-        # libtotapi_mono_inspect runs one hard-gate plus several
+      - name: Inspect libtotapi_mono.so (8-bpsd + no-lib*api.so-deps hard-gated)
+        # libtotapi_mono_inspect runs TWO hard-gates plus several
         # observational checks:
         #
-        # HARD GATE: BPSD storage symbol count == 8 (one per bpsd module
+        # HARD GATE 1: BPSD storage symbol count == 8 (one per bpsd module
         #   type: device + equ1d + metric1d + plasmaf + shot + species +
         #   trmatrix + trsource). If the per-module dedup ever fails
         #   and we get 5×8=40 (or any other count), the build fails.
         #
+        # HARD GATE 2: No `lib*api.so` runtime dep in the .so's NEEDED
+        #   list (Linux `ldd`) / load commands (macOS `otool -L`). The
+        #   whole point of the mono build is that it has no per-module
+        #   .so deps; if any leak in, fail loudly.
+        #
         # Observational (printed, NOT enforced as exit code):
-        #   - ldd / otool -L output (should have no lib*api.so deps;
-        #     visual inspection only until we standardize the regex
-        #     across Linux/macOS).
         #   - exported tot_* symbol list.
         #   - file size.
         run: |
           make -C tot libtotapi_mono_inspect
+
+      - name: Set up Python (for the mono equivalence step below)
+        # The mono-build job is otherwise Python-free; pytest is only
+        # needed for the equivalence step. Pinning to 3.11 (one of the
+        # versions the pytest job's matrix exercises) keeps the
+        # behavior aligned without doubling on both 3.11 + 3.13.
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest deps for the mono equivalence step
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-forked pytest-timeout pytest-mock
+
+      - name: 1e-10 equivalence test against libtotapi_mono.so
+        # Phase 2a deliverable (#201): with the unified
+        # tot_graphics_stubs_mono.f90 in place, libtotapi_mono.so is
+        # now dlopen-loadable via Python ctypes. Running the existing
+        # totlib equivalence fixtures against it verifies the mono
+        # image is a faithful drop-in replacement for the default
+        # libtotapi.so on the existing test surface — required for
+        # CLAUDE.md "equivalence tests at 1e-10 MUST pass."
+        #
+        # These fixtures don't exercise BPSD-mediated coupling, so
+        # this is a regression check that the mono build hasn't
+        # broken the existing path. The Layer-C BPSD smoke test that
+        # actually validates monolithic broker sharing is deferred
+        # to #201 Phase 2b.
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: python
+          TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
+        run: |
+          python -m pytest python/totlib/tests/test_equivalence.py -v \
+            --forked --timeout=120 --timeout-method=signal

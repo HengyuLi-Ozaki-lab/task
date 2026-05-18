@@ -587,9 +587,14 @@ FP_PIC_OBJS_MONO_RAW  = $(wildcard ../fp/obj/pic/*.o ../fp/obj/pic/*/*.o)
 TI_PIC_OBJS_MONO_RAW  = $(wildcard ../ti/obj/pic/*.o ../ti/obj/pic/*/*.o)
 WRX_PIC_OBJS_MONO_RAW = $(wildcard ../wrx/obj/pic/*.o ../wrx/obj/pic/*/*.o)
 
+# Phase 2a (2026-05-18): all 5 per-module <mod>_graphics_stubs.o files
+# are now EXCLUDED. The unified tot_graphics_stubs_mono.f90 source
+# (built into tot/obj/pic/tot_graphics_stubs_mono.o) supplies the
+# full union of graphics-stub symbols across eq/tr/fp/ti/wrx, so
+# none of the per-module stubs participate in the mono link.
 EQ_PIC_OBJS_MONO  = $(filter-out ../eq/obj/pic/bpsd/% ../eq/obj/pic/eq_graphics_stubs.o,$(EQ_PIC_OBJS_MONO_RAW))
 TR_PIC_OBJS_MONO  = $(filter-out ../tr/obj/pic/bpsd/% ../tr/obj/pic/tr_graphics_stubs.o,$(TR_PIC_OBJS_MONO_RAW))
-FP_PIC_OBJS_MONO  = $(filter-out ../fp/obj/pic/bpsd/%,$(FP_PIC_OBJS_MONO_RAW))
+FP_PIC_OBJS_MONO  = $(filter-out ../fp/obj/pic/bpsd/% ../fp/obj/pic/fp_graphics_stubs.o,$(FP_PIC_OBJS_MONO_RAW))
 TI_PIC_OBJS_MONO  = $(filter-out ../ti/obj/pic/bpsd/% ../ti/obj/pic/ti_graphics_stubs.o,$(TI_PIC_OBJS_MONO_RAW))
 WRX_PIC_OBJS_MONO = $(filter-out ../wrx/obj/pic/bpsd/% ../wrx/obj/pic/wrx_graphics_stubs.o,$(WRX_PIC_OBJS_MONO_RAW))
 
@@ -619,12 +624,18 @@ else
   SO_SONAME_MONO = -Wl,-soname,libtotapi_mono.so
 endif
 
-# tot's own PIC objects MINUS tot_graphics_stubs.o. The mono build
-# uses fp_graphics_stubs.o instead, which is a strict superset of
-# tot's stub set for the symbols both provide (guclip_, gudate_,
-# guflsh_, gutime_, pagee_, pages_) plus grd1d_mod/grd2d_mod/draw2d_/
-# eqgout_/move2d_ that some module code paths reference.
-OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o,$(OBJS_PIC))
+# tot's own PIC objects MINUS tot_graphics_stubs.o, PLUS the new
+# unified mono stubs object. tot_graphics_stubs_mono.f90 is a hand-
+# authored union of all 5 per-module <mod>_graphics_stubs.f90 files
+# (eq + tr + fp + ti + wrx), with each symbol defined exactly once
+# and ABI choices documented in the source header (notably GUTIME
+# picks the REAL signature; EQGOUT picks the 1-arg signature). It
+# is used ONLY by the mono build path; the default libtotapi.so
+# continues to use tot_graphics_stubs.o through OBJS_PIC.
+OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o,$(OBJS_PIC)) \
+                 $(OBJDIR_PIC)/tot_graphics_stubs_mono.o
+
+$(OBJDIR_PIC)/tot_graphics_stubs_mono.o : tot_graphics_stubs_mono.f90
 
 # libtotapi_mono.so depends on the per-module .so files (LIBS_PIC_SO)
 # as real-file prerequisites — the same prereq pattern as
@@ -637,7 +648,7 @@ OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o,$(OBJS_PIC))
 #      libtotapi_mono.so only re-links if a per-module .so is newer.
 # Using a .PHONY prereq target here would force unconditional re-link
 # on every invocation (Bugbot LOW finding on PR #202, 2026-05-14).
-libtotapi_mono.so: $(OBJS_PIC) $(LIBS_PIC_SO)
+libtotapi_mono.so: $(OBJS_PIC_MONO) $(LIBS_PIC_SO)
 	@if [ -z "$(strip $(EQ_PIC_OBJS_MONO))" ] || [ -z "$(strip $(TR_PIC_OBJS_MONO))" ] || \
 	    [ -z "$(strip $(FP_PIC_OBJS_MONO))" ] || [ -z "$(strip $(TI_PIC_OBJS_MONO))" ] || \
 	    [ -z "$(strip $(WRX_PIC_OBJS_MONO))" ] || [ -z "$(strip $(OBJBPSD_PIC_MONO))" ]; then \
@@ -657,20 +668,31 @@ libtotapi_mono.so: $(OBJS_PIC) $(LIBS_PIC_SO)
 libtotapi_mono_inspect: libtotapi_mono.so
 	@echo "=== file ==="
 	@file libtotapi_mono.so
-	@echo "=== link deps (should NOT contain any lib*api.so dependency) ==="
-	@( ldd libtotapi_mono.so 2>/dev/null || otool -L libtotapi_mono.so ) | grep -vE '^libtotapi_mono\.so:' | grep -iE 'libtotapi_mono|api\.so|bpsd|lib' | head -20
-	@echo "=== bpsd MOD-private storage symbols (must be 1 set, not 5) ==="
-	@nm libtotapi_mono.so | grep -E '__bpsd_.*_MOD_.*x_init_flag' | sort -u
-	@echo "=== bpsd storage symbol count check (must be 8: device + equ1d + metric1d + plasmaf + shot + species + trmatrix + trsource) ==="
+	@echo "=== link deps ==="
+	@( ldd libtotapi_mono.so 2>/dev/null || otool -L libtotapi_mono.so )
+	@echo "=== HARD GATE 1: bpsd storage symbol count must be exactly 8 (device + equ1d + metric1d + plasmaf + shot + species + trmatrix + trsource) ==="
 	@count=$$(nm libtotapi_mono.so | grep -E '__bpsd_.*_MOD_.*x_init_flag' | sort -u | wc -l | tr -d ' '); \
 	if [ "$$count" != "8" ]; then \
-	  echo "  FAIL: expected 8 unique bpsd storage symbols, found $$count"; exit 1; \
+	  echo "  FAIL: expected 8 unique bpsd storage symbols, found $$count"; \
+	  nm libtotapi_mono.so | grep -E '__bpsd_.*_MOD_.*x_init_flag' | sort -u; \
+	  exit 1; \
 	else \
 	  echo "  OK: 8 unique bpsd storage symbols (one per bpsd module type)"; \
 	fi
-	@echo "=== exported tot_* symbols ==="
+	@echo "=== HARD GATE 2: no per-module lib*api.so runtime deps (the mono build must be self-contained) ==="
+	@deps=$$( ( ldd libtotapi_mono.so 2>/dev/null || otool -L libtotapi_mono.so ) \
+	          | grep -E 'lib(eq|tr|fp|ti|wr|wrx|tot)api\.so' \
+	          | grep -v 'libtotapi_mono\.so' || true ); \
+	if [ -n "$$deps" ]; then \
+	  echo "  FAIL: unexpected per-module lib*api.so deps:"; \
+	  echo "$$deps"; \
+	  exit 1; \
+	else \
+	  echo "  OK: no per-module lib*api.so runtime deps"; \
+	fi
+	@echo "=== exported tot_* symbols (informational) ==="
 	@nm libtotapi_mono.so | grep -E ' T _?tot_' | head -10
-	@echo "=== size ==="
+	@echo "=== size (informational) ==="
 	@ls -la libtotapi_mono.so
 
 # ---------------------------------------------------------------------
