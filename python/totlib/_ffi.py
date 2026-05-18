@@ -161,6 +161,17 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
 
     lib.tot_finalize.restype = ctypes.c_int
     lib.tot_finalize.argtypes = []
+
+    # L-7b-ii Phase 2b: tot_is_mono — runtime introspection for whether
+    # this .so is the monolithic build (returns 1) or the default
+    # per-module build (returns 0). Older builds predating Phase 2b
+    # lack this symbol; treat that as not-mono so the Python side keeps
+    # working with legacy artifacts.
+    try:
+        lib.tot_is_mono.restype = ctypes.c_int
+        lib.tot_is_mono.argtypes = []
+    except AttributeError:  # pragma: no cover - only on pre-Phase-2b builds
+        pass
     return lib
 
 

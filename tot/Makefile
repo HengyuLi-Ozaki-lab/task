@@ -398,11 +398,17 @@ $(OBJDIR_PIC)/%.o: %.f90
 # stub provides GUCLIP / PAGES no-ops in case any code path inside the
 # linked .so list reaches one and the per-module stubs are not picked
 # up by ld first.
+#
+# tot_is_mono.o: introspection helper (L-7b-ii Phase 2b). This .o
+# provides the `tot_is_mono` C ABI symbol with the DEFAULT-build value
+# (returns 0). The mono target swaps in a parallel .o from
+# tot_is_mono_mono.f90 that returns 1 (see OBJS_PIC_MONO below).
 OBJS_PIC = $(OBJDIR_PIC)/totregress.o \
            $(OBJDIR_PIC)/tot_state.o \
            $(OBJDIR_PIC)/tot_param_registry.o \
            $(OBJDIR_PIC)/tot_api.o \
-           $(OBJDIR_PIC)/tot_graphics_stubs.o
+           $(OBJDIR_PIC)/tot_graphics_stubs.o \
+           $(OBJDIR_PIC)/tot_is_mono.o
 
 # Inter-module PIC dependency order. Mirrors the non-PIC deps above.
 $(OBJDIR_PIC)/tot_state.o          : tot_state.f90
@@ -418,6 +424,8 @@ $(OBJDIR_PIC)/tot_api.o            : tot_api.f90 \
                                      ../fp/libfpapi.so ../wrx/libwrxapi.so
 $(OBJDIR_PIC)/totregress.o         : totregress.f90
 $(OBJDIR_PIC)/tot_graphics_stubs.o : tot_graphics_stubs.f90
+$(OBJDIR_PIC)/tot_is_mono.o        : tot_is_mono.f90
+$(OBJDIR_PIC)/tot_is_mono_mono.o   : tot_is_mono_mono.f90
 
 # --- bpsd in-tree PIC rebuild (mirrors eq/Makefile L-4) ---
 # tot's own PIC objects do not directly USE bpsd (only tot_state +
@@ -624,16 +632,28 @@ else
   SO_SONAME_MONO = -Wl,-soname,libtotapi_mono.so
 endif
 
-# tot's own PIC objects MINUS tot_graphics_stubs.o, PLUS the new
-# unified mono stubs object. tot_graphics_stubs_mono.f90 is a hand-
-# authored union of all 5 per-module <mod>_graphics_stubs.f90 files
-# (eq + tr + fp + ti + wrx), with each symbol defined exactly once
-# and ABI choices documented in the source header (notably GUTIME
-# picks the REAL signature; EQGOUT picks the 1-arg signature). It
-# is used ONLY by the mono build path; the default libtotapi.so
-# continues to use tot_graphics_stubs.o through OBJS_PIC.
-OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o,$(OBJS_PIC)) \
-                 $(OBJDIR_PIC)/tot_graphics_stubs_mono.o
+# tot's own PIC objects for the mono build. Two substitutions vs the
+# default OBJS_PIC:
+#
+# (1) tot_graphics_stubs.o -> tot_graphics_stubs_mono.o
+#     The default per-module stubs object is replaced with a unified
+#     union file (~60 symbols across eq/tr/fp/ti/wrx) that covers all
+#     module call sites in a single image. ABI choices for symbols
+#     where per-module stubs diverge (GUTIME picks REAL, EQGOUT picks
+#     1-arg) are documented in tot_graphics_stubs_mono.f90.
+#
+# (2) tot_is_mono.o -> tot_is_mono_mono.o
+#     L-7b-ii Phase 2b introspection helper. The default file returns
+#     0 from the `tot_is_mono` C ABI; the mono variant returns 1.
+#     Python orchestrators use this to gate the conditional
+#     ("eq","tr") BPSD coupling rule registration on mono runtime
+#     selection. See tot_api.h for the ABI doc and the Phase 2b spec
+#     §3-§5 for the two-file rationale.
+OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o \
+                              $(OBJDIR_PIC)/tot_is_mono.o, \
+                              $(OBJS_PIC)) \
+                 $(OBJDIR_PIC)/tot_graphics_stubs_mono.o \
+                 $(OBJDIR_PIC)/tot_is_mono_mono.o
 
 $(OBJDIR_PIC)/tot_graphics_stubs_mono.o : tot_graphics_stubs_mono.f90
 

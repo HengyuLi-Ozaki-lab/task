@@ -104,6 +104,29 @@ int tot_set_param_str(const char* name, const char* value);
 int tot_get_state(tot_state_t* state);
 int tot_finalize(void);
 
+/*
+ * tot_is_mono : introspection — am I the monolithic libtotapi*.so?
+ *
+ * Returns 1 if this .so was linked from the L-7b-ii monolithic target
+ * (eq + tr + fp + ti + wrx + bpsd co-linked, single shared BPSD
+ * broker, suitable for BPSD-mediated cross-module coupling). Returns
+ * 0 if this is the default per-module image (libtotapi.so depending
+ * on individual lib<mod>api.so files, each with private bpsd storage).
+ *
+ * Both libtotapi.so and libtotapi_mono.so export this symbol; the
+ * return value is baked in at link time by the Makefile picking one
+ * of tot/tot_mono_flag.f90 (default, returns 0) vs
+ * tot/tot_mono_flag_mono.f90 (mono, returns 1). Python wrappers can
+ * detect a missing symbol via try/except AttributeError and treat it
+ * as 0 for backwards compatibility with older builds predating this
+ * function.
+ *
+ * Use case: Python orchestrators (TotPipeline) decide whether the
+ * eq -> tr BPSD coupling rule is safe to activate for the loaded
+ * image. See L-7b-ii Phase 2b spec §3-§5.
+ */
+int tot_is_mono(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -519,13 +519,52 @@ jobs:
         #
         # These fixtures don't exercise BPSD-mediated coupling, so
         # this is a regression check that the mono build hasn't
-        # broken the existing path. The Layer-C BPSD smoke test that
-        # actually validates monolithic broker sharing is deferred
-        # to #201 Phase 2b.
+        # broken the existing path. The Layer-C BPSD smoke step below
+        # validates the broker-sharing claim specifically (Phase 2b).
         env:
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONPATH: python
           TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
         run: |
           python -m pytest python/totlib/tests/test_equivalence.py -v \
+            --forked --timeout=120 --timeout-method=signal
+
+      - name: Build default libtotapi.so (needed for Layer-C C-3 test)
+        # Phase 2b deliverable (#201): the Layer-C smoke test below
+        # includes TestDistinguishesPerModule which checks that the
+        # default per-module libtotapi.so reports tot_is_mono() == 0,
+        # confirming the runtime distinguishing mechanism actually
+        # discriminates between the two builds. We need both .so files
+        # present for that. Build it AFTER the mono inspect / mono
+        # equivalence steps so a regression in the mono path can't
+        # be masked by a default-path failure.
+        run: |
+          make -C tot libtotapi.so
+
+      - name: Layer-C BPSD broker smoke (mono image vs default)
+        # Phase 2b deliverable (#201): verifies the runtime distinction
+        # between the monolithic libtotapi_mono.so and the default
+        # libtotapi.so. Three cases:
+        #
+        #   C-1 (test_mono_flag): tot_is_mono() == 1 on the mono image.
+        #   C-2 (test_bpsd_round_trip): drive eq through eq_run(1)
+        #     (which calls eq_load -> eq_bpsd_put), then call
+        #     tr_check_bpsd_pull, expect ok=1. Demonstrates the
+        #     monolithic image's shared BPSD broker.
+        #   C-3 (test_distinguishes_per_module): default libtotapi.so
+        #     reports tot_is_mono() == 0.
+        #
+        # Process isolation: --forked is mandatory because the mono .so
+        # carries module-level state (bpsd broker slots, trcomm, eq
+        # common blocks) that bleeds across pytest cases in the same
+        # process. Without isolation a prior test's eq push could make
+        # the round-trip check pass for the wrong reason (Codex
+        # retrospective 2026-05-15 item 5).
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: python
+          MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
+          TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so
+        run: |
+          python -m pytest python/totlib/tests/test_mono_bpsd_smoke.py -v \
             --forked --timeout=120 --timeout-method=signal
