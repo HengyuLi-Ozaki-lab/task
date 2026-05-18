@@ -107,6 +107,10 @@ jobs:
         # GFLIBS is left empty because libXapi.so excludes graphics
         # (the actual `make X` binary builds need GFLIBS but those are
         # not built in CI).
+        #
+        # KEEP IN SYNC with the mono-build job's identically-named step
+        # below — both heredocs must be byte-identical (see drift-risk
+        # rationale in that step's comment).
         run: |
           cat > make.header <<'HEADER_EOF'
           ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
@@ -330,3 +334,160 @@ jobs:
           PYTHONPATH: python
         run: |
           python -m pytest python/ --collect-only -q | tail -5 || true
+
+  mono-build:
+    # Linux build-only validation of the L-7b-ii monolithic mode
+    # (`make -C tot libtotapi_mono.so`). The mono Makefile target has
+    # only ever been built on macOS arm64 in PR #202; this job exercises
+    # the Linux ld branch (`-Wl,--start-group/--end-group` +
+    # `-Wl,--unresolved-symbols=ignore-all` + `-Wl,-soname`) before
+    # #201 (Phase 2 of L-7b-ii) starts depending on it.
+    #
+    # Scope: BUILD ONLY. We do NOT run the 1e-10 equivalence test or
+    # the BPSD smoke test against libtotapi_mono.so here — those are
+    # blocked on the unified graphics-stub source that #201 Phase 2a
+    # will introduce. This job validates: (1) link succeeds on Linux,
+    # (2) bpsd storage symbols dedupe to one set (the central PoC
+    # claim), (3) no per-module `lib*api.so` deps leak in.
+    name: mono build (Linux libtotapi_mono.so)
+    runs-on: ubuntu-latest
+    # Generous cap: full PIC chain + 5 per-module .so + mono link
+    # is roughly 5-8 minutes on the GitHub runner. 15 min leaves slack.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Fortran/C build deps
+        # Same toolchain as the pytest job (Ubuntu 24.04 default
+        # gfortran 13.2). No Python / pytest needed here.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran gcc make
+          gfortran --version | head -1
+
+      - name: Clone BPSD (patched fork k-yoshimi/bpsd@develop)
+        # Mirrors the pytest job's BPSD provisioning step. Out-of-tree
+        # location at $GITHUB_WORKSPACE/../bpsd matches what every
+        # module Makefile expects (BPSD_SRC=../../bpsd).
+        run: |
+          set -e
+          if ! git clone --depth 1 --branch develop \
+                 https://github.com/k-yoshimi/bpsd.git \
+                 "$GITHUB_WORKSPACE/../bpsd"; then
+            echo "ERROR: Could not clone k-yoshimi/bpsd@develop." >&2
+            exit 1
+          fi
+          ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
+
+      - name: Provision mtxp/make.mtxp from nompi template
+        run: |
+          cp mtxp/make.mtxp.nompi mtxp/make.mtxp
+          head -5 mtxp/make.mtxp
+
+      - name: Provision make.header for Linux gfortran (no graphics)
+        # KEEP IN SYNC with the pytest job's identically-named step
+        # (~line 110 of this file). Both heredocs must be byte-identical:
+        # if a flag drifts in one (e.g. OFLAGS, DFLAGS) and not the
+        # other, the mono CI job will silently validate a different
+        # compiler-flag shape than the per-module .so path that pytest
+        # exercises — i.e. CI would go green while the binaries we
+        # actually ship under each path diverge. The composite-action
+        # extraction that would enforce this structurally is tracked as
+        # follow-up; until then, mirror manually.
+        run: |
+          cat > make.header <<'HEADER_EOF'
+          ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
+          LAPACK = nolapack.f
+          LIBLA =
+          MODLA95 =
+          MDSPLUS = nomdsplus.f
+          MDSLIB =
+          MF77 = mpif77
+          MF90 = mpif90
+          MF95 = mpif90
+          MFC  = $(MF90)
+
+          ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
+          GFLIBS=
+          OFLAGS = -g -O3 -m64 -std=legacy
+          DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
+          FCFIXED = gfortran -ffixed-form
+          FCFREE = gfortran -ffree-form
+          MOD = mod
+          MODDIR = -Jmod
+          LD=ld
+          LDFLAGS=-r -o
+          FPP=
+          HEADER_EOF
+          head -10 make.header
+
+      - name: Build PIC support libraries (bpsd, lib, mtxp, pl, eq, dp, ob, adf11, adpost)
+        # Mirrors the pytest job's PIC-support step. The mono Makefile
+        # target links these as `LIBS_PIC_MONO`, so they must exist
+        # before the mono link runs.
+        run: |
+          set -e
+          make -C "$GITHUB_WORKSPACE/../bpsd" libbpsd.a
+          make -C lib libtask_pic.a libgrf_pic.a libmds_pic.a
+          make -C mtxp libmtxnompi_pic.o libmtxbnd_pic.o
+          make -C tr bpsd_pic
+          make -C pl libpl_noeq_pic
+          make -C eq libeq_pic.a
+          make -C pl libpl_pic.a
+          make -C dp libdp_pic.a
+          make -C ob libob_pic.a
+          make -C open-adas/adf11/adf11-lib lib-adf11_pic.a
+          make -C adpost lib-adpost_pic.a
+
+      - name: Build per-module .so files (tr fp ti wr wrx eq — 6 total)
+        # libtotapi_mono.so's prereq list is $(LIBS_PIC_SO), which
+        # names 5 .so files: eq/libeqapi.so + tr/libtrapi.so +
+        # fp/libfpapi.so + ti/libtiapi.so + wrx/libwrxapi.so. We
+        # additionally build wr/libwrapi.so (6th, NOT a mono prereq)
+        # for symmetry with the pytest job above, so a future
+        # composite-action refactor sees a single canonical module
+        # list. The wr build adds ~30s on a job that takes ~5-8 min;
+        # the symmetry value beats the time cost.
+        #
+        # We deliberately do NOT build tot/libtotapi.so here (the
+        # default per-module path) because this job validates only the
+        # mono target.
+        run: |
+          set -e
+          for mod in tr fp ti wr wrx eq; do
+            echo "::group::Building $mod/lib${mod}api.so"
+            make -C "$mod" bpsd_pic
+            make -C "$mod" "lib${mod}api.so"
+            echo "::endgroup::"
+          done
+
+      - name: Build libtotapi_mono.so (THE target under test)
+        # The L-7b-ii PoC core: links all per-module PIC objects + ONE
+        # canonical bpsd PIC set into a single image, instead of going
+        # through five separate per-module .so files (each carrying its
+        # own private bpsd storage). On macOS this builds cleanly; this
+        # step is the first time the Linux ld branch (`--start-group`,
+        # `--unresolved-symbols=ignore-all`, `-soname`) is exercised
+        # in CI.
+        run: |
+          make -C tot libtotapi_mono.so
+
+      - name: Inspect libtotapi_mono.so (8-bpsd invariant hard-gated)
+        # libtotapi_mono_inspect runs one hard-gate plus several
+        # observational checks:
+        #
+        # HARD GATE: BPSD storage symbol count == 8 (one per bpsd module
+        #   type: device + equ1d + metric1d + plasmaf + shot + species +
+        #   trmatrix + trsource). If the per-module dedup ever fails
+        #   and we get 5×8=40 (or any other count), the build fails.
+        #
+        # Observational (printed, NOT enforced as exit code):
+        #   - ldd / otool -L output (should have no lib*api.so deps;
+        #     visual inspection only until we standardize the regex
+        #     across Linux/macOS).
+        #   - exported tot_* symbol list.
+        #   - file size.
+        run: |
+          make -C tot libtotapi_mono_inspect
