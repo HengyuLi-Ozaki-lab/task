@@ -428,3 +428,27 @@ CONTAINS
   END SUBROUTINE c_string_to_fortran
 
 END MODULE tot_api
+
+!-------------------------------------------------------------------
+! tot_is_mono : C ABI introspection — am I the monolithic .so?
+!
+! Standalone (NOT inside MODULE tot_api) so the Makefile can swap
+! the implementation file per build target without forcing a recompile
+! of tot_api.o. Two parallel source files supply the body:
+!
+!   tot/tot_is_mono.f90        -> RETURN 0 (linked into libtotapi.so)
+!   tot/tot_is_mono_mono.f90   -> RETURN 1 (linked into libtotapi_mono.so)
+!
+! Returns 1 if this .so is the monolithic image (eq + tr + fp + ti +
+! wrx + bpsd co-linked, single shared BPSD broker), 0 if it is the
+! default per-module image (libtotapi.so depending on individual
+! lib<mod>api.so files, each with private bpsd storage).
+!
+! Use case: Python orchestrators (TotPipeline) decide whether the
+! eq -> tr BPSD coupling rule is meaningful for the loaded image.
+! See L-7b-ii Phase 2b spec §3-§5 for the two-file pattern rationale
+! and the conditional rule registration semantics.
+!
+! NOTE: function body lives in the per-target file, NOT here. This
+! header-only declaration is just for `END MODULE tot_api` boundary.
+!-------------------------------------------------------------------

@@ -48,23 +48,41 @@ The same `tot_api.f90` source is compiled into BOTH `libtotapi.so` (default)
 and `libtotapi_mono.so` (mono). The function therefore cannot embed the
 "am I mono?" answer in a literal returned from `tot_api.f90` itself.
 
-**Proposed pattern: two-file split.** Add a tiny new module-local helper
-exposing the flag, with two parallel source files that the Makefile picks
-between:
+**Implementation (2026-05-18): two-file standalone-function split.**
 
-- `tot/tot_mono_flag.f90` (NEW) — defines `LOGICAL, PARAMETER :: tot_is_mono = .FALSE.`
-- `tot/tot_mono_flag_mono.f90` (NEW) — defines `LOGICAL, PARAMETER :: tot_is_mono = .TRUE.`
+Two parallel standalone Fortran files (NOT inside any `MODULE`) with the
+same `BIND(C, NAME="tot_is_mono")` symbol:
 
-`tot_api.f90` `USE`s this module, and `tot_api_is_mono()` returns
-`MERGE(1, 0, tot_is_mono)`. The default `libtotapi.so` build links
-`tot_mono_flag.f90`; the mono build links `tot_mono_flag_mono.f90`. Both
-files export the same module name (`tot_mono_flag`) so `tot_api.f90` doesn't
-care which is in use.
+- `tot/tot_is_mono.f90` (NEW) — `FUNCTION tot_api_is_mono() RESULT(is_mono) BIND(C, NAME="tot_is_mono")` returning `0`
+- `tot/tot_is_mono_mono.f90` (NEW) — same body returning `1`
+
+The Makefile picks one per build:
+- `OBJS_PIC` (default) includes `$(OBJDIR_PIC)/tot_is_mono.o`
+- `OBJS_PIC_MONO` substitutes `$(OBJDIR_PIC)/tot_is_mono_mono.o`
+
+`tot_api.f90` does NOT reference either file — the linker resolves the
+`tot_is_mono` symbol from whichever standalone .o is in the link line.
+
+#### Why standalone functions instead of a MODULE-wrapped PARAMETER?
+
+An earlier draft of this spec proposed `MODULE tot_mono_flag` exporting
+`LOGICAL, PARAMETER :: tot_is_mono`, with `tot_api.f90` `USE`-ing that
+module and `tot_api_is_mono()` returning `MERGE(1, 0, tot_is_mono)`. That
+pattern forces `tot_api.o` to be recompiled per build target because a
+`PARAMETER` is inlined at the call site — the default build's `tot_api.o`
+would carry an inlined `0`, the mono build's would carry an inlined `1`,
+and the two .o files would have different bodies even though the source
+is identical.
+
+The standalone-function approach lets a single `tot_api.o` participate in
+BOTH builds: the actual `tot_is_mono` symbol is resolved at link time from
+whichever per-target .o is in the link line.
 
 Trade-offs:
 - ✓ No preprocessor magic (gfortran works without `.F90`).
-- ✓ Clean separation; the mono override is a single 5-line file.
-- ✓ Symbol semantics enforced at compile time (the constant is a `PARAMETER`).
+- ✓ Clean separation; the per-target override is a single ~15-line file.
+- ✓ Both .so files share `tot_api.o` — incremental builds work as
+  expected.
 - ✗ Two-file maintenance burden (one is essentially "the default").
 - Alternative considered (rejected): an `INCLUDE` directive with a
   build-generated `.inc` — same complexity, less explicit.
@@ -72,11 +90,15 @@ Trade-offs:
 ## §4. New C ABI surface
 
 ```fortran
-! tot/tot_api.f90 — added near the end of the BIND(C) blocks
+! tot/tot_is_mono.f90 (default, returns 0) — also tot_is_mono_mono.f90
+! (mono, returns 1). Both standalone (NOT inside any MODULE) so they
+! share a single ELF symbol and either can be linked into tot_api.o's
+! reference without recompiling tot_api.o.
 FUNCTION tot_api_is_mono() RESULT(is_mono) BIND(C, NAME="tot_is_mono")
-  USE tot_mono_flag, ONLY: tot_is_mono_pkg => tot_is_mono
+  USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_INT
+  IMPLICIT NONE
   INTEGER(C_INT) :: is_mono
-  is_mono = MERGE(1, 0, tot_is_mono_pkg)
+  is_mono = 0   ! or 1 in tot_is_mono_mono.f90
 END FUNCTION tot_api_is_mono
 ```
 
@@ -112,7 +134,8 @@ user dlopen()s an old-build artifact.
 populated at import time. The mono-conditional rule cannot live there
 (import time is too early to know which `.so` is loaded).
 
-**Proposed pattern: pipeline-instance-level rule overlay.**
+**Pattern: pipeline-instance-level rule overlay (infrastructure only in
+Phase 2b — `_MONO_ONLY_RULES` stays empty until Phase 2c).**
 
 ```python
 # python/totlib/pipeline.py
@@ -120,40 +143,49 @@ populated at import time. The mono-conditional rule cannot live there
 # Existing module-level dict (unchanged)
 COUPLING_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
     ("fp", "tr"): [...existing...],
-    # ("eq","tr") deliberately absent — mono-conditional, see _mono_only_rules.
 }
 
-# New: mono-only rules registered lazily
+# Mono-only rules infrastructure. Populated by Phase 2c after wrapper
+# plumbing routes Eqlib/Trlib/Fplib/Tilib/Wrxlib through the mono .so.
+# Populating ("eq","tr") in Phase 2b alone would cause run_pipeline to
+# fire the verify rule against Trlib instances that still load their
+# OWN per-module libtrapi.so — the rule would deterministically fail
+# because eq's push lands in libeqapi.so's PRIVATE bpsd while tr reads
+# from libtrapi.so's PRIVATE bpsd (Codex pre-push review caught this
+# as a HOLD blocker, 2026-05-18).
 _MONO_ONLY_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
-    ("eq", "tr"): [
-        CouplingRule(
-            kind="verify",
-            verify=lambda trlib_inst: trlib_inst.check_bpsd_pull(),
-            doc="eq->tr BPSD broker round-trip; mono-only",
-        ),
-    ],
+    # populated in Phase 2c
 }
 
 class TotPipeline:
     def __init__(self, ...):
         ...
-        self._active_rules = dict(COUPLING_RULES)
-        if self._detect_mono():
-            for k, rules in _MONO_ONLY_RULES.items():
-                self._active_rules.setdefault(k, []).extend(rules)
+        self._active_rules = None    # built lazily on first lookup
 
     def _detect_mono(self) -> bool:
         """Returns True if the loaded libtotapi*.so is the mono image."""
-        # _ffi.load_library() returns a CDLL with tot_is_mono prototyped.
-        # Older builds lacking the function: treat as not-mono.
         try:
-            return bool(self._tot_lib.tot_is_mono())
-        except (AttributeError, OSError):
+            from totlib import _ffi
+            lib = _ffi.load_library()
+            fn = getattr(lib, "tot_is_mono", None)
+            if fn is None:
+                warnings.warn("legacy .so lacks tot_is_mono", RuntimeWarning)
+                return False
+            return bool(fn())
+        except (AttributeError, OSError) as exc:
+            warnings.warn(f"_detect_mono failed: {exc}", RuntimeWarning)
             return False
+
+    def _build_active_rules(self):
+        rules = {k: list(v) for k, v in COUPLING_RULES.items()}
+        if self._detect_mono():
+            for k, mono_rules in _MONO_ONLY_RULES.items():
+                rules.setdefault(k, []).extend(mono_rules)
+        return rules
 ```
 
-Then in `run_pipeline`, replace the lookup `COUPLING_RULES.get((prev,name), [])`
-with `self._active_rules.get(...)`.
+Then in `run_pipeline`, replace `COUPLING_RULES.get((prev,name), [])`
+with `self._get_active_rules().get(...)`.
 
 ### Why instance-level instead of module-level
 
@@ -282,13 +314,13 @@ the 5 per-module `lib<mod>api.so` are. We need to add a step to build
 
 ## §8. Files touched
 
-- `tot/tot_api.f90` (modified): new `tot_api_is_mono` function
+- `tot/tot_api.f90` (modified): doc-only — pointer comment referencing the standalone files
 - `tot/tot_api.h` (modified): new `int tot_is_mono(void)` declaration
-- `tot/tot_mono_flag.f90` (NEW): default flag module (returns 0)
-- `tot/tot_mono_flag_mono.f90` (NEW): mono flag module (returns 1)
-- `tot/Makefile` (modified): wire the two flag files into the appropriate builds; add equivalence + Layer-C step prereq (`libtotapi.so` build)
-- `python/totlib/_ffi.py` (modified): expose `tot_is_mono`
-- `python/totlib/pipeline.py` (modified): instance-level `_active_rules`, mono detection, `_MONO_ONLY_RULES` registry, `("eq","tr")` rule entry
+- `tot/tot_is_mono.f90` (NEW): default standalone function (returns 0)
+- `tot/tot_is_mono_mono.f90` (NEW): mono standalone function (returns 1)
+- `tot/Makefile` (modified): OBJS_PIC adds tot_is_mono.o; OBJS_PIC_MONO substitutes tot_is_mono_mono.o
+- `python/totlib/_ffi.py` (modified): expose `tot_is_mono` with try/except for legacy builds
+- `python/totlib/pipeline.py` (modified): instance-level `_active_rules`, `_detect_mono`, `_MONO_ONLY_RULES` registry (empty in Phase 2b — populated in Phase 2c)
 - `python/totlib/tests/test_mono_bpsd_smoke.py` (NEW): Layer-C tests
 - `.github/workflows/python-tests.yml` (modified): mono-build job adds Layer-C step + default libtotapi.so build
 
@@ -302,10 +334,13 @@ the 5 per-module `lib<mod>api.so` are. We need to add a step to build
    `ok=1` in the mono image after an eq.push.
 6. Layer-C `test_distinguishes_per_module` PASS: default lib returns
    `tot_is_mono() == 0`.
-7. `TotPipeline` with default `TOTLIB_PATH` does NOT have `("eq","tr")`
-   in its `_active_rules` (rule remains dormant on per-module .so).
-8. `TotPipeline` with `TOTLIB_PATH=...mono.so` DOES have `("eq","tr")`
-   in `_active_rules` (rule activated on mono).
+7. Infrastructure for instance-level rule overlay (`_active_rules`,
+   `_detect_mono`, `_MONO_ONLY_RULES`) is in place. `_MONO_ONLY_RULES`
+   is intentionally EMPTY in Phase 2b — Phase 2c populates it once
+   the wrapper plumbing routes Eqlib/Trlib/etc. through the mono .so
+   (Codex pre-push review caught that populating ("eq","tr") here
+   without wrapper plumbing would cause run_pipeline to fire and
+   FAIL on the still-per-module Trlib instance).
 9. CI's mono-build job PASS for all of the above on Linux.
 10. CLAUDE.md compliance: no Fortran refactor outside the new
     `tot_mono_flag*.f90` files + the additive `tot_is_mono` function in
