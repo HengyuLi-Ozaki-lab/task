@@ -9,8 +9,11 @@ extern "C" {
  * TASK/TOT C ABI public header.
  *
  * TOT is the orchestrator: its api fans out to per-module APIs
- * (tr_init + ti_init + fp_init + wr_init, tr_run, tr_get_state + ...,
- * per-module *_set_param, *_finalize). Phase L-2 status: function
+ * (eq_init + tr_init + ti_init + fp_init + wr_init, tr_run,
+ * tr_get_state + ..., per-module *_set_param, *_finalize). The eq
+ * cascade was added in #209 — direct ctypes callers can drive
+ * eq_set_param / eq_run right after tot_init() without an extra
+ * eq_init() round trip. Phase L-2 status: function
  * symbols are present in libtotapi (built from tot_api.f90); each
  * entry point is a stub returning TOT_ERR_NOT_IMPLEMENTED (=4). Real
  * composition arrives in Phase L-3+.
