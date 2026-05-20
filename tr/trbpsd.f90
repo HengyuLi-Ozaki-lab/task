@@ -162,9 +162,16 @@ CONTAINS
       USE trcomm
       integer,intent(out) :: ierr
 ! local variables
-      integer :: ns,nr
-      real(rkind)    :: temp(nrmp,nsm,3)
-      real(rkind)    :: tempx(nrmp,17),psita,dpsitdrho,dvdrho,rgl
+      integer :: ns,nr,nrtmp,nrqp
+! temp/tempx made ALLOCATABLE: bpsd_get_data(plasmaf) can return
+! plasmaf%nrmax > nrmp (=nrmax+1) for file-baked fixtures such as
+! eqdata.TST-2 (nrmax=50 -> nrmp=51 but plasmaf%nrmax=52), which made the
+! former fixed-size temp(nrmp,...)/tempx(nrmp,...) overflow by one row
+! (k-yoshimi/task#203 bug-B). Size to whichever is larger so the copy loops
+! that iterate 1..plasmaf%nrmax stay in bounds.
+      real(rkind), allocatable :: temp(:,:,:)
+      real(rkind), allocatable :: tempx(:,:)
+      real(rkind)    :: psita,dpsitdrho,dvdrho,rgl
       REAL(rkind)    :: FACTOR0, FACTORM, FACTORP
 !=======================================================================
 
@@ -182,6 +189,12 @@ CONTAINS
 
       call bpsd_get_data(plasmaf,ierr)
 
+! Size the work arrays now that plasmaf%nrmax is known. nrmp = nrmax+1, but
+! plasmaf%nrmax can exceed that for file-baked fixtures (see decl comment).
+      nrtmp=max(plasmaf%nrmax,nrmp)
+      allocate(temp(nrtmp,nsm,3))
+      allocate(tempx(nrtmp,17))
+
       do ns=1,plasmaf%nsmax
          do nr=1,plasmaf%nrmax
             temp(nr,ns,1)=plasmaf%data(nr,ns)%density*1.d-20
@@ -189,7 +202,11 @@ CONTAINS
             temp(nr,ns,3)=plasmaf%data(nr,ns)%velocity_tor
          enddo
       enddo
-      do nr=2,plasmaf%nrmax
+! qp is allocated to size NRMAX, so the qp(nr-1) write must stop at NRMAX
+! (=nrmax+1-1). plasmaf%nrmax may be larger; clamp the upper bound so the
+! one-past-end write (qp(51) for TST-2) cannot occur (k-yoshimi/task#203 bug-B).
+      nrqp=min(plasmaf%nrmax,nrmax+1)
+      do nr=2,nrqp
          qp(nr-1)=1.d0/plasmaf%qinv(nr)
       enddo
       Q0=2.d0*qp(1)-qp(2)
@@ -376,6 +393,8 @@ CONTAINS
 
       endif
 
+      if(allocated(temp))  deallocate(temp)
+      if(allocated(tempx)) deallocate(tempx)
       return
   END SUBROUTINE tr_bpsd_get
 
