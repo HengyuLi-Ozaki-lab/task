@@ -34,6 +34,16 @@ import sys
 import unittest
 from pathlib import Path
 
+import pytest
+
+# Force per-test process isolation even when the runner forgets
+# `--forked` on the command line. eq_api's g_initialized is
+# module-level (eq/eq_api.f90:71): without a fork between tests, a
+# previous test that flipped it to TRUE could let a later test pass
+# spuriously even when the #209 cascade is broken. pytest-forked is
+# always available in this repo's CI matrix and locally.
+pytestmark = [pytest.mark.forked]
+
 HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"

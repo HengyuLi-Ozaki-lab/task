@@ -90,14 +90,18 @@ TOT_L3_DEPS_OBJ = \
     ../wrx/obj/wrx_param_registry.o \
     ../eq/eq_param_registry.o
 
-# Phase L-6: per-module API .o files. tot_api.f90 now USEs tr_api /
-# ti_api / fp_api / wrx_api so the orchestrator lifecycle can fan out
-# to each per-module *_api_init / *_api_run / *_api_finalize. Each
-# per-module SRCS_API objects are built by the owning Makefile via
-# the same delegated sub-makes used for the param_registry .o above.
-# Ordering matters: state before param_registry before api (tr_api
-# USEs tr_state; similarly for ti/fp/wrx).
+# Phase L-6: per-module API .o files. tot_api.f90 USEs eq_api /
+# tr_api / ti_api / fp_api / wrx_api so the orchestrator lifecycle can
+# fan out to each per-module *_api_init / *_api_run / *_api_finalize.
+# eq_api was added in #209 (tot_init now cascades eq_api_init to flip
+# eq_api's dual flag for direct-ctypes callers). Each per-module
+# SRCS_API objects are built by the owning Makefile via the same
+# delegated sub-makes used for the param_registry .o above. Ordering
+# matters: state before param_registry before api (tr_api USEs
+# tr_state; similarly for eq/ti/fp/wrx).
 TOT_L6_API_OBJ = \
+    ../eq/eq_state.o \
+    ../eq/eq_api.o \
     ../tr/obj/tr_state.o \
     ../tr/obj/tr_api.o \
     ../ti/ti_state.o \
@@ -264,6 +268,10 @@ $(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TO
 	(cd ../eq; make eq_param_registry.o)
 
 # L-6: per-module api/state .o files.
+../eq/eq_state.o:
+	(cd ../eq; make eq_state.o)
+../eq/eq_api.o:
+	(cd ../eq; make eq_api.o)
 ../tr/obj/tr_state.o:
 	(cd ../tr; make obj/tr_state.o)
 ../tr/obj/tr_api.o:
@@ -333,13 +341,16 @@ tot_param_registry.o : tot_param_registry.f90 \
                        ../ti/ti_param_registry.o \
                        ../wrx/obj/wrx_param_registry.o \
                        ../eq/eq_param_registry.o
-# tot_api.o USEs tr_api / ti_api / fp_api / wrx_api (in addition to
-# tot_state + tot_param_registry). The corresponding .mod files are
-# emitted by each module's *_api.o build, NOT by lib*.a. Same reasoning
-# as tot_param_registry.o above: depend on the per-module *_state.o /
-# *_api.o explicitly so make compiles them first.
+# tot_api.o USEs eq_api / tr_api / ti_api / fp_api / wrx_api (in
+# addition to tot_state + tot_param_registry). The corresponding .mod
+# files are emitted by each module's *_api.o build, NOT by lib*.a.
+# Same reasoning as tot_param_registry.o above: depend on the
+# per-module *_state.o / *_api.o explicitly so make compiles them
+# first. eq added in #209 (tot_init now cascades eq_api_init).
 tot_api.o   : tot_api.f90 tot_state.f90 tot_state.o tot_param_registry.o \
-              ../tr/libtr2.a ../ti/libti.a ../fp/libfp.a ../wrx/libwr.a \
+              ../eq/libeq.a ../tr/libtr2.a ../ti/libti.a ../fp/libfp.a \
+              ../wrx/libwr.a \
+              ../eq/eq_state.o ../eq/eq_api.o \
               ../tr/obj/tr_state.o ../tr/obj/tr_api.o \
               ../ti/ti_state.o ../ti/ti_api.o \
               ../fp/obj/fp_state.o ../fp/obj/fp_api.o \
