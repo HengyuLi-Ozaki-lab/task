@@ -113,8 +113,10 @@ class TestBpsdRoundTrip(unittest.TestCase):
         import tempfile
 
         lib = ctypes.CDLL(_mono_path())
-        # tot init/finalize (full lifecycle, brings up all submodules
-        # including eq's internal state through tr_api_init -> eq_init).
+        # tot init/finalize (full lifecycle, brings up all sub-modules
+        # including eq_api's C-ABI g_initialized via the cascade added
+        # in #209 — direct ctypes callers no longer need a separate
+        # eq_init() round trip after tot_init()).
         lib.tot_init.restype = ctypes.c_int
         lib.tot_init.argtypes = []
         lib.tot_finalize.restype = ctypes.c_int
@@ -123,15 +125,9 @@ class TestBpsdRoundTrip(unittest.TestCase):
         # libtotapi_mono.so along with all other tr PIC objects).
         lib.tr_check_bpsd_pull.argtypes = [ctypes.POINTER(ctypes.c_int)]
         lib.tr_check_bpsd_pull.restype = None
-        # eq C ABI for driving the BPSD push: eq_api maintains its own
-        # g_initialized flag separate from tot_api's; tot_init -> tr_api_init
-        # calls equnit::eq_init (Fortran) but does NOT flip eq_api's
-        # g_initialized. We must call eq_init() via the C ABI explicitly
-        # before set_param / run will succeed. eq_api_init's
-        # equnit_eq_init is idempotent (just re-defaults NRMAX/MODELG/...)
-        # so calling it after tot_init is safe.
-        lib.eq_init.restype = ctypes.c_int
-        lib.eq_init.argtypes = []
+        # eq C ABI for driving the BPSD push. eq_api's g_initialized
+        # is flipped by the tot_init cascade (#209), so we go straight
+        # to eq_set_param / eq_run below.
         lib.eq_set_param.restype = ctypes.c_int
         lib.eq_set_param.argtypes = [ctypes.c_char_p, ctypes.c_double]
         lib.eq_set_param_str.restype = ctypes.c_int
@@ -149,11 +145,8 @@ class TestBpsdRoundTrip(unittest.TestCase):
                 rc = lib.tot_init()
                 self.assertEqual(rc, 0, f"tot_init returned {rc}")
                 try:
-                    # eq_api maintains its own g_initialized flag; flip
-                    # it explicitly so set_param / run pass the
-                    # NOT_INIT guard.
-                    rc = lib.eq_init()
-                    self.assertEqual(rc, 0, f"eq_init returned {rc}")
+                    # No explicit eq_init() — #209 cascade flips
+                    # eq_api's g_initialized from inside tot_api_init.
                     rc = lib.eq_set_param(b"MODELG", ctypes.c_double(3.0))
                     self.assertEqual(rc, 0, f"eq_set_param(MODELG=3) -> {rc}")
                     rc = lib.eq_set_param_str(b"KNAMEQ", b"eqdata-HT6M")
