@@ -101,6 +101,7 @@ TOT_L3_DEPS_OBJ = \
 # tr_state; similarly for eq/ti/fp/wrx).
 TOT_L6_API_OBJ = \
     ../eq/eq_state.o \
+    ../eq/eq_api_common.o \
     ../eq/eq_api.o \
     ../tr/obj/tr_state.o \
     ../tr/obj/tr_api.o \
@@ -270,6 +271,13 @@ $(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TO
 # L-6: per-module api/state .o files.
 ../eq/eq_state.o:
 	(cd ../eq; make eq_state.o)
+# eq_api.o references eq_common_get_grid_counts_ / eq_common_get_scalars_
+# / etc. from eq_api_common.f. That helper is NOT part of libeq.a (eq's
+# Makefile keeps it in OBJ_API only), so the static `make tot_api_check`
+# link needs the .o explicitly. The PIC libtotapi*.so paths get it via
+# ../eq/libeqapi.so where eq_api_common.o is already co-linked.
+../eq/eq_api_common.o:
+	(cd ../eq; make eq_api_common.o)
 ../eq/eq_api.o:
 	(cd ../eq; make eq_api.o)
 ../tr/obj/tr_state.o:
