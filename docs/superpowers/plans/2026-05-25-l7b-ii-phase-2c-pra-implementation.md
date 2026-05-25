@@ -77,10 +77,13 @@ test -L /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/bpsd \
   || ln -s /Users/k-yoshimi/Dropbox/cursor/task/../bpsd \
         /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/bpsd
 readlink /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/bpsd
-realpath ../../bpsd
+# From the worktree root, the build chain's `../../bpsd` from `pl/`
+# resolves to `<wt-root>/../bpsd` (i.e. `.claude/worktrees/bpsd`).
+# Verify the symlink resolves to the canonical bpsd checkout.
+realpath ../bpsd
 ```
 
-Expected: symlink resolves to `/Users/k-yoshimi/Dropbox/cursor/task/../bpsd` (the canonical bpsd checkout).
+Expected: symlink resolves to the canonical bpsd checkout (e.g. `/Users/k-yoshimi/Dropbox/cursor/bpsd`).
 
 - [ ] **Step 5: Build the mono image AND the default per-module image**
 
@@ -403,7 +406,17 @@ Expected:
 - `test_set_routes_eqlib`: FAIL (eqlib does NOT yet consult `_runtime_mode`)
 - `test_missing_file_raises`: FAIL (same reason)
 
-- [ ] **Step 3: Modify `python/eqlib/_ffi.py` — add priority-0 hook**
+- [ ] **Step 3: Modify `python/eqlib/_ffi.py` — add top-level import**
+
+Locate the import block near the top of the file (just after `from typing import Optional`). Insert:
+
+```python
+from _runtime_mode import mono_lib_path
+```
+
+Top-level (not function-local) per spec §10 R-3 explicit decision: "wrappers' tests already assume `python/` is on `sys.path`, and production users do too." Putting the import at module top avoids paying the import cost on every `_default_lib_path()` call and keeps the dependency declarative.
+
+- [ ] **Step 4: Modify `python/eqlib/_ffi.py` — add priority-0 hook**
 
 Locate `_default_lib_path()` (around line 169). Replace it with:
 
@@ -422,7 +435,6 @@ def _default_lib_path() -> Path:
     wins over (0) — the early ``if path:`` branch runs before this
     function is consulted.
     """
-    from _runtime_mode import mono_lib_path
     mono = mono_lib_path()
     if mono is not None:
         return mono
@@ -458,7 +470,7 @@ two parents above this file (``__file__.parents[2]``).
 """
 ```
 
-- [ ] **Step 4: Verify the 3 tests pass**
+- [ ] **Step 5: Verify the 3 tests pass**
 
 ```bash
 (cd python && python -m pytest --forked --timeout=120 --timeout-method=signal totlib/tests/test_mono_routing.py -v 2>&1) | tail -15
@@ -466,7 +478,7 @@ two parents above this file (``__file__.parents[2]``).
 
 Expected: 4 passed (TestHelperCacheClear + 3 from TestEqlibRouting).
 
-- [ ] **Step 5: Verify eqlib's own test suite still green (no regression)**
+- [ ] **Step 6: Verify eqlib's own test suite still green (no regression)**
 
 ```bash
 (cd python && python -m pytest --forked --timeout=120 --timeout-method=signal eqlib/tests/ 2>&1) | tail -5
@@ -474,7 +486,7 @@ Expected: 4 passed (TestHelperCacheClear + 3 from TestEqlibRouting).
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add python/eqlib/_ffi.py python/totlib/tests/test_mono_routing.py
@@ -514,9 +526,15 @@ EOF
 - Modify: `python/totlib/_ffi.py`
 - Modify: `python/totlib/tests/test_mono_routing.py` (expand to all-6 assertion + add 2 more cases)
 
-The pattern is identical for each wrapper: import `mono_lib_path`, prepend it as priority 0 in `_default_lib_path()`, update docstring. Below shows the per-wrapper substitution after the eqlib template from Task 2.
+The pattern is identical for each wrapper: add top-level `from _runtime_mode import mono_lib_path`, prepend `mono_lib_path()` as priority 0 in `_default_lib_path()`, update docstring. Below shows the per-wrapper substitution after the eqlib template from Task 2.
 
 - [ ] **Step 1: Modify `python/trlib/_ffi.py`**
+
+Add to the import block (just after `from typing import Optional`):
+
+```python
+from _runtime_mode import mono_lib_path
+```
 
 Locate the analogous `_default_lib_path()` (search `def _default_lib_path`) and replace with:
 
@@ -530,7 +548,6 @@ def _default_lib_path() -> Path:
       2. ``<repo>/tr/libtrapi.so``
       3. ``<repo>/lib/libtrapi.so``
     """
-    from _runtime_mode import mono_lib_path
     mono = mono_lib_path()
     if mono is not None:
         return mono
@@ -545,7 +562,15 @@ def _default_lib_path() -> Path:
 
 Update module docstring to prepend priority 0 (same shape as eqlib's update in Task 2 Step 3).
 
-- [ ] **Step 2: Modify `python/fplib/_ffi.py`** — identical pattern with `FPLIB_PATH`:
+- [ ] **Step 2: Modify `python/fplib/_ffi.py`** — identical pattern with `FPLIB_PATH`.
+
+Add top-level import alongside the other imports:
+
+```python
+from _runtime_mode import mono_lib_path
+```
+
+Replace `_default_lib_path()`:
 
 ```python
 def _default_lib_path() -> Path:
@@ -557,7 +582,6 @@ def _default_lib_path() -> Path:
       2. ``<repo>/fp/libfpapi.so``
       3. ``<repo>/lib/libfpapi.so``
     """
-    from _runtime_mode import mono_lib_path
     mono = mono_lib_path()
     if mono is not None:
         return mono
@@ -572,7 +596,15 @@ def _default_lib_path() -> Path:
 
 Update docstring header analogously.
 
-- [ ] **Step 3: Modify `python/tilib/_ffi.py`** — `TILIB_PATH`:
+- [ ] **Step 3: Modify `python/tilib/_ffi.py`** — `TILIB_PATH`.
+
+Add top-level import:
+
+```python
+from _runtime_mode import mono_lib_path
+```
+
+Replace `_default_lib_path()`:
 
 ```python
 def _default_lib_path() -> Path:
@@ -584,7 +616,6 @@ def _default_lib_path() -> Path:
       2. ``<repo>/ti/libtiapi.so``
       3. ``<repo>/lib/libtiapi.so``
     """
-    from _runtime_mode import mono_lib_path
     mono = mono_lib_path()
     if mono is not None:
         return mono
@@ -599,7 +630,15 @@ def _default_lib_path() -> Path:
 
 Update docstring header analogously.
 
-- [ ] **Step 4: Modify `python/wrxlib/_ffi.py`** — `WRXLIB_PATH`:
+- [ ] **Step 4: Modify `python/wrxlib/_ffi.py`** — `WRXLIB_PATH`.
+
+Add top-level import:
+
+```python
+from _runtime_mode import mono_lib_path
+```
+
+Replace `_default_lib_path()`:
 
 ```python
 def _default_lib_path() -> Path:
@@ -611,7 +650,6 @@ def _default_lib_path() -> Path:
       2. ``<repo>/wrx/libwrxapi.so``
       3. ``<repo>/lib/libwrxapi.so``
     """
-    from _runtime_mode import mono_lib_path
     mono = mono_lib_path()
     if mono is not None:
         return mono
@@ -626,7 +664,15 @@ def _default_lib_path() -> Path:
 
 Update docstring header analogously.
 
-- [ ] **Step 5: Modify `python/totlib/_ffi.py`** — `TOTLIB_PATH` (D-7 explicitly applies: MONO overrides TOTLIB_PATH on tot itself):
+- [ ] **Step 5: Modify `python/totlib/_ffi.py`** — `TOTLIB_PATH` (D-7 explicitly applies: MONO overrides TOTLIB_PATH on tot itself).
+
+Add top-level import:
+
+```python
+from _runtime_mode import mono_lib_path
+```
+
+Replace `_default_lib_path()`:
 
 ```python
 def _default_lib_path() -> Path:
@@ -641,7 +687,6 @@ def _default_lib_path() -> Path:
       2. ``<repo>/tot/libtotapi.so``
       3. ``<repo>/lib/libtotapi.so``
     """
-    from _runtime_mode import mono_lib_path
     mono = mono_lib_path()
     if mono is not None:
         return mono
@@ -860,12 +905,25 @@ class TestNonMonoSoRaises(unittest.TestCase):
 - [ ] **Step 3: Add `test_wrong_so_without_tot_is_mono_raises`**
 
 ```python
+# Cover Debian/Ubuntu, RHEL/Fedora/CentOS (lib64), older Linux,
+# musl-based distros (Alpine), and macOS's libSystem fallback. The
+# class-level skipUnless gates on any candidate existing; the
+# loop inside test_* picks the first match so the friendly RuntimeError
+# we raise actually points at a real dlopen-able .so.
+_LIBC_CANDIDATES = (
+    "/usr/lib/x86_64-linux-gnu/libc.so.6",       # Debian/Ubuntu
+    "/lib/x86_64-linux-gnu/libc.so.6",           # older Debian
+    "/lib64/libc.so.6",                          # RHEL/Fedora/CentOS
+    "/usr/lib64/libc.so.6",                      # RHEL alt
+    "/usr/lib/libc.so.6",                        # Arch + others
+    "/lib/libc.musl-x86_64.so.1",                # Alpine musl
+    "/usr/lib/libSystem.B.dylib",                # macOS (Mach-O)
+)
+
+
 @unittest.skipUnless(
-    Path("/usr/lib/x86_64-linux-gnu/libc.so.6").exists()
-    or Path("/usr/lib/libc.so.6").exists()
-    or Path("/lib/x86_64-linux-gnu/libc.so.6").exists(),
-    "libc.so.6 not at any expected Linux location; "
-    "macOS does not ship libc.so",
+    any(Path(c).exists() for c in _LIBC_CANDIDATES),
+    "libc.so.6 / libSystem not at any expected location",
 )
 class TestWrongSoWithoutTotIsMono(unittest.TestCase):
     """MONO_LIB_PATH set to a valid but unrelated .so (libc) ->
@@ -877,16 +935,12 @@ class TestWrongSoWithoutTotIsMono(unittest.TestCase):
         import _runtime_mode
         from eqlib import _ffi as eqlib_ffi
 
-        for cand in (
-            "/usr/lib/x86_64-linux-gnu/libc.so.6",
-            "/usr/lib/libc.so.6",
-            "/lib/x86_64-linux-gnu/libc.so.6",
-        ):
-            if Path(cand).exists():
-                libc = cand
-                break
-        else:
-            self.skipTest("libc.so.6 not found")
+        libc = next(
+            (c for c in _LIBC_CANDIDATES if Path(c).exists()),
+            None,
+        )
+        if libc is None:
+            self.skipTest("no libc candidate found at runtime")
 
         os.environ["MONO_LIB_PATH"] = libc
         _runtime_mode.mono_lib_path.cache_clear()
