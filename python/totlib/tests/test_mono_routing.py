@@ -274,6 +274,11 @@ class TestNonMonoSoRaises(unittest.TestCase):
 # p.exists() check and raise FileNotFoundError instead of the RuntimeError
 # we want. Use files that are real on disk: /usr/lib/libobjc-trampolines.dylib
 # (macOS 12+) is always a real file and dlopen-able without tot_is_mono.
+# NOTE: macOS fixture (libobjc-trampolines.dylib) is dyld-cache-visible
+# AND a real file on macOS 12+. If a future macOS removes/inlines it,
+# the test will SKIP (Path.exists()->False, skipUnless gates the class).
+# A maintainer should add a replacement candidate, NOT widen this list
+# silently — see #208 PR-A Codex 2026-05-25 review MED-2.
 _UNRELATED_SO_CANDIDATES = (
     "/usr/lib/x86_64-linux-gnu/libc.so.6",       # Debian/Ubuntu
     "/lib/x86_64-linux-gnu/libc.so.6",           # older Debian
@@ -375,6 +380,7 @@ class TestExplicitConstructorPathWins(unittest.TestCase):
         original_mono = os.environ.get("MONO_LIB_PATH")
         os.environ["MONO_LIB_PATH"] = _mono_path()
         _runtime_mode.mono_lib_path.cache_clear()
+        tot = None
         try:
             # Pass the default .so explicitly; it should be used,
             # NOT the mono path.
@@ -384,8 +390,9 @@ class TestExplicitConstructorPathWins(unittest.TestCase):
                 f"explicit lib_path should override MONO; "
                 f"got {tot._lib._name}, expected {_totlib_path()}",
             )
-            tot.close()
         finally:
+            if tot is not None:
+                tot.close()
             if original_mono is not None:
                 os.environ["MONO_LIB_PATH"] = original_mono
             else:
