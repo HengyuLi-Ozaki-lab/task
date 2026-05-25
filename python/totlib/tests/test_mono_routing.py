@@ -178,8 +178,13 @@ class TestAllWrappersRouting(unittest.TestCase):
             for modname, _envname, _suffix in WRAPPER_MODULES:
                 with self.subTest(wrapper=modname):
                     ffi = _import_ffi(modname)
-                    with self.assertRaises(FileNotFoundError):
+                    with self.assertRaises(FileNotFoundError) as ctx:
                         ffi._default_lib_path()
+                    self.assertIn(
+                        "does not exist", str(ctx.exception),
+                        f"{modname} raised FileNotFoundError but message lacks "
+                        f"'does not exist': {ctx.exception}",
+                    )
         finally:
             if original_mono_lib_path is not None:
                 os.environ["MONO_LIB_PATH"] = original_mono_lib_path
