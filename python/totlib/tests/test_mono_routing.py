@@ -88,5 +88,82 @@ class TestHelperCacheClear(unittest.TestCase):
             _runtime_mode.mono_lib_path.cache_clear()
 
 
+@unittest.skipUnless(
+    _mono_path(),
+    "MONO_LIB_PATH not set or missing",
+)
+class TestEqlibRouting(unittest.TestCase):
+    """First wrapper wiring (eqlib). Other wrappers added in Task 3."""
+
+    def test_unset_falls_back_to_per_module(self):
+        """MONO_LIB_PATH unset -> eqlib uses per-module default."""
+        import _runtime_mode
+        from eqlib import _ffi as eqlib_ffi
+
+        original_mono_lib_path = os.environ.get("MONO_LIB_PATH")
+
+        try:
+            os.environ.pop("MONO_LIB_PATH", None)
+            _runtime_mode.mono_lib_path.cache_clear()
+
+            resolved = eqlib_ffi._default_lib_path()
+            self.assertTrue(
+                str(resolved).endswith("eq/libeqapi.so")
+                or str(resolved).endswith("lib/libeqapi.so"),
+                f"expected per-module libeqapi.so, got {resolved}",
+            )
+        finally:
+            if original_mono_lib_path is not None:
+                os.environ["MONO_LIB_PATH"] = original_mono_lib_path
+            else:
+                os.environ.pop("MONO_LIB_PATH", None)
+            _runtime_mode.mono_lib_path.cache_clear()
+
+    def test_set_routes_eqlib(self):
+        """MONO_LIB_PATH set -> eqlib routes to mono image."""
+        import _runtime_mode
+        from eqlib import _ffi as eqlib_ffi
+
+        mono = _mono_path()
+        original_mono_lib_path = os.environ.get("MONO_LIB_PATH")
+
+        try:
+            os.environ["MONO_LIB_PATH"] = mono
+            _runtime_mode.mono_lib_path.cache_clear()
+
+            resolved = eqlib_ffi._default_lib_path()
+            self.assertEqual(
+                resolved, Path(mono),
+                f"MONO_LIB_PATH set but eqlib got {resolved}",
+            )
+        finally:
+            if original_mono_lib_path is not None:
+                os.environ["MONO_LIB_PATH"] = original_mono_lib_path
+            else:
+                os.environ.pop("MONO_LIB_PATH", None)
+            _runtime_mode.mono_lib_path.cache_clear()
+
+    def test_missing_file_raises(self):
+        """MONO_LIB_PATH points to /nonexistent -> FileNotFoundError."""
+        import _runtime_mode
+        from eqlib import _ffi as eqlib_ffi
+
+        original_mono_lib_path = os.environ.get("MONO_LIB_PATH")
+
+        try:
+            os.environ["MONO_LIB_PATH"] = "/nonexistent_mono.so"
+            _runtime_mode.mono_lib_path.cache_clear()
+
+            with self.assertRaises(FileNotFoundError) as ctx:
+                eqlib_ffi._default_lib_path()
+            self.assertIn("does not exist", str(ctx.exception))
+        finally:
+            if original_mono_lib_path is not None:
+                os.environ["MONO_LIB_PATH"] = original_mono_lib_path
+            else:
+                os.environ.pop("MONO_LIB_PATH", None)
+            _runtime_mode.mono_lib_path.cache_clear()
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
