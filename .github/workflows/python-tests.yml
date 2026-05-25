@@ -568,3 +568,21 @@ jobs:
         run: |
           python -m pytest python/totlib/tests/test_mono_bpsd_smoke.py -v \
             --forked --timeout=120 --timeout-method=signal
+
+      - name: Mono routing sanity (Phase 2c PR-A)
+        # #208 PR-A — verify that setting MONO_LIB_PATH routes all 6
+        # wrappers (eqlib/trlib/fplib/tilib/wrxlib/totlib) to the
+        # monolithic image instead of each loading its per-module .so.
+        # This is a SANITY test (plumbing only); the behavioral
+        # eq->tr BPSD round-trip lives in PR-B.
+        #
+        # Re-uses the default libtotapi.so artifact built earlier in
+        # this job (the "Build default libtotapi.so" step landed in
+        # PR #207) for test_non_mono_so_raises.
+        env:
+          MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
+          TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so
+          PYTHONPATH: python
+        run: |
+          python -m pytest python/totlib/tests/test_mono_routing.py \
+                 --forked --timeout=120 --timeout-method=signal -v
