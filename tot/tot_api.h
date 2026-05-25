@@ -13,7 +13,16 @@ extern "C" {
  * tr_get_state + ..., per-module *_set_param, *_finalize). The eq
  * cascade was added in #209 — direct ctypes callers can drive
  * eq_set_param / eq_run right after tot_init() without an extra
- * eq_init() round trip. Phase L-2 status: function
+ * eq_init() round trip.
+ *
+ * Phase 2c PR-A (#208) introduces a single-authoritative routing
+ * contract for the Python wrappers: setting the MONO_LIB_PATH env
+ * var makes every per-module wrapper (Eqlib / Trlib / ...) and the
+ * Tot orchestrator wrapper load libtotapi_mono.so instead of each
+ * loading its per-module lib<mod>api.so. This is plumbing only at
+ * the C ABI level — no new symbols added to this header.
+ *
+ * Phase L-2 status: function
  * symbols are present in libtotapi (built from tot_api.f90); each
  * entry point is a stub returning TOT_ERR_NOT_IMPLEMENTED (=4). Real
  * composition arrives in Phase L-3+.

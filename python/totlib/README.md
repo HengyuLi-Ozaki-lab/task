@@ -408,3 +408,28 @@ dispatch).
 - `python/trlib/README.md`, `python/eqlib/README.md` — sibling wrapper
   references
 - `CHANGELOG.md` — per-phase history
+
+## Mono routing (Phase 2c PR-A, #208)
+
+To make every wrapper load the monolithic image (so eq/tr/fp/ti/wrx
+all share one BPSD broker), set the `MONO_LIB_PATH` env var:
+
+```bash
+export MONO_LIB_PATH=/path/to/tot/libtotapi_mono.so
+python -c "from totlib import Tot, TotPipeline; ..."
+```
+
+When set, the helper at `python/_runtime_mode.py` verifies the .so
+is a real mono image (`tot_is_mono() == 1`) and short-circuits each
+wrapper's per-module path resolution.
+
+Errors are loud:
+- missing file → `FileNotFoundError`
+- non-mono `.so` → `RuntimeError("not a mono image")`
+- non-shared-object file → `RuntimeError("cannot be dlopen'd")`
+
+Explicit `lib_path=...` to a wrapper constructor still wins
+(diagnostic / one-off probes are not affected).
+
+The behavioral eq→tr BPSD coupling rule that this routing enables
+is activated in PR-B (issue #208 follow-up).
