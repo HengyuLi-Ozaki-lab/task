@@ -560,7 +560,7 @@ def _default_lib_path() -> Path:
     return _candidate_paths()[0]
 ```
 
-Update module docstring to prepend priority 0 (same shape as eqlib's update in Task 2 Step 3).
+Update module docstring to prepend priority 0 (same shape as eqlib's docstring update in Task 2 Step 4, the "add priority-0 hook" step).
 
 - [ ] **Step 2: Modify `python/fplib/_ffi.py`** — identical pattern with `FPLIB_PATH`.
 
@@ -1018,7 +1018,7 @@ export TOTLIB_PATH="$PWD/tot/libtotapi.so"
 
 Expected: 9 tests pass (1 helper + 3 + 1 + 1 + 1 + 1 + 1).
 
-On macOS, `test_wrong_so_without_tot_is_mono_raises` skips because libc.so.6 isn't shipped. CI Linux runs all 9.
+All 9 tests run on every platform now that `_LIBC_CANDIDATES` includes the macOS Mach-O `/usr/lib/libSystem.B.dylib`. If the test runs in a non-standard sysroot with no libc / libSystem at any expected location, the class-level `skipUnless(any(exists))` skips cleanly.
 
 - [ ] **Step 7: Commit**
 
@@ -1043,8 +1043,9 @@ place (1 helper + 3 wrapper-flow):
 - test_explicit_constructor_path_still_wins: Tot(lib_path=...) at
   the user-facing constructor level beats MONO_LIB_PATH.
 
-9 cases total; full local run green; macOS path skips libc test
-cleanly.
+9 cases total; full local run green. libc test now portable across
+Debian/Ubuntu, RHEL/Fedora, Alpine musl, and macOS via the
+expanded _LIBC_CANDIDATES list (Codex pre-push review on 8d9f48a2).
 
 Spec: docs/superpowers/specs/2026-05-23-l7b-ii-phase-2c-pra-loader-contract-design.md
 
