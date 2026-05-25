@@ -192,6 +192,206 @@ class TestAllWrappersRouting(unittest.TestCase):
                 os.environ.pop("MONO_LIB_PATH", None)
             _runtime_mode.mono_lib_path.cache_clear()
 
+    def test_per_module_env_var_still_honored(self):
+        """MONO_LIB_PATH unset + per-module env var set -> uses
+        per-module env (priority 1, unchanged from pre-#208 behavior).
+        Pins D-5: the 4-step default chain stays verbatim when MONO
+        is inactive (spec §8.1 LOW-3).
+        """
+        import _runtime_mode
+        import tempfile
+
+        # Capture mono path BEFORE popping MONO_LIB_PATH from env
+        # (once popped, _mono_path() returns "" which resolves to ".").
+        mono_so = _mono_path()
+        original_mono = os.environ.pop("MONO_LIB_PATH", None)
+        _runtime_mode.mono_lib_path.cache_clear()
+        try:
+            # Use a path that exists so the env-var branch returns it.
+            # Reuse the mono .so path as a sentinel — its filename is
+            # NOT libtrapi.so / libeqapi.so / ... so we can detect
+            # that the env-var step is what selected it.
+            with tempfile.TemporaryDirectory() as td:
+                fake = Path(td) / "fake-per-module.so"
+                fake.write_bytes(Path(mono_so).read_bytes()[:100])
+                for modname, envname, _suffix in WRAPPER_MODULES:
+                    with self.subTest(wrapper=modname, env=envname):
+                        os.environ[envname] = str(fake)
+                        try:
+                            ffi = _import_ffi(modname)
+                            resolved = ffi._default_lib_path()
+                            self.assertEqual(
+                                resolved, fake,
+                                f"{modname}: {envname}={fake} but "
+                                f"got {resolved}",
+                            )
+                        finally:
+                            os.environ.pop(envname, None)
+        finally:
+            if original_mono is not None:
+                os.environ["MONO_LIB_PATH"] = original_mono
+            _runtime_mode.mono_lib_path.cache_clear()
+
+
+@unittest.skipUnless(
+    _mono_path() and _totlib_path(),
+    "MONO_LIB_PATH and TOTLIB_PATH must both be set",
+)
+class TestNonMonoSoRaises(unittest.TestCase):
+    """MONO_LIB_PATH pointed at a default (per-module-link)
+    libtotapi.so -> RuntimeError. The default .so has tot_is_mono()
+    returning 0, not 1.
+    """
+
+    def test_non_mono_so_raises(self):
+        import _runtime_mode
+        from eqlib import _ffi as eqlib_ffi
+
+        original_mono = os.environ.get("MONO_LIB_PATH")
+        os.environ["MONO_LIB_PATH"] = _totlib_path()
+        _runtime_mode.mono_lib_path.cache_clear()
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                eqlib_ffi._default_lib_path()
+            self.assertIn("not a mono image", str(ctx.exception))
+        finally:
+            if original_mono is not None:
+                os.environ["MONO_LIB_PATH"] = original_mono
+            else:
+                os.environ.pop("MONO_LIB_PATH", None)
+            _runtime_mode.mono_lib_path.cache_clear()
+
+
+# Candidates for "a valid dlopen-able .so / .dylib that does NOT
+# contain tot_is_mono" — used to test the §6 hasattr guard.
+# Requirements: (a) real file on disk (Path.exists() == True), so it
+# passes _runtime_mode's p.exists() gate; (b) can be dlopen'd; (c) no
+# tot_is_mono symbol.
+#
+# Note: on macOS 12+ (dyld shared cache) system libraries like
+# /usr/lib/libc.dylib or /usr/lib/libSystem.B.dylib are NOT present as
+# real files (Path.exists() -> False), so they fail _runtime_mode's
+# p.exists() check and raise FileNotFoundError instead of the RuntimeError
+# we want. Use files that are real on disk: /usr/lib/libobjc-trampolines.dylib
+# (macOS 12+) is always a real file and dlopen-able without tot_is_mono.
+_UNRELATED_SO_CANDIDATES = (
+    "/usr/lib/x86_64-linux-gnu/libc.so.6",       # Debian/Ubuntu
+    "/lib/x86_64-linux-gnu/libc.so.6",           # older Debian
+    "/lib64/libc.so.6",                          # RHEL/Fedora/CentOS
+    "/usr/lib64/libc.so.6",                      # RHEL alt
+    "/usr/lib/libc.so.6",                        # Arch + others
+    "/lib/libc.musl-x86_64.so.1",                # Alpine musl
+    "/usr/lib/libobjc-trampolines.dylib",        # macOS 12+ (real file, no tot_is_mono)
+    "/usr/lib/libffi-trampolines.dylib",         # macOS 12+ alt
+)
+
+_UNRELATED_SO_PATH = next(
+    (c for c in _UNRELATED_SO_CANDIDATES if Path(c).exists()),
+    "",
+)
+
+
+@unittest.skipUnless(
+    _UNRELATED_SO_PATH,
+    "no unrelated .so / .dylib found at any expected location",
+)
+class TestWrongSoWithoutTotIsMono(unittest.TestCase):
+    """MONO_LIB_PATH set to a valid but unrelated .so (libc /
+    libobjc-trampolines) -> RuntimeError mentioning the missing
+    tot_is_mono symbol. Exercises the §6 hasattr guard.
+    """
+
+    def test_wrong_so_without_tot_is_mono_raises(self):
+        import _runtime_mode
+        from eqlib import _ffi as eqlib_ffi
+
+        unrelated = _UNRELATED_SO_PATH
+        if not unrelated:
+            self.skipTest("no unrelated .so candidate found at runtime")
+
+        original_mono = os.environ.get("MONO_LIB_PATH")
+        os.environ["MONO_LIB_PATH"] = unrelated
+        _runtime_mode.mono_lib_path.cache_clear()
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                eqlib_ffi._default_lib_path()
+            self.assertIn("tot_is_mono", str(ctx.exception))
+        finally:
+            if original_mono is not None:
+                os.environ["MONO_LIB_PATH"] = original_mono
+            else:
+                os.environ.pop("MONO_LIB_PATH", None)
+            _runtime_mode.mono_lib_path.cache_clear()
+
+
+class TestUnreadableSoRaises(unittest.TestCase):
+    """MONO_LIB_PATH set to a path whose contents are NOT a valid
+    shared object (e.g. an empty file) -> friendly RuntimeError
+    (NOT a raw OSError). Exercises the §6 try/except OSError wrap.
+    """
+
+    def test_unreadable_so_raises_runtime_error(self):
+        import _runtime_mode
+        import tempfile
+        from eqlib import _ffi as eqlib_ffi
+
+        with tempfile.TemporaryDirectory() as td:
+            bad = Path(td) / "not-a-real.so"
+            bad.write_text("this is not an ELF/Mach-O shared object\n")
+
+            original_mono = os.environ.get("MONO_LIB_PATH")
+            os.environ["MONO_LIB_PATH"] = str(bad)
+            _runtime_mode.mono_lib_path.cache_clear()
+            try:
+                with self.assertRaises(RuntimeError) as ctx:
+                    eqlib_ffi._default_lib_path()
+                self.assertIn(
+                    "cannot be dlopen'd", str(ctx.exception),
+                )
+            finally:
+                if original_mono is not None:
+                    os.environ["MONO_LIB_PATH"] = original_mono
+                else:
+                    os.environ.pop("MONO_LIB_PATH", None)
+                _runtime_mode.mono_lib_path.cache_clear()
+
+
+@unittest.skipUnless(
+    _mono_path() and _totlib_path(),
+    "MONO_LIB_PATH and TOTLIB_PATH must both be set",
+)
+class TestExplicitConstructorPathWins(unittest.TestCase):
+    """Explicit ``lib_path=...`` to a high-level wrapper constructor
+    STILL wins over MONO_LIB_PATH (spec D-5 + §7 Combined
+    precedence). Uses the user-facing Tot(lib_path=...) constructor,
+    not the low-level _ffi.load_library, so a regression here would
+    be visible to actual library users.
+    """
+
+    def test_explicit_constructor_path_still_wins(self):
+        import _runtime_mode
+        from totlib import Tot
+
+        original_mono = os.environ.get("MONO_LIB_PATH")
+        os.environ["MONO_LIB_PATH"] = _mono_path()
+        _runtime_mode.mono_lib_path.cache_clear()
+        try:
+            # Pass the default .so explicitly; it should be used,
+            # NOT the mono path.
+            tot = Tot(lib_path=_totlib_path())
+            self.assertEqual(
+                tot._lib._name, _totlib_path(),
+                f"explicit lib_path should override MONO; "
+                f"got {tot._lib._name}, expected {_totlib_path()}",
+            )
+            tot.close()
+        finally:
+            if original_mono is not None:
+                os.environ["MONO_LIB_PATH"] = original_mono
+            else:
+                os.environ.pop("MONO_LIB_PATH", None)
+            _runtime_mode.mono_lib_path.cache_clear()
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
