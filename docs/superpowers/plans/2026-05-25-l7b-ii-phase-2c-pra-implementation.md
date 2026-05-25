@@ -1035,9 +1035,10 @@ place (1 helper + 3 wrapper-flow):
   the env-var step, not a side-effect of the fallback file existing.
 - test_non_mono_so_raises: default libtotapi.so (tot_is_mono==0)
   surfaces "not a mono image" RuntimeError.
-- test_wrong_so_without_tot_is_mono_raises: libc.so.6 (valid but
-  unrelated .so) surfaces "no tot_is_mono symbol" RuntimeError.
-  Skips on macOS (no libc.so).
+- test_wrong_so_without_tot_is_mono_raises: libc / libSystem
+  (valid but unrelated .so) surfaces "no tot_is_mono symbol"
+  RuntimeError. Portable across Debian/Ubuntu, RHEL/Fedora, Alpine
+  musl, and macOS via the _LIBC_CANDIDATES list.
 - test_unreadable_so_raises_runtime_error: empty/text file surfaces
   "cannot be dlopen'd" — exercises the §6 try/except OSError wrap.
 - test_explicit_constructor_path_still_wins: Tot(lib_path=...) at
