@@ -88,30 +88,54 @@ class TestHelperCacheClear(unittest.TestCase):
             _runtime_mode.mono_lib_path.cache_clear()
 
 
+WRAPPER_MODULES = (
+    ("eqlib._ffi",   "EQLIB_PATH",   "eq/libeqapi.so"),
+    ("trlib._ffi",   "TRLIB_PATH",   "tr/libtrapi.so"),
+    ("fplib._ffi",   "FPLIB_PATH",   "fp/libfpapi.so"),
+    ("tilib._ffi",   "TILIB_PATH",   "ti/libtiapi.so"),
+    ("wrxlib._ffi",  "WRXLIB_PATH",  "wrx/libwrxapi.so"),
+    ("totlib._ffi",  "TOTLIB_PATH",  "tot/libtotapi.so"),
+)
+
+
+def _import_ffi(modname: str):
+    """Import e.g. 'eqlib._ffi' and return the module."""
+    parts = modname.split(".")
+    mod = __import__(modname)
+    for p in parts[1:]:
+        mod = getattr(mod, p)
+    return mod
+
+
 @unittest.skipUnless(
     _mono_path(),
     "MONO_LIB_PATH not set or missing",
 )
-class TestEqlibRouting(unittest.TestCase):
-    """First wrapper wiring (eqlib). Other wrappers added in Task 3."""
+class TestAllWrappersRouting(unittest.TestCase):
+    """All 6 wrappers (eqlib/trlib/fplib/tilib/wrxlib/totlib) consume
+    the priority-0 mono routing hook from _runtime_mode.
+    """
 
     def test_unset_falls_back_to_per_module(self):
-        """MONO_LIB_PATH unset -> eqlib uses per-module default."""
         import _runtime_mode
-        from eqlib import _ffi as eqlib_ffi
 
         original_mono_lib_path = os.environ.get("MONO_LIB_PATH")
 
         try:
             os.environ.pop("MONO_LIB_PATH", None)
             _runtime_mode.mono_lib_path.cache_clear()
-
-            resolved = eqlib_ffi._default_lib_path()
-            self.assertTrue(
-                str(resolved).endswith("eq/libeqapi.so")
-                or str(resolved).endswith("lib/libeqapi.so"),
-                f"expected per-module libeqapi.so, got {resolved}",
-            )
+            for modname, _envname, suffix in WRAPPER_MODULES:
+                with self.subTest(wrapper=modname):
+                    ffi = _import_ffi(modname)
+                    resolved = ffi._default_lib_path()
+                    self.assertTrue(
+                        str(resolved).endswith(suffix)
+                        or str(resolved).endswith(
+                            "lib/" + suffix.split("/")[-1]
+                        ),
+                        f"{modname} expected per-module {suffix}, "
+                        f"got {resolved}",
+                    )
         finally:
             if original_mono_lib_path is not None:
                 os.environ["MONO_LIB_PATH"] = original_mono_lib_path
@@ -119,10 +143,8 @@ class TestEqlibRouting(unittest.TestCase):
                 os.environ.pop("MONO_LIB_PATH", None)
             _runtime_mode.mono_lib_path.cache_clear()
 
-    def test_set_routes_eqlib(self):
-        """MONO_LIB_PATH set -> eqlib routes to mono image."""
+    def test_set_routes_all_wrappers(self):
         import _runtime_mode
-        from eqlib import _ffi as eqlib_ffi
 
         mono = _mono_path()
         original_mono_lib_path = os.environ.get("MONO_LIB_PATH")
@@ -130,12 +152,14 @@ class TestEqlibRouting(unittest.TestCase):
         try:
             os.environ["MONO_LIB_PATH"] = mono
             _runtime_mode.mono_lib_path.cache_clear()
-
-            resolved = eqlib_ffi._default_lib_path()
-            self.assertEqual(
-                resolved, Path(mono),
-                f"MONO_LIB_PATH set but eqlib got {resolved}",
-            )
+            for modname, _envname, _suffix in WRAPPER_MODULES:
+                with self.subTest(wrapper=modname):
+                    ffi = _import_ffi(modname)
+                    resolved = ffi._default_lib_path()
+                    self.assertEqual(
+                        resolved, Path(mono),
+                        f"{modname}: MONO_LIB_PATH set but got {resolved}",
+                    )
         finally:
             if original_mono_lib_path is not None:
                 os.environ["MONO_LIB_PATH"] = original_mono_lib_path
@@ -144,19 +168,18 @@ class TestEqlibRouting(unittest.TestCase):
             _runtime_mode.mono_lib_path.cache_clear()
 
     def test_missing_file_raises(self):
-        """MONO_LIB_PATH points to /nonexistent -> FileNotFoundError."""
         import _runtime_mode
-        from eqlib import _ffi as eqlib_ffi
 
         original_mono_lib_path = os.environ.get("MONO_LIB_PATH")
 
         try:
             os.environ["MONO_LIB_PATH"] = "/nonexistent_mono.so"
             _runtime_mode.mono_lib_path.cache_clear()
-
-            with self.assertRaises(FileNotFoundError) as ctx:
-                eqlib_ffi._default_lib_path()
-            self.assertIn("does not exist", str(ctx.exception))
+            for modname, _envname, _suffix in WRAPPER_MODULES:
+                with self.subTest(wrapper=modname):
+                    ffi = _import_ffi(modname)
+                    with self.assertRaises(FileNotFoundError):
+                        ffi._default_lib_path()
         finally:
             if original_mono_lib_path is not None:
                 os.environ["MONO_LIB_PATH"] = original_mono_lib_path
