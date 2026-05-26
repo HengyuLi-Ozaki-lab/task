@@ -85,5 +85,93 @@ class TestEqToTrPipelineCoupling(unittest.TestCase):
         )
 
 
+def _default_per_module_so_present() -> bool:
+    """Return True iff every per-module .so the negative test
+    actually loads via the resolution chain exists at its default
+    repo path. eqlib/trlib/totlib wrappers each look in
+    <repo>/<mod>/lib<mod>api.so (priority 2 in PR-A's spec §D-5),
+    so we check those directly. Per Codex 2026-05-26 spec round-3
+    review, TOTLIB_PATH is NOT included here: eqlib and trlib do
+    not honor it (they use EQLIB_PATH / TRLIB_PATH respectively),
+    so gating on it would either over-skip (false-negative on
+    TOTLIB_PATH-only setups) or under-cover (false-positive when
+    eq/tr .so are missing).
+    """
+    return all(
+        (REPO / mod / f"lib{name}.so").exists()
+        for mod, name in (
+            ("eq", "eqapi"),
+            ("tr", "trapi"),
+            ("tot", "totapi"),
+        )
+    )
+
+
+@unittest.skipUnless(
+    _default_per_module_so_present() and _EQDATA_FIXTURE.exists(),
+    "per-module .so (eq/libeqapi.so, tr/libtrapi.so, "
+    "tot/libtotapi.so) and/or eqdata-HT6M fixture missing; "
+    "build via setup.sh or `make -C <mod> lib<mod>api.so`",
+)
+class TestEqToTrRuleDormantOnDefault(unittest.TestCase):
+    """Layer-D negative path: rule must NOT fire on the default
+    per-module image even though _MONO_ONLY_RULES is now populated.
+
+    Pinned per Codex 2026-05-26 design review MED-6: if a future
+    refactor of _detect_mono() or _build_active_rules() silently
+    activates the overlay on non-mono, this test catches it.
+    """
+
+    def test_eq_to_tr_rule_dormant_on_default(self):
+        import _runtime_mode
+        from totlib import TotPipeline
+
+        # Unset MONO_LIB_PATH so the wrappers route to per-module
+        # .so files via their priority-1 env vars (EQLIB_PATH /
+        # TRLIB_PATH / TOTLIB_PATH) or priority-2 repo defaults.
+        # _detect_mono() reads tot_is_mono() from the totlib
+        # wrapper's loaded image, which is the default
+        # libtotapi.so, returning 0 — so the overlay stays inactive.
+        original_mono = os.environ.pop("MONO_LIB_PATH", None)
+        _runtime_mode.mono_lib_path.cache_clear()
+
+        result = None
+        try:
+            with tempfile.TemporaryDirectory(prefix="prb_neg_") as td:
+                shutil.copy2(_EQDATA_FIXTURE, Path(td) / "eqdata-HT6M")
+                prev = os.getcwd()
+                os.chdir(td)
+                try:
+                    with TotPipeline() as p:
+                        p.set_param("eq:MODELG", 3.0)
+                        p.set_param("eq:KNAMEQ", "eqdata-HT6M")
+                        # IMPORTANT: this is expected to SUCCEED.
+                        # On default per-module .so, eq's BPSD push
+                        # lands in libeqapi's private storage; tr
+                        # reads from libtrapi's private storage. The
+                        # rule MUST stay dormant or the pipeline
+                        # would fail for the wrong reason (the
+                        # verify would return False).
+                        result = p.run_pipeline([
+                            ("eq", {"mode": 1}),
+                            ("tr", {"ntmax": 1}),
+                        ])
+                finally:
+                    os.chdir(prev)
+        finally:
+            if original_mono is not None:
+                os.environ["MONO_LIB_PATH"] = original_mono
+            _runtime_mode.mono_lib_path.cache_clear()
+
+        self.assertIsNotNone(result, "run_pipeline returned None")
+        tr_step = result.last("tr")
+        self.assertNotIn(
+            "eq -> tr BPSD broker round-trip",
+            " ".join(tr_step.coupling_applied),
+            f"rule should NOT fire on default per-module image; "
+            f"coupling_applied={tr_step.coupling_applied}",
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
