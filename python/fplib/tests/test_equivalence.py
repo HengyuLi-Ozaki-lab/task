@@ -165,6 +165,18 @@ def _fplib_importable() -> bool:
     return True
 
 
+IS_LINUX = sys.platform.startswith("linux")
+
+
+@unittest.skipUnless(
+    IS_LINUX,
+    "Equivalence tests are Linux-canonical. The 1e-10 baselines "
+    "live in test_run/baselines/<case>/metrics.json and were "
+    "generated on Linux gfortran 13.x (Ubuntu CI runner). macOS / "
+    "non-Linux dev runs the libfpapi.so via the Python wrapper; "
+    "correctness is verified by Linux CI on every push. See "
+    "docs/baseline-policy.md.",
+)
 @unittest.skipUnless(
     DEFAULT_SO.exists(),
     f"libfpapi.so not built at {DEFAULT_SO}; run `make -C fp libfpapi.so`",
