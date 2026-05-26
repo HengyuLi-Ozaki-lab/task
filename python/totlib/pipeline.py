@@ -292,42 +292,54 @@ COUPLING_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
 
 
 # ------------------------------------------------------------------
-# Mono-only coupling rules (L-7b-ii Phase 2b infrastructure)
+# Mono-only coupling rules
 # ------------------------------------------------------------------
-# This dict is the home for coupling rules that are activated ONLY
-# when the loaded libtotapi*.so is the monolithic build
-# (tot_is_mono() == 1). On the default per-module .so path, BPSD
-# broker storage is private to each per-module .so, so cross-module
-# BPSD coupling cannot be verified meaningfully and these rules stay
-# dormant.
+# Rules in this dict are activated ONLY when the loaded
+# libtotapi*.so is the monolithic build (tot_is_mono() == 1). On
+# the default per-module .so path each per-module library has
+# private bpsd storage, so cross-module BPSD verification is
+# meaningless there and these rules stay dormant via the
+# _detect_mono() / _build_active_rules() overlay mechanism that
+# Phase 2b put in place.
 #
-# Activation mechanism: TotPipeline._build_active_rules() overlays
-# these onto the instance's _active_rules dict if _detect_mono()
-# returns True. The legacy module-level COUPLING_RULES dict above is
-# NOT mutated.
+# Phase 2c PR-A (#212) plumbed the wrappers to honor MONO_LIB_PATH
+# so all 6 wrappers can route to the same mono image. PR-B (this
+# commit) activates the ("eq","tr") rule that PR-A's plumbing
+# enables.
 #
-# Phase 2b status (2026-05-18): the OVERLAY MECHANISM is in place
-# (verified by Layer-C tests in test_mono_bpsd_smoke.py), but no
-# actual rule is populated here yet — populating ("eq","tr") today
-# would cause run_pipeline([("eq",...),("tr",...)]) to fire the
-# verify rule against TotPipeline's Eqlib/Trlib wrappers, which
-# still load their OWN per-module lib<mod>api.so files (NOT the
-# mono image). The verify would fail because eq pushed to one
-# private bpsd and tr reads from a different private bpsd.
-#
-# Phase 2c will plumb the wrappers to honor a unified mono path
-# (e.g. MONO_LIB_PATH env var honored by Eqlib/Trlib/Fplib/Tilib/
-# Wrxlib's _ffi.py), at which point activating ("eq","tr") here
-# becomes meaningful. Until then this dict stays empty so the
-# detection infrastructure can land safely.
-#
-# Codex retrospective 2026-05-18 (review of Phase 2b PR) caught
-# that prematurely populating this dict would create a user-facing
-# regression for mono users running multi-module pipelines.
+# Adding a new rule here?
+#   1. Define a named module-level callable (not a lambda) so
+#      pipeline.run_pipeline error messages show a meaningful
+#      __qualname__ when the verify fails.
+#   2. Verify the timing is safe at the rule-firing phase
+#      (run_pipeline fires verify rules AFTER current-module init
+#      but BEFORE current-module run — see lines 610-631).
+#   3. Add a Layer-D integration test covering both the happy
+#      mono path AND the dormant non-mono path (see
+#      python/totlib/tests/test_mono_pipeline_coupling.py for
+#      the ("eq","tr") example).
+
+def _eq_to_tr_bpsd_check(trlib_inst) -> bool:
+    """Verify eq's BPSD push is visible to tr (mono image only).
+
+    Returns True iff Trlib.check_bpsd_pull() finds the device /
+    equ1D / metric1D slots that eq pushed during eq_run(1). On the
+    default per-module image this would always return False because
+    each per-module .so has private bpsd storage — but the rule
+    only activates when _detect_mono() == True so the path is never
+    exercised against the default image.
+    """
+    return trlib_inst.check_bpsd_pull()
+
 
 _MONO_ONLY_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
-    # ("eq", "tr"): populated in #201 Phase 2c after Eqlib/Trlib mono
-    # routing is implemented.
+    ("eq", "tr"): [
+        CouplingRule(
+            kind="verify",
+            verify=_eq_to_tr_bpsd_check,
+            doc="eq -> tr BPSD broker round-trip (mono image only)",
+        ),
+    ],
 }
 
 

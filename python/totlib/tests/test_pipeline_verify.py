@@ -83,6 +83,10 @@ def test_verify_true_records_rule_in_applied(patch_wrappers, monkeypatch):
         ],
     }
     monkeypatch.setattr("totlib.pipeline.COUPLING_RULES", rules)
+    # Suppress mono-only rules so this unit test is independent of
+    # MONO_LIB_PATH in the environment. The mono overlay is covered
+    # by test_mono_pipeline_coupling.py (Phase 2c PR-B).
+    monkeypatch.setattr("totlib.pipeline._MONO_ONLY_RULES", {})
     pipe = TotPipeline()
     result = pipe.run_pipeline([("eq", {}), ("tr", {})])
     tr_step = result.last("tr")
