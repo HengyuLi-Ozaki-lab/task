@@ -88,13 +88,13 @@ readlink /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/bpsd
 
 Expected: `/Users/k-yoshimi/Dropbox/cursor/bpsd` (already created in prior sessions). If missing: `ln -s /Users/k-yoshimi/Dropbox/cursor/bpsd /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/bpsd`.
 
-- [ ] **Step 5: Build all `lib<mod>api.so` files (needed for macOS regen in Task 4)**
+- [ ] **Step 5: Build all `lib<mod>api.so` files (PIC chain only — no standalone binaries needed)**
 
-The macOS baseline regen in Task 4 calls `run_tests.sh` which invokes per-module standalone binaries (e.g. `tot/tot`, `fp/fp`). Build those plus the .so libs the equiv tests load:
+Task 4's macOS baseline regen uses the new `regen_baselines_via_so.py` script (Task 2b), which loads `lib<mod>api.so` via Python — NOT the standalone Fortran binaries. The standalone-binary path was abandoned mid-implementation per Codex 2026-05-26 plan-review HIGH (`fp`/`ti`/`tr`/`eq`/`wr`/`wrx` link with real GFLIBS which macOS Homebrew doesn't have; only `tot` has `tot_static_stubs.f90` for graphics-free linking). See `reference_clavius_baseline_regen.md` memory.
 
 ```bash
 cd /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines
-# Full PIC chain (per PR-A/PR-B plan pattern):
+# Full PIC chain:
 make -C lib  libtask_pic.a libgrf_pic.a libmds_pic.a
 make -C mtxp libmtxnompi_pic.o libmtxbnd_pic.o
 make -C tr   bpsd_pic
@@ -112,28 +112,11 @@ make -C ti  libtiapi.so
 make -C wr  libwrapi.so
 make -C wrx libwrxapi.so
 make -C tot libtotapi.so libtotapi_mono.so
-# Standalone binaries for run_tests.sh — names verified against
-# test_run/run_tests.sh:108-115 case statement:
-#   eq)   $TASK_DIR/eq/eq        (NOT eqx2 — eqx2 is an older alias)
-#   tr)   $TASK_DIR/tr/tr2       (NOT tr — tr2 is the regression-test binary)
-#   ti)   $TASK_DIR/ti/ti
-#   fp)   $TASK_DIR/fp/fp
-#   wr)   $TASK_DIR/wr/wr
-#   wrx)  $TASK_DIR/wrx/wrx
-#   tot)  $TASK_DIR/tot/tot
-make -C tot tot
-make -C fp  fp
-make -C ti  ti
-make -C tr  tr2
-make -C eq  eq
-make -C wr  wr
-make -C wrx wrx
 ls -l eq/libeqapi.so tr/libtrapi.so fp/libfpapi.so ti/libtiapi.so \
       wr/libwrapi.so wrx/libwrxapi.so tot/libtotapi.so tot/libtotapi_mono.so
-ls -l tot/tot fp/fp ti/ti tr/tr2 eq/eq wr/wr wrx/wrx 2>&1 | head -20
 ```
 
-Expected: every `lib*.so` and standalone binary present.
+Expected: every `lib*.so` present. No standalone-binary build in this plan — Task 4 uses the .so path exclusively.
 
 - [ ] **Step 6: Baseline sanity — existing equivalence tests run cleanly on the worktree (before any changes)**
 
@@ -576,6 +559,335 @@ EOF
 
 ---
 
+## Task 2b: Python-level baseline regen script
+
+**Why this task exists** (Codex 2026-05-26 plan-review HIGH; original plan T0 standalone-binary path is broken on macOS):
+
+The legacy regen flow is `test_run/run_tests.sh` (invokes per-module standalone Fortran binary) → produces `*_regress.dat` dump → `check_regression.sh --generate-baseline` → extracts metrics via `test_run/scripts/extract_*_metrics.py` → writes JSON. On macOS this fails: fp/ti/tr/eq/wr/wrx standalone binaries link against real GFLIBS (`-lg3d-gfc64 …`) which Homebrew doesn't provide. Only `tot` has a `tot_static_stubs.f90` graphics-free link path.
+
+The `lib<mod>api.so` shared libraries DO build on macOS (PIC, no graphics link). `python/<mod>/tests/test_equivalence.py` already loads each .so and computes the "actual" side of the equiv comparison via `state.to_dict()` + per-module reshape adapters (`_to_baseline_shape`). What we need is the **same path but write to JSON instead of compare**.
+
+**Codex's specific constraint** (plan-review HIGH-Q1): a generic `state.to_dict()` dumper would produce schema-mismatched output for some modules. The script MUST reuse each module's existing `test_equivalence.py` adapters verbatim:
+- FP: `_to_baseline_shape` reshape (per-species rows → flat `(NR, NSA)` row format).
+- WR: standalone baseline contains input scalars (RF/RPI/ZPI/PHII/RNZI/RNPHII/RKR0/UUI) NOT exposed by Python state. The script must **embed these scalars from the fixture** before writing the new baseline (mirroring the standalone path's extractor output). For platform-keyed baselines this is just data carry-over since the inputs don't differ across compiler — only the outputs may drift.
+- TR: `tr_tst2` baseline lacks `AJRFT` field (xfail today). The new macos-gcc15 baseline should include `AJRFT` from `state.to_dict()` — closing that xfail incidentally is a bonus.
+- EQ/TR/TOT: existing eqdata cwd-staging helpers (`_isolated_cwd_with_eqdata`).
+- TI: data cwd mixin.
+- WRX: run-gating + history fields.
+
+**Files:**
+- Create: `test_run/scripts/regen_baselines_via_so.py` (~250 lines including per-module dispatch).
+
+- [ ] **Step 1: Write failing smoke test for the regen script (TDD)**
+
+Create `test_run/scripts/test_regen_baselines_via_so.py` (small smoke test, not in main pytest collection):
+
+```python
+"""Smoke test for regen_baselines_via_so.py.
+
+Verifies the script loads + dispatches for at least one case
+(fp_dt1) and writes a JSON whose schema matches the existing
+linux-gcc13 baseline's keys (Codex 2026-05-26 plan-review
+HIGH-Q1: schema parity is the gating constraint).
+"""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+HERE = Path(__file__).resolve()
+REPO = HERE.parents[2]
+SCRIPT = HERE.parent / "regen_baselines_via_so.py"
+LINUX_BASELINE = (
+    REPO / "test_run" / "baselines" / "fp_dt1" / "metrics.json"
+)
+
+
+@unittest.skipUnless(
+    SCRIPT.exists() and LINUX_BASELINE.exists(),
+    "regen_baselines_via_so.py or fp_dt1 baseline missing",
+)
+class TestRegenScript(unittest.TestCase):
+
+    def test_fp_dt1_schema_matches_linux_baseline(self):
+        with tempfile.TemporaryDirectory() as td:
+            outdir = Path(td)
+            res = subprocess.run(
+                [sys.executable, str(SCRIPT),
+                 "--case", "fp_dt1",
+                 "--out-root", str(outdir),
+                 "--platform-key-override", "test-key"],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(
+                res.returncode, 0,
+                f"script failed:\n{res.stdout}\n{res.stderr}",
+            )
+            out_path = outdir / "fp_dt1" / "test-key" / "metrics.json"
+            self.assertTrue(out_path.exists(), f"missing {out_path}")
+            actual = json.loads(out_path.read_text())
+
+            baseline = json.loads(LINUX_BASELINE.read_text())
+            # Top-level key parity:
+            self.assertEqual(
+                set(actual.keys()), set(baseline.keys()),
+                "top-level key set differs",
+            )
+            # scalars subkey parity:
+            if "scalars" in baseline:
+                self.assertEqual(
+                    set(actual.get("scalars", {}).keys()),
+                    set(baseline["scalars"].keys()),
+                    "scalars key set differs",
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+Run: `python test_run/scripts/test_regen_baselines_via_so.py` — expected FAIL (script doesn't exist yet).
+
+- [ ] **Step 2: Implement `test_run/scripts/regen_baselines_via_so.py`**
+
+```python
+#!/usr/bin/env python3
+"""Regenerate per-platform equivalence baselines via lib<mod>api.so.
+
+Bypasses the standalone-Fortran-binary regen path (run_tests.sh +
+check_regression.sh --generate-baseline) which requires graphics
+libraries that aren't available on macOS Homebrew (per
+reference_clavius_baseline_regen.md memory).
+
+This script reuses each module's test_equivalence.py adapter
+functions verbatim — preserving the per-module schema quirks that
+a naive state.to_dict() dump would lose (Codex 2026-05-26
+plan-review HIGH-Q1: FP reshape, WR input-scalar carry-over, TR
+AJRFT, EQ/TR/TOT eqdata cwd staging, TI data mixin, WRX gating).
+
+Usage:
+  python test_run/scripts/regen_baselines_via_so.py [--case <name>] \\
+      [--out-root <dir>] [--platform-key-override <key>]
+
+  --case            Regenerate just one case (default: all 20).
+  --out-root        Override output root (default:
+                    test_run/baselines/).
+  --platform-key-override  Force a specific platform key (testing).
+
+For each case:
+  1. Look up the module + fixture from the case-name registry.
+  2. Import the module's test_equivalence._run_case adapter.
+  3. Run the case (loads lib<mod>api.so, replays via Python).
+  4. For WR: merge in the input scalars from the fixture so the
+     output schema matches the standalone-binary baseline.
+  5. Write JSON to <out_root>/<case>/<platform-key>/metrics.json.
+"""
+from __future__ import annotations
+
+import argparse
+import importlib
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any, Callable, Dict
+
+REPO = Path(__file__).resolve().parents[2]
+PYTHON_ROOT = REPO / "python"
+if str(PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ROOT))
+
+# Case registry: maps case name -> (module-name, fixture-py-module, ntmax).
+# Keep in sync with the test_equivalence.py CASES dicts per module.
+CASES: Dict[str, Dict[str, Any]] = {
+    # eq cases
+    "eq_iter01": {"mod": "eqlib", "fixture": "fixtures.eq_iter01_params", "ntmax": 1},
+    "eq_jt60":   {"mod": "eqlib", "fixture": "fixtures.eq_jt60_params",   "ntmax": 1},
+    "eq_tst2":   {"mod": "eqlib", "fixture": "fixtures.eq_tst2_params",   "ntmax": 1},
+    # fp cases
+    "fp_dt1":    {"mod": "fplib", "fixture": "fixtures.fp_dt1_params",    "ntmax": 1},
+    "fp_iter01": {"mod": "fplib", "fixture": "fixtures.fp_iter01_params", "ntmax": 2},
+    "fp_jt60":   {"mod": "fplib", "fixture": "fixtures.fp_jt60_params",   "ntmax": 1},
+    # ti cases
+    "ti_ar":     {"mod": "tilib", "fixture": "fixtures.ti_ar_params",     "ntmax": 1},
+    "ti_min":    {"mod": "tilib", "fixture": "fixtures.ti_min_params",    "ntmax": 1},
+    "ti_w":      {"mod": "tilib", "fixture": "fixtures.ti_w_params",      "ntmax": 1},
+    # tot cases
+    "tot_demo2014_short": {"mod": "totlib", "fixture": "fixtures.tot_demo2014_short_params", "ntmax": 10},
+    "tot_ht6m_short":     {"mod": "totlib", "fixture": "fixtures.tot_ht6m_short_params",     "ntmax": 10},
+    # tr cases
+    "tr_iter01": {"mod": "trlib", "fixture": "fixtures.tr_iter01_params", "ntmax": 1},
+    "tr_m0904":  {"mod": "trlib", "fixture": "fixtures.tr_m0904_params",  "ntmax": 1},
+    "tr_tst2":   {"mod": "trlib", "fixture": "fixtures.tr_tst2_params",   "ntmax": 1},
+    # wr cases
+    "wr_iter_lhcd": {"mod": "wrlib", "fixture": "fixtures.wr_iter_lhcd_params", "ntmax": 1},
+    "wr_test001":   {"mod": "wrlib", "fixture": "fixtures.wr_test001_params",   "ntmax": 1},
+    "wr_tst2_ec":   {"mod": "wrlib", "fixture": "fixtures.wr_tst2_ec_params",   "ntmax": 1},
+    # wrx cases
+    "wrx_demo":     {"mod": "wrxlib", "fixture": "fixtures.wrx_demo_params",   "ntmax": 1},
+    "wrx_iter01":   {"mod": "wrxlib", "fixture": "fixtures.wrx_iter01_params", "ntmax": 1},
+    "wrx_jt60":     {"mod": "wrxlib", "fixture": "fixtures.wrx_jt60_params",   "ntmax": 1},
+}
+
+
+def _platform_key() -> str:
+    """Reuse python/_baseline_select.py::platform_key() exactly."""
+    from _baseline_select import platform_key  # type: ignore
+    return platform_key()
+
+
+def _run_case_via_module(case_name: str) -> Dict[str, Any]:
+    """Dispatch to the per-module test_equivalence.py adapter for this case.
+
+    For each module, we import the matching test_equivalence module
+    so we get the EXACT _run_case + _to_baseline_shape behavior used
+    by the live equivalence test — including any WR input-scalar
+    merging, TR field schema, eqdata cwd staging, etc.
+
+    Returns the JSON-serializable dict the test would compare to the
+    baseline.
+    """
+    entry = CASES[case_name]
+    mod_name = entry["mod"]              # e.g. "fplib"
+    fixture_mod = entry["fixture"]       # e.g. "fixtures.fp_dt1_params"
+    ntmax = int(entry["ntmax"])
+
+    # Locate the per-module test_equivalence as a module so its
+    # internal _run_case + _to_baseline_shape can be used.
+    teq = importlib.import_module(f"{mod_name}.tests.test_equivalence")
+    fixture = importlib.import_module(f"{mod_name}.tests.{fixture_mod}")
+
+    # _run_case(apply_fn, ntmax) is the per-module helper that does
+    # the lib<mod>api.so load + replay + state.to_dict() + reshape.
+    # Signature is consistent across all 7 modules (verified by Codex
+    # 2026-05-26 spec-review). EQ/TR/TOT versions internally handle
+    # the cwd + eqdata staging via context managers.
+    if hasattr(teq, "_run_case"):
+        actual = teq._run_case(fixture.apply, ntmax)
+    else:
+        raise RuntimeError(
+            f"{mod_name}.tests.test_equivalence has no _run_case helper. "
+            "All 7 modules' test_equivalence.py expose _run_case per "
+            "Codex 2026-05-26 plan-review HIGH-Q1; if this changed, "
+            "regen_baselines_via_so.py needs the new per-module adapter."
+        )
+
+    # WR-specific: merge input scalars from the fixture into the
+    # output so the schema matches what extract_wr_metrics.py
+    # produces from the standalone-binary dump.
+    if mod_name == "wrlib":
+        WR_INPUT_SCALARS = (
+            "RF", "RPI", "ZPI", "PHII", "RNZI", "RNPHII", "RKR0", "UUI",
+        )
+        scalars = actual.setdefault("scalars", {})
+        for k in WR_INPUT_SCALARS:
+            v = getattr(fixture, k, None)
+            if v is not None:
+                scalars[k] = float(v)
+
+    return actual
+
+
+def _main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--case", default=None,
+                    help="single case (default: all 20)")
+    ap.add_argument("--out-root", default=None,
+                    help=f"default: {REPO}/test_run/baselines")
+    ap.add_argument("--platform-key-override", default=None,
+                    help="force a specific key (testing only)")
+    args = ap.parse_args()
+
+    out_root = Path(args.out_root) if args.out_root else \
+               REPO / "test_run" / "baselines"
+    key = args.platform_key_override or _platform_key()
+    targets = [args.case] if args.case else list(CASES.keys())
+
+    print(f"Platform key: {key}", file=sys.stderr)
+    print(f"Output root:  {out_root}", file=sys.stderr)
+    print(f"Cases:        {len(targets)}", file=sys.stderr)
+
+    failed = []
+    for case in targets:
+        if case not in CASES:
+            print(f"  ! {case}: not in CASES registry, skipping", file=sys.stderr)
+            failed.append(case)
+            continue
+        try:
+            actual = _run_case_via_module(case)
+        except Exception as exc:
+            print(f"  ! {case}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            failed.append(case)
+            continue
+        out_path = out_root / case / key / "metrics.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(actual, indent=2, sort_keys=True))
+        print(f"  ✓ {case} -> {out_path}", file=sys.stderr)
+
+    if failed:
+        print(f"\n{len(failed)} case(s) failed: {failed}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_main())
+```
+
+- [ ] **Step 3: Verify the smoke test now PASSES**
+
+```bash
+cd /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines
+python test_run/scripts/test_regen_baselines_via_so.py 2>&1 | tail -10
+```
+
+Expected: 1 passed (fp_dt1 schema matches linux-gcc13).
+
+- [ ] **Step 4: Commit**
+
+```bash
+cd /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines
+git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines add \
+    test_run/scripts/regen_baselines_via_so.py \
+    test_run/scripts/test_regen_baselines_via_so.py
+git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines commit -m "$(cat <<'EOF'
+feat(test_run): regen_baselines_via_so.py — Python-level baseline regen (#213)
+
+New tooling for regenerating equivalence baselines without the
+standalone Fortran binaries (which require graphics libs not
+available on macOS Homebrew per
+reference_clavius_baseline_regen.md memory).
+
+Codex 2026-05-26 plan-review HIGH discovery: the script must reuse
+each module's existing test_equivalence._run_case + _to_baseline_shape
+adapter to preserve per-module schema quirks (WR input-scalar
+merging, TR AJRFT, EQ/TR/TOT eqdata cwd staging, TI data mixin,
+WRX gating). A generic state.to_dict() dumper would produce
+schema-mismatched JSON.
+
+CASES registry mirrors the per-module test_equivalence.py CASES
+dicts for the 20 cases. WR-specific input scalar merge (RF/RPI/
+ZPI/PHII/RNZI/RNPHII/RKR0/UUI) carries fixture values into the
+output to match what extract_wr_metrics.py produces from the
+standalone-binary dump.
+
+Smoke test (test_regen_baselines_via_so.py) verifies fp_dt1
+schema parity with the existing linux-gcc13 baseline before
+the script is exercised on all 20 cases in Task 4.
+
+Spec: docs/superpowers/specs/2026-05-26-platform-keyed-baselines-design.md
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Task 3: Migration — `git mv` + `check_regression.sh` + 7 `test_equivalence.py`
 
 This is the structural commit. After it: CI Linux green (linux-gcc13
@@ -814,36 +1126,19 @@ python -c "from _baseline_select import platform_key; print(platform_key())"
 
 Save both outputs verbatim — they go in the PR description per spec §13 R-1.
 
-- [ ] **Step 2: Run the 20-case regen loop**
+- [ ] **Step 2: Run the 20-case regen via regen_baselines_via_so.py**
+
+Per Task 2b: bypasses standalone-binary requirement, uses each module's existing `_run_case` adapter.
 
 ```bash
 cd /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines
-for case in eq_iter01 eq_jt60 eq_tst2 \
-            fp_dt1 fp_iter01 fp_jt60 \
-            ti_ar ti_min ti_w \
-            tot_demo2014_short tot_ht6m_short \
-            tr_iter01 tr_m0904 tr_tst2 \
-            wr_iter_lhcd wr_test001 wr_tst2_ec \
-            wrx_demo wrx_iter01 wrx_jt60 ; do
-    echo "=== $case ==="
-    bash test_run/run_tests.sh "$case"
-    bash test_run/scripts/check_regression.sh \
-         "$case" \
-         "test_run/test_output/$case" \
-         "test_run/baselines" \
-         1e-10 \
-         --generate-baseline 2>&1 | tail -3
-done
+python test_run/scripts/regen_baselines_via_so.py 2>&1 | tee /tmp/regen.log
 ls test_run/baselines/*/macos-gcc15/metrics.json | wc -l
 ```
 
-Expected: `20` macos-gcc15 metrics.json files generated.
+Expected: `20` macos-gcc15 metrics.json files generated, all 20 cases reporting `✓` (or whatever ASCII the script uses). The script's exit code is non-zero if any case failed.
 
-If any case fails to run_tests.sh (e.g., missing standalone binary,
-namelist parse error), record the failing case + error message and
-STOP. Surface to controller for triage. Per spec R-1: a real bug
-masquerading as drift is a red flag and must be investigated
-before commit.
+If any case fails (e.g., `lib<mod>api.so` missing symbol, fixture import error, schema mismatch with linux-gcc13 baseline), the script reports the failing case + exception. Record + STOP. Surface to controller for triage. Per spec R-1: a real bug masquerading as drift is a red flag and must be investigated before commit.
 
 - [ ] **Step 3: R-1 spot-comparison sanity check**
 
@@ -999,7 +1294,7 @@ Branch platform-keyed-baselines @ <substitute HEAD SHA>.
 Base origin/develop @ 3807ecc3.
 
 Run:
-- git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines log --oneline origin/develop..HEAD  (expect 4 commits)
+- git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines log --oneline origin/develop..HEAD  (expect 5 commits)
 - git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines diff --stat origin/develop..HEAD
 - Inspect actual diffs.
 
@@ -1034,7 +1329,7 @@ Branch platform-keyed-baselines @ <substitute HEAD SHA>.
 Base origin/develop @ 3807ecc3.
 
 Run:
-- git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines log --oneline origin/develop..HEAD  (4 commits expected)
+- git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines log --oneline origin/develop..HEAD  (5 commits expected)
 - git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines diff --stat origin/develop..HEAD
 
 Anchor: cross-cutting code quality + edge cases:
@@ -1097,7 +1392,7 @@ hard-fail when no exact key matches; regenerates the 20 macOS
 Homebrew GCC 15.2.0 baselines so macOS dev sees true 1e-10
 equivalence locally.
 
-## What's in this PR (4 commits)
+## What's in this PR (5 commits)
 
 1. **`feat(python): _baseline_select helper`** — `platform_key()` +
    `select_baseline()` with cross-distro `gfortran --version` parser
