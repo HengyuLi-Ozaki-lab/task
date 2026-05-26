@@ -42,7 +42,7 @@ different compilers or libm vendors.
 **Ubuntu CI runner with gfortran 13.x**. The full set of
 `linux-gcc13` baselines under `test_run/baselines/*/metrics.json`
 was generated on clavius
-(`memory/reference_clavius_baseline_regen.md`) and is exercised on
+(memory `reference_clavius_baseline_regen.md`) and is exercised on
 every push by `.github/workflows/python-tests.yml` line 323's
 whole-tree pytest (which sweeps the 7 module `test_equivalence.py`
 suites).
