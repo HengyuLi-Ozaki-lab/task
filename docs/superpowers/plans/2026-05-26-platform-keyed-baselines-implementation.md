@@ -88,9 +88,9 @@ readlink /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/bpsd
 
 Expected: `/Users/k-yoshimi/Dropbox/cursor/bpsd` (already created in prior sessions). If missing: `ln -s /Users/k-yoshimi/Dropbox/cursor/bpsd /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/bpsd`.
 
-- [ ] **Step 5: Build all `lib<mod>api.so` files (needed for macOS regen in Task 3)**
+- [ ] **Step 5: Build all `lib<mod>api.so` files (needed for macOS regen in Task 4)**
 
-The macOS baseline regen in Task 3 calls `run_tests.sh` which invokes per-module standalone binaries (e.g. `tot/tot`, `fp/fp`). Build those plus the .so libs the equiv tests load:
+The macOS baseline regen in Task 4 calls `run_tests.sh` which invokes per-module standalone binaries (e.g. `tot/tot`, `fp/fp`). Build those plus the .so libs the equiv tests load:
 
 ```bash
 cd /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines
@@ -112,20 +112,28 @@ make -C ti  libtiapi.so
 make -C wr  libwrapi.so
 make -C wrx libwrxapi.so
 make -C tot libtotapi.so libtotapi_mono.so
-# Standalone binaries for run_tests.sh:
+# Standalone binaries for run_tests.sh — names verified against
+# test_run/run_tests.sh:108-115 case statement:
+#   eq)   $TASK_DIR/eq/eq        (NOT eqx2 — eqx2 is an older alias)
+#   tr)   $TASK_DIR/tr/tr2       (NOT tr — tr2 is the regression-test binary)
+#   ti)   $TASK_DIR/ti/ti
+#   fp)   $TASK_DIR/fp/fp
+#   wr)   $TASK_DIR/wr/wr
+#   wrx)  $TASK_DIR/wrx/wrx
+#   tot)  $TASK_DIR/tot/tot
 make -C tot tot
 make -C fp  fp
 make -C ti  ti
-make -C tr  tr
-make -C eq  eqx2     # eqlib standalone uses eqx2
+make -C tr  tr2
+make -C eq  eq
 make -C wr  wr
 make -C wrx wrx
 ls -l eq/libeqapi.so tr/libtrapi.so fp/libfpapi.so ti/libtiapi.so \
       wr/libwrapi.so wrx/libwrxapi.so tot/libtotapi.so tot/libtotapi_mono.so
-ls -l tot/tot fp/fp ti/ti tr/tr eq/eqx2 wr/wr wrx/wrx 2>&1 | head -20
+ls -l tot/tot fp/fp ti/ti tr/tr2 eq/eq wr/wr wrx/wrx 2>&1 | head -20
 ```
 
-Expected: every `lib*.so` and standalone binary present. If a standalone build target name is wrong (e.g. `eqx2` vs `eq`), check `<module>/Makefile` for the actual binary target name and substitute. (Cross-reference per `test_run/run_tests.sh` line ~50-80 where each module's binary is invoked — if you see `cd eq && ./eqx2 < ...` then the target is `eqx2`.)
+Expected: every `lib*.so` and standalone binary present.
 
 - [ ] **Step 6: Baseline sanity — existing equivalence tests run cleanly on the worktree (before any changes)**
 
@@ -141,7 +149,7 @@ cd /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselin
     totlib/tests/test_equivalence.py 2>&1) | tail -15
 ```
 
-Expected on macOS today: eqlib/trlib/tilib/totlib pass; fplib + wrxlib fail (the #213 failures: `fp_dt1`, `fp_iter01`, `wrx_demo`, `wrx_iter01`). `wrlib` status unknown today — record it from this run for later comparison. Note the exact pass/fail count for the cumulative regression check in Task 4 Step 7.
+Expected on macOS today: eqlib/trlib/tilib/totlib pass; fplib + wrxlib fail (the #213 failures: `fp_dt1`, `fp_iter01`, `wrx_demo`, `wrx_iter01`). `wrlib` status unknown today — record it from this run for later comparison. Note the exact pass/fail count for the cumulative regression check in Task 5 Step 2.
 
 ---
 
@@ -612,6 +620,10 @@ platform key via the same shell-side logic the Python helper uses:
 ```bash
 # Resolve platform-keyed subdirectory (per #213 spec §6).
 # Matches python/_baseline_select.py::platform_key() exactly.
+# IMPORTANT: use [[:space:]] not \s — BSD sed (macOS default) does
+# not recognize \s as a whitespace shorthand (Codex 2026-05-26 plan
+# review HIGH-2 — would silently produce empty $_gcc_major on every
+# macOS run). [[:space:]] is POSIX and works on BSD + GNU sed alike.
 _os_name=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$_os_name" in
     darwin) _os_key=macos ;;
@@ -619,7 +631,7 @@ case "$_os_name" in
 esac
 _gcc_major=$(gfortran --version 2>/dev/null \
     | head -1 \
-    | sed -E 's/.*\)\s+([0-9]+)\.[0-9]+.*/\1/')
+    | sed -E 's/.*\)[[:space:]]+([0-9]+)\.[0-9]+.*/\1/')
 if [ -z "$_gcc_major" ] || ! echo "$_gcc_major" | grep -qE '^[0-9]+$'; then
     echo "ERROR: cannot determine gfortran major version" >&2
     echo "       gfortran --version output:" >&2
@@ -628,6 +640,14 @@ if [ -z "$_gcc_major" ] || ! echo "$_gcc_major" | grep -qE '^[0-9]+$'; then
 fi
 PLATFORM_KEY="${_os_key}-gcc${_gcc_major}"
 ```
+
+To verify on macOS before committing the script change:
+```bash
+echo "GNU Fortran (Homebrew GCC 15.2.0_1) 15.2.0" | \
+    sed -E 's/.*\)[[:space:]]+([0-9]+)\.[0-9]+.*/\1/'
+# Expected output: 15
+```
+The Python `_baseline_select.py` already uses `r"\)\s+(\d+)\.\d+"` which is fine — Python regex `\s` works on both platforms. Only the **shell sed** required this fix.
 
 Then change line 48 from:
 
@@ -966,14 +986,85 @@ Expected: all green (7 equiv suites + 3 unit tests).
 
 - [ ] **Step 3: Launch BOTH reviewers in parallel**
 
-In a single tool-call message fire:
+In a single tool-call message, fire both. **Concrete prompt
+bodies below** (Codex 2026-05-26 plan-review MED-5 — earlier draft
+left these as `prompt=…` placeholders).
 
-- `Agent(subagent_type="general-purpose", model="sonnet", description="In-house cumulative review", prompt=…)` — anchor: plan adherence + spec §14 acceptance criteria.
-- `Agent(subagent_type="codex:codex-rescue", description="Codex independent review", prompt=…)` — anchor: cross-cutting code quality, regex robustness, R-1 audit verification.
+**In-house prompt** (Agent: general-purpose, model: sonnet):
 
-Reviewer prompts give: working dir `/Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines`, branch `platform-keyed-baselines`, HEAD = latest commit, base `origin/develop @ 3807ecc3`, spec path.
+```
+Cumulative pre-push code review on PR #213 implementation at
+/Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines.
+Branch platform-keyed-baselines @ <substitute HEAD SHA>.
+Base origin/develop @ 3807ecc3.
 
-Paste HIGH / MED findings back. Iterate with fix-up commits if any.
+Run:
+- git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines log --oneline origin/develop..HEAD  (expect 4 commits)
+- git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines diff --stat origin/develop..HEAD
+- Inspect actual diffs.
+
+Anchor: plan adherence to docs/superpowers/plans/2026-05-26-platform-keyed-baselines-implementation.md
++ spec §14 acceptance criteria (docs/superpowers/specs/2026-05-26-platform-keyed-baselines-design.md).
+
+Verify ALL 10 acceptance criteria from spec §14:
+1. python/_baseline_select.py matches §6 contract.
+2. 20 baselines migrated flat -> linux-gcc13/.
+3. 20 macos-gcc15 baselines exist; PR description has R-1 audit
+   table (rel_err < 5e-9 spot-checks + all 20 < 1e-7 sweep).
+4. All 7 test_equivalence.py call select_baseline().
+5. check_regression.sh resolves platform-keyed in both modes.
+6. docs/baseline-regeneration.md exists.
+7. 3 unit tests in test_baseline_select.py pass.
+8. All previously-passing equiv tests still pass locally.
+9. Issue #213 closes (4 fp/wrx tests now pass on macOS).
+10. HIGH/MED-free.
+
+Local test result on macOS: 7 equiv suites + 3 unit tests all pass
+(matching AC#8 + AC#9a).
+
+Report HIGH/MED/LOW. SHIP IT or flag. ≤300 words.
+```
+
+**Codex prompt** (Agent: codex:codex-rescue):
+
+```
+Independent cumulative review on PR #213 implementation at
+/Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines.
+Branch platform-keyed-baselines @ <substitute HEAD SHA>.
+Base origin/develop @ 3807ecc3.
+
+Run:
+- git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines log --oneline origin/develop..HEAD  (4 commits expected)
+- git -C /Users/k-yoshimi/Dropbox/cursor/task/.claude/worktrees/platform-keyed-baselines diff --stat origin/develop..HEAD
+
+Anchor: cross-cutting code quality + edge cases:
+
+1. Python regex (r"\)\s+(\d+)\.\d+") vs shell sed
+   ([[:space:]]) parity — they MUST produce the same major version
+   across Homebrew + Ubuntu + Debian + RHEL gfortran outputs.
+   Confirm both match the same set of strings.
+
+2. The 20 macos-gcc15 baselines — spot-check 1-2 scalars per case
+   against the linux-gcc13 baseline. Any case where rel_err >= 1e-7
+   without a clear physical explanation is a real bug (not libm
+   drift). The PR description should have the audit table.
+
+3. The 7 test_equivalence.py mods — same pattern across all 7?
+   Any drift in import placement or path-construction style?
+
+4. check_regression.sh -- the new platform_key resolution must
+   work in both compare and --generate-baseline modes. Test by
+   inspection.
+
+5. Anything else: scope creep, missing acceptance items, drift
+   between plan and actual.
+
+Report HIGH/MED/LOW. SHIP IT or flag. ≤300 words.
+```
+
+Paste HIGH / MED findings back to the user before continuing.
+Iterate with fix-up commits if any (per `feedback_codex_worktree_sharing.md`
+discipline). Re-review on the new SHA.
 
 - [ ] **Step 4: Pre-push marker**
 
