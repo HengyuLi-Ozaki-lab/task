@@ -1,6 +1,8 @@
-# Platform-keyed equivalence baselines — implementation plan
+# Platform-keyed equivalence baselines — implementation plan — **SUPERSEDED**
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **⚠️ SUPERSEDED** along with its parent spec. See `docs/superpowers/specs/2026-05-26-platform-keyed-baselines-design.md` header for the rejected-design rationale. The successor spec/plan is the Linux-canonical policy (`docs/superpowers/specs/2026-05-26-linux-canonical-equiv-policy-design.md`). This file is kept as design history; do NOT execute its tasks.
+
+> **For agentic workers (historical reference only):** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **THIS PLAN IS SUPERSEDED — see banner above before running.**
 
 **Goal:** End the macOS-developer-only `1e-10` equivalence false-positive class (Issue #213) without skipping tests, without tolerance fudging. Introduce platform-keyed baselines at `test_run/baselines/<case>/<os>-gcc<major>/metrics.json` with hard-fail when no exact key matches, and regenerate the 20 macOS Homebrew GCC 15.2.0 baselines so macOS dev sees true 1e-10 equivalence locally.
 
