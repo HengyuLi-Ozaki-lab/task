@@ -586,3 +586,26 @@ jobs:
         run: |
           python -m pytest python/totlib/tests/test_mono_routing.py \
                  --forked --timeout=120 --timeout-method=signal -v
+
+      - name: Mono pipeline coupling (Phase 2c PR-B)
+        # #208 PR-B — drives eq -> tr through TotPipeline.run_pipeline
+        # on the mono image and asserts the ("eq","tr") verify rule
+        # fires (TestEqToTrPipelineCoupling). Also exercises the
+        # negative case via TestEqToTrRuleDormantOnDefault — that
+        # test skip-gates on the per-module .so files at the repo
+        # default paths (eq/libeqapi.so, tr/libtrapi.so,
+        # tot/libtotapi.so), which the per-module build steps
+        # earlier in this job have already produced.
+        #
+        # TOTLIB_PATH is set so the totlib wrapper picks the
+        # default libtotapi.so from the workspace consistently with
+        # other tests in this job. eqlib / trlib do NOT honor
+        # TOTLIB_PATH; they resolve via the repo default at
+        # workspace/eq/libeqapi.so etc.
+        env:
+          MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
+          TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so
+          PYTHONPATH: python
+        run: |
+          python -m pytest python/totlib/tests/test_mono_pipeline_coupling.py \
+                 --forked --timeout=120 --timeout-method=signal -v

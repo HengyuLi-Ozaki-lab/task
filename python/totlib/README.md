@@ -433,3 +433,12 @@ Explicit `lib_path=...` to a wrapper constructor still wins
 
 The behavioral eq→tr BPSD coupling rule that this routing enables
 is activated in PR-B (issue #208 follow-up).
+
+**Phase 2c PR-B (#208 follow-up)**: the `("eq","tr")` BPSD coupling
+rule is now active in `_MONO_ONLY_RULES`. When `MONO_LIB_PATH` is
+set, `TotPipeline.run_pipeline([("eq", ...), ("tr", ...)])` runs
+the rule via `Trlib.check_bpsd_pull()` and reports it in
+`PipelineResult.last("tr").coupling_applied`. On the default
+per-module image the rule stays dormant — eq and tr each have
+their own private bpsd storage so cross-module verification is
+meaningless there.
