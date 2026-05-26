@@ -132,7 +132,13 @@ class TestEqToTrRuleDormantOnDefault(unittest.TestCase):
         # _detect_mono() reads tot_is_mono() from the totlib
         # wrapper's loaded image, which is the default
         # libtotapi.so, returning 0 — so the overlay stays inactive.
+        # Defensive: also pop the per-module env vars (Codex 2026-05-26
+        # cumulative review LOW-1). EQLIB_PATH / TRLIB_PATH would route
+        # eqlib / trlib away from the repo-default per-module .so files
+        # we just asserted exist, defeating the test's intent.
         original_mono = os.environ.pop("MONO_LIB_PATH", None)
+        original_eqlib = os.environ.pop("EQLIB_PATH", None)
+        original_trlib = os.environ.pop("TRLIB_PATH", None)
         _runtime_mode.mono_lib_path.cache_clear()
 
         result = None
@@ -161,6 +167,10 @@ class TestEqToTrRuleDormantOnDefault(unittest.TestCase):
         finally:
             if original_mono is not None:
                 os.environ["MONO_LIB_PATH"] = original_mono
+            if original_eqlib is not None:
+                os.environ["EQLIB_PATH"] = original_eqlib
+            if original_trlib is not None:
+                os.environ["TRLIB_PATH"] = original_trlib
             _runtime_mode.mono_lib_path.cache_clear()
 
         self.assertIsNotNone(result, "run_pipeline returned None")
