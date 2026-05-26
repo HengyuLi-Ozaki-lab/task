@@ -62,7 +62,7 @@ class TestEquivalence(...):
 ```
 
 On macOS / FreeBSD / Windows / any non-Linux: tests skip. On WSL
-or Linux containers running on macOS Docker: `sys.platform == 'linux'`,
+or Linux containers running on macOS Docker: `sys.platform.startswith("linux")` is True,
 so they run. The policy is "Linux userland", not "physical host OS".
 
 The skip is **NOT overridable** by env var. The policy is binary:
