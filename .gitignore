@@ -189,3 +189,11 @@ docs/manual/*.blg
 # that may be cloned in-tree during local development.
 /bpsd/
 /gsaf/
+
+# Per-machine Claude Code workspace state.
+# .claude/commands/ and .claude/hooks/ ARE tracked — they are project
+# workflow assets that benefit all collaborators. Settings and worktree
+# storage are per-machine and excluded here so a fresh clone doesn't
+# accidentally commit hook registrations or per-machine permissions.
+.claude/worktrees/
+.claude/settings.local.json
