@@ -231,6 +231,10 @@ class TestEquivalence(unittest.TestCase):
         from trlib.tests.fixtures import tr_tst2_params as f
         self._check_case(f)
 
+    def test_m0904(self):
+        from trlib.tests.fixtures import tr_m0904_params as f
+        self._check_case(f)
+
 
 if __name__ == "__main__":
     unittest.main()
