@@ -143,7 +143,7 @@ class TestEquivalence(TiDataCwdMixin, unittest.TestCase):
         """Run one fixture and diff vs its baseline.
 
         The fixture module must expose ``apply`` / ``NTMAX`` /
-        ``BASELINE_NAME`` (see :mod:`fixtures.ti_iter01_params`).
+        ``BASELINE_NAME`` (see :mod:`fixtures.ti_min_params`).
         """
         actual = _run_case(fixture_module.apply, ntmax=fixture_module.NTMAX)
         _compare_with_baseline(actual, fixture_module.BASELINE_NAME, self.TOLERANCE)
@@ -151,7 +151,7 @@ class TestEquivalence(TiDataCwdMixin, unittest.TestCase):
     def test_ti_min(self):
         # Local import so collection works even if the fixture is
         # syntactically invalid (failure reported per-test, not globally).
-        from tilib.tests.fixtures import ti_iter01_params as f
+        from tilib.tests.fixtures import ti_min_params as f
         self._check_case(f)
 
     def test_ti_ar(self):
