@@ -210,6 +210,10 @@ class TestEquivalence(unittest.TestCase):
         from fplib.tests.fixtures import fp_dt1_params as f
         self._check_case(f)
 
+    def test_jt60(self):
+        from fplib.tests.fixtures import fp_jt60_params as f
+        self._check_case(f)
+
 
 if __name__ == "__main__":
     unittest.main()
