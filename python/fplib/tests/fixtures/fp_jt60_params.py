@@ -17,16 +17,12 @@ from __future__ import annotations
 # Scalar parameters accepted by fp_param_registry.
 SCALARS = {
     "NSMAX":   3,
-    "PROFN2":  0.5,
-    "PROFT2":  2.0,
     "NRMAX":   11,
     "RMIN":    0.1,
     "RMAX":    0.4,
     "NTMAX":   1,
-    "PMAX":    20.0,
     "NPMAX":   100,
     "NTHMAX":  100,
-    "MODELC":  4,
 }
 
 ARRAYS = {
@@ -40,12 +36,24 @@ ARRAYS = {
     "PTPR": [3.7,   3.7,    3.7],
     "PTPP": [3.7,   3.7,    3.7],
     "PTS":  [0.4,   0.4,    0.4],
+    # Fortran namelist `PMAX=20.D0` sets ONLY PMAX(1)=20; PMAX(2..NSMAX)
+    # keep fp_init defaults (0.0). Writing [20,20,20] would broadcast
+    # and shift NSB=2,3 DELP (fp/fpprep.f90:181) away from baseline.
+    "PMAX":   {1: 20.0},
+    # Same Fortran namelist rule: MODELC=4 sets MODELC(1)=4 only;
+    # MODELC(2..NSMAX) stay at default 0 (different collision-operator
+    # branch in fp/fpparm.f90:929).
+    "MODELC": {1: 4},
 }
 
 # Namelist keys that are not (or do not need to be) routed through
 # fp_set_param in the wrapper path. KNAMFP=' ' is empty -> no file I/O.
+# PROFN2 / PROFT2 are plcomm namelist keys with no entry in
+# fp_param_registry.f90 (would return ierr=2 from fp.set_param).
 UNREGISTERED_KEYS = (
-    "KNAMFP",
+    "KNAMFP",   # namelist filename (string; not a numeric param)
+    "PROFN2",   # radial profile exponent (plcomm) - not in fp registry
+    "PROFT2",   # temperature profile exponent (plcomm) - not in fp registry
 )
 
 SOURCE_INPUT = "test_run/inputs/fp_jt60.in"
