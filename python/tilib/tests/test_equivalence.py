@@ -158,6 +158,10 @@ class TestEquivalence(TiDataCwdMixin, unittest.TestCase):
         from tilib.tests.fixtures import ti_ar_params as f
         self._check_case(f)
 
+    def test_ti_w(self):
+        from tilib.tests.fixtures import ti_w_params as f
+        self._check_case(f)
+
 
 if __name__ == "__main__":
     unittest.main()
