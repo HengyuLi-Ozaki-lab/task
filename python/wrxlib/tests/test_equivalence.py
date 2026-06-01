@@ -184,6 +184,10 @@ class TestEquivalence(unittest.TestCase):
         from wrxlib.tests.fixtures import wrx_demo_params as f
         self._check_case(f)
 
+    def test_jt60(self):
+        from wrxlib.tests.fixtures import wrx_jt60_params as f
+        self._check_case(f)
+
 
 if __name__ == "__main__":
     unittest.main()
