@@ -18,6 +18,8 @@ baseline exists).
 """
 from __future__ import annotations
 
+from tilib.errors import TilibParamError
+
 SCALARS = {
     "NSMAX":   3,
     "DN0":     0.1,
@@ -70,14 +72,14 @@ def _apply_array(ti, name, arr) -> None:
         for i, v in arr.items():
             try:
                 ti.set_param(f"{name}[{int(i)}]", float(v))
-            except Exception:  # pragma: no cover - unregistered is OK
+            except TilibParamError:  # ierr=1 = unknown name; OK for UNREGISTERED_KEYS
                 if name not in UNREGISTERED_KEYS:
                     raise
     else:
         for i, v in enumerate(arr, start=1):
             try:
                 ti.set_param(f"{name}[{i}]", float(v))
-            except Exception:  # pragma: no cover - unregistered is OK
+            except TilibParamError:  # ierr=1 = unknown name; OK for UNREGISTERED_KEYS
                 if name not in UNREGISTERED_KEYS:
                     raise
 
@@ -87,7 +89,7 @@ def apply(ti) -> None:
     for name, value in SCALARS.items():
         try:
             ti.set_param(name, float(value))
-        except Exception:
+        except TilibParamError:  # ierr=1 = unknown name; OK for UNREGISTERED_KEYS
             if name not in UNREGISTERED_KEYS:
                 raise
     for name, arr in ARRAYS.items():
@@ -97,6 +99,6 @@ def apply(ti) -> None:
         for (i, j), v in mat.items():
             try:
                 ti.set_param(f"{name}[{int(i)},{int(j)}]", float(v))
-            except Exception:
+            except TilibParamError:  # ierr=1 = unknown name; OK for UNREGISTERED_KEYS
                 if name not in UNREGISTERED_KEYS:
                     raise
