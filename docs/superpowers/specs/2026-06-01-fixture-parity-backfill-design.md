@@ -4,7 +4,23 @@
 **Date**: 2026-06-01
 **Tracking issue**: [#215](https://github.com/k-yoshimi/task/issues/215) — Python fixture parity for the 6-8 dead-baseline equivalence cases
 **Builds on**: [`2026-05-26-linux-canonical-equiv-policy-design.md`](2026-05-26-linux-canonical-equiv-policy-design.md) (#213 / PR #216)
-**Reviewed by**: Codex (3 independent passes — scope, fixture content, verification plan)
+**Reviewed by**: Codex (3 independent passes — scope, fixture content, verification plan; plus one pre-push pass on the implementation)
+
+## 0. Errata (post-implementation registry corrections)
+
+Three §5 fixture-content tables were corrected during implementation after auditing each module's `*_param_registry.f90`. The original §5 tables below are preserved as historical record; the **as-shipped** content is summarized here. Codex pre-push review (2026-06-02) flagged the spec-vs-code divergence; this erratum closes it.
+
+| Fixture | Spec §5 said | As-shipped (registry-correct) | Authoritative commit |
+|---|---|---|---|
+| `fp_jt60_params.py` SCALARS | included `PROFN2, PROFT2, PMAX, MODELC` | dropped from SCALARS | `52709160` |
+| `fp_jt60_params.py` ARRAYS | did not include `PMAX, MODELC` | added `PMAX={1: 20.0}, MODELC={1: 4}` (Fortran namelist scalar-form assigns index 1 only, NOT broadcast — per `fp_iter01_params.py:52-61` precedent) | `52709160` |
+| `fp_jt60_params.py` UNREGISTERED_KEYS | `("KNAMFP",)` | `("KNAMFP", "PROFN2", "PROFT2")` (PROFN2/PROFT2 have no CASE entry in `fp/fp_param_registry.f90`) | `52709160` |
+| `tr_m0904_params.py` SCALARS | included `MDNCLS, PNBCD` | dropped from SCALARS | `92da504d` (pre-corrected at implementation, no separate fix commit) |
+| `tr_m0904_params.py` UNREGISTERED_KEYS | not specified | `("MDNCLS", "PNBCD")` (neither has a CASE entry in `tr/tr_param_registry.f90`) | `92da504d` |
+
+The `wrx_jt60_params.py` table had a similar drift (PROFN1/PROFN2/PROFT1/PROFT2 should be ARRAYS not SCALARS per `wrx_param_registry.f90:113-125`); the as-shipped fixture at commit `a3fa6ad9` already has these in ARRAYS as `[v, v]` per `wrx_iter01_params.py:45-48` precedent. The original spec §5.4 ARRAYS row did NOT list them — this erratum confirms they belong there.
+
+The pattern that drove all three corrections: any namelist key registered as array-only (`IF (idx > SIZE(...)) RETURN; X(idx) = value`) in `<mod>_param_registry.f90` MUST live in ARRAYS, not SCALARS — bare-name `set_param(name, value)` against an array-only registration parses to `idx=0` and returns `ierr` silently.
 
 ## 1. Context
 
