@@ -13,7 +13,8 @@ write so the key is listed in :data:`UNREGISTERED_KEYS`.
 All array parameters in this fixture **must** be Python lists (not dicts);
 ``wrxlib`` fixture convention uses ``enumerate(arr, start=1)`` only -- a
 dict-form array would silently iterate over keys (likely TypeError on
-``float(name)``). A defensive ``assert isinstance(arr, list)`` in
+``float(name)``). A defensive ``raise TypeError`` (NOT ``assert`` —
+asserts are stripped under ``python -O``) in
 :func:`apply` catches future fixture mistakes early.
 
 Edit cautiously: changing values invalidates the Layer 1 equivalence
@@ -112,9 +113,12 @@ def apply(lib) -> None:
     for name, arr in ARRAYS.items():
         # Defensive guard: wrxlib's enumerate path iterates list values;
         # a dict-form array would iterate dict keys and silently misapply.
-        assert isinstance(arr, list), (
-            f"wrx_jt60_params.ARRAYS[{name!r}] must be a list, "
-            f"got {type(arr).__name__}"
-        )
+        # Use an explicit TypeError (not assert) so the check survives
+        # python -O, which strips assert statements.
+        if not isinstance(arr, list):
+            raise TypeError(
+                f"wrx_jt60_params.ARRAYS[{name!r}] must be a list, "
+                f"got {type(arr).__name__}"
+            )
         for i, v in enumerate(arr, start=1):
             lib.set_param(f"{name}[{i}]", float(v))
