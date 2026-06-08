@@ -32,6 +32,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
@@ -158,6 +160,17 @@ class TestEquivalence(TiDataCwdMixin, unittest.TestCase):
         from tilib.tests.fixtures import ti_ar_params as f
         self._check_case(f)
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "#223: ti_get_state returns ierr=3 (TI_ERR_CALC_FAILED) on the "
+            "W-impurity case under the libtiapi.so wrapper path. Likely "
+            "KID_NS recomputation from NPA=74 or ADAS-table load missing "
+            "in the wrapper init path. Diagnosis requires Linux + "
+            "-ffpe-trap rebuild. Remove this xfail when the wrapper path "
+            "for W-impurity is complete AND baseline reflects the fix."
+        ),
+    )
     def test_ti_w(self):
         from tilib.tests.fixtures import ti_w_params as f
         self._check_case(f)

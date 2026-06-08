@@ -231,6 +231,19 @@ class TestEquivalence(unittest.TestCase):
         from trlib.tests.fixtures import tr_tst2_params as f
         self._check_case(f)
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "#224: tr_m0904 baseline at test_run/baselines/tr_m0904/ "
+            "(a) lacks AJRFT (pre-AJRFT 13-scalar shape; PR #187 added "
+            "AJRFT to the TR dump path but this baseline was not "
+            "regenerated — same pattern as #190 for tr_tst2) AND (b) "
+            "exhibits the env-dependent drift documented in KNOWN_ISSUE.md. "
+            "309 mismatches on canonical CI gfortran 13.3.0. Spec §6.3 "
+            "explicitly anticipated this case. Remove this xfail when "
+            "the baseline is regenerated on canonical Linux."
+        ),
+    )
     def test_m0904(self):
         from trlib.tests.fixtures import tr_m0904_params as f
         self._check_case(f)
