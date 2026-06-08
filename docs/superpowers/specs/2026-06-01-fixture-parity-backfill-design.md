@@ -22,6 +22,18 @@ The `wrx_jt60_params.py` table had a similar drift (PROFN1/PROFN2/PROFT1/PROFT2 
 
 The pattern that drove all three corrections: any namelist key registered as array-only (`IF (idx > SIZE(...)) RETURN; X(idx) = value`) in `<mod>_param_registry.f90` MUST live in ARRAYS, not SCALARS — bare-name `set_param(name, value)` against an array-only registration parses to `idx=0` and returns `ierr` silently.
 
+### 0.1 Post-CI xfail amendments
+
+After the canonical Linux CI run on 2026-06-08 (workflow 27113686677), 3 of the 4 new test methods failed at 1e-10 and were marked `@pytest.mark.xfail(strict=True, reason="#NNN")` per spec §6.3 drift policy. The 4th new test (`wrx_jt60::test_jt60`) and the renamed `test_ti_min` PASSED on canonical CI.
+
+| Test | Failure mode | Follow-up issue | Authoritative commit |
+|---|---|---|---|
+| `fplib/test_equivalence.py::test_jt60` | Profile fields drift 0.5–51% (PROFN2/PROFT2 are plcomm scalars with no fp_param_registry CASE entry — wrapper cannot reproduce baseline) | [#222](https://github.com/k-yoshimi/task/issues/222) | `28b692b3` |
+| `tilib/test_equivalence.py::test_ti_w` | `ti_get_state: ierr=3` (TI_ERR_CALC_FAILED) on W-impurity (Z=74); likely KID_NS/ADAS coverage gap in wrapper init | [#223](https://github.com/k-yoshimi/task/issues/223) | `28b692b3` |
+| `trlib/test_equivalence.py::test_m0904` | AJRFT missing from baseline (#190-style pre-AJRFT shape) + env-dependent drift (`KNOWN_ISSUE.md`); §6.3 explicitly anticipated this | [#224](https://github.com/k-yoshimi/task/issues/224) | `28b692b3` |
+
+CI env at xfail introduction: gfortran 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04.1), Python 3.11 + 3.13. `strict=True` ensures the markers auto-fail (XPASS) once the underlying issue is fixed, prompting marker removal.
+
 ## 1. Context
 
 PR #216 (merged 2026-05-28) closed #213 by establishing the **Linux-canonical equivalence policy**: canonical Linux CI runs the 1e-10 baseline comparison; other platforms skip via `@skipUnless(IS_LINUX)` with a principled message naming the policy doc. See `docs/baseline-policy.md`.
