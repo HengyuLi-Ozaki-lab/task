@@ -27,6 +27,7 @@ HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
 TEST_OUTPUT_DIR = REPO / "test_run" / "test_output"
+FIXTURES_DIR = HERE.parent / "fixtures"
 DEFAULT_SO = REPO / "tr" / "libtrapi.so"
 
 if str(PYTHON_ROOT) not in sys.path:
@@ -68,15 +69,24 @@ FANOUT_NTMAX = 2
 class TestTrlibFanoutParity(unittest.TestCase):
     """scalar-set vs element-set parity for PROFN1/PROFN2."""
 
-    WORKDIR = TEST_OUTPUT_DIR / "tr_tst2"
-    EQDATA = WORKDIR / "eqdata.TST-2"
+    WORKDIR: Path  # resolved by setUpClass
+    EQDATA: Path
 
-    def setUp(self):
-        if not self.EQDATA.exists():
-            self.skipTest(
-                f"eqdata missing at {self.EQDATA}; "
-                "run `./test_run/run_tests.sh tr_tst2` first."
+    @classmethod
+    def setUpClass(cls):
+        knameq = "eqdata.TST-2"
+        candidate = TEST_OUTPUT_DIR / "tr_tst2"
+        if (candidate / knameq).exists():
+            cls.WORKDIR = candidate
+        elif (FIXTURES_DIR / knameq).exists():
+            cls.WORKDIR = FIXTURES_DIR
+        else:
+            raise unittest.SkipTest(
+                f"{knameq} missing under {candidate} or {FIXTURES_DIR}; "
+                "run `./test_run/run_tests.sh tr_tst2` first "
+                "(or rely on committed fixture)."
             )
+        cls.EQDATA = cls.WORKDIR / knameq
 
     def _run_case(self, apply_extra) -> dict:
         """Run tst2 with an extra apply-overlay, return scalars dict only.
