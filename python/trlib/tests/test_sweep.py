@@ -35,8 +35,22 @@ HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
 DEFAULT_SO = REPO / "tr" / "libtrapi.so"
-ITER01_WORKDIR = REPO / "test_run" / "test_output" / "tr_iter01"
-ITER01_EQDATA = ITER01_WORKDIR / "eqdata.ITER01"
+FIXTURES_DIR = HERE.parent / "fixtures"
+TEST_OUTPUT_DIR = REPO / "test_run" / "test_output"
+KNAMEQ_ITER01 = "eqdata.ITER01"
+
+
+def _resolve_iter01_cwd() -> Path | None:
+    """Resolve cwd for tr_iter01: prefer dev-generated test_output, else committed FIXTURES_DIR."""
+    candidate = TEST_OUTPUT_DIR / "tr_iter01"
+    if (candidate / KNAMEQ_ITER01).exists():
+        return candidate
+    if (FIXTURES_DIR / KNAMEQ_ITER01).exists():
+        return FIXTURES_DIR
+    return None
+
+
+ITER01_CWD = _resolve_iter01_cwd()
 
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
@@ -56,9 +70,9 @@ def _trlib_importable() -> bool:
 )
 @unittest.skipUnless(_trlib_importable(), "python/trlib not importable")
 @unittest.skipUnless(
-    ITER01_EQDATA.exists(),
-    f"eqdata.ITER01 missing at {ITER01_EQDATA}; "
-    "run `./test_run/run_tests.sh tr_iter01` first (requires eq_iter01).",
+    ITER01_CWD is not None,
+    f"{KNAMEQ_ITER01} missing under {TEST_OUTPUT_DIR}/tr_iter01 or {FIXTURES_DIR}; "
+    f"run `./test_run/run_tests.sh tr_iter01` first (or rely on committed fixture).",
 )
 class TestSweep(unittest.TestCase):
     """3x3 RR x BB grid; smoke-only (no numerical regression)."""
@@ -80,7 +94,7 @@ class TestSweep(unittest.TestCase):
         # ITER01 sets MODELG=3 + KNAMEQ=eqdata.ITER01; chdir so
         # tr_prep can read the eq data from the Phase-0 output dir.
         prev_cwd = Path.cwd()
-        os.chdir(ITER01_WORKDIR)
+        os.chdir(ITER01_CWD)  # resolved at module load (test_output or FIXTURES_DIR)
         try:
             results = []
             for rr in self.RR_VALUES:
