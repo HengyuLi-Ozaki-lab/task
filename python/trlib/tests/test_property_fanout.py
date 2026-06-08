@@ -79,18 +79,6 @@ class TestTrlibFanoutParity(unittest.TestCase):
         if (candidate / knameq).exists():
             cls.WORKDIR = candidate
         elif (FIXTURES_DIR / knameq).exists():
-            # Defensive guard: TR_REGRESS_DUMP=1 and TR_DUMP_STATE write debug
-            # artefacts to cwd (tr/trregress.f90:30, tr/tr_dump_state.f90:58).
-            # The FIXTURES_DIR fallback path would land those inside the
-            # committed fixture directory — skip instead.
-            if (
-                os.environ.get("TR_REGRESS_DUMP") == "1"
-                or os.environ.get("TR_DUMP_STATE")
-            ):
-                raise unittest.SkipTest(
-                    "TR_REGRESS_DUMP/TR_DUMP_STATE would write into committed FIXTURES_DIR; "
-                    "unset them or generate test_run/test_output/tr_tst2/ first."
-                )
             cls.WORKDIR = FIXTURES_DIR
         else:
             raise unittest.SkipTest(
@@ -99,6 +87,24 @@ class TestTrlibFanoutParity(unittest.TestCase):
                 "(or rely on committed fixture)."
             )
         cls.EQDATA = cls.WORKDIR / knameq
+
+    def setUp(self):
+        # Defensive guard (run-time, per test): TR_REGRESS_DUMP=1 and
+        # TR_DUMP_STATE write debug artefacts to cwd
+        # (tr/trregress.f90:30, tr/tr_dump_state.f90:58). If the fallback
+        # selected FIXTURES_DIR as cwd, those would land inside the
+        # committed fixture directory. Check at run time (not at
+        # setUpClass) so env vars set later in the same pytest process
+        # are still observed.
+        if self.WORKDIR == FIXTURES_DIR and (
+            os.environ.get("TR_REGRESS_DUMP") == "1"
+            or os.environ.get("TR_DUMP_STATE")
+        ):
+            self.skipTest(
+                "TR_REGRESS_DUMP/TR_DUMP_STATE would write into committed "
+                "FIXTURES_DIR; unset them or generate "
+                "test_run/test_output/tr_tst2/ first."
+            )
 
     def _run_case(self, apply_extra) -> dict:
         """Run tst2 with an extra apply-overlay, return scalars dict only.
