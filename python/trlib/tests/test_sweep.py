@@ -74,6 +74,18 @@ def _trlib_importable() -> bool:
     f"{KNAMEQ_ITER01} missing under {TEST_OUTPUT_DIR}/tr_iter01 or {FIXTURES_DIR}; "
     f"run `./test_run/run_tests.sh tr_iter01` first (or rely on committed fixture).",
 )
+# Defensive guard: TR_REGRESS_DUMP=1 and TR_DUMP_STATE write debug artefacts
+# to cwd (tr/trregress.f90:30, tr/tr_dump_state.f90:58). If the fallback
+# selected FIXTURES_DIR as cwd, those would land inside the committed fixture
+# directory — skip the test in that case so the dev's debug session does not
+# accidentally pollute the tracked tree.
+@unittest.skipIf(
+    ITER01_CWD == FIXTURES_DIR and (
+        os.environ.get("TR_REGRESS_DUMP") == "1" or os.environ.get("TR_DUMP_STATE")
+    ),
+    "TR_REGRESS_DUMP/TR_DUMP_STATE would write into committed FIXTURES_DIR; "
+    "unset them or generate test_run/test_output/tr_iter01/ first.",
+)
 class TestSweep(unittest.TestCase):
     """3x3 RR x BB grid; smoke-only (no numerical regression)."""
 

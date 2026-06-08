@@ -121,6 +121,14 @@ class TestSweep(unittest.TestCase):
             eqdata_dir = candidate
         elif (FIXTURES_DIR / knameq).exists():
             # CI / fresh checkout fallback: use committed fixture eqdata.
+            # Defensive guard: EQ_REGRESS_DUMP=1 writes eq_regress.dat to cwd
+            # (eq/eqregress.f:35). If we'd be using FIXTURES_DIR as cwd, that
+            # would land inside the committed fixture directory — skip instead.
+            if os.environ.get("EQ_REGRESS_DUMP") == "1":
+                self.skipTest(
+                    "EQ_REGRESS_DUMP=1 would write into committed FIXTURES_DIR; "
+                    "unset it or generate test_run/test_output/eq_iter01/ first."
+                )
             eqdata_dir = FIXTURES_DIR
         else:
             self.skipTest(

@@ -79,6 +79,18 @@ class TestTrlibFanoutParity(unittest.TestCase):
         if (candidate / knameq).exists():
             cls.WORKDIR = candidate
         elif (FIXTURES_DIR / knameq).exists():
+            # Defensive guard: TR_REGRESS_DUMP=1 and TR_DUMP_STATE write debug
+            # artefacts to cwd (tr/trregress.f90:30, tr/tr_dump_state.f90:58).
+            # The FIXTURES_DIR fallback path would land those inside the
+            # committed fixture directory — skip instead.
+            if (
+                os.environ.get("TR_REGRESS_DUMP") == "1"
+                or os.environ.get("TR_DUMP_STATE")
+            ):
+                raise unittest.SkipTest(
+                    "TR_REGRESS_DUMP/TR_DUMP_STATE would write into committed FIXTURES_DIR; "
+                    "unset them or generate test_run/test_output/tr_tst2/ first."
+                )
             cls.WORKDIR = FIXTURES_DIR
         else:
             raise unittest.SkipTest(
