@@ -1114,6 +1114,8 @@ C
       BETAP=PVAVE/(BPA**2/(2.D0*RMU0)) ! Poloidal beta
       QAXIS=FNQPS(0.D0)    ! Safety factor at the magnetic axis
       QSURF=FNQPS(1.D0)    ! Safety factor at the separatrix
+      IF(NPRINT.GE.1) WRITE(6,'(A,1P4E12.4)')
+     &     'BETAT,BETAP,QAXIS,QSURF =',BETAT,BETAP,QAXIS,QSURF
 C
       IF(NPRINT.GE.2) THEN
 c$$$         WRITE(6,'(A,1P4E12.4)') 
