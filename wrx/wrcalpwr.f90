@@ -258,7 +258,11 @@ CONTAINS
     ! caller chooses NSTPMAX = SMAX/DELS exactly (e.g. test_wrxlib.py
     ! TestWrxlibRun: NSTPMAX=2000, SMAX=2.0, DELS=1e-3).
     nstpmax_all=MIN(MAXVAL(nstpmax_nray(1:nraymax))+1, nstpmax-1)
-    dx=1.D0/(nstpmax_all)
+    ! Guard the divisor: nstpmax_all collapses to 0 when NSTPMAX<=1
+    ! (MIN(MAXVAL(...)+1, nstpmax-1) -> nstpmax-1 = 0), which would make
+    ! dx = 1/0. Reviewers (in-house + codex) flagged this merge-interaction
+    ! div-by-zero (kyoshimi's nstpmax-1 clamp + bpsi's 1/nstpmax_all divisor).
+    dx=1.D0/MAX(nstpmax_all,1)
     DO nstp=0,nstpmax_all
        xtemp(nstp+1)=nstp*dx
     END DO

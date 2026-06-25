@@ -42,6 +42,7 @@
       USE trinit
       USE trparm
       USE trmenu
+      USE trrslt_print, ONLY : tr_setup_kv
 
       IMPLICIT NONE
       REAL   :: GTCPU2
