@@ -264,10 +264,14 @@ CONTAINS
     END DO
     DO nray=1,nraymax
        DO nsa=1,nsamax_wr
-          DO nstp=0,nstpmax_nray(nray)
+          ! Clamp to nstpmax_all so ytemp(nstp+1) stays within (0:nstpmax):
+          ! a ray that uses all NSTPMAX steps has nstpmax_nray(nray)=nstpmax,
+          ! which would overrun ytemp at nstp+1=nstpmax+1 (the merge re-introduced
+          ! bpsi's unclamped nstpmax_nray bound over kyoshimi's nstpmax_all clamp).
+          DO nstp=0,MIN(nstpmax_nray(nray),nstpmax_all)
              ytemp(nstp+1,nsa,nray)=pwr_nsa_nstp_nray(nsa,nstp,nray)
           END DO
-          DO nstp=nstpmax_nray(nray)+1,nstpmax_all
+          DO nstp=MIN(nstpmax_nray(nray),nstpmax_all)+1,nstpmax_all
              ytemp(nstp+1,nsa,nray)=0.D0
           END DO
           
