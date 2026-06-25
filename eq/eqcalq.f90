@@ -1254,7 +1254,7 @@
 !     ----- SET NUMBER OF DIVISION for integration -----
 !
 
-C      NMAX=200
+!      NMAX=200
       NMAX=400
       IF(NMAX.GT.NTVM) NMAX=NTVM
 !
