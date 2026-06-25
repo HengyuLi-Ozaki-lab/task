@@ -33,7 +33,7 @@
 !     *                                                             *
 !     ***************************************************************
 
-      USE TRCOMM, ONLY : GTCPU1, NFM, NGM, NSM, NTM, DEALLOCATE_TRCOMM
+      USE TRCOMM, ONLY : GTCPU1
       use bpsd
       use plinit,ONLY: pl_init
       use plparm,ONLY: pl_parm
@@ -42,7 +42,6 @@
       USE trinit
       USE trparm
       USE trmenu
-      USE trrslt_print, ONLY : tr_setup_kv
 
       IMPLICIT NONE
       REAL   :: GTCPU2
@@ -76,6 +75,5 @@
       WRITE(6,666) GTCPU2-GTCPU1
   666 FORMAT(' ','#      CPU TIME :   ',F8.3,' SEC ')
       CALL GSCLOS
-      CALL DEALLOCATE_TRCOMM
       STOP
       END PROGRAM

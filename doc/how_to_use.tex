@@ -55,12 +55,12 @@ p{45mm}p{35mm}p{30mm}p{120mm}}}{\end{tabular}\par\bigskip}
 \vspace*{-40mm}
 
 \begin{flushright}\LARGE
-  2022/04/11
+  2026/03/06
 \end{flushright}
 \vspace{20mm}
 
 \xtitle{160mm}{%
-Introduction to running TASK
+Introduction to use TASK
 }
 \medskip
 
@@ -187,29 +187,31 @@ Professor Emeritus, Kyoto University
 \begin{itemize}
 \itemsep=3mm
 \item
-\ttype{XXcomm.f90}: Definition of global variables, allocation of arrays
+  \ttype{XXcomm.f90}: Definition of global variables, allocation of arrays
 \item
-\ttype{XXmain.f90}: Main program for standalone use, read XXparm file
+  \ttype{XXmain.f90}: Main program for standalone use, read XXparm file
 \item
-\ttype{XXmenu.f90}: Command input
+  \ttype{XXinit.f90}: Initialize input parameters
 \item
-\ttype{XXinit.f90}: Default values
-\item
-\ttype{XXparm.f90}: Read input parameters
-\item
-\ttype{XXview.f90}: Show input parameters
-\item
-\ttype{XXprep.f90}: Initialization of run, initial profile
-\item
-\ttype{XXexec.f90}: Execution of run
-\item
-\ttype{XXgout.f90}: Graphic output
-\item
-\ttype{XXfout.f90}: Text file output
-\item
-\ttype{XXsave.f90}: Binary file output
-\item
-\ttype{XXload.f90}: Binary file input
+  \ttype{XXmenu.f90}: Command input
+  \begin{itemize}
+  \item
+    \ttype{XXparm.f90}: Read input parameters
+  \item
+    \ttype{XXview.f90}: Show input parameters
+  \item
+    \ttype{XXprep.f90}: Initialization of run, initial profile
+  \item
+    \ttype{XXexec.f90}: Execution of run
+  \item
+    \ttype{XXgout.f90}: Graphic output
+  \item
+    \ttype{XXfout.f90}: Text file output
+  \item
+    \ttype{XXsave.f90}: Binary file output
+  \item
+    \ttype{XXload.f90}: Binary file input
+  \end{itemize}
 \end{itemize}
 
 \title{Typical input command}
@@ -240,6 +242,8 @@ Professor Emeritus, Kyoto University
   \item
     \ttype{q}: End of the program
   \end{itemize}
+\item
+  When the first character is '!', the line is neglected
 \end{itemize}
 
 \title{How to setting input parameters}
@@ -418,7 +422,7 @@ Professor Emeritus, Kyoto University
   \end{itemize}
 \end{itemize}
 
-\title{How to run TASK/EQ (3)}
+\title{How to run TASK/TR (3)}
 
 \begin{itemize}
 \item
@@ -430,7 +434,7 @@ Professor Emeritus, Kyoto University
     This example uses a fixed-boundary equilibrium file
     \ttype{../eq/eqdata.ITER01} in a previous eq run
   \item
-    \quad \ttype{cd task/eq}
+    \quad \ttype{cd task/tr}
   \item
     \quad \ttype{./tr2 <in/tr.ITER01.in | tee tr.ITER01.out}
   \item

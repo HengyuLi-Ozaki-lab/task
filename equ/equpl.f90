@@ -1,11 +1,12 @@
-c
+! equpl.f90
+
       module equpl_mod
-c
+!
       use bpsd
       use tpxssl_mod
       public eqpl_init, eqpl_prof, eqpl_get, eqpl_put
       private
-c
+!
       type(bpsd_device_type),private,save  :: device_eq
       type(bpsd_equ1D_type),private,save   :: equ1D
       type(bpsd_metric1D_type),private,save:: metric1D
@@ -13,9 +14,9 @@ c
       type(bpsd_plasmaf_type),private,save :: plasmaf
       logical, private, save :: eqpl_init_flag = .TRUE.
       contains
-c=======================================================================
+!=======================================================================
       subroutine eqpl_init(ierr)
-c=======================================================================
+!=======================================================================
       use aaa_mod
       use com_mod
       use par_mod
@@ -29,14 +30,14 @@ c=======================================================================
 ! local variables
       integer    ns
       real(rkind) pretot,dentot,temave
-c=======================================================================
+!=======================================================================
       if(eqpl_init_flag) then
          equ1D%nrmax=0
          metric1D%nrmax=0
          eqpl_init_flag=.FALSE.
          bpsd_debug_flag=.FALSE.
       endif
-c
+!
       device_eq%rr=rmaj
       device_eq%zz=zpla
       device_eq%ra=rpla
@@ -46,7 +47,7 @@ c
       device_eq%elip=elip
       device_eq%trig=trig
       call bpsd_put_data(device_eq,ierr)
-c
+!
       equ1D%time=0.D0
       if(equ1D%nrmax.ne.nv) then
          if(ALLOCATED(equ1D%rho)) deallocate(equ1D%rho)
@@ -55,7 +56,7 @@ c
          allocate(equ1D%rho(nv))
          allocate(equ1D%data(nv))
       endif
-c
+!
       metric1D%time=0.D0
       if(metric1D%nrmax.ne.nv) then
          if(ALLOCATED(metric1D%rho)) deallocate(metric1d%rho)
@@ -67,10 +68,10 @@ c
 
       return
       end subroutine eqpl_init
-c
-c=======================================================================
+!
+!=======================================================================
       subroutine eqpl_prof(ierr)
-c=======================================================================
+!=======================================================================
       use aaa_mod
       use com_mod
       use par_mod
@@ -84,11 +85,10 @@ c=======================================================================
 ! local variables
       integer(4)    ns,n
       real(rkind) pretot,dentot,temave
-c=======================================================================
+!=======================================================================
 
 !----- adjust pressure profile -----
 
-      plasmaf%nrmax=0
       call bpsd_get_plasmaf(plasmaf,ierr)
       nt=plasmaf%nrmax
       ntm=nt-1
@@ -107,7 +107,7 @@ c=======================================================================
       call spln(hdt,hit,nt,hdv,hiv,nv,ww1,0)
       call spln(vlt,hit,nt,vlv,hiv,nv,ww1,0)
 
-c set pressure profiles
+! set pressure profiles
       do n=1,nt
          pretot=(mut(n)/cnmu)*hdt(n)**gam
          dentot=0.d0
@@ -130,13 +130,13 @@ c set pressure profiles
 
       return
       end subroutine eqpl_prof
-c
-c=======================================================================
+!
+!=======================================================================
       subroutine eqpl_get(ierr)
-c=======================================================================
-c     interface eqiulibrium <>transport                            JAERI
-c          transport grid -> equilibrium grid
-c=======================================================================
+!=======================================================================
+!     interface eqiulibrium <>transport                            JAERI
+!          transport grid -> equilibrium grid
+!=======================================================================
       use aaa_mod
       use par_mod
       use geo_mod
@@ -151,15 +151,15 @@ c=======================================================================
       implicit none
       integer ierr
 ! local variables
-      integer   i, icend, in, ir, is, it, iturn, iturnm, iz
-     >        , izdz, izen, izst, j, jz, n, ns
-      real*8    gzte(itdm,0:indmz), muta(itdm),  mutb(itdm)
-     >        , mute(itdm,0:indmz), s
-     >        , wkt(itdm), wkv(ivdm)
+      integer   i, icend, in, ir, is, it, iturn, iturnm, iz &
+              , izdz, izen, izst, j, jz, n, ns
+      real*8    gzte(itdm,0:indmz), muta(itdm),  mutb(itdm) &
+              , mute(itdm,0:indmz), s &
+              , wkt(itdm), wkv(ivdm)
       common/intf/gzte,mute
-c=======================================================================
-c     transport quantities      trn-grid --> equ-grid    :  hiv(n)
-c=======================================================================
+!=======================================================================
+!     transport quantities      trn-grid --> equ-grid    :  hiv(n)
+!=======================================================================
       plasmaf%nrmax=0
       call bpsd_get_plasmaf(plasmaf,ierr)
 
@@ -177,7 +177,7 @@ c=======================================================================
             pre(n,ns-1)=cnec*tem(n,ns-1)*den(n,ns-1)
          enddo
       enddo
-c
+!
       sit(nt)=0.
       do n=ntm,1,-1
       sit(n)=sit(n+1)-0.5*(qi(n+1)+qi(n))*(hit(n+1)-hit(n))
@@ -201,7 +201,7 @@ c
       nut(n)=qi(n)
 !      write(27,'(I5,1p4e12.4)') n,ro(n),mut(n),nut(n),sit(n)
       enddo
-c-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
       do n=1,nv
       siv(n)=sit(1)+(sit(nt)-sit(1))*float(n-1)/float(nvm)
       enddo
@@ -211,19 +211,19 @@ c-----------------------------------------------------------------------
       yyhit(n)=nut(n)
       zzhit(n)=hit(n)
       enddo
-c-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
       call spln(muv,hiv,nv,mut,hit,nt,wwmu,0)
       call spln(nuv,hiv,nv,nut,hit,nt,wwmu,0)
-c-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
       return
       end subroutine eqpl_get
-c
-c=======================================================================
+!
+!=======================================================================
       subroutine eqpl_put(ierr)
-c=======================================================================
-c     interface eqiulibrium <>transport                            JAERI
-c         transport grid -> equilibrium grid     
-c=======================================================================
+!=======================================================================
+!     interface eqiulibrium <>transport                            JAERI
+!         transport grid -> equilibrium grid     
+!=======================================================================
       use aaa_mod
       use par_mod
       use geo_mod
@@ -238,18 +238,18 @@ c=======================================================================
       implicit none
       integer ierr
 ! local variables
-      integer   i, icend, in, ir, ire, irs, is, it, iturn, iturnm, iz
-     >        , izdz, izen, izst, j, jz, n, izs, ize, ns
-      real*8    gzte(itdm,0:indmz), muta(itdm),  mutb(itdm)
-     >        , mute(itdm,0:indmz), s
-     >        , wkt(itdm), wkv(ivdm)
+      integer   i, icend, in, ir, ire, irs, is, it, iturn, iturnm, iz &
+              , izdz, izen, izst, j, jz, n, izs, ize, ns
+      real*8    gzte(itdm,0:indmz), muta(itdm),  mutb(itdm) &
+              , mute(itdm,0:indmz), s &
+              , wkt(itdm), wkv(ivdm)
       common/intf/gzte,mute
-c=======================================================================
-c     equilibrium quantities      equ-grid --> trn-grid  : ro(n)
-c-----------------------------------------------------------------------
-c
+!=======================================================================
+!     equilibrium quantities      equ-grid --> trn-grid  : ro(n)
+!-----------------------------------------------------------------------
+!
       call spln(hdt,hit,nt,hdv,hiv,nv,ww1,0)
-c
+!
       do n=1,nv
          equ1D%rho(n)=SQRT(hiv(n)/hiv(nv))
          equ1D%data(n)%psit=hiv(n)/(2.D0*cnpi)
@@ -260,7 +260,7 @@ c
          equ1D%data(n)%pit=ckv(n)*sdv(n)/cnmu/(2.D0*cnpi)
       enddo
       call bpsd_put_equ1D(equ1D,ierr)
-c
+!
       do n=1,nv
          metric1D%rho(n)=SQRT(hiv(n)/hiv(nv))
          metric1D%data(n)%pvol=vlv(n)
@@ -280,7 +280,7 @@ c
          metric1D%data(n)%trig=dlv(n)
       enddo
       call bpsd_put_metric1D(metric1D,ierr)
-c
+!
          
       call spln(sit,hit,nt,siv,hiv,nv,ww1,0)
       call spln(sdt,hit,nt,sdv,hiv,nv,ww1,0)
@@ -290,9 +290,9 @@ c
       call spln(sst,hit,nt,ssv,hiv,nv,ww1,0)
       call spln(aat,hit,nt,aav,hiv,nv,ww1,0)
       call spln(rrt,hit,nt,rrv,hiv,nv,ww1,0)
-c-----------------------------------------------------------------------
-c     equilibrium quantities      equ-grid --> trn-grid  : roh(n)
-c-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
+!     equilibrium quantities      equ-grid --> trn-grid  : roh(n)
+!-----------------------------------------------------------------------
       do n=1,ntm
       roh(n)=0.5*(ro(n)+ro(n+1))
       hih(n)=hiv(nv)*roh(n)**2
@@ -304,7 +304,7 @@ c-----------------------------------------------------------------------
       call spln(ssh,hih,ntm,ssv,hiv,nv,ww1,0)
       call spln(vlh,hih,ntm,vlv,hiv,nv,ww1,0)
       call spln(r2b2h,hih,ntm,r2b2,hiv,nv,ww1,0)
-c-----
+!-----
       do i=1,nv
       wkv(i)=rpv(i)**2
       enddo
@@ -312,11 +312,11 @@ c-----
       do i=1,ntm
       rph(i)=dsqrt(wkt(i))
       enddo
-c-----
+!-----
       call spln(rth,hih,ntm,rtv,hiv,nv,ww1,0)
       call spln(bbh,hih,ntm,bbv,hiv,nv,ww1,0)
       call spln(bih,hih,ntm,biv,hiv,nv,ww1,0)
-c<<TRAPPED PARTICLE FRACTION>>
+!<<TRAPPED PARTICLE FRACTION>>
       do i=1,nv
       wkv(i)=ftr(i)**4.
       enddo
@@ -331,9 +331,9 @@ c<<TRAPPED PARTICLE FRACTION>>
       do i=1,ntm
       eph(i)=wkt(i)**(1./2.)
       enddo
-c-----------------------------------------------------------------------
-c     CALL INTODE
-c-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
+!     CALL INTODE
+!-----------------------------------------------------------------------
       do n=nt,1,-1
       m=n+1
       if(n.eq.nt)sit(n)=0.
@@ -346,11 +346,11 @@ c-----------------------------------------------------------------------
       if(n.lt.nt)then
       vrh(n)=2.*hit(nt)*roh(n)/hdh(n)
       srh(n)=ssh(n)*(hdh(n)/(2.*hit(nt)*roh(n)))**2
-c--
+!--
       rovh(n)=dsqrt(vlh(n)/(2.*cnpi**2*rmaj))
       endif
       enddo
-c-----
+!-----
       do is=0,mion
       do n=1,nroblk
       den(n,is)=gzte(n,is)*hdt(n)
@@ -375,19 +375,19 @@ c-----
             plasmaf%data(n,ns)%temperature_perp=tem(n,ns-1)
             plasmaf%data(n,ns)%velocity_tor=0.d0
          enddo
-c         plasmaf%qinv(n)=nut(n)*(2.D0*cnpi)**2
+!         plasmaf%qinv(n)=nut(n)*(2.D0*cnpi)**2
       enddo
 
       call bpsd_put_plasmaf(plasmaf,ierr)
-c-----
-c     call spln(cpdt,hit,nt,cpds,hiv,nv,ww1,0)
-c=======================================================================
-c     2d geometry for transport calculation   :  ro(r,z)
-c=======================================================================
+!-----
+!     call spln(cpdt,hit,nt,cpds,hiv,nv,ww1,0)
+!=======================================================================
+!     2d geometry for transport calculation   :  ro(r,z)
+!=======================================================================
       ntr2d=nro
       ntr2db=nroblm
       ntr2dm=nro-1
-c-----
+!-----
       nrr2d=nr
       nzr2d=nz
       nrzr2d=nrz
@@ -395,7 +395,7 @@ c-----
       dzr2d=dz
       rsr2d=rg(1)
       zsr2d=zg(1)
-c=======================================================================
+!=======================================================================
       nsur2d=nsu
       nscl2d=nsu
       do n=1,nsu
@@ -404,7 +404,7 @@ c=======================================================================
       rscl2d(n)=rsu(n)
       zscl2d(n)=zsu(n)
       enddo
-c-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
       izs=(zzsmin-zg(1))/dz+1.d0
       ize=(zzsmax-zg(1))/dz+1.d0
       irs=(zrsmin-rg(1))/dr+1.d0
@@ -430,11 +430,11 @@ c-----------------------------------------------------------------------
       endif
       enddo
       enddo
-c=======================================================================
+!=======================================================================
       entry int2dp
-c=======================================================================
-c     for the 2d-calculation of transport process
-c=======================================================================
+!=======================================================================
+!     for the 2d-calculation of transport process
+!=======================================================================
       ionr2d=nion
       jonr2d=mion
       do in=0,jonr2d
@@ -453,8 +453,8 @@ c=======================================================================
       vlr2d(n)=vlt(n)
       enddo
       vlr2d(ntr2d)=vlt(nro)
-c-----------------------------------------------------------------------
+!-----------------------------------------------------------------------
       return
       end subroutine eqpl_put
-c
+!
       end module equpl_mod
