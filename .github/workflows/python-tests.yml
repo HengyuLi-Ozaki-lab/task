@@ -149,6 +149,18 @@ jobs:
           # production users hit.
           pip install mcp
 
+      - name: Provide ../task symlink (module Makefiles hardcode ../task/make.header)
+        # bpsd/Makefile and the module Makefiles `include ../task/make.header`,
+        # assuming the repo is checked out under a dir named `task`. On a
+        # differently-named repo (e.g. the task-merge merge/test sandbox) the
+        # checkout is $GITHUB_WORKSPACE/../<repo>, so `../task` does not resolve
+        # and the bpsd build dies: "No rule to make target '../task/make.header'".
+        # Symlink ../task -> the checkout so the relative include is repo-name
+        # agnostic (no-op when the repo is already named task).
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE" "$(dirname "$GITHUB_WORKSPACE")/task"
+          ls -ld "$(dirname "$GITHUB_WORKSPACE")/task"
+
       - name: Build PIC support libraries (bpsd, lib, mtxp, pl, eq, dp, ob)
         # Pre-build all shared support libraries so each module Makefile
         # finds the .mod files it needs (bpsd, libitp, equnit, plcomm,
