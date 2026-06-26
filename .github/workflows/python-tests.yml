@@ -148,6 +148,17 @@ jobs:
           # block; CI now exercises the FastMCP construction path that
           # production users hit.
           pip install mcp
+          # numpy = the array dtype the python wrappers (python/<mod>lib/
+          # _ffi.py) use for state arrays. It is guarded as optional there
+          # (try/except ImportError), but the TEST suite assumes it present:
+          # mcp-servers/<mod>/tests/test_server.py does a bare `import numpy`
+          # (collection-ERRORS without it, interrupting the whole run) and
+          # eqlib/tests/test_get_psi_rz.py importorskip's it (silently SKIPs).
+          # Same run-don't-skip rationale as the mcp install above
+          # (CLAUDE.md §Test-suite discipline). The build finally compiling
+          # on the merge branch is what first let CI reach pytest and surface
+          # this latent gap (base develop never got past the build either).
+          pip install numpy
 
       - name: Provide ../task symlink (module Makefiles hardcode ../task/make.header)
         # bpsd/Makefile and the module Makefiles `include ../task/make.header`,
@@ -297,7 +308,13 @@ jobs:
       - name: Run pytest (FFI + layout + serialization coverage)
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-          PYTHONPATH: python
+          # python/mcp-servers is on the path so `import <mod>_mcp` and the
+          # `python -m <mod>_mcp.server` subprocesses in mcp-servers/<mod>/
+          # tests/test_{server,save_tool,get_psi_rz_tool}.py resolve. The
+          # subprocesses inherit this env (test passes env={**os.environ}),
+          # so PYTHONPATH must carry it. The wrappers under python/ stay
+          # pure-Python (no install needed), per each mcp pyproject.
+          PYTHONPATH: python:python/mcp-servers
           # WRX_RUN_OK default ON (2026-04-22): the original SIGABRT
           # cause was libgrf::grd1d from wr_calc_pwr walking an
           # uninitialized grf_attr_type; PR #123 set WRX_NO_GRAPHICS=1
@@ -339,6 +356,6 @@ jobs:
       - name: Show collected vs skipped summary
         if: always()
         env:
-          PYTHONPATH: python
+          PYTHONPATH: python:python/mcp-servers
         run: |
           python -m pytest python/ --collect-only -q | tail -5 || true
