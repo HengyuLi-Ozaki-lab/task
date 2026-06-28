@@ -16,7 +16,7 @@ baselines, in two unrelated classes:
 
 | Test | Magnitude | Class |
 |---|---|---|
-| `totlib::test_tot_ht6m_short` | 210 mismatches, rel_err up to ~3.7e-4 | **physics change (this record)** |
+| `totlib::test_tot_ht6m_short` | 210 leaves (all 50 rows), rel_err up to ~7.9e-4 | **physics change (this record)** |
 | `wrxlib::test_demo` / `test_iter01` | pwr_tot rel_err ~4.9e-10 / 1.55e-9 | compiler-version FP noise (gf8.5 baseline ≠ gf13.2 CI) — separate, see #197 |
 
 This record covers **only** the `tot_ht6m_short` failure. The wrx failures are
@@ -50,47 +50,53 @@ fa9dd493  "tr,eq: fix modelg=9 TR-EQ q-solver coupling" — despite the title, i
 
 The pre-merge baseline (`8956d7a9`-era) encodes the coarser/older EQ solve; the
 merged code solves the same HT6M equilibrium on a finer grid (NMAX 400) with
-EQLOOP under-relaxation, yielding a slightly **more accurate** core current/q.
-demo2014 / iter01 are well-conditioned configurations where these refinements
-are inert at 1e-10, which is why only HT6M moved. The exact dominant sub-change
+EQLOOP under-relaxation, yielding a slightly **more accurate**, globally
+redistributed current/q profile (§3). demo2014 / iter01 are well-conditioned
+configurations where these refinements are inert at 1e-10, which is why only
+HT6M moved. The exact dominant sub-change
 was not bisected (that needs per-commit rebuilds), but the physics signature in
 §3 is unambiguous regardless of which refinement dominates.
 
 ## 3. Physics review (why this is a correct refinement, not a bug)
 
-The shift was extracted from the authoritative gf13.2 CI run (baseline vs
-actual, all 210 elements) and grouped by quantity. Signature:
+**CORRECTION (2026-06-29):** an earlier draft of this section called the shift
+"core-localized (ρ ≤ 0.20), byte-identical beyond." That was wrong — an artifact
+of a TRUNCATED CI log (`compare_metrics.py` prints only the first ~52 of 210
+mismatched leaves, which happen to be the core rows). The full committed baseline
+shows the shift is **global**. Two code reviewers caught the discrepancy; the
+corrected signature below is from all 50 profile rows of the committed gf13.2
+baseline vs the old baseline, and was re-approved by the owner.
 
-| Quantity | # pts | rel_err range | direction |
+| Quantity | rows changed | max rel_err | shape |
 |---|---|---|---|
-| AJ (current density j) | 10 (core) | 2.00e-4 … 2.67e-4 | ↑ all up |
-| QP (safety factor q)   | 10 (core) | 1.02e-4 … 1.33e-4 | ↓ all down |
-| Q0 (axis q0)           | 1 | 1.33e-4 | ↓ |
-| RT (temperature)       | 10×2 spc | 1.9e-5 … 1.39e-4 | redistribute |
-| TAUE1/2 (confinement)  | — | 3.71e-4 (largest scalar) | ↓ |
-| AJT, ALI, WPT, β*       | — | 2e-6 … 6e-5 | small, coherent |
-| **RN (density n)**     | **0** | — | **unchanged** |
+| AJ (current density j) | 50/50 | 7.91e-4 @ ρ=0.74 | redistribute: + core, − mid, + edge |
+| QP (safety factor q)   | 50/50 | 1.33e-4 @ ρ=0.02 | − core, + outer (integral of j) |
+| RT (temperature, ×2 spc) | 50/50 | ~1.4e-4 | mild redistribution |
+| AJT (total current)    | scalar | 3.91e-5 | ≈ conserved |
+| TAUE1/2, ALI, WPT, β*   | scalars | 6e-5 … 3.7e-4 | small, coherent |
+| **RN (density n)**     | **0/50** | — | **frozen** |
 
-Four independent bug-vs-physics discriminators, all pointing to a legitimate
-core q-solver refinement:
+Four bug-vs-physics discriminators, re-confirmed against the full committed data:
 
-1. **`j ↑ ↔ q ↓` strict anti-correlation**, with |Δj/j| ≈ 2·|Δq/q|. This is the
-   exact analytic coupling `q ∝ r·Bφ/(R·Bθ)`, `Bθ ∝ ∫ j dr` — more core current
-   ⟹ lower core q, with the ~2:1 ratio from the integral+geometry. A bug has no
-   reason to honor this relation.
-2. **Spatially localized to the core, ρ ≤ 0.20**, decaying *smoothly* to exactly
-   zero at ρ = 0.20 (ρ ≥ 0.22: byte-identical). A bug is typically global or
-   discontinuous.
-3. **Density n completely frozen** (0 of its points changed). n is an input
-   profile, not a q-solver output; an algorithm bug would tend to contaminate
-   unrelated quantities.
-4. **No NaN / no blow-up / no jumps** — every change is smooth and ~1e-4..1e-5;
-   downstream quantities (T redistribution, τE/Wp small decrease, li small
-   increase) are all consistent with a slightly-modified core current profile.
+1. **Total current is conserved.** Integrated AJT moves only 3.91e-5 while local
+   Δj/j reaches 7.91e-4 (≈20× larger). This is a current-profile REDISTRIBUTION —
+   current shifts out of the mid-region (ρ≈0.5–0.85) toward the core and the edge —
+   not a net current change. A bug has no reason to conserve the integral.
+2. **Density n completely frozen** (0 of 50 rows). n is an input profile, not an
+   equilibrium-solver output; an algorithm bug would tend to contaminate it.
+3. **q tracks the redistributed current as its integral**: `q ∝ r·Bφ/(R·Bθ)`,
+   `Bθ ∝ ∫₀ʳ j dr`. q falls where the cumulative interior current rises (core) and
+   rises where it falls (outer); 39 of 50 rows have sign(Δj) = −sign(Δq), the
+   remainder being the integral lag near the two sign-crossings. This is the
+   correct physical coupling, not a per-point coincidence.
+4. **Smooth, bounded, finite** — every change varies smoothly with ρ, bounded at
+   ~8e-4, no NaN / no blow-up; downstream scalars (τE/Wp small, li small) are
+   consistent with a slightly-redistributed current profile.
 
-Visualization: `Δrel = (new−old)/old × 10⁻⁴` vs ρ for j and q shows two
-mirror-image core bumps (j: +2.67→0, q: −1.33→0 over ρ = 0.02→0.20), then flat
-zero. (Rendered for review on 2026-06-29.)
+Visualization: `Δrel = (new−old)/old × 10⁻⁴` vs ρ across all 50 rows shows j
+rising in the core, crossing zero at ρ≈0.43, dipping to −7.9e-4 at ρ=0.74, and
+recovering at the edge; q falling in the core, crossing zero at ρ≈0.5, rising in
+the outer half. (Corrected global plot rendered; owner re-approved 2026-06-29.)
 
 ## 4. Decision
 
@@ -129,24 +135,25 @@ CI compiler.** (tot/eq/tr are compiler-stable at 1e-10 — the tot_ht6m regen he
 is for the *physics* shift, not compiler drift, so it would reproduce on any
 compiler; gf13.2 is used only to match CI exactly.)
 
-## 6. Appendix — core radial data (gf13.2 CI, baseline → new)
+## 6. Appendix — full-radius shift (gf13.2 CI, Δrel = (new−old)/old ×10⁻⁴)
 
-ρ = NR/NRMAX, NRMAX = 50. Only ρ ≤ 0.20 changed.
+ρ = NR/NRMAX, NRMAX = 50. **ALL 50 rows changed** (global redistribution); a
+representative subsample:
 
-| ρ | j_old (kA/m²) | j_new | Δj ×10⁻⁴ | q_old | q_new | Δq ×10⁻⁴ |
+| ρ | Δj ×10⁻⁴ | Δq ×10⁻⁴ | | ρ | Δj ×10⁻⁴ | Δq ×10⁻⁴ |
 |---|---|---|---|---|---|---|
-| 0.02 | 547.624 | 547.770 | +2.665 | 6.4789 | 6.4781 | −1.328 |
-| 0.04 | 543.134 | 543.277 | +2.637 | 6.5214 | 6.5206 | −1.314 |
-| 0.06 | 536.475 | 536.613 | +2.576 | 6.5745 | 6.5737 | −1.283 |
-| 0.08 | 526.989 | 527.121 | +2.505 | 6.6452 | 6.6443 | −1.250 |
-| 0.10 | 517.169 | 517.295 | +2.430 | 6.7243 | 6.7235 | −1.215 |
-| 0.12 | 506.626 | 506.745 | +2.353 | 6.8113 | 6.8105 | −1.179 |
-| 0.14 | 495.893 | 496.005 | +2.271 | 6.9046 | 6.9038 | −1.140 |
-| 0.16 | 484.857 | 484.963 | +2.187 | 7.0039 | 7.0032 | −1.101 |
-| 0.18 | 473.630 | 473.729 | +2.094 | 7.1091 | 7.1084 | −1.060 |
-| 0.20 | 462.215 | 462.307 | +1.998 | 7.2202 | 7.2195 | −1.017 |
-| ≥0.22 | — | (unchanged) | 0 | — | (unchanged) | 0 |
+| 0.02 | +2.67 | −1.33 | | 0.56 | −2.09 | +0.25 |
+| 0.10 | +2.43 | −1.22 | | 0.62 | −3.42 | +0.54 |
+| 0.20 | +2.00 | −1.02 | | 0.68 | −5.30 | +0.83 |
+| 0.30 | +1.42 | −0.77 | | 0.74 | **−7.91** (j min) | +1.10 |
+| 0.40 | +0.46 | −0.45 | | 0.80 | −5.06 | **+1.21** (q max) |
+| ~0.43 | ≈0 (j sign-cross) | −0.40 | | 0.86 | −0.79 | +1.15 |
+| 0.50 | −1.00 | −0.03 | | 0.92 | +2.35 | +0.97 |
+| ~0.50 | −1.00 | ≈0 (q sign-cross) | | 1.00 | +4.15 | +0.68 |
 
-Source: baseline = `test_run/baselines/tot_ht6m_short/metrics.json`; new =
-`totlib::test_tot_ht6m_short` actuals from task-merge CI run 28218102375
-(gfortran-13.2, ubuntu-24.04, nompi).
+profile[0] (ρ=0.02) absolute: AJ 547623.91→547769.87, QP 6.478933→6.478072.
+Total current AJT 0.021011987→0.021011165 (rel 3.91e-5, ≈conserved). RN frozen.
+
+Source: baseline = old `test_run/baselines/tot_ht6m_short/metrics.json`; new =
+the committed gf13.2 baseline captured from task-merge CI run 28327720495
+(gfortran-13.2, ubuntu-24.04, nompi); cross-checked py3.11 == py3.13.
