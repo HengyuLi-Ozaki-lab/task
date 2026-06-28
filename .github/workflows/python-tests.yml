@@ -315,6 +315,13 @@ jobs:
           # so PYTHONPATH must carry it. The wrappers under python/ stay
           # pure-Python (no install needed), per each mcp pyproject.
           PYTHONPATH: python:python/mcp-servers
+          # Baseline-capture: the equivalence tests' _compare_with_baseline ALSO
+          # dumps each case's freshly computed `actual` metrics.json under this
+          # dir (additive — does NOT change pass/fail), so the CI compiler's
+          # values can be downloaded from the artifact below and committed as
+          # updated baselines after an intended physics change. See
+          # docs/superpowers/decisions/2026-06-29-tot-ht6m-qsolver-baseline.md.
+          REGEN_OUTPUT_DIR: regen-output
           # WRX_RUN_OK default ON (2026-04-22): the original SIGABRT
           # cause was libgrf::grd1d from wr_calc_pwr walking an
           # uninitialized grf_attr_type; PR #123 set WRX_NO_GRAPHICS=1
@@ -352,6 +359,20 @@ jobs:
             --tb=short \
             -ra \
             --maxfail=50
+
+      - name: Upload captured equivalence metrics (CI-compiler baselines)
+        if: always()
+        # The equivalence tests dumped each case's actual metrics.json under
+        # regen-output/ (REGEN_OUTPUT_DIR above). `always()` so this runs even
+        # when an equivalence test FAILs (which is exactly when a baseline needs
+        # updating). Download + commit the relevant case(s) as the new gf13.2
+        # baseline after the physics change has been reviewed/approved.
+        uses: actions/upload-artifact@v4
+        with:
+          name: equivalence-actuals-${{ matrix.python-version }}-${{ github.run_id }}
+          path: regen-output/
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Show collected vs skipped summary
         if: always()
