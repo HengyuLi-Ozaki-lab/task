@@ -119,6 +119,17 @@ jobs:
           HEADER_EOF
           head -10 make.header
 
+      - name: Provide ../task symlink (module Makefiles hardcode ../task/make.header)
+        # Same fix as python-tests.yml (d4afbaca): bpsd/Makefile and the module
+        # Makefiles `include ../task/make.header`, assuming the checkout dir is
+        # named `task`. On a differently-named repo (the task-merge sandbox) the
+        # checkout is $GITHUB_WORKSPACE/../<repo>, so `../task` does not resolve
+        # and the bpsd build dies "No rule to make target '../task/make.header'".
+        # Symlink ../task -> the checkout (no-op when the repo is already `task`).
+        run: |
+          ln -sfn "$GITHUB_WORKSPACE" "$(dirname "$GITHUB_WORKSPACE")/task"
+          ls -ld "$(dirname "$GITHUB_WORKSPACE")/task"
+
       - name: Build the dependency chain (canonical `tot libs` topology)
         shell: bash
         run: |
