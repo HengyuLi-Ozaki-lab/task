@@ -29,10 +29,11 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
 2. **STRATEGY = Option A (owner-decided): KEEP the old `MDLNF`/`SIGMAM`/`TRNFDT` DT path; ADD `model_pnf`
    as a NEW *additive* multi-reaction path (default off).** Justification (verified numerically): the new
    `libnf` `svnf_dt` reaction-rate table is the SAME analytic fit as the old `SIGMAM` (`svnf_dt` is in cm³/s, `SIGMAM` in m³/s; the % agreement is after the cm³/s→m³/s conversion), just tabulated to
-   2 sig figs — at the table temps they agree to 0.03–1.2%, and across the core range T=1–30 keV a
-   log-log spline of the table vs the analytic `SIGMAM` differs by ≤1.2% (dominated by the 2-sig-fig
-   table rounding). So migrating existing DT cases to `model_pnf` would shift `SNF` ~1% for ZERO physics
-   gain. `model_pnf`'s real value is the MULTI-REACTION capability (DD/DHe3/TT/THe3 = model_pnf 2/3/4)
+   2 sig figs — at the table points they agree to 0.03–1.2%. CORRECTION (codex review): `libnf` splines
+   the RAW ⟨σv⟩ vs `log10(T)` (`SPL1D`), NOT log-log, so at core/fusion temps T≳5 keV it holds ~1–2% but
+   between the low-T edge points (T≲3 keV, where ⟨σv⟩ is negligible and no fusion occurs) the raw-value
+   spline overshoots strongly (≫100% at 1–2 keV) — immaterial to fusion power. So migrating existing DT
+   cases to `model_pnf` gains ZERO physics at the core (the analytic `MDLNF` is actually smoother). `model_pnf`'s real value is the MULTI-REACTION capability (DD/DHe3/TT/THe3 = model_pnf 2/3/4)
    that `MDLNF` lacks — which is purely additive.
    ⇒ **Task 6 is REVISED: do NOT retire the `MDLNF` `SELECT CASE`.** Add `CALL tr_pnf` as an additive
    branch gated by `model_pnf>0` (the two paths coexist; `model_pnf=0` default ⇒ existing baselines

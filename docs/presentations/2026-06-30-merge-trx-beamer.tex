@@ -68,7 +68,7 @@ canonical transport module by porting \textsc{trx}'s newer fusion physics.
 \begin{tikzpicture}[>={Latex[length=2mm]},
   box/.style={draw, rounded corners, align=center, inner sep=3pt, font=\scriptsize,
               minimum height=9mm, text width=22mm}]
-  \node[box, fill=blue!8]                  (gh) at (0, 1.15) {GitHub backup\\ \texttt{ats-fukuyama}\\ (stale)};
+  \node[box, fill=blue!8]                  (gh) at (0, 1.15) {GitHub fork\\ \texttt{kyoshimi-develop}\\ (Phase-L)};
   \node[box, fill=blue!8]                  (ky) at (0,-1.15) {Kyoto main dev\\ \texttt{bpsi}\\ (latest)};
   \node[box, fill=ok!15]                   (mg) at (3.5, 0)  {merge \texttt{0254aa91}\\ + fixes};
   \node[box, fill=ok!30, text width=26mm]  (bs) at (7.1, 0)  {\textbf{unified baseline}\\ \texttt{kyoshimi-develop}\\ CI green (736)};
@@ -79,9 +79,11 @@ canonical transport module by porting \textsc{trx}'s newer fusion physics.
   \draw[->] (bs) -- (dA);  \draw[->] (bs) -- (dB);
 \end{tikzpicture}
 \end{center}
-\textbf{Purpose:} unify the GitHub (\texttt{ats-fukuyama}) and Kyoto (\texttt{bpsi}) source lines into
-\emph{one CI-validated, reliable baseline} that different developers branch from for subsequent merges
-and new features --- instead of re-reconciling divergent trees each time.
+\textbf{Purpose:} unify the GitHub-hosted modernization (the Phase-L fork \texttt{kyoshimi-develop},
+forked from \texttt{ats-fukuyama}) and the Kyoto \texttt{bpsi} line into \emph{one CI-validated, reliable
+baseline} that developers branch from for subsequent merges and new features --- instead of
+re-reconciling divergent trees each time. (The stale \texttt{ats-fukuyama} backup itself is superseded,
+not a merge input.)
 \end{frame}
 
 % ---------------------------------------------------------------
@@ -225,13 +227,15 @@ The old analytic DT reactivity:
 T_I=\tfrac{3T_D+2T_T}{5}.
 \]
 \begin{block}{Finding}
-The new \C{libnf} table \C{svnf\_dt} \emph{is} this same fit, tabulated to 2 significant figures
-(\C{svnf\_dt} in cm$^3$/s, \C{SIGMAM} in m$^3$/s; agreement is after the cm$^3$/s$\to$m$^3$/s conversion):
-they agree to $0.03$--$1.2\%$ at the table points, and $\le 1.2\%$ over the core range
-$T=1$--$30$\,keV (dominated by the 2-sig-fig rounding).
+The new \C{libnf} table \C{svnf\_dt} tabulates this same \C{SIGMAM} fit to 2 significant figures
+(units: cm$^3$/s vs m$^3$/s). At the table points they agree to $0.03$--$1.2\%$. \C{libnf} splines the
+\emph{raw} $\langle\sigma v\rangle$ vs $\log_{10}T$, so at core/fusion temperatures $T\gtrsim5$\,keV it
+holds $\sim$1--2\%; between the low-$T$ edge points ($T\lesssim3$\,keV, where $\langle\sigma v\rangle$
+is negligible) the raw-value spline deviates strongly --- immaterial to the fusion power.
 \end{block}
-$\Rightarrow$ migrating DT to \C{model\_pnf} shifts the DT reactivity $\sim$1\% (hence \C{SNF}, modulo assembly units) for \textbf{zero physics gain};
-\C{model\_pnf}'s value is the \textbf{multi-reaction} capability (DD/DHe3/TT/THe3), which is additive.
+$\Rightarrow$ migrating DT to \C{model\_pnf} gains \textbf{zero physics} at the core (the analytic
+\C{MDLNF} is actually smoother); \C{model\_pnf}'s value is the \textbf{multi-reaction} capability
+(DD/DHe3/TT/THe3), which is additive.
 \end{frame}
 
 \begin{frame}{P1: decision (Option A) and remaining plan}

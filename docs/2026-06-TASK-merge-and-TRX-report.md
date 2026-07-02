@@ -133,9 +133,12 @@ Recon corrected a plan premise: `tr_m0904` / `tr_iter01` **run `MDLNF=1` (fusion
 retiring `MDLNF` would change two core baselines. A direct comparison settled the strategy:
 
 > **The new `libnf` DT table `svnf_dt` is the same analytic fit as the old `SIGMAM`, tabulated to 2
-> significant figures** (`svnf_dt` is tabulated in cm³/s, `SIGMAM` returns m³/s; the agreement below is after the cm³/s→m³/s conversion). At the table temperatures they agree to 0.03–1.2 %; across the core range
-> T = 1–30 keV a log‑log spline of the table vs the analytic `SIGMAM` differs by ≤ 1.2 % (dominated by
-> the 2‑sig‑fig rounding). So the DT **reactivity** is the same fit; migrating existing DT cases to `model_pnf` shifts ⟨σv⟩ ~1 % (and hence `SNF`, once the `model_pnf` assembly’s unit handling is confirmed at validation) for **zero
+> significant figures** (`svnf_dt` is tabulated in cm³/s, `SIGMAM` returns m³/s; the agreement below is after the cm³/s→m³/s conversion). At the table temperatures they agree to 0.03–1.2 %. But `libnf`
+> splines the **raw** ⟨σv⟩ against `log10(T)` (`SPL1D`), so at core/fusion temperatures T ≳ 5 keV the
+> spline holds ~1–2 % of `SIGMAM`, while between the widely-spaced low-T edge points (T ≲ 3 keV, where
+> ⟨σv⟩ is negligible and no fusion occurs) the raw-value spline overshoots strongly — immaterial to the
+> fusion power. So the DT **reactivity** is the same fit at the reference points; migrating existing DT
+> cases to `model_pnf` gains **zero
 > physics gain**; `model_pnf`’s real value is the **multi‑reaction** capability (DD/DHe3/TT/THe3) that
 > `MDLNF` lacks — which is purely additive.
 
