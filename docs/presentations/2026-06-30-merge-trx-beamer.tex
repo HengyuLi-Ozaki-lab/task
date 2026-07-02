@@ -197,11 +197,12 @@ The old analytic DT reactivity:
 T_I=\tfrac{3T_D+2T_T}{5}.
 \]
 \begin{block}{Finding}
-The new \C{libnf} table \C{svnf\_dt} \emph{is} this same fit, tabulated to 2 significant figures:
+The new \C{libnf} table \C{svnf\_dt} \emph{is} this same fit, tabulated to 2 significant figures
+(\C{svnf\_dt} in cm$^3$/s, \C{SIGMAM} in m$^3$/s; agreement is after the cm$^3$/s$\to$m$^3$/s conversion):
 they agree to $0.03$--$1.2\%$ at the table points, and $\le 1.2\%$ over the core range
 $T=1$--$30$\,keV (dominated by the 2-sig-fig rounding).
 \end{block}
-$\Rightarrow$ migrating DT to \C{model\_pnf} shifts \C{SNF} $\sim$1\% for \textbf{zero physics gain};
+$\Rightarrow$ migrating DT to \C{model\_pnf} shifts the DT reactivity $\sim$1\% (hence \C{SNF}, modulo assembly units) for \textbf{zero physics gain};
 \C{model\_pnf}'s value is the \textbf{multi-reaction} capability (DD/DHe3/TT/THe3), which is additive.
 \end{frame}
 
@@ -209,7 +210,7 @@ $\Rightarrow$ migrating DT to \C{model\_pnf} shifts \C{SNF} $\sim$1\% for \textb
 \begin{block}{Decision --- Option A}
 Keep the exact old \C{MDLNF}/\C{SIGMAM} DT path (3 baselines bit-for-bit); add \C{model\_pnf} as an
 \textbf{additive} multi-reaction path (default off $\Rightarrow$ every regression gate trivially holds),
-validated vs a bpsi-\C{trx} reference at 1e-10. \C{MDLNF} is \emph{not} retired.
+to be validated (Tasks 2, 7) vs a bpsi-\C{trx} reference at 1e-10. \C{MDLNF} is \emph{not} retired.
 \end{block}
 Remaining (Tasks 2--10): collision fns $\to$ \C{trcoll}/\C{trlib} \textbullet{} fusion data model in the
 split \C{trcomm} (inert) \textbullet{} port \C{libnf} \textbullet{} generic \C{tr\_pnf} dispatch gated by

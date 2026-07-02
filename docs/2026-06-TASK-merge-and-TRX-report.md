@@ -133,15 +133,15 @@ Recon corrected a plan premise: `tr_m0904` / `tr_iter01` **run `MDLNF=1` (fusion
 retiring `MDLNF` would change two core baselines. A direct comparison settled the strategy:
 
 > **The new `libnf` DT table `svnf_dt` is the same analytic fit as the old `SIGMAM`, tabulated to 2
-> significant figures.** At the table temperatures they agree to 0.03–1.2 %; across the core range
+> significant figures** (`svnf_dt` is tabulated in cm³/s, `SIGMAM` returns m³/s; the agreement below is after the cm³/s→m³/s conversion). At the table temperatures they agree to 0.03–1.2 %; across the core range
 > T = 1–30 keV a log‑log spline of the table vs the analytic `SIGMAM` differs by ≤ 1.2 % (dominated by
-> the 2‑sig‑fig rounding). Migrating existing DT cases to `model_pnf` would shift `SNF` ~1 % for **zero
+> the 2‑sig‑fig rounding). So the DT **reactivity** is the same fit; migrating existing DT cases to `model_pnf` shifts ⟨σv⟩ ~1 % (and hence `SNF`, once the `model_pnf` assembly’s unit handling is confirmed at validation) for **zero
 > physics gain**; `model_pnf`’s real value is the **multi‑reaction** capability (DD/DHe3/TT/THe3) that
 > `MDLNF` lacks — which is purely additive.
 
 **Decision — Option A:** keep the exact old `MDLNF`/`SIGMAM` DT path (3 baselines bit‑for‑bit), add
 `model_pnf` as an **additive** multi‑reaction path (default off ⇒ every regression gate trivially
-holds), validated against a bpsi‑`trx` reference at 1e‑10. `MDLNF` is **not** retired.
+holds), to be validated (Tasks 2, 7) against a bpsi‑`trx` reference at 1e‑10. `MDLNF` is **not** retired.
 
 ### 5.3 Remaining plan (Tasks 2–10)
 

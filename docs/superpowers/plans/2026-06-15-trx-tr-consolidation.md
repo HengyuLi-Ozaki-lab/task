@@ -28,7 +28,7 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
    bit-identical" premise was FALSE.
 2. **STRATEGY = Option A (owner-decided): KEEP the old `MDLNF`/`SIGMAM`/`TRNFDT` DT path; ADD `model_pnf`
    as a NEW *additive* multi-reaction path (default off).** Justification (verified numerically): the new
-   `libnf` `svnf_dt` reaction-rate table is the SAME analytic fit as the old `SIGMAM`, just tabulated to
+   `libnf` `svnf_dt` reaction-rate table is the SAME analytic fit as the old `SIGMAM` (`svnf_dt` is in cm³/s, `SIGMAM` in m³/s; the % agreement is after the cm³/s→m³/s conversion), just tabulated to
    2 sig figs — at the table temps they agree to 0.03–1.2%, and across the core range T=1–30 keV a
    log-log spline of the table vs the analytic `SIGMAM` differs by ≤1.2% (dominated by the 2-sig-fig
    table rounding). So migrating existing DT cases to `model_pnf` would shift `SNF` ~1% for ZERO physics
@@ -457,7 +457,13 @@ git commit -m "feat(tr): port libnf fusion reaction tables from trx (unwired)"
 
 ## Task 6: Rewrite `trpnf.f90` (generic `tr_pnf`) and wire dispatch
 
-**Files:** Rewrite `task-kyoshimi/tr/trpnf.f90`; Modify `trprep.f90`, `trcalc.f90`, `trexec.f90`; per Task-1 Step-3 policy, retire/guard old `MDLNF` path.
+> **⚠ OVERRIDDEN by RECORDED DECISIONS (Option A).** Do **NOT** retire the `MDLNF` `SELECT CASE`.
+> In Step 3, ADD `CALL tr_pnf` as an *additive* branch **gated by `model_pnf>0`**, alongside the kept
+> `MDLNF` path (the old 1‑D `SNF(NR)` path stays for `MDLNF>0`). The "retire/replace MDLNF" wording in
+> the Files line, Step 3, and the Step‑4 commit message below is **superseded** — the two fusion paths
+> coexist and `model_pnf=0` default keeps the 3 existing baselines bit‑for‑bit.
+
+**Files:** Rewrite `task-kyoshimi/tr/trpnf.f90`; Modify `trprep.f90`, `trcalc.f90`, `trexec.f90`; per RECORDED DECISIONS (Option A), **keep** `MDLNF` and add `model_pnf` additively (do **not** retire).
 
 - [ ] **Step 1: Replace `trpnf.f90` with bpsi `trx`'s `tr_prep_pnf` + `tr_pnf`**
 ```bash
