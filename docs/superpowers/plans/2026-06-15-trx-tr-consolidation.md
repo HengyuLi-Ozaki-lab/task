@@ -30,7 +30,7 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
    as a NEW *additive* multi-reaction path (default off).** Justification (verified numerically): the new
    `libnf` `svnf_dt` reaction-rate table is the SAME analytic fit as the old `SIGMAM` (`svnf_dt` is in cm³/s, `SIGMAM` in m³/s; the % agreement is after the cm³/s→m³/s conversion), just tabulated to
    2 sig figs — at the table points they agree to 0.03–1.2%. CORRECTION (codex review): `libnf` splines
-   the RAW ⟨σv⟩ vs `log10(T)` (`SPL1D`), NOT log-log, so at core/fusion temps T≳5 keV it holds ~1–2% but
+   the RAW ⟨σv⟩ vs `log10(T)` (`SPL1D`), NOT log-log, so at core/fusion temps T≳5 keV it stays within ~1–2% of `SIGMAM` but
    between the low-T edge points (T≲3 keV, where ⟨σv⟩ is negligible and no fusion occurs) the raw-value
    spline overshoots strongly (≫100% at 1–2 keV) — immaterial to fusion power. So migrating existing DT
    cases to `model_pnf` gains ZERO physics at the core (the analytic `MDLNF` is actually smoother). `model_pnf`'s real value is the MULTI-REACTION capability (DD/DHe3/TT/THe3 = model_pnf 2/3/4)
@@ -61,7 +61,7 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
 | `task-kyoshimi/test_run/baselines/tr_fus_dt/metrics.json` | Create (generated) | 1e-10 reference from bpsi `trx` |
 | `task-kyoshimi/tr/trcoll.f90` | Create | MODULE `trcoll`: `coulomb_log`, `FTAUE`, `FTAUI` (extracted from `trcalc`) |
 | `task-kyoshimi/tr/trlib.f90` | Create | MODULE `trlib`: `COULOG`, `HY` |
-| `task-kyoshimi/tr/trcalc.f90` | Modify | Remove inline collision functions; `USE trcoll`/`trlib`; replace `MDLNF` `SELECT CASE` with `CALL tr_pnf` |
+| `task-kyoshimi/tr/trcalc.f90` | Modify | Remove inline collision functions; `USE trcoll`/`trlib`; add `CALL tr_pnf` gated by `model_pnf>0` **(Option A — keep the `MDLNF` `SELECT CASE`, do NOT replace it; see RECORDED DECISIONS)** |
 | `task-kyoshimi/tr/trcomm_param.f90` | Modify | Add `model_pnf`, `nnfmax`, `NNFM`, reaction-source dims |
 | `task-kyoshimi/tr/trcomm_profile.f90` | Modify | Add radial fusion/source arrays `SNF_*`/`PNF_*`/`SNFNN_*`/`TAUF`/`AJNB_NSNNBNR`/`PEC_/PLH_/PIC_NSN*` + allocate/dealloc |
 | `task-kyoshimi/tr/trcomm_globals.f90` | Modify | Add `ANF0,TF0,ANFAV,TFAV,WFT` + allocate/dealloc |
@@ -490,13 +490,17 @@ grep -nE 'tr_prep_ns|allocate_trcomm|tr_prep_pnf|set_usigmav_nf|CALL tr_prof' /U
 ```
 Ensure `set_usigmav_nf` runs **after** `tr_prep_ns` (needs `NS_*`) and **before** `allocate_trcomm` (needs `nnfmax`).
 
-- [ ] **Step 3: Replace the `MDLNF SELECT CASE` with `CALL tr_pnf` in `trcalc.f90`**
+- [ ] **Step 3: Add `CALL tr_pnf` gated by `model_pnf>0` in `trcalc.f90` (Option A — additive; do NOT retire `MDLNF`)**
 
-In `task-kyoshimi/tr/trcalc.f90` (around line 132, the `SELECT CASE(MDLNF)` block that currently selects `TRNFDT`/`TRNFDHe3`), replace it per Task-1 Step-3 policy:
+> **OVERRIDE (see RECORDED DECISIONS #2, Option A):** the original "replace the `MDLNF` `SELECT CASE`
+> with `CALL tr_pnf`" wording is **superseded**. `model_pnf` is an **additive** path (default off); the
+> legacy `MDLNF`/`SIGMAM` DT path is **kept bit-for-bit** so the three fusion-ON baselines stay green.
+
+In `task-kyoshimi/tr/trcalc.f90` (around line 132, the `SELECT CASE(MDLNF)` block that currently selects `TRNFDT`/`TRNFDHe3`), **add the `model_pnf>0` dispatch alongside the existing `MDLNF` block** (per Task-1 Step-3 policy, Option A):
 - Add `USE trpnf, ONLY : tr_pnf` to the subroutine's `USE` block.
-- Insert `CALL tr_pnf` before the source-assembly that builds `SSIN`/`PIN` (~line 135-185).
-- Replace reads of the old 1-D `SNF(NR)`/`PNF(NR)` with the reduced `SNF_NSNR(NS,NR)`/`PNFCL_NSNR(NS,NR)` (mirror bpsi `trx/trcalc.f90` lines ~135-185; get them with `git show bpsi/develop:trx/trcalc.f90`).
-- If policy (A): keep a compatibility branch mapping `MDLNF>0 .AND. model_pnf==0` to the equivalent reactions at init so `SSIN` still gets populated for legacy inputs.
+- Insert `CALL tr_pnf` **inside an `IF(model_pnf>0) THEN` guard** before the source-assembly that builds `SSIN`/`PIN` (~line 135-185).
+- **Only in the `model_pnf>0` branch**, read the reduced `SNF_NSNR(NS,NR)`/`PNFCL_NSNR(NS,NR)` (mirror bpsi `trx/trcalc.f90` lines ~135-185; get them with `git show bpsi/develop:trx/trcalc.f90`). The legacy `MDLNF` branch keeps reading the old 1-D `SNF(NR)`/`PNF(NR)` **unchanged**.
+- **Option A (decided):** the `MDLNF>0 .AND. model_pnf==0` path stays exactly as-is — no remapping, no behaviour change — so `SSIN` is still populated for legacy inputs and the three fusion-ON baselines hold bit-for-bit.
 
 - [ ] **Step 4: Add the fast-ion fusion rows in `trexec.f90`**
 
@@ -534,7 +538,7 @@ Expected: all `OK ... 1e-10`. (If a case drifts, `tr_pnf` is writing into the so
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi
 git add tr/trpnf.f90 tr/trprep.f90 tr/trcalc.f90 tr/trexec.f90 tr/Makefile
-git commit -m "feat(tr): wire model_pnf fusion dispatch (tr_prep_pnf/tr_pnf/TRMTRX), retire MDLNF path"
+git commit -m "feat(tr): wire additive model_pnf fusion dispatch (tr_prep_pnf/tr_pnf/TRMTRX), default off; MDLNF path kept (Option A)"
 ```
 
 ---

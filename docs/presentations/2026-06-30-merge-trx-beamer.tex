@@ -54,7 +54,7 @@ servers, and \C{trcomm} split into 6 sub-modules.
 \vspace{0.6em}
 
 \begin{block}{Goal --- one reliable baseline for many developers}
-\textbf{Unify} the GitHub line (\C{ats-fukuyama}) and the Kyoto main-dev line (\C{bpsi}) into a
+\textbf{Unify} the GitHub-hosted fork line (\C{kyoshimi-develop}) and the Kyoto main-dev line (\C{bpsi}) into a
 \emph{single, CI-validated, reliable baseline} that different developers can branch from for
 \emph{subsequent merges and new features} --- without regression. Then make \C{tr} the single
 canonical transport module by porting \textsc{trx}'s newer fusion physics.
@@ -230,7 +230,7 @@ T_I=\tfrac{3T_D+2T_T}{5}.
 The new \C{libnf} table \C{svnf\_dt} tabulates this same \C{SIGMAM} fit to 2 significant figures
 (units: cm$^3$/s vs m$^3$/s). At the table points they agree to $0.03$--$1.2\%$. \C{libnf} splines the
 \emph{raw} $\langle\sigma v\rangle$ vs $\log_{10}T$, so at core/fusion temperatures $T\gtrsim5$\,keV it
-holds $\sim$1--2\%; between the low-$T$ edge points ($T\lesssim3$\,keV, where $\langle\sigma v\rangle$
+stays within $\sim$1--2\% of \C{SIGMAM}; between the low-$T$ edge points ($T\lesssim3$\,keV, where $\langle\sigma v\rangle$
 is negligible) the raw-value spline deviates strongly --- immaterial to the fusion power.
 \end{block}
 $\Rightarrow$ migrating DT to \C{model\_pnf} gains \textbf{zero physics} at the core (the analytic

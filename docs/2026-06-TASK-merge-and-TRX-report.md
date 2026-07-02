@@ -135,7 +135,7 @@ retiring `MDLNF` would change two core baselines. A direct comparison settled th
 > **The new `libnf` DT table `svnf_dt` is the same analytic fit as the old `SIGMAM`, tabulated to 2
 > significant figures** (`svnf_dt` is tabulated in cm³/s, `SIGMAM` returns m³/s; the agreement below is after the cm³/s→m³/s conversion). At the table temperatures they agree to 0.03–1.2 %. But `libnf`
 > splines the **raw** ⟨σv⟩ against `log10(T)` (`SPL1D`), so at core/fusion temperatures T ≳ 5 keV the
-> spline holds ~1–2 % of `SIGMAM`, while between the widely-spaced low-T edge points (T ≲ 3 keV, where
+> spline stays within ~1–2 % of `SIGMAM`, while between the widely-spaced low-T edge points (T ≲ 3 keV, where
 > ⟨σv⟩ is negligible and no fusion occurs) the raw-value spline overshoots strongly — immaterial to the
 > fusion power. So the DT **reactivity** is the same fit at the reference points; migrating existing DT
 > cases to `model_pnf` gains **zero
