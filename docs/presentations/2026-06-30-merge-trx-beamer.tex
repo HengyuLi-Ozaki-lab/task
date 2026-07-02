@@ -16,6 +16,7 @@
 \definecolor{warn}{RGB}{186,117,23}
 \newcommand{\C}[1]{\texttt{\small #1}}          % inline code (escape _ inside!)
 \newcommand{\good}{\textcolor{ok}{\textbf{green}}}
+\hypersetup{colorlinks=true, urlcolor=blue!60!black, linkcolor=black}   % beamer loads hyperref
 
 \title[TASK merge \& TRX port]{Merging upstream \texttt{bpsi} into a modernized TASK fork\\
 and consolidating \textsc{trx} $\to$ \texttt{tr}}
@@ -247,45 +248,7 @@ split \C{trcomm} (inert) \textbullet{} port \C{libnf} \textbullet{} generic \C{t
 \end{frame}
 
 % ---------------------------------------------------------------
-\section{Lessons}
-\begin{frame}{Lessons learned}
-\begin{enumerate}
-\item \textbf{\C{.so}-only tests miss static-binary issues} --- menus/some modules are excluded from
-      \C{libXapi.so}; one \C{pl\_view} break only appeared at \emph{link} time.
-\item \textbf{Truncated tool output misleads} --- verify against the complete data.
-\item \textbf{1e-10 equivalence is too tight for FP-heavy modules across compiler versions}.
-\item \textbf{An independent-reviewer pre-push gate earns its keep} --- caught 3 real issues.
-\item \textbf{Physics-change baselines need explicit owner approval} + rigorous characterization.
-\item \textbf{Verify a new capability adds physics before migrating} --- \C{model\_pnf} DT $=$ the
-      legacy fit ($\sim$1\% rounding), so DT stayed legacy; \C{model\_pnf} reserved for multi-reaction.
-\end{enumerate}
-\end{frame}
-
 \section{Results \& roadmap}
-\begin{frame}{Repositories \& current result}
-\footnotesize
-\begin{tabular}{@{}p{40mm}p{32mm}p{36mm}@{}}
-\toprule
-Repo & Role & State \\
-\midrule
-\texttt{ats-fukuyama/task} & GitHub backup (stale) & --- \\
-\texttt{bpsi\dots/task} & Kyoto main dev & base \texttt{fa9dd493} \\
-\texttt{HengyuLi-Ozaki-lab/task} & \textbf{unified fork (delivered)} & \texttt{kyoshimi-develop} @ \texttt{d1f7f9e7} \\
-\texttt{\dots/task-merge} & merge/test sandbox & PR \#1 merged \\
-\bottomrule
-\end{tabular}
-\vspace{0.8em}
-\begin{center}
-\begin{tikzpicture}[bg/.style={draw, rounded corners, align=center, font=\scriptsize,
-                    minimum width=24mm, minimum height=12mm}]
-  \node[bg, fill=ok!25]     at (0,0)   {\textbf{CI}\\ 736 passed};
-  \node[bg, fill=ok!18]     at (2.7,0) {\textbf{10 conflict}\\ resolutions};
-  \node[bg, fill=blue!14]   at (5.4,0) {\textbf{delivered P0}\\ \texttt{d1f7f9e7}};
-  \node[bg, fill=orange!18] at (8.1,0) {\textbf{P1}\\ Task 1 done};
-\end{tikzpicture}
-\end{center}
-\end{frame}
-
 \begin{frame}{Future plan}
 \begin{center}
 \begin{tikzpicture}[>={Latex[length=2mm]},
@@ -311,25 +274,35 @@ Repo & Role & State \\
 \end{itemize}
 \end{frame}
 
-\begin{frame}{Status}
-\begin{columns}[T]
-\column{0.5\textwidth}
-\textbf{P0 --- delivered}
-\begin{itemize}
-\item merge \C{0254aa91} $\to$ \C{d1f7f9e7}
-\item CI \good{}: 736 passed
-\item on \C{myfork/kyoshimi-develop}; PR \#1 merged
-\end{itemize}
-\column{0.5\textwidth}
-\textbf{P1 --- in progress}
-\begin{itemize}
-\item Task 1 complete (Option A decided)
-\item strategy locked + justified
-\item Tasks 2--10: defined mechanical port + 1e-10 validation
-\end{itemize}
-\end{columns}
-\vspace{1em}
-\begin{center}\Large \textbf{Thank you.}\end{center}
+\begin{frame}{Repositories, links \& current result}
+\footnotesize
+\begin{tabular}{@{}p{45mm}p{26mm}p{37mm}@{}}
+\toprule
+Repo (click to open) & Role & State \\
+\midrule
+\href{https://github.com/ats-fukuyama/task}{\texttt{ats-fukuyama/task}} & GitHub backup (stale) & --- \\
+\texttt{bpsi.nucleng.kyoto-u.ac.jp} & Kyoto main dev & base \texttt{fa9dd493} \\
+\href{https://github.com/HengyuLi-Ozaki-lab/task/tree/kyoshimi-develop}{\texttt{HengyuLi-Ozaki-lab/task}} & \textbf{unified fork} & \texttt{kyoshimi-develop} @ \texttt{d1f7f9e7} \\
+\href{https://github.com/HengyuLi-Ozaki-lab/task-merge/pull/1}{\texttt{HengyuLi-Ozaki-lab/task-merge}} & merge/test sandbox & PR \#1 (merged) \\
+\bottomrule
+\end{tabular}
+\vspace{0.3em}
+\begin{center}\scriptsize
+$\hookrightarrow$ \href{https://github.com/HengyuLi-Ozaki-lab/task/blob/kyoshimi-develop/docs/2026-06-TASK-merge-and-TRX-report.md}{full engineering report}\quad
+$\hookrightarrow$ \href{https://github.com/HengyuLi-Ozaki-lab/task/tree/kyoshimi-develop/docs/presentations}{these slides (.tex)}
+\end{center}
+\vspace{0.3em}
+\begin{center}
+\begin{tikzpicture}[bg/.style={draw, rounded corners, align=center, font=\scriptsize,
+                    minimum width=24mm, minimum height=11mm}]
+  \node[bg, fill=ok!25]     at (0,0)   {\textbf{CI}\\ 736 passed};
+  \node[bg, fill=ok!18]     at (2.7,0) {\textbf{10 conflict}\\ resolutions};
+  \node[bg, fill=blue!14]   at (5.4,0) {\textbf{P0 delivered}\\ \texttt{d1f7f9e7}};
+  \node[bg, fill=orange!18] at (8.1,0) {\textbf{P1}\\ Task 1 done};
+\end{tikzpicture}
+\end{center}
+\vspace{0.3em}
+\begin{center}\large\textbf{P0 delivered (CI \good{}); P1 underway.}\qquad\Large\textbf{Thank you.}\end{center}
 \end{frame}
 
 \end{document}
