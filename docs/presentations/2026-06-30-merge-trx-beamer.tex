@@ -1,6 +1,6 @@
 % TASK bpsi->kyoshimi merge & TRX->tr consolidation -- academic Beamer deck.
 % Build:  pdflatex 2026-06-30-merge-trx-beamer.tex   (run twice for the outline/refs)
-% Standard packages only (beamer, booktabs, amsmath) -- no external theme needed.
+% Standard packages only (beamer, booktabs, amsmath, tikz) -- no external theme needed.
 \documentclass[10pt,aspectratio=169]{beamer}
 \usetheme{Madrid}
 \usecolortheme{seahorse}
@@ -9,6 +9,8 @@
 \usepackage{booktabs}
 \usepackage{amsmath,amssymb}
 \usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
 
 \definecolor{ok}{RGB}{15,110,86}
 \definecolor{warn}{RGB}{186,117,23}
@@ -50,10 +52,35 @@ Line & Origin & Role \\
 servers, and \C{trcomm} split into 6 sub-modules.
 \vspace{0.6em}
 
-\begin{block}{Goal}
-Bring the \emph{latest upstream base} onto the \emph{modernized} fork \textbf{without regression},
-then make \C{tr} the single canonical transport module by porting \textsc{trx}'s newer fusion physics.
+\begin{block}{Goal --- one reliable baseline for many developers}
+\textbf{Unify} the GitHub line (\C{ats-fukuyama}) and the Kyoto main-dev line (\C{bpsi}) into a
+\emph{single, CI-validated, reliable baseline} that different developers can branch from for
+\emph{subsequent merges and new features} --- without regression. Then make \C{tr} the single
+canonical transport module by porting \textsc{trx}'s newer fusion physics.
 \end{block}
+\end{frame}
+
+% ---------------------------------------------------------------
+\section{Motivation}
+\begin{frame}{Why: converge two diverged lines into one reliable baseline}
+\begin{center}
+\begin{tikzpicture}[>={Latex[length=2mm]},
+  box/.style={draw, rounded corners, align=center, inner sep=3pt, font=\scriptsize,
+              minimum height=9mm, text width=22mm}]
+  \node[box, fill=blue!8]                  (gh) at (0, 1.15) {GitHub backup\\ \texttt{ats-fukuyama}\\ (stale)};
+  \node[box, fill=blue!8]                  (ky) at (0,-1.15) {Kyoto main dev\\ \texttt{bpsi}\\ (latest)};
+  \node[box, fill=ok!15]                   (mg) at (3.5, 0)  {merge \texttt{0254aa91}\\ + fixes};
+  \node[box, fill=ok!30, text width=26mm]  (bs) at (7.1, 0)  {\textbf{unified baseline}\\ \texttt{kyoshimi-develop}\\ CI green (736)};
+  \node[box, fill=orange!15]               (dA) at (10.8, 1.15) {developer A};
+  \node[box, fill=orange!15]               (dB) at (10.8,-1.15) {developer B /\\ new features};
+  \draw[->] (gh) -- (mg);  \draw[->] (ky) -- (mg);
+  \draw[->] (mg) -- (bs);
+  \draw[->] (bs) -- (dA);  \draw[->] (bs) -- (dB);
+\end{tikzpicture}
+\end{center}
+\textbf{Purpose:} unify the GitHub (\texttt{ats-fukuyama}) and Kyoto (\texttt{bpsi}) source lines into
+\emph{one CI-validated, reliable baseline} that different developers branch from for subsequent merges
+and new features --- instead of re-reconciling divergent trees each time.
 \end{frame}
 
 % ---------------------------------------------------------------
@@ -232,6 +259,56 @@ split \C{trcomm} (inert) \textbullet{} port \C{libnf} \textbullet{} generic \C{t
 \item \textbf{Verify a new capability adds physics before migrating} --- \C{model\_pnf} DT $=$ the
       legacy fit ($\sim$1\% rounding), so DT stayed legacy; \C{model\_pnf} reserved for multi-reaction.
 \end{enumerate}
+\end{frame}
+
+\section{Results \& roadmap}
+\begin{frame}{Repositories \& current result}
+\footnotesize
+\begin{tabular}{@{}p{40mm}p{32mm}p{36mm}@{}}
+\toprule
+Repo & Role & State \\
+\midrule
+\texttt{ats-fukuyama/task} & GitHub backup (stale) & --- \\
+\texttt{bpsi\dots/task} & Kyoto main dev & base \texttt{fa9dd493} \\
+\texttt{HengyuLi-Ozaki-lab/task} & \textbf{unified fork (delivered)} & \texttt{kyoshimi-develop} @ \texttt{d1f7f9e7} \\
+\texttt{\dots/task-merge} & merge/test sandbox & PR \#1 merged \\
+\bottomrule
+\end{tabular}
+\vspace{0.8em}
+\begin{center}
+\begin{tikzpicture}[bg/.style={draw, rounded corners, align=center, font=\scriptsize,
+                    minimum width=24mm, minimum height=12mm}]
+  \node[bg, fill=ok!25]     at (0,0)   {\textbf{CI}\\ 736 passed};
+  \node[bg, fill=ok!18]     at (2.7,0) {\textbf{10 conflict}\\ resolutions};
+  \node[bg, fill=blue!14]   at (5.4,0) {\textbf{delivered P0}\\ \texttt{d1f7f9e7}};
+  \node[bg, fill=orange!18] at (8.1,0) {\textbf{P1}\\ Task 1 done};
+\end{tikzpicture}
+\end{center}
+\end{frame}
+
+\begin{frame}{Future plan}
+\begin{center}
+\begin{tikzpicture}[>={Latex[length=2mm]},
+  ph/.style={draw, rounded corners, align=center, font=\scriptsize,
+             minimum width=17mm, minimum height=11mm}]
+  \node[ph, fill=ok!30]     (p0) at (0,0)    {\textbf{P0}\\ merge \&\\ baseline};
+  \node[ph, fill=orange!22] (p1) at (2.2,0)  {\textbf{P1}\\ TRX$\to$tr\\ fusion};
+  \node[ph, fill=gray!12]   (p2) at (4.4,0)  {\textbf{P2}\\ param\\ dedup};
+  \node[ph, fill=gray!12]   (p3) at (6.6,0)  {\textbf{P3}\\ eq$\leftrightarrow$pl\\ +F90};
+  \node[ph, fill=gray!12]   (p4) at (8.8,0)  {\textbf{P4}\\ reorg\\ +CMake};
+  \node[ph, fill=blue!14]   (up) at (11.0,0) {upstream\\ PR};
+  \draw[->] (p0)--(p1); \draw[->] (p1)--(p2); \draw[->] (p2)--(p3); \draw[->] (p3)--(p4); \draw[->] (p4)--(up);
+  \node[font=\scriptsize\bfseries, text=ok]     at (0,-0.95)   {done};
+  \node[font=\scriptsize\bfseries, text=orange] at (2.2,-0.95) {in progress};
+\end{tikzpicture}
+\end{center}
+\footnotesize
+\begin{itemize}
+\item \textbf{P1} (now): Tasks 2--10 --- port \C{libnf}/\C{tr\_pnf}, validate \C{model\_pnf=1..4} vs bpsi \C{trx} @1e-10, archive \C{trx}/\C{trm}.
+\item \textbf{P2}: de-duplicate shared params (\C{RR}/\C{RA}/\C{BB}\,\dots) into \C{plcomm}.
+\item \textbf{P3}: \C{eq}$\leftrightarrow$\C{pl} interface + remaining F90-ification. \quad \textbf{P4}: directory reorg + CMake.
+\item Then the \textbf{upstream} \C{myfork}$\to$\C{k-yoshimi/task} pull request.
+\end{itemize}
 \end{frame}
 
 \begin{frame}{Status}
