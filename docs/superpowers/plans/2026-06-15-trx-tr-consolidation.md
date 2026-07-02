@@ -18,6 +18,38 @@
 
 ---
 
+## RECORDED DECISIONS (Task 1 complete, 2026-06-30)
+
+Task 1 recon done. Findings + decisions that REVISE the plan below:
+
+1. **[CORRECTS a plan precondition] Existing inputs run with fusion ON.** `tr_m0904.in` and
+   `tr_iter01.in` both set `MDLNF=1` (NSMAX=4, e/D/T/He4) — the old scalar DT path IS exercised by 2 of
+   the 3 core baselines. The plan's "inputs leave fusion off ⇒ default-off model_pnf keeps baselines
+   bit-identical" premise was FALSE.
+2. **STRATEGY = Option A (owner-decided): KEEP the old `MDLNF`/`SIGMAM`/`TRNFDT` DT path; ADD `model_pnf`
+   as a NEW *additive* multi-reaction path (default off).** Justification (verified numerically): the new
+   `libnf` `svnf_dt` reaction-rate table is the SAME analytic fit as the old `SIGMAM`, just tabulated to
+   2 sig figs — at the table temps they agree to 0.03–1.2%, and across the core range T=1–30 keV a
+   log-log spline of the table vs the analytic `SIGMAM` differs by ≤1.2% (dominated by the 2-sig-fig
+   table rounding). So migrating existing DT cases to `model_pnf` would shift `SNF` ~1% for ZERO physics
+   gain. `model_pnf`'s real value is the MULTI-REACTION capability (DD/DHe3/TT/THe3 = model_pnf 2/3/4)
+   that `MDLNF` lacks — which is purely additive.
+   ⇒ **Task 6 is REVISED: do NOT retire the `MDLNF` `SELECT CASE`.** Add `CALL tr_pnf` as an additive
+   branch gated by `model_pnf>0` (the two paths coexist; `model_pnf=0` default ⇒ existing baselines
+   bit-for-bit unchanged, guaranteed). This makes every "regression unchanged at 1e-10" gate trivially
+   satisfied for the structural tasks.
+3. **[Task 1 Step 4] FTAUE/FTAUI reconcile: use `AMM`.** kyoshimi `trcomm_const.f90:19` has `AMM`
+   (=1.672621637D-27) but NOT `AMP`; adopt bpsi's guarded `NS_D` form with `AMM` (identical value).
+4. **[Validation-env] `run_tests.sh` is unusable locally** (macOS `bash 3.2` lacks `declare -A`). Use the
+   **pytest equivalence path** (`python/trlib/tests/test_equivalence.py`, drives `libtrapi.so`) as the
+   local 1e-10 gate, plus **CI** (`python-tests.yml`) as the authoritative gate. Build with
+   `make -C tr tr2 libtrapi.so`.
+5. bpsi `trx` keeps `MDLNF` in its namelist echo but drives fusion via `CALL tr_pnf` (trcalc.f90:128) —
+   consistent with policy A. `task/` checkout is on `develop` with the `bpsi` remote ⇒ the Task 2
+   reference oracle (build bpsi `trx`) is feasible when the model_pnf paths need validating.
+
+---
+
 ## File Structure
 
 | File | Action | Responsibility |
