@@ -1,0 +1,257 @@
+% TASK bpsi->kyoshimi merge & TRX->tr consolidation -- academic Beamer deck.
+% Build:  pdflatex 2026-06-30-merge-trx-beamer.tex   (run twice for the outline/refs)
+% Standard packages only (beamer, booktabs, amsmath) -- no external theme needed.
+\documentclass[10pt,aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+
+\definecolor{ok}{RGB}{15,110,86}
+\definecolor{warn}{RGB}{186,117,23}
+\newcommand{\C}[1]{\texttt{\small #1}}          % inline code (escape _ inside!)
+\newcommand{\good}{\textcolor{ok}{\textbf{green}}}
+
+\title[TASK merge \& TRX port]{Merging upstream \texttt{bpsi} into a modernized TASK fork\\
+and consolidating \textsc{trx} $\to$ \texttt{tr}}
+\subtitle{Engineering report and lessons learned}
+\author{TASK modernization effort}
+\institute[]{Plasma simulation stack --- P0 merge (delivered) + P1 fusion port (in progress)}
+\date{2026-06-30}
+
+\begin{document}
+
+\begin{frame}[plain]\titlepage\end{frame}
+
+\begin{frame}{Outline}\tableofcontents\end{frame}
+
+% ---------------------------------------------------------------
+\section{Background}
+\begin{frame}{Background: three git lines that had drifted apart}
+\textbf{TASK} --- a Fortran tokamak transport stack (\C{eq}, \C{tr}/\C{trx},
+\C{fp}, \C{wr}/\C{wrx}, \C{wm}, \C{tot} orchestrator, \dots).
+\vspace{0.6em}
+\begin{table}\footnotesize
+\begin{tabular}{@{}lll@{}}
+\toprule
+Line & Origin & Role \\
+\midrule
+\textbf{bpsi} & Kyoto main dev & latest physics + bug-fixes (the base) \\
+\textbf{kyoshimi-develop} & fork of bpsi @ \C{8eed6fc2} & \textbf{Phase-L modernization} \\
+\textbf{ats-fukuyama} & GitHub & stale 2023 backup (read-only) \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.4em}
+\textbf{Phase-L} = F90-ification, per-module C-ABI + \C{libXapi.so} + Python wrappers + MCP
+servers, and \C{trcomm} split into 6 sub-modules.
+\vspace{0.6em}
+
+\begin{block}{Goal}
+Bring the \emph{latest upstream base} onto the \emph{modernized} fork \textbf{without regression},
+then make \C{tr} the single canonical transport module by porting \textsc{trx}'s newer fusion physics.
+\end{block}
+\end{frame}
+
+% ---------------------------------------------------------------
+\section{P0 --- the merge}
+\begin{frame}[fragile]{P0: base selection and topology}
+An audit found \C{bpsi/develop} is the latest base --- \emph{not} a 3-way upstream merge
+(\C{ats-fukuyama} is 119 commits behind; its "unique" commits are superseded backups).
+
+\begin{block}{Merge = bpsi base $\rightarrow$ the Phase-L fork}
+\footnotesize
+\begin{verbatim}
+8eed6fc2  fork point (2025-12-16)
+   |- bpsi/develop      +23 commits -> fa9dd493   (latest base)
+   |- kyoshimi-develop  +Phase-L    -> 58f1fe2e   (C-ABI/.so/MCP/split)
+        0254aa91 = merge(1st parent = fork, 2nd = bpsi base)
+        + integration & baseline fixes -> d1f7f9e7  (CI green, delivered)
+\end{verbatim}
+\end{block}
+Principle for every conflict: \textbf{keep the kyoshimi modernization, graft the bpsi intent}
+(bug-fixes + the \C{eq}/\C{tr} q-solver refinement).
+\end{frame}
+
+\begin{frame}{P0: the 10 conflict resolutions}
+\begin{table}\scriptsize
+\begin{tabular}{@{}ll@{}}
+\toprule
+File & Resolution \\
+\midrule
+\C{eq/eqinit.f90} & graft into free-form: \C{NTVMAX} 200$\to$400, \C{NLPMAX} 20$\to$100 \\
+\C{eq/eqcalc.f90} & graft bpsi \C{EQLOOP} adaptive under-relaxation \\
+\C{eq/eqcalq.f90} & graft \C{NPRINT} print + \C{NMAX} 200$\to$400 \\
+\C{eq/eqsub.f90}  & fixed-form $\to$ free-form; richer diagnostic \\
+\C{pl/Makefile}   & keep \C{noeqlib} + take bpsi \C{SRCS\_NOEQ} + \C{plview.f90} \\
+\C{tr/trcomm.f90} & take-ours (6-module split) + idempotent \C{DEALLOCATE\_TRCOMM} \\
+\C{tr/trcomm\_param.f90} & species param list 8 $\to$ 15 \\
+\C{tr/trmain.f90} & take-theirs (drop double-free) \\
+\C{txnew/txcalv.f90} & take-theirs (SAVE-workspace) \\
+\C{wrx/wrcalpwr.f90} & 3-way blend: keep headless/OOB clamp + graft \C{dx} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{frame}
+
+% ---------------------------------------------------------------
+\section{Validation}
+\begin{frame}{Getting CI to \good: issues surfaced class by class}
+CI had \textbf{never} been green (even the pure base --- the build never reached pytest).
+\begin{table}\scriptsize
+\begin{tabular}{@{}ll@{}}
+\toprule
+Fix & Problem exposed \\
+\midrule
+\C{35c4bb5f}/\C{4bceac38} & eq fixed-form leak; lost wrx OOB clamp (auto-merge artifacts) \\
+\C{4df6e541} & wrx \C{dx} $\div 0$; \C{trmain} dropped \C{USE}; non-idempotent dealloc \\
+\C{d4afbaca} & \C{../task/make.header} not found (repo not named \C{task}) \\
+\C{17f21f2c}/\C{9242c127} & bpsi added a bare \C{PT} to \C{plcomm\_parm} (ti/wm clash); \\
+                          & \C{pl\_view} moved plparm$\to$plview (fp broke at \emph{link} time) \\
+\C{bacf3f19} & numpy missing; mcp-servers not on \C{PYTHONPATH} (latent env gaps) \\
+capture + \C{d1f7f9e7} & 3 equivalence baselines drift on gf13.2 (see next) \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{center}\textbf{Result: 736 passed, 1 pre-existing xfail --- CI \good{} (py3.11 + 3.13).}\end{center}
+Delivered by fast-forwarding \C{myfork/kyoshimi-develop} to \C{d1f7f9e7}.
+\end{frame}
+
+\begin{frame}{The 1e-10 equivalence baselines}
+Three baselines drifted on the CI compiler (gfortran-13.2); \textbf{two distinct causes}:
+\begin{itemize}
+\item \C{wrx\_demo} / \C{wrx\_iter01} --- \textbf{compiler-version} FP reordering
+      (gf8.5 $\ne$ gf13.2 $\ne$ gf15, all within $\sim$1e-9).
+\item \C{tot\_ht6m\_short} --- a real $\sim$1e-4 \textbf{physics} shift (next slide).
+\end{itemize}
+\begin{alertblock}{Lesson}
+1e-10 binary equivalence is too tight for FP-heavy modules (ray tracing, Fokker--Planck)
+\emph{across compiler versions}, not just architectures --- capture baselines on the exact CI
+compiler, or use a per-platform tolerance.
+\end{alertblock}
+Mechanism: an \emph{env-gated capture} dumps each case's gf13.2 \C{actual} metrics as a CI artifact;
+those values are committed as the new baselines.
+\end{frame}
+
+% ---------------------------------------------------------------
+\section{Case study: \texttt{tot\_ht6m}}
+\begin{frame}{Case study: the \texttt{tot\_ht6m} q-solver refinement}
+Root cause: bpsi's EQ-solver refinements --- finer flux-surface grid (\C{NMAX} 200$\to$400)
++ \C{EQLOOP} under-relaxation --- on the \C{modelg=3} \C{eq\_load} path.
+\medskip
+
+Signature (all 50 radial rows):
+\begin{itemize}
+\item current profile \textbf{redistributes} ($j$: $+$core, $-$mid to $-7.9$e-4 @ $\rho{=}0.74$,
+      $+$edge; $q$ is its integral: $-$core, $+$outer);
+\item \textbf{total current conserved} ($\Delta$\C{AJT} $=3.9$e-5 $\ll$ local $\Delta\,7.9$e-4);
+\item \textbf{density frozen} (0/50 rows); smooth, no NaN.
+\end{itemize}
+\medskip
+$\Rightarrow$ owner-approved as an intended higher-accuracy solve; baseline regenerated on gf13.2.
+\end{frame}
+
+\begin{frame}{Case study: a genuine review save}
+\begin{alertblock}{Truncated tool output misleads}
+An early analysis called the shift \emph{core-localized} ($\rho\le0.20$, zero beyond) --- an artifact
+of a \textbf{truncated CI log} (the comparator prints only $\sim$52 of 210 mismatches, which happen to
+be the core rows). Two independent pre-push reviewers caught the contradiction against the full
+committed baseline; it was corrected to a \emph{global} redistribution and re-approved.
+\end{alertblock}
+\begin{block}{Takeaway}
+Verify conclusions against the \emph{complete} data, and keep an independent-reviewer gate ---
+it caught three real issues the author missed (the link-time \C{\_pl\_view\_}, a wrong root-cause
+attribution, and this localization error).
+\end{block}
+\end{frame}
+
+% ---------------------------------------------------------------
+\section{P1 --- TRX $\to$ tr}
+\begin{frame}{P1: old vs new fusion physics}
+\begin{table}\footnotesize
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & kyoshimi \C{tr} (old) & bpsi \C{trx} (new) \\
+\midrule
+Selector    & scalar \C{MDLNF} & \C{model\_pnf} \\
+Reactions   & hardcoded D+T (\C{TRNFDT}) & DT/DD/DHe3/TT/THe3 (\C{libnf}) \\
+Source array& 1-D \C{SNF(NR)} & \C{SNF\_NSNNFNR(NS,NNF,NR)} \\
+Reactivity  & analytic \C{SIGMAM(T)} & spline over tabulated \C{svnf\_*} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\medskip
+Recon corrected a plan premise: \C{tr\_m0904} / \C{tr\_iter01} \textbf{run \C{MDLNF=1}} (fusion ON),
+so naively retiring \C{MDLNF} would change two core baselines. A direct physics comparison settled
+the strategy.
+\end{frame}
+
+\begin{frame}{P1: the reactivity comparison drives the decision}
+The old analytic DT reactivity:
+\[
+\langle\sigma v\rangle_{DT}=3.7\times10^{-18}\;T_I^{-2/3}\,
+\frac{\exp\!\left(-20/T_I^{1/3}\right)}{H(T_I)},\qquad
+T_I=\tfrac{3T_D+2T_T}{5}.
+\]
+\begin{block}{Finding}
+The new \C{libnf} table \C{svnf\_dt} \emph{is} this same fit, tabulated to 2 significant figures:
+they agree to $0.03$--$1.2\%$ at the table points, and $\le 1.2\%$ over the core range
+$T=1$--$30$\,keV (dominated by the 2-sig-fig rounding).
+\end{block}
+$\Rightarrow$ migrating DT to \C{model\_pnf} shifts \C{SNF} $\sim$1\% for \textbf{zero physics gain};
+\C{model\_pnf}'s value is the \textbf{multi-reaction} capability (DD/DHe3/TT/THe3), which is additive.
+\end{frame}
+
+\begin{frame}{P1: decision (Option A) and remaining plan}
+\begin{block}{Decision --- Option A}
+Keep the exact old \C{MDLNF}/\C{SIGMAM} DT path (3 baselines bit-for-bit); add \C{model\_pnf} as an
+\textbf{additive} multi-reaction path (default off $\Rightarrow$ every regression gate trivially holds),
+validated vs a bpsi-\C{trx} reference at 1e-10. \C{MDLNF} is \emph{not} retired.
+\end{block}
+Remaining (Tasks 2--10): collision fns $\to$ \C{trcoll}/\C{trlib} \textbullet{} fusion data model in the
+split \C{trcomm} (inert) \textbullet{} port \C{libnf} \textbullet{} generic \C{tr\_pnf} dispatch gated by
+\C{model\_pnf>0} \textbullet{} bpsi-\C{trx} reference oracle + validate \C{model\_pnf=1..4}
+\textbullet{} C-ABI/MCP exposure \textbullet{} archive \C{trx}/\C{trm}.
+\emph{Deferred:} TGLF (external GACODE lib).
+\end{frame}
+
+% ---------------------------------------------------------------
+\section{Lessons}
+\begin{frame}{Lessons learned}
+\begin{enumerate}
+\item \textbf{\C{.so}-only tests miss static-binary issues} --- menus/some modules are excluded from
+      \C{libXapi.so}; one \C{pl\_view} break only appeared at \emph{link} time.
+\item \textbf{Truncated tool output misleads} --- verify against the complete data.
+\item \textbf{1e-10 equivalence is too tight for FP-heavy modules across compiler versions}.
+\item \textbf{An independent-reviewer pre-push gate earns its keep} --- caught 3 real issues.
+\item \textbf{Physics-change baselines need explicit owner approval} + rigorous characterization.
+\item \textbf{Verify a new capability adds physics before migrating} --- \C{model\_pnf} DT $=$ the
+      legacy fit ($\sim$1\% rounding), so DT stayed legacy; \C{model\_pnf} reserved for multi-reaction.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Status}
+\begin{columns}[T]
+\column{0.5\textwidth}
+\textbf{P0 --- delivered}
+\begin{itemize}
+\item merge \C{0254aa91} $\to$ \C{d1f7f9e7}
+\item CI \good{}: 736 passed
+\item on \C{myfork/kyoshimi-develop}; PR \#1 merged
+\end{itemize}
+\column{0.5\textwidth}
+\textbf{P1 --- in progress}
+\begin{itemize}
+\item Task 1 complete (Option A decided)
+\item strategy locked + justified
+\item Tasks 2--10: defined mechanical port + 1e-10 validation
+\end{itemize}
+\end{columns}
+\vspace{1em}
+\begin{center}\Large \textbf{Thank you.}\end{center}
+\end{frame}
+
+\end{document}
