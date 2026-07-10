@@ -348,6 +348,21 @@ OBJMMM_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCMMM95:.f=.o) $(SRCMMM7:.f90=.o))
 OBJMBGB_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCMBGB:.f=.o))
 OBJITG_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCITG:.f=.o) $(SRCITGF:.F=.o))
 OBJ_CORE_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
+
+# Enforce the dependency order so -j builds don't race (mirrors the bpsd block
+# above). The PIC path has no per-file rules, so without these `make -j
+# libtrapi.so` can compile a consumer before trlib.mod / trcoll.mod exist.
+$(OBJDIR_PIC)/trlib.o               : $(OBJDIR_PIC)/trcomm.o
+$(OBJDIR_PIC)/trcoll.o              : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/trcoll.o
+$(OBJDIR_PIC)/trcoef_turbulence.o   : $(OBJDIR_PIC)/trcoll.o
+$(OBJDIR_PIC)/trcoef_neoclassical.o : $(OBJDIR_PIC)/trcoll.o
+$(OBJDIR_PIC)/trcoef_resistivity.o  : $(OBJDIR_PIC)/trcoll.o $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trcoef_adhoc.o        : $(OBJDIR_PIC)/trcoll.o
+$(OBJDIR_PIC)/trexec.o              : $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trpnb.o               : $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trpnf.o               : $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trpel.o               : $(OBJDIR_PIC)/trlib.o
 OBJ_API_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_API:.f90=.o))
 
 # Graphics stubs that satisfy TRGLOB / GUCLIP & friends without dragging
@@ -527,8 +542,8 @@ $(OBJDIR)/trpl.o : trpl.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trrslt_globals.o : trrslt_globals.f90 trcomm.f90 $(OBJDIR)/trexec.o
 $(OBJDIR)/trrslt_files.o   : trrslt_files.f90 trcomm.f90
 $(OBJDIR)/trrslt_print.o   : trrslt_print.f90 trcomm.f90 $(OBJDIR)/trrslt_files.o
-$(OBJDIR)/trlib.o  : trlib.f90  trcomm.f90
-$(OBJDIR)/trcoll.o : trcoll.f90 trcomm.f90 $(OBJDIR)/trlib.o
+$(OBJDIR)/trlib.o  : trlib.f90  $(OBJDIR)/trcomm.o
+$(OBJDIR)/trcoll.o : trcoll.f90 $(OBJDIR)/trcomm.o $(OBJDIR)/trlib.o
 $(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trcoll.o
 $(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90 $(OBJDIR)/trcoll.o
 $(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90 $(OBJDIR)/trcoll.o

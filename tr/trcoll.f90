@@ -2,7 +2,9 @@
 !
 ! FTAUE / FTAUI used to be bare external functions in trcalc.f90.  They are
 ! collected here as module procedures (P1 Task 3), mirroring bpsi's
-! trx/trcoll.f90 layout.  The bodies are moved verbatim: no numerical change.
+! trx/trcoll.f90 layout.  The bodies were moved verbatim in the extraction
+! commit; the ABS(ANIL) guard below was added afterwards as a separate,
+! deliberate change (RECORDED DECISIONS #3).
 !
 ! Two deliberate divergences from bpsi's trx/trcoll.f90, per RECORDED
 ! DECISIONS #3 in docs/superpowers/plans/2026-06-15-trx-tr-consolidation.md:
@@ -49,6 +51,10 @@ CONTAINS
 !     Vanishing ion density: the collision time diverges. Return a large
 !     finite value instead of dividing by ~0 (which yields Inf, or NaN once
 !     multiplied by a zero pressure downstream).
+!     NOTE: this guard precedes the impurity branch below, whose denominator
+!     uses ANEL (not ANIL) and would stay finite for ANIL~0. Guarding on ANIL
+!     for both branches is deliberate -- it reproduces bpsi trx/trcoll.f90
+!     exactly, which is what the Task-7 1e-10 comparison is written against.
       IF(ABS(ANIL).LE.1.D-8) THEN
          FTAUE=1.D8
          RETURN

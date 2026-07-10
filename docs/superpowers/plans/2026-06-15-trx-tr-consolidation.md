@@ -121,11 +121,11 @@ bpsi `trcoll` differs from kyoshimi `trcalc` inline:
 | `FTAUE` | `PZ(2)`, **no** `ABS(ANIL)` guard, `USE ...AME...` | `PZ(NS_D)`, `IF(ABS(ANIL).LE.1.D-8) FTAUE=1.D8`, `coulomb_log(1,2,..)` |
 | `FTAUI` | `AMM` | `AMP`, `IF(ABS(ANIL).LE.1.D-8) FTAUI=1.D8` |
 
-Decision: **adopt bpsi's guarded `NS_D`/`AMP` version** (it is the maintained one and guards a div-by-tiny-density). This is numerically identical when `ANIL>1e-8`, `AMP==AMM`, `NS_D==2` — i.e. for all existing baselines (verify `AMP`/`AMM` are the same proton-mass constant in `trcom0`/`plcomm`). **Confirm `AMP` exists in kyoshimi `TRCOMM`**:
+Decision: **adopt bpsi's guard, but keep kyoshimi's `AMM` and `PZ(2)`** (see RECORDED DECISIONS #3 — as-built). `NS_D` does not exist in kyoshimi `tr` and `PZ(2)` is its numerically identical form; `AMP` is **NOT** equal to `AMM` any more (bpsd moved to CODATA-2018). The guard is the only behavioural delta, and it is inert for `ANIL>1e-8`. **Confirm which constant exists in kyoshimi `TRCOMM`**:
 ```bash
 grep -rnE '\bAMP\b|\bAMM\b' /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trcom0.f90 /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trcomm_*.f90
 ```
-If only `AMM` exists, port FTAUI using `AMM` (the constant value is identical; only the symbol name differs).
+Only `AMM` exists (`trcomm_const.f90:19`). Port FTAUI using `AMM`. **Do not substitute bpsd's `AMP`** — the two differ by ~1.7e-7 (CODATA-2006 vs 2018), which shifts `FTAUI` by ~8.6e-8 and breaks the 1e-10 baselines.
 
 - [x] **Step 5: Capture a clean pre-port regression baseline run**
 
@@ -240,8 +240,8 @@ git commit -m "test(tr): add DT-fusion 1e-10 reference baseline captured from bp
 
 > **DONE (as-built, 2026-07-10).** Commits `2baa7948` (pure move) + `b795c9e6` (guard).
 > Deviations forced by the code, all verified:
-> - `COULOG`/`FTAUE`/`FTAUI` were **bare external** functions with **9 + 5 + 4 call sites across 8
->   files**, not just `trcalc.f90`. Every caller bound them via a local `REAL(rkind)` declaration, so
+> - `COULOG`/`FTAUE`/`FTAUI` were **bare external** functions with **12 + 8 + 11 live call sites
+>   across 9 files** (plus 4 for `HY`), not just `trcalc.f90`. Every caller bound them via a local `REAL(rkind)` declaration, so
 >   each needed a `USE` **and** surgical removal of the name from a shared declaration line.
 > - `HY` (external, in `trpnb.f90`) moved into `trlib` too, otherwise `trlib`'s `HY` and the external
 >   `HY` would coexist as two silently-divergent live bodies (module mangling `__trlib_MOD_hy` never
