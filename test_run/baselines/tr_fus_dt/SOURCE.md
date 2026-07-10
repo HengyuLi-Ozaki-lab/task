@@ -157,7 +157,9 @@ in the port. That is the natural kyoshimi convention (kyoshimi `tr` never uses
   1.6e-1, ~1.6e9x). Either way the case genuinely discriminates the fusion model.
 - **Profiles are physical:** positive densities decreasing outward
   (min `RN` 1.13e-3), temperatures cooling core→edge (1.017→0.059 keV,
-  min `RT` 5.89e-2), D and T exactly symmetric, no NaN/Inf.
+  min `RT` 5.89e-2), no NaN/Inf. D and T **densities** are bit-identical; their
+  **temperatures** differ by up to 5.5e-3 relative, as the mass ratio (PA=2 vs 3)
+  requires -- not a symmetry violation.
 - **Conditioned for a 1e-10 comparison:** see the next section. This is the
   property that actually makes the file usable as an oracle, and it is why
   `NTMAX=5` rather than the 20 originally captured.
