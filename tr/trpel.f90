@@ -74,12 +74,12 @@
       USE TRCOMM, ONLY : AEE, AME, AMM, ANC, ANFE, DR, DVRHO, NRMAX,&
            & NSM, PA, PELPAT, PELRAD, PELVEL, PI, PNBENG, PZ, PZC,&
            & PZFE, RA, RKEV, RN, RPE, RT, SNB, SNF, SPE, rkind
+      USE trlib, ONLY : COULOG
       IMPLICIT NONE
       REAL(rkind)    :: A1, A2, A3, AMA, AMB, AMD, AMP, AMT, ANE,&
            & ANFAST, ANS, B1, B2, B3, EFAST, P1, P2, PAP, QFAST, ROS,&
            & RP, RPDOT, RPPRE, SPEL, TAUS, TE, VB, VCR, VF
       INTEGER :: NR, NS
-      REAL(rkind)    :: COULOG   ! FUNCTION
 
       NR = NRMAX
       RP = PELRAD

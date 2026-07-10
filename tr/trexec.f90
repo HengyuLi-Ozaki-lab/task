@@ -443,12 +443,13 @@ CONTAINS
      &                   VV, X, XV, Y, YV, Z, ZV, RDPS, &
      &                   ABVRHOG, rkind
       USE TRCOM1, ONLY : A, B, C, D, PPA, PPB, PPC, RD
+      USE trlib, ONLY : COULOG
       IMPLICIT NONE
       INTEGER, INTENT(INOUT):: NEQRMAX
       INTEGER, INTENT(OUT)  :: IERR  ! #142 B4: propagated from TR_COEF_DECIDE / TR_BAND_GEN
       INTEGER:: KL, MV, MVV, MW, MWMAX, NEQ, NEQ1, NR, NS, NS1, NSTN, NSW, &
      &             NV, NW
-      REAL(rkind)   :: ADV, C1, COEF, COULOG, DV53, FADV, PRV, RDPA, RLP
+      REAL(rkind)   :: ADV, C1, COEF, DV53, FADV, PRV, RDPA, RLP
 
       IERR=0
 

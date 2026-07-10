@@ -10,13 +10,14 @@
            AME, AMM, ANC, ANFE, MDLNF, NRMAX, PA, PBIN, PFCL, &
            PFIN, PI, PNBENG, PNF, PZ, PZC, PZFE, RKEV, &
            RN, RNF, RT, RTF, RW, SNF, TAUF, rkind
+      USE trlib, ONLY : COULOG, HY
       IMPLICIT NONE
 !      INCLUDE 'trcomm.inc'
       REAL(rkind)   :: &
            AMA, AMD, AMT, ANE, EC, HYF, P1, PTNT, SS, SSB, TAUS, &
            TD, TE, TT, VC3, VCA3, VCD3, VCR, VCT3, VF, WF, ZEFFM
       INTEGER:: NR
-      REAL(rkind)   :: SIGMAM, COULOG, SIGMAB, HY   !FUNCTION
+      REAL(rkind)   :: SIGMAM, SIGMAB   !FUNCTION
 
 
       AMD=PA(2)*AMM
@@ -189,12 +190,13 @@
            AME, AMM, MDLNF, NRMAX, PA, PFCL, &
            PFIN, PI, PNF, PZ, RKEV, &
            RN, RNF, RT, RTF, RW, SNF, TAUF, rkind
+      USE trlib, ONLY : COULOG, HY
       IMPLICIT NONE
       REAL(rkind)   :: &
            AMA, AMD, AMHe3, ANE, HYF, P1, SS, TAUS, &
            TD, TE, THe3, VC3, VCA3, VCD3, VCR, VCHe3, VF, WF
       INTEGER:: NR
-      REAL(rkind)   :: SIGMADHe3, COULOG, HY   !FUNCTION
+      REAL(rkind)   :: SIGMADHe3   !FUNCTION
 
       AMD=  PA(2)*AMM
       AMHe3=PA(3)*AMM
