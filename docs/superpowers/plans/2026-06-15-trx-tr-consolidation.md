@@ -11,7 +11,7 @@
 **Sources (verified live 2026-06-15):** bpsi `trx` files via `git -C task show bpsi/develop:trx/<f>`; kyoshimi `tr/` worktree; the design spec `docs/superpowers/specs/2026-06-15-task-merge-f90-design.md`; the TR Phase-0 harness plan `docs/superpowers/plans/2026-04-17-tr-refactoring-phase0.md`.
 
 **Key preconditions established by recon:**
-- kyoshimi `tr` fusion is the **old scalar `MDLNF`** path (`trpnf.f90` `TRNFDT`/`TRNFDHe3` writing 1-D `SNF(NR)`/`PNF(NR)` with hardcoded species 2,3; `trcalc.f90:132 SELECT CASE(MDLNF)`). It has **zero** `model_pnf`/`libnf`/`nnfmax`/`SNF_NSNNFNR`. So fusion is a **replace/upgrade**, not an add.
+- kyoshimi `tr` fusion is the **old scalar `MDLNF`** path (`trpnf.f90` `TRNFDT`/`TRNFDHe3` writing 1-D `SNF(NR)`/`PNF(NR)` with hardcoded species 2,3; `trcalc.f90:132 SELECT CASE(MDLNF)`). It has **zero** `model_pnf`/`libnf`/`nnfmax`/`SNF_NSNNFNR`. (This preconception said fusion must be a *replace/upgrade*; **RECORDED DECISIONS #2 overturned it** — `model_pnf` is added *additively* and the legacy `MDLNF` path is kept.)
 - CYTRAN is **already ported** (`tr/cytran/{cytran_mod.f90,tr_cytran_mod.f90}`, wired, `trcalc.f90:19,101`) → **no work**.
 - TGLF (`trtglf.f90`) needs the external GACODE TGLF library (`tglf_interface`/`tglf_run`), **absent from both trees** → **deferred** (§Deferred).
 - Adding a `.f90` to `SRCS_CORE` (`tr/Makefile:34-48`) auto-includes it in both `libtr2.a` and `libtrapi.so` (via `OBJ_CORE_PIC`) — no other src-list edit needed.
@@ -42,7 +42,8 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
 3. **[Task 1 Step 4] FTAUE/FTAUI reconcile: use `AMM`.** kyoshimi `trcomm_const.f90:19` has `AMM`
    (=1.672621637D-27) but NOT `AMP`; adopt bpsi's guarded form with `AMM`.
    **CORRECTION (Task 3 as-built): `AMM` and bpsd's `AMP` are NO LONGER the same number.**
-   `bpsd/bpsd_constants.f90:39` now carries the CODATA-2018 `AMP = 1.67262192369E-27`, a relative
+   `../bpsd/bpsd_constants.f90:39` (the sibling repo; `tr/Makefile` compiles it via `BPSD_SRC=../../bpsd`, and
+   `pl/plcomm.f90:36` re-exports it) now carries the CODATA-2018 `AMP = 1.67262192369E-27`, a relative
    difference of ~1.7e-7 from `AMM`. Using `AMP` shifts `FTAUI` by ~8.6e-8 and breaks the 1e-10
    baselines, so `AMM` is mandatory. Likewise bpsi's `PZ(NS_D)` cannot be pasted verbatim — kyoshimi
    `tr` defines no `NS_D`; `PZ(2)` is the numerically identical form for the e/D/T/He4 ordering.
@@ -73,7 +74,7 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
 | `task-kyoshimi/tr/trcomm_profile.f90` | Modify | Add radial fusion/source arrays `SNF_*`/`PNF_*`/`SNFNN_*`/`TAUF`/`AJNB_NSNNBNR`/`PEC_/PLH_/PIC_NSN*` + allocate/dealloc |
 | `task-kyoshimi/tr/trcomm_globals.f90` | Modify | Add `ANF0,TF0,ANFAV,TFAV,WFT` + allocate/dealloc |
 | `task-kyoshimi/tr/libnf.f90` | Create (port) | MODULE `libnf`: reaction tables, `set_usigmav_nf`, `sigmav_nf` |
-| `task-kyoshimi/tr/trpnf.f90` | Rewrite | Replace `TRNFDT`/`TRNFDHe3` with `tr_prep_pnf`/`tr_pnf` generic loop |
+| `task-kyoshimi/tr/trpnf.f90` | Extend | **Add** `tr_prep_pnf`/`tr_pnf` generic loop; **keep** `TRNFDT`/`TRNFDHe3` (Option A — the retained `MDLNF SELECT CASE` calls them) |
 | `task-kyoshimi/tr/trprep.f90` | Modify | Insert `set_usigmav_nf`→`NFMAX`→allocate→`tr_prep_pnf` sequence |
 | `task-kyoshimi/tr/trexec.f90` | Modify | Fast-ion fusion matrix rows over `NNBMAX+NNF` |
 | `task-kyoshimi/tr/trparm.f90` + `tr_param_registry.f90` | Modify | Register `model_pnf`,`nnfmax` (default 0) |
@@ -147,6 +148,34 @@ git commit -m "docs(tr): record P1 trx->tr port decisions (MDLNF policy, FTAUE/F
 
 ## Task 2: Build the 1e-10 bpsi-`trx` reference oracle
 
+> **DONE (as-built, 2026-07-10).** Commit `e8837d92`. Artefacts:
+> `test_run/baselines/tr_fus_dt/{metrics.json,SOURCE.md}`, `test_run/inputs/tr_fus_dt.in`
+> (force-added — root `.gitignore` has `*.in`), `test_run/test_definitions.conf`.
+> Capture branch `ref/trx-regress-capture` @ bpsi `fa9dd493`, in the isolated worktree
+> `task-trx-ref/` — **never merged**, and `task/` was never touched (Step 1 as written
+> would have switched a dirty tree; it was replaced by `git worktree add`).
+>
+> Two things this task discovered that the plan did not anticipate:
+> 1. **Constant reconciliation is mandatory.** bpsi `trx` takes `AEE`/`AME`/`AMP` from
+>    `bpsd_constants` (CODATA-2018) via `plcomm`; kyoshimi `tr` uses the older values in
+>    `trcomm_const` and never touches `plcomm`. All three differ by ~1e-7. The capture
+>    branch shadows them in `trx`'s `trcomm_parm` (+ a three-site `libnf` patch, since
+>    `libnf` reads `AMP` straight from `bpsd_constants`). `PI`/`VC`/`RMU0`/`EPS0` are
+>    bit-identical between the trees and are left alone. See `SOURCE.md`.
+> 2. **The case must be well-conditioned or the tolerance is meaningless.** The first
+>    capture used `NTMAX=20`. A perturbation probe (`PN(1)` ±1e-12 relative, read every
+>    `metrics.json` entry) measured an amplification of **2.8e11** there — O(1) scalars
+>    `BETAP0`/`Q0`/`WPT` move by 1.4–28 %, so plain FP rounding (1e-16) yields ~1e-5 of
+>    noise, five orders **above** the 1e-10 tolerance. Amplification is ~1e2 up to
+>    `NTMAX=10` and jumps to ~4e11 at `NTMAX=12` (a discrete branch flip; profiles stay
+>    physical). **The baseline is captured at `NTMAX=5`**, where amplification over the
+>    whole of `metrics.json` is 76.5 (rounding → 7.7e-15, a 13000x margin) while
+>    `model_pnf=1` vs `=0` still separate by 2.2e-4 in `WPT` (~2e6x the tolerance; the largest signal is `BETA0` at 1.6e-1, ~1.6e9x).
+>
+> **Task 7 must re-run the perturbation probe** if it ever changes `NTMAX`, and should
+> confirm cross-host (Mac↔Linux, gfortran-15↔13.2) reproducibility before treating a
+> mismatch as a port bug.
+
 **Files:**
 - Create: `task/trx/trregress.f90` (copy of the kyoshimi dumper)
 - Modify: `task/trx/trloop.f90`, `task/trx/Makefile`
@@ -154,20 +183,20 @@ git commit -m "docs(tr): record P1 trx->tr port decisions (MDLNF policy, FTAUE/F
 
 > These edits live on a throwaway branch in `task/` (the github-baseline checkout) used only to emit the reference dump. They are **not** merged into the canonical `tr`.
 
-- [ ] **Step 1: Create a reference-capture branch in the `task/` checkout**
+- [x] **Step 1: Create a reference-capture branch in the `task/` checkout**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task
 git checkout -b ref/trx-regress-capture bpsi/develop
 ```
 
-- [ ] **Step 2: Copy the dumper into `trx`**
+- [x] **Step 2: Copy the dumper into `trx`**
 ```bash
 cp /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trregress.f90 \
    /Users/lihengyu/Research_Project/MS10/TASK/task/trx/trregress.f90
 ```
 (`trx`'s `TRCOMM` exposes every ONLY-symbol the dumper needs — `NRMAX,NSMAX,NT,T,WPT,AJT,AJRFT,Q0,BETA0,BETAP0,BETAA,BETAN,TAUE1,TAUE2,ZEFF0,ALI,RQ1,RN,RT,AJ,QP` — verified in `trx/trrslt.f90 SUBROUTINE TRGLOB`.)
 
-- [ ] **Step 3: Add `trregress.f90` to the `trx` Makefile source list**
+- [x] **Step 3: Add `trregress.f90` to the `trx` Makefile source list**
 
 In `task/trx/Makefile`, find the `SRCS=` block (the line group containing `trrslt.f90`) and append ` trregress.f90` to it. Verify:
 ```bash
@@ -175,7 +204,7 @@ grep -n 'trregress' /Users/lihengyu/Research_Project/MS10/TASK/task/trx/Makefile
 ```
 Expected: `trregress.f90` appears in `SRCS`.
 
-- [ ] **Step 4: Add the dump hook to `trx/trloop.f90`**
+- [x] **Step 4: Add the dump hook to `trx/trloop.f90`**
 
 After the existing `USE` block (~line 22) add:
 ```fortran
@@ -186,20 +215,20 @@ Immediately before the `RETURN` at the `9000 CONTINUE` end (~line 84-85) add:
       CALL tr_regress_dump_if_enabled   ! reference capture (env-guarded)
 ```
 
-- [ ] **Step 5: Build the reference `trx` binary**
+- [x] **Step 5: Build the reference `trx` binary**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task/trx && make tr2
 ```
 Expected: clean build producing `trx/tr2`. (Fix any `USE`/symbol issue before continuing — the dump only links what `TRGLOB` already computes.)
 
-- [ ] **Step 6: Create the DT-fusion regression input**
+- [x] **Step 6: Create the DT-fusion regression input**
 
-Create `task-kyoshimi/test_run/inputs/tr_fus_dt.in` as a `TRMENU` stdin script identical in geometry to `tr_m0904.in` (analytic `modelg=2`, self-contained, no eq dependency) **plus** a deuterium+tritium+alpha species set and `model_pnf=1`. Base it on `tr_m0904.in`; in its `&TR` namelist set: `NSMAX=4` with `PA=2.0,3.0,4.0,...`, `PZ=1.0,1.0,2.0,...` (e,D,T,He4 ordering matching `tr_prep_ns`), `model_pnf=1`, and a short `NTMAX` (e.g. 20) for speed. Read `tr_m0904.in` first to copy its exact menu framing:
+Create `task-kyoshimi/test_run/inputs/tr_fus_dt.in` as a `TRMENU` stdin script identical in geometry to `tr_m0904.in` (analytic `modelg=2`, self-contained, no eq dependency) **plus** a deuterium+tritium+alpha species set and `model_pnf=1`. Base it on `tr_m0904.in`; in its `&TR` namelist set: `NSMAX=4` with `PA=2.0,3.0,4.0,...`, `PZ=1.0,1.0,2.0,...` (e,D,T,He4 ordering matching `tr_prep_ns`), `model_pnf=1`, and a short `NTMAX`. **`NTMAX=5` (as built).** Do **not** use `NTMAX>=12`: the case is ill-conditioned there (see the as-built note above). `PA`/`PZ` are left at `trinit`'s NSMAX=4 defaults rather than set explicitly. Read `tr_m0904.in` first to copy its exact menu framing:
 ```bash
 cat /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run/inputs/tr_m0904.in
 ```
 
-- [ ] **Step 7: Emit the bpsi-`trx` reference dump for the DT case**
+- [x] **Step 7: Emit the bpsi-`trx` reference dump for the DT case**
 
 The bpsi `trx` namelist uses `model_pnf`; run `trx/tr2` on the same physical input (translate the menu/namelist to `trx`'s `in/` format if keys differ — `trx` already supports `model_pnf`):
 ```bash
@@ -209,7 +238,7 @@ ls -l tr_regress.dat
 ```
 Expected: `tr_regress.dat` written in `1PE24.16` format. (`trx`'s menu/namelist may need the keys spelled as in `trx/in/test01.in`; read that file to match.)
 
-- [ ] **Step 8: Convert the dump to the baseline JSON and store it**
+- [x] **Step 8: Convert the dump to the baseline JSON and store it**
 ```bash
 mkdir -p /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run/baselines/tr_fus_dt
 python3 /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run/scripts/extract_tr_metrics.py \
@@ -219,14 +248,14 @@ head -5 /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run/baseli
 ```
 Expected: valid JSON with `NT`, `NRMAX`, `NSMAX`, `scalars`, `profile`. Add a `baselines/tr_fus_dt/SOURCE.md` noting "generated from bpsi/develop:trx @ <sha> via ref/trx-regress-capture, model_pnf=1 DT".
 
-- [ ] **Step 9: Register the new case in the harness**
+- [x] **Step 9: Register the new case in the harness**
 
 In `task-kyoshimi/test_run/test_definitions.conf`, after the `tr_tst2` line add:
 ```
 tr_fus_dt:tr:@inputs/tr_fus_dt.in:none:120:DT fusion (model_pnf=1) vs bpsi trx reference
 ```
 
-- [ ] **Step 10: Commit the oracle**
+- [x] **Step 10: Commit the oracle**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi
 git add test_run/inputs/tr_fus_dt.in test_run/baselines/tr_fus_dt/ test_run/test_definitions.conf
@@ -269,14 +298,14 @@ MODULE trcoll
   PUBLIC :: coulomb_log, FTAUE, FTAUI
 CONTAINS
 ! --- paste bpsi trx/trcoll.f90 bodies of coulomb_log, FTAUE, FTAUI here ---
-! --- adopt the guarded NS_D/AMP forms per Task 1 Step 4 ---
+! --- adopt the guard, but keep kyoshimi's PZ(2) and AMM (RECORDED DECISIONS #3) ---
 END MODULE trcoll
 ```
 Get the exact bodies:
 ```bash
 git -C /Users/lihengyu/Research_Project/MS10/TASK/task show bpsi/develop:trx/trcoll.f90
 ```
-Paste the three `FUNCTION` bodies verbatim between `CONTAINS` and `END MODULE`, keeping their `USE TRCOMM, ONLY: ...` lines (change `AMP`→`AMM` only if Task 1 Step 4 found `AMP` absent).
+Move the kyoshimi bodies between `CONTAINS` and `END MODULE`, keeping their `USE TRCOMM, ONLY: ...` lines. `AMM` and `PZ(2)` are **mandatory** (not conditional): kyoshimi `tr` has no `NS_D`, and bpsd's `AMP` is no longer equal to `AMM`. Only the `ABS(ANIL)` guard is taken from bpsi.
 
 - [x] **Step 2: Create `tr/trlib.f90` as MODULE `trlib`** (`COULOG`, `HY`)
 ```bash
@@ -450,7 +479,7 @@ git -C /Users/lihengyu/Research_Project/MS10/TASK/task show bpsi/develop:trx/lib
 grep -nE 'model_pnf|nnfmax|NS_D|NS_He4' /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trcomm.f90
 grep -nE 'NS_D|NS_He4|NS_He5' /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/pl/plcomm.f90
 ```
-If the umbrella does not re-export `NS_*`, add `USE plcomm, ONLY : NS_e,NS_D,NS_T,NS_He4,NS_He3,NS_H,NS_He5` to `set_usigmav_nf`. Keep `USE libspl1d` / `USE libde` / `USE bpsd_constants` as-is (those libs exist in `lib/`).
+If the umbrella does not re-export `NS_*`, add `USE plcomm, ONLY : NS_e,NS_D,NS_T,NS_He4,NS_He3,NS_H,NS_He5` to `set_usigmav_nf`. Keep `USE libspl1d` / `USE libde` as-is (those libs exist in `lib/`). **DROP `USE bpsd_constants`.** ⚠ The oracle contract (`test_run/baselines/tr_fus_dt/SOURCE.md`, "Contract for Tasks 4-6") requires the ported `libnf` to take its constants from kyoshimi `TRCOMM` (=`trcomm_const`, CODATA-2006). bpsi's `libnf` reads `AMP` straight from `bpsd_constants` for the DT reduced mass (`pm_local = PA(...)*AMP`); keeping that import pulls the CODATA-2018 `AMP`, lands ~1.7e-7 off the reference, and makes Task 7's 1e-10 gate fail. Use `AMM` from `TRCOMM`.
 
 - [ ] **Step 3: Add `libnf.f90` to the Makefile**
 
@@ -492,12 +521,12 @@ git commit -m "feat(tr): port libnf fusion reaction tables from trx (unwired)"
 
 **Files:** Rewrite `task-kyoshimi/tr/trpnf.f90`; Modify `trprep.f90`, `trcalc.f90`, `trexec.f90`; per RECORDED DECISIONS (Option A), **keep** `MDLNF` and add `model_pnf` additively (do **not** retire).
 
-- [ ] **Step 1: Replace `trpnf.f90` with bpsi `trx`'s `tr_prep_pnf` + `tr_pnf`**
+- [ ] **Step 1: Extend `trpnf.f90` with bpsi `trx`'s `tr_prep_pnf` + `tr_pnf` (additive; keep `TRNFDT`/`TRNFDHe3`)**
 ```bash
 git -C /Users/lihengyu/Research_Project/MS10/TASK/task show bpsi/develop:trx/trpnf.f90 \
   > /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trpnf.f90
 ```
-Then adapt its `USE TRCOMM`/`USE libnf`/`USE trlib` lines if the split umbrella needs explicit `ONLY` lists (build will tell you). This removes the old `TRNFDT`/`TRNFDHe3` and adds the generic `nnf=1..nnfmax` loop writing `SNF_NSNNFNR`/`PNF_NSNNFNR`/`SNFNN_NNFNR` and `TAUF`.
+Then adapt its `USE TRCOMM`/`USE libnf`/`USE trlib` lines if the split umbrella needs explicit `ONLY` lists (build will tell you). This **adds** the generic `nnf=1..nnfmax` loop (gated by `model_pnf>0`) writing `SNF_NSNNFNR`/`PNF_NSNNFNR`/`SNFNN_NNFNR` and `TAUF`. **Do NOT delete `TRNFDT`/`TRNFDHe3`** — Option A keeps the `MDLNF SELECT CASE`, which calls them, and `tr_m0904`/`tr_iter01` run `MDLNF=1`.
 
 - [ ] **Step 2: Insert the prep sequence in `trprep.f90`**
 

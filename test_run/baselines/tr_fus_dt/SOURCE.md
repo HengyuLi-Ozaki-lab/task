@@ -91,7 +91,9 @@ All patches are in the worktree only (`ref/trx-regress-capture`, never merged).
 
 ### 2. Physical-constant reconciliation (ESSENTIAL — see rationale)
 
-bpsi `trx` inherits physical constants from `bpsd/bpsd_constants.f90`
+bpsi `trx` inherits physical constants from `../bpsd/bpsd_constants.f90` (the sibling
+repo, compiled via `BPSD_SRC=../../bpsd`; re-exported by `pl/plcomm.f90:36`. Note
+`lib/task_constants.f90` carries the same CODATA-2018 values but is NOT what `plcomm` uses)
 (CODATA-2018) via `plcomm`; kyoshimi `tr` uses the older CODATA-2006 values in
 `tr/trcomm_const.f90` (kyoshimi `tr` never `USE`s `plcomm`). Three constants
 differ and are used pervasively in the transport layer, so a `trcoll`-only
@@ -150,8 +152,9 @@ in the port. That is the natural kyoshimi convention (kyoshimi `tr` never uses
   produce a bit-identical `tr_regress.dat` (sha256 `1bba5692198b4610…`).
 - **`model_pnf` is exercised:** `model_pnf=1` vs `=0` differ well above the
   tolerance — `WPT` 4.3245989445 vs 4.3236370200 (rel 2.2e-4), `BETAN`
-  0.0518484897 vs 0.0518369570. The fusion signal is ~1e9x the 1e-10 tolerance,
-  so the case genuinely discriminates the fusion model.
+  0.0518484897 vs 0.0518369570. That `WPT` split is ~2e6x the 1e-10 tolerance;
+  the largest single signal is `BETA0` (1.93112210e-4 vs 2.23879583e-4, rel
+  1.6e-1, ~1.6e9x). Either way the case genuinely discriminates the fusion model.
 - **Profiles are physical:** positive densities decreasing outward
   (min `RN` 1.13e-3), temperatures cooling core→edge (1.017→0.059 keV,
   min `RT` 5.89e-2), D and T exactly symmetric, no NaN/Inf.
