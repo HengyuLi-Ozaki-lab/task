@@ -19,10 +19,11 @@
            & EPSRHO, MDDIAG, MDEDGE, MDLKNC, MDLUF, NREDGE, NRMAX,&
            & NSLMAX, NSM, PA, PNSS, PTS, PZ, QP, RA, RG, RKEV, RN, RR&
            &, RT, ZEFF, NSMAX, rkind
+      USE trcoll, ONLY : FTAUE, FTAUI
       IMPLICIT NONE
       INTEGER:: NR, NS, NS1
       REAL(rkind)   :: AMA, AMD, AMT, ANA, ANDX, ANE, ANT, CHECK,&
-           & DELDA, EPS, EPSS, F1, F2, FTAUE, FTAUI, QL, RALPHA,&
+           & DELDA, EPS, EPSS, F1, F2, QL, RALPHA,&
            & RHOA2, RHOD2, RHOE2, RHOT2, RK22E, RK2A, RK2D, RK2T,&
            & RMUSA, RMUSD, RMUST, RNUA, RNUD, RNUE, RNUT, TA, TAUA,&
            & TAUD, TAUE, TAUT, TD, TE, TERM1A, TERM1D, TERM1T, TERM2A&

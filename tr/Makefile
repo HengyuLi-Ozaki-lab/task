@@ -31,7 +31,8 @@ SRCM=trcom0.f90 trcom1.f90 \
 
 # Core computation sources (no graphics, no interactive menu).
 # This subset will be linked into libtrapi.so in Phase L-4.
-SRCS_CORE=trcdbm.f90 trmodels.f90 \
+SRCS_CORE=trlib.f90 trcoll.f90 \
+     trcdbm.f90 trmodels.f90 \
      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
      trcoef_resistivity.f90 trcoef_adhoc.f90 \
      trinit.f90 trparm.f90 trview.f90 \
@@ -521,23 +522,25 @@ $(OBJDIR)/tr_ufile_task.o : tr_ufile_task.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/tr_ufile_topics.o : tr_ufile_topics.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trufsub.o : trufsub.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trloop.o : trloop.f90 trcomm.f90 trcom1.f90
-$(OBJDIR)/trexec.o : trexec.f90 trcomm.f90 trcom1.f90 trcoef_neoclassical.f90 $(OBJDIR)/trrslt_files.o
+$(OBJDIR)/trexec.o : trexec.f90 trcomm.f90 trcom1.f90 trcoef_neoclassical.f90 $(OBJDIR)/trrslt_files.o $(OBJDIR)/trlib.o
 $(OBJDIR)/trpl.o : trpl.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trrslt_globals.o : trrslt_globals.f90 trcomm.f90 $(OBJDIR)/trexec.o
 $(OBJDIR)/trrslt_files.o   : trrslt_files.f90 trcomm.f90
 $(OBJDIR)/trrslt_print.o   : trrslt_print.f90 trcomm.f90 $(OBJDIR)/trrslt_files.o
-$(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90
-$(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90
-$(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90
-$(OBJDIR)/trcoef_resistivity.o  : trcoef_resistivity.f90 trcomm.f90
-$(OBJDIR)/trcoef_adhoc.o        : trcoef_adhoc.f90 trcomm.f90
+$(OBJDIR)/trlib.o  : trlib.f90  trcomm.f90
+$(OBJDIR)/trcoll.o : trcoll.f90 trcomm.f90 $(OBJDIR)/trlib.o
+$(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trcoll.o
+$(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90 $(OBJDIR)/trcoll.o
+$(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90 $(OBJDIR)/trcoll.o
+$(OBJDIR)/trcoef_resistivity.o  : trcoef_resistivity.f90 trcomm.f90 $(OBJDIR)/trcoll.o $(OBJDIR)/trlib.o
+$(OBJDIR)/trcoef_adhoc.o        : trcoef_adhoc.f90 trcomm.f90 $(OBJDIR)/trcoll.o
 $(OBJDIR)/trcoef.o : trcoef.f90 trcomm.f90 trglf.inc \
                      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
                      trcoef_resistivity.f90 trcoef_adhoc.f90
-$(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90
+$(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90 $(OBJDIR)/trlib.o
 $(OBJDIR)/trprf.o  : trprf.f90  trcomm.f90
-$(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90
-$(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90
+$(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90 $(OBJDIR)/trlib.o
+$(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90 $(OBJDIR)/trlib.o
 $(OBJDIR)/trpsc.o  : trpsc.f90  trcomm.f90
 
 # Phase L-2 / L-3 C ABI sources. tr_state is independent of TRCOMM;
