@@ -40,7 +40,14 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
    bit-for-bit unchanged, guaranteed). This makes every "regression unchanged at 1e-10" gate trivially
    satisfied for the structural tasks.
 3. **[Task 1 Step 4] FTAUE/FTAUI reconcile: use `AMM`.** kyoshimi `trcomm_const.f90:19` has `AMM`
-   (=1.672621637D-27) but NOT `AMP`; adopt bpsi's guarded `NS_D` form with `AMM` (identical value).
+   (=1.672621637D-27) but NOT `AMP`; adopt bpsi's guarded form with `AMM`.
+   **CORRECTION (Task 3 as-built): `AMM` and bpsd's `AMP` are NO LONGER the same number.**
+   `bpsd/bpsd_constants.f90:39` now carries the CODATA-2018 `AMP = 1.67262192369E-27`, a relative
+   difference of ~1.7e-7 from `AMM`. Using `AMP` shifts `FTAUI` by ~8.6e-8 and breaks the 1e-10
+   baselines, so `AMM` is mandatory. Likewise bpsi's `PZ(NS_D)` cannot be pasted verbatim — kyoshimi
+   `tr` defines no `NS_D`; `PZ(2)` is the numerically identical form for the e/D/T/He4 ordering.
+   ⇒ **Consequence for Task 2:** bpsi `trx` cannot serve as a 1e-10 oracle for any FTAUI-dependent
+   quantity (bootstrap `AJBS` → `AJ` → `QP`) unless its `AMP` is reconciled to `AMM` in the capture build.
 4. **[Validation-env] `run_tests.sh` is unusable locally** (macOS `bash 3.2` lacks `declare -A`). Use the
    **pytest equivalence path** (`python/trlib/tests/test_equivalence.py`, drives `libtrapi.so`) as the
    local 1e-10 gate, plus **CI** (`python-tests.yml`) as the authoritative gate. Build with
@@ -79,7 +86,7 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
 
 **Files:** none (read-only); record decisions in this plan / a scratch note.
 
-- [ ] **Step 1: Confirm bpsi `trx`'s `MDLNF` disposition** (does `trx` keep, remove, or map `MDLNF` alongside `model_pnf`?)
+- [x] **Step 1: Confirm bpsi `trx`'s `MDLNF` disposition** (does `trx` keep, remove, or map `MDLNF` alongside `model_pnf`?)
 
 Run:
 ```bash
@@ -90,7 +97,7 @@ git show bpsi/develop:trx/trparm.f90 | grep -nE 'MDLNF|model_pnf'
 ```
 Expected: `trx` uses `CALL tr_pnf` / `model_pnf` and no longer the `MDLNF SELECT CASE`. **Record** whether `MDLNF` remains a namelist key in `trx` (it governs the decision in Step 3).
 
-- [ ] **Step 2: Confirm existing tr regression inputs leave fusion OFF**
+- [x] **Step 2: Confirm existing tr regression inputs leave fusion OFF**
 
 Run:
 ```bash
@@ -99,13 +106,13 @@ grep -iE 'MDLNF' tr/trinit.f90 test_run/inputs/tr_iter01.in test_run/inputs/tr_m
 ```
 Expected: `tr/trinit.f90` sets `MDLNF=0` default and none of the three inputs override it to >0. This guarantees that introducing `model_pnf` with default 0 keeps the three existing baselines bit-identical. If any input sets `MDLNF>0`, flag it — that case's baseline must be regenerated against bpsi `trx`.
 
-- [ ] **Step 3: Decide the `MDLNF`→`model_pnf` namelist policy** (record in this plan)
+- [x] **Step 3: Decide the `MDLNF`→`model_pnf` namelist policy** (record in this plan)
 
 Two options; pick per Step-1 finding and the no-NAMELIST-change constraint:
-- **(A, recommended) Keep `MDLNF` as an accepted legacy key, add `model_pnf` (default 0).** New `model_pnf` path is authoritative; if `model_pnf=0` and `MDLNF>0`, map `MDLNF` to the equivalent `model_pnf` at init so old inputs reproduce old physics. Preserves all existing input files.
+- **(A, CHOSEN — see RECORDED DECISIONS #2) Keep `MDLNF` as the authoritative legacy DT path; add `model_pnf` (default 0) as an *additive* multi-reaction path.** When `model_pnf=0` the legacy `MDLNF` path runs **exactly as-is — no remapping, no behaviour change** — so existing inputs and the three baselines stay bit-for-bit identical. Preserves all existing input files.
 - **(B) Mirror bpsi `trx` exactly** (whatever Step 1 shows). If `trx` dropped `MDLNF`, dropping it here would break old inputs — only choose if Fukuyama confirms no production input uses `MDLNF>0`.
 
-- [ ] **Step 4: Decide the `FTAUE`/`FTAUI` behavioral reconcile** (record in this plan)
+- [x] **Step 4: Decide the `FTAUE`/`FTAUI` behavioral reconcile** (record in this plan)
 
 bpsi `trcoll` differs from kyoshimi `trcalc` inline:
 
@@ -120,7 +127,7 @@ grep -rnE '\bAMP\b|\bAMM\b' /Users/lihengyu/Research_Project/MS10/TASK/task-kyos
 ```
 If only `AMM` exists, port FTAUI using `AMM` (the constant value is identical; only the symbol name differs).
 
-- [ ] **Step 5: Capture a clean pre-port regression baseline run**
+- [x] **Step 5: Capture a clean pre-port regression baseline run**
 
 Run (must already have `tr/tr2` built; if not, `make -C tr tr2`):
 ```bash
@@ -129,7 +136,7 @@ cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run
 ```
 Expected: each prints `CLOSED` and `OK: metrics match within tol=1e-10`. This is the green baseline every structural task must preserve. **Do not proceed if any case is red before porting.**
 
-- [ ] **Step 6: Commit the decisions**
+- [x] **Step 6: Commit the decisions**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi
 git add docs/superpowers/plans/2026-06-15-trx-tr-consolidation.md
@@ -231,11 +238,30 @@ git commit -m "test(tr): add DT-fusion 1e-10 reference baseline captured from bp
 
 ## Task 3: Extract collision functions into `trcoll` + `trlib` modules
 
+> **DONE (as-built, 2026-07-10).** Commits `2baa7948` (pure move) + `b795c9e6` (guard).
+> Deviations forced by the code, all verified:
+> - `COULOG`/`FTAUE`/`FTAUI` were **bare external** functions with **9 + 5 + 4 call sites across 8
+>   files**, not just `trcalc.f90`. Every caller bound them via a local `REAL(rkind)` declaration, so
+>   each needed a `USE` **and** surgical removal of the name from a shared declaration line.
+> - `HY` (external, in `trpnb.f90`) moved into `trlib` too, otherwise `trlib`'s `HY` and the external
+>   `HY` would coexist as two silently-divergent live bodies (module mangling `__trlib_MOD_hy` never
+>   collides with the external `hy_`, so the linker would NOT catch it).
+> - `trcoll` exports `FTAUE`/`FTAUI` only and `USE trlib, ONLY : COULOG`. bpsi ships *both* lowercase
+>   `coulomb_log` and uppercase `COULOG` with identical bodies; only one is kept.
+> - `AMM` (not `AMP`) and `PZ(2)` (not `PZ(NS_D)`) — see RECORDED DECISIONS #3.
+> - Makefile: `trlib.f90 trcoll.f90` **prepended to `SRCS_CORE`** (the earliest consumers are
+>   `trcoef_turbulence`/`trcoef_resistivity`, and the PIC/`libtrapi.so` build has no per-file dep
+>   rules, so list order is its only ordering guarantee); consumer object rules gained `.o`
+>   prerequisites so `make -j` cannot race on `trlib.mod`/`trcoll.mod`.
+> - Step 7's `run_tests.sh` is unusable locally (RECORDED DECISIONS #4). Gate used instead:
+>   `pytest python/trlib/tests/test_equivalence.py --forked` → *1 passed, 1 xfailed* (unchanged), plus
+>   a `tr_m0904` `TR_REGRESS_DUMP` dump that is **byte-identical** pre vs post (sha256 `56d09887…`).
+
 **Files:**
 - Create: `task-kyoshimi/tr/trcoll.f90`, `task-kyoshimi/tr/trlib.f90`
 - Modify: `task-kyoshimi/tr/trcalc.f90` (remove inline funcs lines 1314-1391; `USE` the modules), `task-kyoshimi/tr/Makefile`
 
-- [ ] **Step 1: Create `tr/trcoll.f90` as a MODULE** (wrap bpsi's bare functions; apply the Step-4 reconcile decision)
+- [x] **Step 1: Create `tr/trcoll.f90` as a MODULE** (wrap bpsi's bare functions; apply the Step-4 reconcile decision)
 ```fortran
 MODULE trcoll
   IMPLICIT NONE
@@ -252,14 +278,14 @@ git -C /Users/lihengyu/Research_Project/MS10/TASK/task show bpsi/develop:trx/trc
 ```
 Paste the three `FUNCTION` bodies verbatim between `CONTAINS` and `END MODULE`, keeping their `USE TRCOMM, ONLY: ...` lines (change `AMP`→`AMM` only if Task 1 Step 4 found `AMP` absent).
 
-- [ ] **Step 2: Create `tr/trlib.f90` as MODULE `trlib`** (`COULOG`, `HY`)
+- [x] **Step 2: Create `tr/trlib.f90` as MODULE `trlib`** (`COULOG`, `HY`)
 ```bash
 git -C /Users/lihengyu/Research_Project/MS10/TASK/task show bpsi/develop:trx/trlib.f90 \
   > /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trlib.f90
 ```
 (bpsi `trx/trlib.f90` is already `MODULE trlib` with `PUBLIC COULOG, HY` — copy verbatim.)
 
-- [ ] **Step 3: Remove the inline collision functions from `trcalc.f90`**
+- [x] **Step 3: Remove the inline collision functions from `trcalc.f90`**
 
 Delete `FUNCTION COULOG` (lines 1314-1336), `FUNCTION FTAUE` (1346-1370), `FUNCTION FTAUI` (1374-1391) from `task-kyoshimi/tr/trcalc.f90`. Verify they are gone:
 ```bash
@@ -267,7 +293,7 @@ grep -nE 'FUNCTION (COULOG|FTAUE|FTAUI)' /Users/lihengyu/Research_Project/MS10/T
 ```
 Expected: no matches.
 
-- [ ] **Step 4: Wire the `USE` in `SUBROUTINE TRAJBS`**
+- [x] **Step 4: Wire the `USE` in `SUBROUTINE TRAJBS`**
 
 In `tr/trcalc.f90 SUBROUTINE TRAJBS`, remove the local declaration `REAL(rkind):: FTAUE, FTAUI` (~line 820) and add to its `USE` block:
 ```fortran
@@ -275,7 +301,7 @@ In `tr/trcalc.f90 SUBROUTINE TRAJBS`, remove the local declaration `REAL(rkind):
 ```
 (The call sites at ~860-863 and ~945-948 stay unchanged.) If `COULOG` is referenced elsewhere in `trcalc`, add `USE trlib, ONLY : COULOG` there too.
 
-- [ ] **Step 5: Add the modules to the Makefile**
+- [x] **Step 5: Add the modules to the Makefile**
 
 In `task-kyoshimi/tr/Makefile`, append `trcoll.f90 trlib.f90` to `SRCS_CORE` (the `trmdlt.f90` group on line ~46). Add dependency rules in the 505-541 block:
 ```make
@@ -285,21 +311,21 @@ $(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcoll.f90 trlib.f90 tr_cytran_mod.f9
 ```
 (Do NOT add `-I../trlib` — kyoshimi `tr` has no `../trlib` dir; `trcoll`/`trlib` only `USE TRCOMM`.)
 
-- [ ] **Step 6: Build (static + shared)**
+- [x] **Step 6: Build (static + shared)**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr
 make tr2 && make libtrapi.so
 ```
 Expected: clean build of both `tr2` and `libtrapi.so`.
 
-- [ ] **Step 7: Run the existing regression — must be UNCHANGED at 1e-10**
+- [x] **Step 7: Run the existing regression — must be UNCHANGED at 1e-10**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run
 ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2
 ```
 Expected: all three `CLOSED` + `OK: metrics match within tol=1e-10`. (The collision math is unchanged for `ANIL>1e-8`, so the bootstrap-current path `TRAJBS` must reproduce the baseline exactly. If a case drifts, the guard/`NS_D`/`AMP` reconcile changed a number — investigate before continuing.)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi
 git add tr/trcoll.f90 tr/trlib.f90 tr/trcalc.f90 tr/Makefile
