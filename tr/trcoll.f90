@@ -46,6 +46,14 @@ CONTAINS
       REAL(rkind) :: ANEL, ANIL, TEL, ZL, FTAUE
       REAL(rkind) :: COEF
 
+!     Vanishing ion density: the collision time diverges. Return a large
+!     finite value instead of dividing by ~0 (which yields Inf, or NaN once
+!     multiplied by a zero pressure downstream).
+      IF(ABS(ANIL).LE.1.D-8) THEN
+         FTAUE=1.D8
+         RETURN
+      ENDIF
+
       COEF = 6.D0*PI*SQRT(2.D0*PI)*EPS0**2*SQRT(AME)/(AEE**4*1.D20)
       IF(ZL-PZ(2).LE.1.D-7) THEN
          FTAUE = COEF*(TEL*RKEV)**1.5D0/(ANIL*ZL**2*COULOG(1,2,ANEL,TEL))
@@ -74,6 +82,12 @@ CONTAINS
       IMPLICIT NONE
       REAL(rkind):: ANEL, ANIL, PAL, TIL, ZL, FTAUI
       REAL(rkind):: COEF
+
+!     Vanishing ion density -- see FTAUE above.
+      IF(ABS(ANIL).LE.1.D-8) THEN
+         FTAUI=1.D8
+         RETURN
+      ENDIF
 
       COEF = 12.D0*PI*SQRT(PI)*EPS0**2*SQRT(PAL*AMM)/(AEE**4*1.D20)
       FTAUI = COEF*(TIL*RKEV)**1.5D0/(ANIL*ZL**4*COULOG(2,2,ANEL,TIL))
