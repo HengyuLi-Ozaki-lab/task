@@ -1,0 +1,34 @@
+0
+f
+tr_fus_dt.gs
+c
+! DT-fusion regression case (model_pnf=1) for kyoshimi TR.
+! Physically identical to the bpsi trx reference capture in
+! test_run/baselines/tr_fus_dt/ (see SOURCE.md).  Analytic geometry
+! (modelg=2, self-contained, no eq dependency); species e/D/T/He4.
+! NOTE: model_pnf is added to kyoshimi tr by P1 Tasks 4-6.  The case IS
+! registered in test_definitions.conf (which no pytest/CI job reads), but it
+! is NOT runnable end-to-end against tr until that port lands -- see Task 7.
+! NTMAX=5 is mandatory: the case is ill-conditioned for NTMAX>=12 and cannot
+! support a 1e-10 comparison there (SOURCE.md, "Numerical conditioning").
+   modelg=2
+   RR=8.481D0
+   RA=2.574D0
+   RKAP=1.816D0
+   RDLT=0.3478D0
+   BB=5.953D0
+   NSMAX=4
+   PN=0.1D0,0.045D0,0.045D0,0.005D0
+   PNS=0.01D0,0.0045D0,0.0045D0,0.0005D0
+   PT=1.0D0,1.0D0,1.0D0,1.0D0
+   PTS=0.1D0,0.1D0,0.1D0,0.1D0
+   PROFN2=0.15D0
+   model_pnf=1
+   DT=0.02D0
+   NRMAX=50
+   NTMAX=5
+   NTSTEP=5
+   RIPS=2.D0
+   RIPE=3.D0
+r
+q
