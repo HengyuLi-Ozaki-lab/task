@@ -142,6 +142,18 @@ def _compare_with_baseline(actual: dict, case_name: str, tol: str = "1e-10") -> 
             pass
 
 
+IS_LINUX = sys.platform.startswith("linux")
+
+
+@unittest.skipUnless(
+    IS_LINUX,
+    "Equivalence tests are Linux-canonical. The 1e-10 baselines "
+    "live in test_run/baselines/<case>/metrics.json and were "
+    "generated on Linux gfortran 13.x (Ubuntu CI runner). macOS / "
+    "non-Linux dev runs the libwrxapi.so via the Python wrapper; "
+    "correctness is verified by Linux CI on every push. See "
+    "docs/baseline-policy.md.",
+)
 @unittest.skipUnless(
     _any_so_exists(),
     "libwrxapi.so not built at any candidate path "
@@ -185,6 +197,10 @@ class TestEquivalence(unittest.TestCase):
 
     def test_demo(self):
         from wrxlib.tests.fixtures import wrx_demo_params as f
+        self._check_case(f)
+
+    def test_jt60(self):
+        from wrxlib.tests.fixtures import wrx_jt60_params as f
         self._check_case(f)
 
 

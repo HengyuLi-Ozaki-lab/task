@@ -1,20 +1,17 @@
-"""Ar-impurity parameters mirroring ``test_run/inputs/ti_ar.in``.
+"""W-impurity parameters mirroring ``test_run/inputs/ti_w.in``.
 
-The ``ti_ar`` namelist adds a third plasma species (Argon) to the minimum
-setup: NSMAX=3, NRMAX=20, NTMAX=10. It exercises the impurity-transport
-code path; its baseline at ``test_run/baselines/ti_ar/metrics.json`` is
-the Layer 1 equivalence target for Ar transport.
+The ``ti_w`` namelist adds tungsten (Z=74) as the third plasma species to
+the minimum-setup template: NSMAX=3, NRMAX=20, NTMAX=5. It exercises the
+high-Z impurity-transport code path; its baseline at
+``test_run/baselines/ti_w/metrics.json`` is the Layer 1 equivalence
+target for W transport.
 
-Note: the ``KID_NS(3)='Ar'`` line in the namelist cannot be replayed via
-the float-only ``ti_set_param`` ABI (see ``ti_param_registry.f90``
-docstring). For Layer 1 we rely on ``ti_init``'s defaults for the
-char-valued fields; in practice ``KID_NS(3)='Ar'`` is recomputed from
-``NPA(3)=18`` in ``tiinit.f90``, so the run still reproduces the
-baseline.
+The ``KID_NS(3)='W'`` line cannot be replayed via the float-only
+``ti_set_param`` ABI; ``KID_NS`` is recomputed from ``NPA(3)=74`` in
+``tiinit.f90`` (same mechanism documented in ti_ar_params.py).
 
 Edit cautiously: changing values invalidates the Layer 1 equivalence
-test against ``test_run/baselines/ti_ar/metrics.json`` (once that
-baseline exists).
+test against ``test_run/baselines/ti_w/metrics.json``.
 """
 from __future__ import annotations
 
@@ -30,40 +27,41 @@ SCALARS = {
     "NTSTEP":  1,
     "NGTSTEP": 1,
     "NGRSTEP": 1,
-    "NTMAX":   10,
+    "NTMAX":   5,
 }
 
 # 2D arrays keyed by (i, j) tuples so 1-origin subscripts stay explicit.
-# MODEL_BND[1,3]=2 and BND_VALUE[1,3]=1.0 in the namelist.
+# MODEL_BND(1,3)=2 and BND_VALUE(1,3)=1.D-3 in the namelist.
 MATRIX_ARRAYS = {
     "MODEL_BND": {(1, 3): 2},
-    "BND_VALUE": {(1, 3): 1.0},
+    "BND_VALUE": {(1, 3): 1.0e-3},
 }
 
-# 1D arrays: namelist uses sparse subscripts like NPA(3)=18, so we use
+# 1D arrays: namelist uses sparse subscripts like NPA(3)=74, so we use
 # {index: value} dicts rather than full lists.
 ARRAYS = {
-    "NPA":      {3: 18},
-    "PA":       {3: 39.95},   # Argon atomic mass; namelist key is PM but
-                              # ticomm exposes it as PA in the registry.
+    "NPA":      {3: 74},
+    "PA":       {3: 183.84},  # tungsten atomic mass; namelist key PM is
+                              # ticomm-aliased to PA in the registry.
+    "PZ":       {3: 74.0},
     "ID_NS":    {3: 10},
-    "NZMIN_NS": {3: 15},
-    "NZMAX_NS": {3: 18},
+    "NZMIN_NS": {3: 20},
+    "NZMAX_NS": {3: 45},
     "DN0_NS":   {1: 0.0, 2: 0.0},
 }
 
-# Namelist keys NOT in ti_param_registry.f90 (L-3 state).
-# `KID_NS` is char-valued -> not settable via float ABI.
-# `PM` is the namelist form of `PA` (different name in ticomm); PA is in
-# ARRAYS above, so PM stays here only to document the namelist mapping.
+# Namelist keys NOT settable via the float-only ti ABI.
+# KID_NS is char-valued (recomputed from NPA in tiinit.f90).
+# PM is the namelist form of PA (different name in ticomm); PA is in
+# ARRAYS above, so PM is documented but skipped.
 UNREGISTERED_KEYS = (
     "KID_NS",
-    "PM",  # namelist alias for PA; value is applied via PA in ARRAYS.
+    "PM",
 )
 
-SOURCE_INPUT = "test_run/inputs/ti_ar.in"
-NTMAX = 10
-BASELINE_NAME = "ti_ar"
+SOURCE_INPUT = "test_run/inputs/ti_w.in"
+NTMAX = 5
+BASELINE_NAME = "ti_w"
 
 
 def _apply_array(ti, name, arr) -> None:
@@ -85,7 +83,7 @@ def _apply_array(ti, name, arr) -> None:
 
 
 def apply(ti) -> None:
-    """Apply all *registered* ti_ar parameters to a TiLib instance."""
+    """Apply all *registered* ti_w parameters to a TiLib instance."""
     for name, value in SCALARS.items():
         try:
             ti.set_param(name, float(value))
@@ -94,7 +92,7 @@ def apply(ti) -> None:
                 raise
     for name, arr in ARRAYS.items():
         _apply_array(ti, name, arr)
-    # 2D (i, j) subscripts.
+    # 2D (i, j) subscripts: pattern from ti_ar_params.py:96-102.
     for name, mat in MATRIX_ARRAYS.items():
         for (i, j), v in mat.items():
             try:

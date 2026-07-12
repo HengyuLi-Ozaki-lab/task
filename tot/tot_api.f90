@@ -2,24 +2,27 @@
 !
 ! Phase L-6: C ABI entry points for libtotapi.so (functional layer).
 !
-! TOT is the orchestrator module — its lifecycle fans out to the four
-! libraryized per-module APIs (tr_api, ti_api, fp_api, wr_api). The
-! pl/eq foundation modules are initialized through tr_api_init's own
-! pl_init / eq_init calls (and again via the others for idempotent
-! safety). wm/dp do NOT have shared-library back-ends yet and are
-! intentionally skipped at L-6; the full integrated wm pipeline that
-! totmain.f90 drives stays accessible through the standalone `tot`
-! binary.
+! TOT is the orchestrator module — its lifecycle fans out to the five
+! libraryized per-module APIs (eq_api, tr_api, ti_api, fp_api, wr_api).
+! pl is initialized as a side-effect of tr_api_init's CALL pl_init.
+! wm/dp do NOT have shared-library back-ends yet and are intentionally
+! skipped at L-6; the full integrated wm pipeline that totmain.f90
+! drives stays accessible through the standalone `tot` binary.
 !
 ! Mapping vs totmain.f90:
 !   binary order : pl_init -> eq_init -> tr_init -> dp_init ->
 !                  wr_init -> wm_init -> fp_init -> ti_init
-!   library order: tr_api_init -> ti_api_init -> fp_api_init ->
-!                  wr_api_init   (each *_api_init internally calls
-!                                 pl_init + eq_init as needed; the
-!                                 second call to pl_init / eq_init is
-!                                 a no-op because both are flag-guarded
-!                                 in their own modules)
+!   library order: eq_api_init -> tr_api_init -> ti_api_init ->
+!                  fp_api_init -> wr_api_init   (each *_api_init is
+!                                 itself idempotent; tr_api_init also
+!                                 CALLs equnit::eq_init internally so
+!                                 the eq COMMON state is brought up
+!                                 even without eq_api_init, but
+!                                 eq_api's own g_initialized flag is
+!                                 module-local to eq_api and must be
+!                                 flipped via eq_api_init for direct
+!                                 ctypes callers to drive eq_set_param
+!                                 / eq_run via the C ABI. See #209.)
 !
 ! At L-6 the run path only advances the TR transport solver
 ! (tr_api_run). Wiring fp_api_run / wr_api_run into the run loop
@@ -58,8 +61,13 @@ MODULE tot_api
   USE tot_state, ONLY: tot_state_c, TOT_MAX_NRMAX, TOT_MAX_NSMAX
   USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str
   ! Per-module APIs (libraryized in L-3). We rename each *_api_*
-  ! function to a tot-local alias so the four namespaces do not collide
+  ! function to a tot-local alias so the namespaces do not collide
   ! when the wrap module pulls them all in.
+  ! eq_api: only the lifecycle hooks are pulled in. set_param / run /
+  ! get_state are exposed via eq_api.f90's BIND(C) symbols directly;
+  ! tot_api only needs init/finalize to flip eq_api's g_initialized
+  ! flag for direct-ctypes callers (#209).
+  USE eq_api, ONLY: eq_api_init,     eq_api_finalize
   USE tr_api, ONLY: tr_api_init,     tr_api_run,     tr_api_get_state, &
                     tr_api_finalize
   USE tr_state, ONLY: tr_state_c
@@ -90,6 +98,10 @@ MODULE tot_api
 
   ! Per-sub-module presence flags. Mirror what tot_state_c exposes so
   ! get_state can publish the live picture without an extra scan.
+  ! g_eq_present is not surfaced through tot_state_c today; it exists
+  ! so finalize can mirror init's reverse order symmetrically and so
+  ! future state aggregation can pull it in without re-wiring init.
+  LOGICAL, SAVE :: g_eq_present = .FALSE.
   LOGICAL, SAVE :: g_tr_present = .FALSE.
   LOGICAL, SAVE :: g_ti_present = .FALSE.
   LOGICAL, SAVE :: g_fp_present = .FALSE.
@@ -106,6 +118,13 @@ CONTAINS
   ! foundational layer is brought up regardless of which sub-module is
   ! invoked first.
   !
+  ! eq_api_init is called FIRST so eq_api's module-local g_initialized
+  ! flag is set before any sibling module references eq_api's C ABI.
+  ! Without this, a direct ctypes caller chaining `tot_init() ->
+  ! eq_set_param(...)` would hit EQ_ERR_NOT_INIT because tr_api_init's
+  ! `CALL eq_init` brings up equnit's COMMON state but does NOT touch
+  ! eq_api's flag. See #209 for the foot-gun discussion.
+  !
   ! On any sub-module init failure the orchestrator finalizes whatever
   ! has succeeded so far so the heap does not leak across re-init.
   !-------------------------------------------------------------------
@@ -119,12 +138,25 @@ CONTAINS
        RETURN
     END IF
 
+    ! eq first — flip eq_api's g_initialized so direct ctypes callers
+    ! can drive eq_set_param / eq_run via the C ABI without an extra
+    ! eq_init() round trip (#209). eq_api_init's CALL equnit_eq_init
+    ! is idempotent — tr_api_init below calls equnit::eq_init again,
+    ! but equnit's init just re-applies defaults, which is harmless.
+    rc = eq_api_init()
+    IF (rc /= 0) THEN
+       ierr = TOT_ERR_INIT_FAILED
+       RETURN
+    END IF
+    g_eq_present = .TRUE.
+
     ! tr_api_init also opens unit 7 (OPEN(7, STATUS='SCRATCH', ...)) which
     ! several lib/libkio.f90 inline-namelist paths require. Once tr brings
     ! it up the other modules' set_param / prep paths can reuse it without
     ! re-OPEN'ing (libkio's inline NAMELIST writer hard-codes UNIT=7).
     rc = tr_api_init()
     IF (rc /= 0) THEN
+       rc = eq_api_finalize();   g_eq_present = .FALSE.
        ierr = TOT_ERR_INIT_FAILED
        RETURN
     END IF
@@ -132,10 +164,10 @@ CONTAINS
 
     rc = ti_api_init()
     IF (rc /= 0) THEN
-       ! Roll back tr to keep the heap clean for the caller's next
-       ! tot_init attempt.
-       rc = tr_api_finalize()
-       g_tr_present = .FALSE.
+       ! Roll back tr + eq to keep the heap clean for the caller's
+       ! next tot_init attempt.
+       rc = tr_api_finalize();   g_tr_present = .FALSE.
+       rc = eq_api_finalize();   g_eq_present = .FALSE.
        ierr = TOT_ERR_INIT_FAILED
        RETURN
     END IF
@@ -145,6 +177,7 @@ CONTAINS
     IF (rc /= 0) THEN
        rc = ti_api_finalize();   g_ti_present = .FALSE.
        rc = tr_api_finalize();   g_tr_present = .FALSE.
+       rc = eq_api_finalize();   g_eq_present = .FALSE.
        ierr = TOT_ERR_INIT_FAILED
        RETURN
     END IF
@@ -155,6 +188,7 @@ CONTAINS
        rc = fp_api_finalize();   g_fp_present = .FALSE.
        rc = ti_api_finalize();   g_ti_present = .FALSE.
        rc = tr_api_finalize();   g_tr_present = .FALSE.
+       rc = eq_api_finalize();   g_eq_present = .FALSE.
        ierr = TOT_ERR_INIT_FAILED
        RETURN
     END IF
@@ -406,6 +440,11 @@ CONTAINS
        IF (rc /= 0 .AND. ierr == TOT_ERR_OK) ierr = TOT_ERR_INIT_FAILED
        g_tr_present = .FALSE.
     END IF
+    IF (g_eq_present) THEN
+       rc = eq_api_finalize()
+       IF (rc /= 0 .AND. ierr == TOT_ERR_OK) ierr = TOT_ERR_INIT_FAILED
+       g_eq_present = .FALSE.
+    END IF
 
     g_initialized = .FALSE.
   END FUNCTION tot_api_finalize
@@ -428,3 +467,27 @@ CONTAINS
   END SUBROUTINE c_string_to_fortran
 
 END MODULE tot_api
+
+!-------------------------------------------------------------------
+! tot_is_mono : C ABI introspection — am I the monolithic .so?
+!
+! Standalone (NOT inside MODULE tot_api) so the Makefile can swap
+! the implementation file per build target without forcing a recompile
+! of tot_api.o. Two parallel source files supply the body:
+!
+!   tot/tot_is_mono.f90        -> RETURN 0 (linked into libtotapi.so)
+!   tot/tot_is_mono_mono.f90   -> RETURN 1 (linked into libtotapi_mono.so)
+!
+! Returns 1 if this .so is the monolithic image (eq + tr + fp + ti +
+! wrx + bpsd co-linked, single shared BPSD broker), 0 if it is the
+! default per-module image (libtotapi.so depending on individual
+! lib<mod>api.so files, each with private bpsd storage).
+!
+! Use case: Python orchestrators (TotPipeline) decide whether the
+! eq -> tr BPSD coupling rule is meaningful for the loaded image.
+! See L-7b-ii Phase 2b spec §3-§5 for the two-file pattern rationale
+! and the conditional rule registration semantics.
+!
+! NOTE: function body lives in the per-target file, NOT here. This
+! header-only declaration is just for `END MODULE tot_api` boundary.
+!-------------------------------------------------------------------

@@ -284,6 +284,62 @@ COUPLING_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
     #   broker といった解決方針が決まり次第ルールを追加できる骨組みは
     #   揃っている。詳細は spec §後続検討、および
     #   `python/totlib/README.md` の Coupling rules 節を参照。
+    #
+    #   L-7b-ii Phase 2b update (2026-05-18): ('eq','tr') is now
+    #   registered conditionally — see _MONO_ONLY_RULES below and
+    #   TotPipeline.__init__'s _detect_mono() / _active_rules logic.
+}
+
+
+# ------------------------------------------------------------------
+# Mono-only coupling rules
+# ------------------------------------------------------------------
+# Rules in this dict are activated ONLY when the loaded
+# libtotapi*.so is the monolithic build (tot_is_mono() == 1). On
+# the default per-module .so path each per-module library has
+# private bpsd storage, so cross-module BPSD verification is
+# meaningless there and these rules stay dormant via the
+# _detect_mono() / _build_active_rules() overlay mechanism that
+# Phase 2b put in place.
+#
+# Phase 2c PR-A (#212) plumbed the wrappers to honor MONO_LIB_PATH
+# so all 6 wrappers can route to the same mono image. PR-B (this
+# commit) activates the ("eq","tr") rule that PR-A's plumbing
+# enables.
+#
+# Adding a new rule here?
+#   1. Define a named module-level callable (not a lambda) so
+#      pipeline.run_pipeline error messages show a meaningful
+#      __qualname__ when the verify fails.
+#   2. Verify the timing is safe at the rule-firing phase
+#      (run_pipeline fires verify rules AFTER current-module init
+#      but BEFORE current-module run — see lines 610-631).
+#   3. Add a Layer-D integration test covering both the happy
+#      mono path AND the dormant non-mono path (see
+#      python/totlib/tests/test_mono_pipeline_coupling.py for
+#      the ("eq","tr") example).
+
+def _eq_to_tr_bpsd_check(trlib_inst) -> bool:
+    """Verify eq's BPSD push is visible to tr (mono image only).
+
+    Returns True iff Trlib.check_bpsd_pull() finds the device /
+    equ1D / metric1D slots that eq pushed during eq_run(1). On the
+    default per-module image this would always return False because
+    each per-module .so has private bpsd storage — but the rule
+    only activates when _detect_mono() == True so the path is never
+    exercised against the default image.
+    """
+    return trlib_inst.check_bpsd_pull()
+
+
+_MONO_ONLY_RULES: Dict[Tuple[str, str], List[CouplingRule]] = {
+    ("eq", "tr"): [
+        CouplingRule(
+            kind="verify",
+            verify=_eq_to_tr_bpsd_check,
+            doc="eq -> tr BPSD broker round-trip (mono image only)",
+        ),
+    ],
 }
 
 
@@ -305,6 +361,71 @@ class TotPipeline:
         # compute_rjt_volint needs tr's RR/RA). Per spec §5.4.
         self._params: Dict[str, Any] = {}
         self._closed: bool = False
+        # L-7b-ii Phase 2b: instance-level rule table. Starts as a shallow
+        # copy of the module-level COUPLING_RULES (always-on rules) and
+        # adds _MONO_ONLY_RULES (e.g. ('eq','tr')) if this pipeline is
+        # operating against a mono libtotapi_mono.so. Detection is
+        # deferred to first use of _active_rules so __init__ stays
+        # side-effect-free (does NOT load any .so).
+        self._active_rules: Optional[Dict[Tuple[str, str], List[CouplingRule]]] = None
+
+    def _detect_mono(self) -> bool:
+        """Return True if the loaded libtotapi*.so is the mono image.
+
+        Loads libtotapi via _ffi.load_library() (already cached by
+        ctypes if previously called) and calls tot_is_mono(). Older
+        builds predating Phase 2b lack the symbol — treat as not-mono
+        for backwards compatibility.
+
+        Failure paths emit a RuntimeWarning so a user wondering why
+        their ("eq","tr") rule never activates sees a diagnostic
+        (Codex retrospective 2026-05-18 LOW finding).
+        """
+        import warnings
+        try:
+            from totlib import _ffi  # local import to avoid cycle
+            lib = _ffi.load_library()
+            # tot_is_mono is best-effort attached in _apply_prototypes;
+            # the attribute may be absent on legacy builds.
+            fn = getattr(lib, "tot_is_mono", None)
+            if fn is None:
+                warnings.warn(
+                    "libtotapi.so predates L-7b-ii Phase 2b "
+                    "(no tot_is_mono symbol); TotPipeline assumes "
+                    "per-module .so mode and skips mono-only rules.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                return False
+            return bool(fn())
+        except (AttributeError, OSError) as exc:
+            warnings.warn(
+                f"TotPipeline._detect_mono failed ({type(exc).__name__}: "
+                f"{exc}); assuming non-mono and skipping mono-only rules.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return False
+
+    def _build_active_rules(self) -> Dict[Tuple[str, str], List[CouplingRule]]:
+        """Compose the effective rule table for this pipeline instance.
+
+        Cached on first access via _get_active_rules(). The mono detect
+        is run exactly once per TotPipeline instance.
+        """
+        rules: Dict[Tuple[str, str], List[CouplingRule]] = {
+            k: list(v) for k, v in COUPLING_RULES.items()
+        }
+        if self._detect_mono():
+            for k, mono_rules in _MONO_ONLY_RULES.items():
+                rules.setdefault(k, []).extend(mono_rules)
+        return rules
+
+    def _get_active_rules(self) -> Dict[Tuple[str, str], List[CouplingRule]]:
+        """Return the cached rule table, building it lazily on first call."""
+        if self._active_rules is None:
+            self._active_rules = self._build_active_rules()
+        return self._active_rules
 
     def __enter__(self) -> "TotPipeline":
         return self
@@ -473,7 +594,12 @@ class TotPipeline:
                 applied: List[str] = []
 
                 if prev_name is not None:
-                    for rule in COUPLING_RULES.get((prev_name, name), []):
+                    # L-7b-ii Phase 2b: lookup goes through the instance-
+                    # level _active_rules so mono-only rules registered
+                    # in _MONO_ONLY_RULES participate iff the loaded
+                    # .so is the monolithic build.
+                    active_rules = self._get_active_rules()
+                    for rule in active_rules.get((prev_name, name), []):
                         if rule.kind == "transfer":
                             # __post_init__ guarantees src_state_key/dst_param/
                             # transform are non-None for kind="transfer", so the

@@ -192,3 +192,11 @@ docs/manual/*.blg
 
 # Downstream task-web worktrees (created under .worktrees/ by task-web dev flow)
 .worktrees/
+
+# Per-machine Claude Code workspace state.
+# .claude/commands/ and .claude/hooks/ ARE tracked — they are project
+# workflow assets that benefit all collaborators. Settings and worktree
+# storage are per-machine and excluded here so a fresh clone doesn't
+# accidentally commit hook registrations or per-machine permissions.
+.claude/worktrees/
+.claude/settings.local.json

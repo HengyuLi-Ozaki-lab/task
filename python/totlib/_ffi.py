@@ -6,6 +6,10 @@ so tests can exercise the boundary directly.
 
 Library-path resolution order (first match wins):
 
+0. ``MONO_LIB_PATH`` env var (#208 PR-A): if set, all wrappers route
+   to the same monolithic image so eq/tr/etc. share one BPSD broker.
+   See D-7: TOTLIB_PATH is subordinated to MONO_LIB_PATH so the
+   orchestrator wrapper loads the same image as the sibling wrappers.
 1. explicit ``path`` argument to :func:`load_library`
 2. ``TOTLIB_PATH`` environment variable
 3. ``<repo>/tot/libtotapi.so`` (standard L-4 build location)
@@ -20,6 +24,8 @@ import ctypes
 import os
 from pathlib import Path
 from typing import Optional
+
+from _runtime_mode import mono_lib_path
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -119,10 +125,18 @@ def _candidate_paths() -> list:
 def _default_lib_path() -> Path:
     """Resolve the default ``libtotapi.so`` path.
 
-    Honours ``TOTLIB_PATH`` first; otherwise returns the first existing
-    candidate. If none exists, returns the canonical build location so
-    the error message from :func:`load_library` mentions it directly.
+    Priority (highest first):
+      0. ``mono_lib_path()`` — global mono override (``MONO_LIB_PATH``).
+         When set, the orchestrator wrapper loads the same monolithic
+         image as the sibling per-module wrappers — see #208 PR-A
+         spec D-7 for why TOTLIB_PATH is subordinated here.
+      1. ``TOTLIB_PATH`` env var
+      2. ``<repo>/tot/libtotapi.so``
+      3. ``<repo>/lib/libtotapi.so``
     """
+    mono = mono_lib_path()
+    if mono is not None:
+        return mono
     env = os.environ.get("TOTLIB_PATH")
     if env:
         return Path(env)
@@ -161,6 +175,17 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
 
     lib.tot_finalize.restype = ctypes.c_int
     lib.tot_finalize.argtypes = []
+
+    # L-7b-ii Phase 2b: tot_is_mono — runtime introspection for whether
+    # this .so is the monolithic build (returns 1) or the default
+    # per-module build (returns 0). Older builds predating Phase 2b
+    # lack this symbol; treat that as not-mono so the Python side keeps
+    # working with legacy artifacts.
+    try:
+        lib.tot_is_mono.restype = ctypes.c_int
+        lib.tot_is_mono.argtypes = []
+    except AttributeError:  # pragma: no cover - only on pre-Phase-2b builds
+        pass
     return lib
 
 

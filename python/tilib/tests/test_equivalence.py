@@ -32,6 +32,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
@@ -113,6 +115,18 @@ def _tilib_importable() -> bool:
     return True
 
 
+IS_LINUX = sys.platform.startswith("linux")
+
+
+@unittest.skipUnless(
+    IS_LINUX,
+    "Equivalence tests are Linux-canonical. The 1e-10 baselines "
+    "live in test_run/baselines/<case>/metrics.json and were "
+    "generated on Linux gfortran 13.x (Ubuntu CI runner). macOS / "
+    "non-Linux dev runs the libtiapi.so via the Python wrapper; "
+    "correctness is verified by Linux CI on every push. See "
+    "docs/baseline-policy.md.",
+)
 @unittest.skipUnless(
     DEFAULT_SO.exists(),
     f"libtiapi.so not built at {DEFAULT_SO}; run `make -C ti libtiapi.so`",
@@ -131,7 +145,7 @@ class TestEquivalence(TiDataCwdMixin, unittest.TestCase):
         """Run one fixture and diff vs its baseline.
 
         The fixture module must expose ``apply`` / ``NTMAX`` /
-        ``BASELINE_NAME`` (see :mod:`fixtures.ti_iter01_params`).
+        ``BASELINE_NAME`` (see :mod:`fixtures.ti_min_params`).
         """
         actual = _run_case(fixture_module.apply, ntmax=fixture_module.NTMAX)
         _compare_with_baseline(actual, fixture_module.BASELINE_NAME, self.TOLERANCE)
@@ -139,11 +153,26 @@ class TestEquivalence(TiDataCwdMixin, unittest.TestCase):
     def test_ti_min(self):
         # Local import so collection works even if the fixture is
         # syntactically invalid (failure reported per-test, not globally).
-        from tilib.tests.fixtures import ti_iter01_params as f
+        from tilib.tests.fixtures import ti_min_params as f
         self._check_case(f)
 
     def test_ti_ar(self):
         from tilib.tests.fixtures import ti_ar_params as f
+        self._check_case(f)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "#223: ti_get_state returns ierr=3 (TI_ERR_CALC_FAILED) on the "
+            "W-impurity case under the libtiapi.so wrapper path. Likely "
+            "KID_NS recomputation from NPA=74 or ADAS-table load missing "
+            "in the wrapper init path. Diagnosis requires Linux + "
+            "-ffpe-trap rebuild. Remove this xfail when the wrapper path "
+            "for W-impurity is complete AND baseline reflects the fix."
+        ),
+    )
+    def test_ti_w(self):
+        from tilib.tests.fixtures import ti_w_params as f
         self._check_case(f)
 
 

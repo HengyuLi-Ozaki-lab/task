@@ -6,6 +6,8 @@ so tests can exercise the boundary directly.
 
 Library-path resolution order (first match wins):
 
+0. ``MONO_LIB_PATH`` env var (#208 PR-A): if set, all wrappers route
+   to the same monolithic image so eq/tr/etc. share one BPSD broker.
 1. explicit ``path`` argument to :func:`load_library`
 2. ``EQLIB_PATH`` environment variable
 3. ``<repo>/eq/libeqapi.so`` (standard L-4 build location)
@@ -20,6 +22,8 @@ import ctypes
 import os
 from pathlib import Path
 from typing import Optional
+
+from _runtime_mode import mono_lib_path
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -169,10 +173,20 @@ def _candidate_paths() -> list:
 def _default_lib_path() -> Path:
     """Resolve the default ``libeqapi.so`` path.
 
-    Honours ``EQLIB_PATH`` first; otherwise returns the first existing
-    candidate. If none exists, returns the canonical build location so
-    the error message from :func:`load_library` mentions it directly.
+    Priority (highest first):
+      0. ``mono_lib_path()`` — global mono override
+         (``MONO_LIB_PATH`` env var). See #208 Phase 2c PR-A spec.
+      1. ``EQLIB_PATH`` env var
+      2. ``<repo>/eq/libeqapi.so``
+      3. ``<repo>/lib/libeqapi.so``
+
+    ``load_library(path=...)`` still accepts an explicit override that
+    wins over (0) — the early ``if path:`` branch runs before this
+    function is consulted.
     """
+    mono = mono_lib_path()
+    if mono is not None:
+        return mono
     env = os.environ.get("EQLIB_PATH")
     if env:
         return Path(env)
