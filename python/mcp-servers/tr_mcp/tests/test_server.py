@@ -423,5 +423,16 @@ class TestIntegration(unittest.TestCase):
             )
 
 
+class TestHeatingPowerRegistry(unittest.TestCase):
+    """PECTOT/PICTOT (total EC/IC input power, MW) must be registered (AutoTASK M0)."""
+
+    def test_pectot_pictot_present(self):
+        for name in ("PECTOT", "PICTOT"):
+            with self.subTest(name=name):
+                entry = srv.PARAMETER_REGISTRY.get(name)
+                self.assertIsNotNone(entry, f"{name} missing from PARAMETER_REGISTRY")
+                self.assertEqual(entry["type"], "float")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

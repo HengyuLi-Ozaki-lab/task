@@ -352,6 +352,7 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | `PICR0`  | double | 0.0 | m | パワー堆積の半径中心 |
 | `PICRW`  | double | 0.5 | m | パワー堆積の半径幅 |
 | `PICNPR` | double | 2.0 | — | 平行屈折率 $N_\parallel$ |
+| `PICTOT` | double | 0.0 | MW | 総 ICRF 入力パワー |
 
 ## 11. ECRF (Electron Cyclotron Range of Frequencies)
 
@@ -363,6 +364,7 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | `PECR0`  | double | 0.0 | m | パワー堆積の半径中心 |
 | `PECRW`  | double | 0.2 | m | パワー堆積の半径幅 |
 | `PECNPR` | double | 0.0 | — | 平行屈折率 $N_\parallel$ |
+| `PECTOT` | double | 0.0 | MW | 総 ECRF 入力パワー |
 
 ## 12. LH (Lower Hybrid Range)
 

@@ -364,6 +364,7 @@ Active when `MDLIC ≠ 0`.
 | `PICR0`  | double | 0.0 | m | radial centre of power deposition |
 | `PICRW`  | double | 0.5 | m | radial width of power deposition |
 | `PICNPR` | double | 2.0 | — | parallel refractive index $N_\parallel$ |
+| `PICTOT` | double | 0.0 | MW | total ICRF input power |
 
 ## 11. ECRF (Electron Cyclotron Range of Frequencies)
 
@@ -375,6 +376,7 @@ Active when `MDLEC ≠ 0`.
 | `PECR0`  | double | 0.0 | m | radial centre of power deposition |
 | `PECRW`  | double | 0.2 | m | radial width of power deposition |
 | `PECNPR` | double | 0.0 | — | parallel refractive index $N_\parallel$ |
+| `PECTOT` | double | 0.0 | MW | total ECRF input power |
 
 ## 12. LH (Lower Hybrid Range)
 
