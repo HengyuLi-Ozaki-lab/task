@@ -25,8 +25,8 @@
 !   - graphics step counters (NGTSTP, NGRSTP)
 !   - heating / current drive
 !       NBI                  (PNBR0, PNBRW, PNBENG, PNBRTG)
-!       ICRF                 (PICCD, PICR0, PICRW, PICNPR)
-!       ECRF                 (PECCD, PECR0, PECRW, PECNPR)
+!       ICRF                 (PICCD, PICR0, PICRW, PICNPR, PICTOT)
+!       ECRF                 (PECCD, PECR0, PECRW, PECNPR, PECTOT)
 !       LH                   (PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT)
 !
 ! Strings (KNAMEQ) are handled through a separate entry point:
@@ -50,8 +50,8 @@ MODULE tr_param_registry
        MODELG, MDLIMP, NGTSTP, NGRSTP, &
        PROFN1, PROFN2, PNC, &
        PNBTOT, PNBR0, PNBRW, PNBENG, PNBRTG, &
-       PICCD, PICR0, PICRW, PICNPR, &
-       PECCD, PECR0, PECRW, PECNPR, &
+       PICCD, PICR0, PICRW, PICNPR, PICTOT, &
+       PECCD, PECR0, PECRW, PECNPR, PECTOT, &
        PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT, &
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_R0, EXTERNAL_DRIVEN_RW, &
        KNAMEQ
@@ -152,11 +152,13 @@ CONTAINS
     CASE ("PICR0");  PICR0  = value
     CASE ("PICRW");  PICRW  = value
     CASE ("PICNPR"); PICNPR = value
+    CASE ("PICTOT"); PICTOT = value
     !     ECRF
     CASE ("PECCD");  PECCD  = value
     CASE ("PECR0");  PECR0  = value
     CASE ("PECRW");  PECRW  = value
     CASE ("PECNPR"); PECNPR = value
+    CASE ("PECTOT"); PECTOT = value
     !     LH
     CASE ("PLHCD");  PLHCD  = value
     CASE ("PLHR0");  PLHR0  = value
