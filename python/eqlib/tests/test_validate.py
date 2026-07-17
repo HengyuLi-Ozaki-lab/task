@@ -113,6 +113,103 @@ class TestEqValidate(unittest.TestCase):
         ]
         self.assertEqual(len(knameq_diags), 1)
 
+    # --- M2-T7: grid-containment + wall-vs-minor-radius cross-checks ---
+    # (task-web app/services/optimize/guards.py::eq_cross_checks upstream)
+
+    def test_validate_rb_less_than_ra_emits_inconsistent_pair(self) -> None:
+        """RB < RA (wall inside the plasma) is the reattributed M0
+        live-crash class: the ITER preset (RR=6.2, RA=2.0 — see
+        docs/superpowers/plans/2026-05-17-3d-tokamak-architecture-
+        wiki.md's "iter" preset) run with RB left at the small-tokamak
+        default (1.2) instead of an enclosing wall value. MODELG-
+        agnostic: fires under the eq_init default MODELG=2 with no
+        override. Mirrors guards.py::eq_cross_checks's RB<RA branch."""
+        with Eq() as eq:
+            eq.set_params(RR=6.2, RA=2.0)      # RB left at default (1.2)
+            diags = eq.validate()
+
+        codes = [d.code for d in diags]
+        self.assertIn(int(EqDiagCode.INCONSISTENT_PAIR), codes)
+        rb_diags = [d for d in diags if d.code == EqDiagCode.INCONSISTENT_PAIR]
+        self.assertEqual(len(rb_diags), 1)
+        self.assertEqual(rb_diags[0].param, "RB")
+        self.assertIn("M0 crash class", rb_diags[0].message)
+
+    def test_validate_m0_crash_preset_emits_nonempty_and_names_r_grid(self) -> None:
+        """Decisive regression (Task 7 Step 2): the exact M0-verified
+        crash case (RR=6.2, RA=2.0, default RB=1.2, MODELG=2) MUST now
+        produce a non-empty validate() result naming the R-grid. It
+        also trips the RB<RA wall check — both are genuine violations
+        for this preset, so both are expected in the output."""
+        with Eq() as eq:
+            eq.set_params(MODELG=2.0, RR=6.2, RA=2.0)
+            diags = eq.validate()
+
+        self.assertTrue(diags, "expected non-empty diagnostics for the M0 crash preset")
+        messages = " ".join(d.message for d in diags)
+        self.assertIn("R-grid", messages)
+        codes = {d.code for d in diags}
+        self.assertIn(int(EqDiagCode.OUT_OF_RANGE_AFTER_DEP), codes)
+        self.assertIn(int(EqDiagCode.INCONSISTENT_PAIR), codes)
+
+    def test_validate_r_extent_uses_ra_not_rb(self) -> None:
+        """R-extent basis is RA (plasma minor radius), NOT RB (wall): a
+        healthy wall (RB >= RA) that still puts RR+/-RA outside the
+        grid must independently trip OUT_OF_RANGE_AFTER_DEP naming RR,
+        with NO wall violation reported alongside it."""
+        with Eq() as eq:
+            # RR+RA = 4.0+1.0 = 5.0 > RGMAX=4.5; RB=1.9 >= RA=1.0 (healthy wall).
+            eq.set_params(MODELG=2.0, RR=4.0, RA=1.0, RB=1.9)
+            diags = eq.validate()
+
+        wall_diags = [d for d in diags if d.code == EqDiagCode.INCONSISTENT_PAIR]
+        self.assertEqual(wall_diags, [], "healthy wall (RB>=RA) must not also fire")
+        extent_diags = [d for d in diags if d.code == EqDiagCode.OUT_OF_RANGE_AFTER_DEP]
+        self.assertEqual(len(extent_diags), 1)
+        self.assertEqual(extent_diags[0].param, "RR")
+        self.assertIn("R-grid", extent_diags[0].message)
+
+    def test_validate_z_extent_uses_kappa_times_ra(self) -> None:
+        """Z-extent = RKAP*RA (RA basis) must fit ZGMIN/ZGMAX. The true
+        p1c ground-truth box corner (RKAP=1.9, RA=1.0 -> 1.9 < 2.0) is
+        clean under the RA basis; the OLD RB basis (RKAP*RB=1.9*1.2=
+        2.28>2.0) would have falsely rejected it (task-web guards.py
+        commit 6002c5e) — this pins the fix on the Fortran side too."""
+        with Eq() as eq:
+            eq.set_params(MODELG=2.0, RR=3.0, RA=1.0, RKAP=1.9, RB=1.2)
+            diags = eq.validate()
+        self.assertEqual(
+            diags, [], "true p1c box corner must validate cleanly under RA basis")
+
+        with Eq() as eq:
+            # RKAP*RA = 1.5*1.4 = 2.1 > ZGMAX=2.0; RB=2.0 >= RA=1.4 (healthy wall);
+            # R-extent [1.6, 4.4] stays inside [1.5, 4.5] (extent-clean on R).
+            eq.set_params(MODELG=2.0, RR=3.0, RA=1.4, RKAP=1.5, RB=2.0)
+            diags = eq.validate()
+        extent_diags = [d for d in diags if d.code == EqDiagCode.OUT_OF_RANGE_AFTER_DEP]
+        self.assertEqual(len(extent_diags), 1)
+        self.assertEqual(extent_diags[0].param, "RKAP")
+        self.assertIn("Z-extent", extent_diags[0].message)
+
+    def test_validate_modelg3_skips_grid_extent_check(self) -> None:
+        """SCOPING REGRESSION (Task 7 reconciliation): the R/Z-extent
+        check is MODELG==2 only. The ITER01 fixture geometry (RR=6.2,
+        RA=2.0) sits far outside the default R-grid under the RA basis
+        (RR+RA=8.2 >> RGMAX=4.5) yet is a legitimately-clean MODELG=3
+        (EQDSK-load) configuration — see
+        test_init_set_run_get_state_cycle_iter01 in eq_mcp's tests,
+        which exercises this exact geometry end-to-end via eq_run(1).
+        A MODELG-agnostic port of guards.py's check would regress that
+        fixture, so it must stay gated to MODELG==2."""
+        with Eq() as eq:
+            eq.set_params(MODELG=3.0, RR=6.2, RA=2.0, RB=2.1)
+            eq.set_param_str("KNAMEQ", "eqdata.ITER01")
+            diags = eq.validate()
+        extent_diags = [d for d in diags if d.code == EqDiagCode.OUT_OF_RANGE_AFTER_DEP]
+        self.assertEqual(
+            extent_diags, [],
+            "grid-extent check must not fire for MODELG=3 (EQDSK load)")
+
 
 class TestFFIBindings(unittest.TestCase):
     """Smoke tests for the new _ffi exports (no .so needed)."""
