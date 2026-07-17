@@ -45,7 +45,8 @@ MODULE eq_api
                       EQ_MAX_NRM,  EQ_MAX_NTHM, EQ_MAX_NSUM, &
                       eq_diag_entry_c, &
                       EQ_DIAG_PARAM_LEN, EQ_DIAG_MSG_LEN, &
-                      EQ_DIAG_OUT_OF_RANGE, EQ_DIAG_FILE_MISSING
+                      EQ_DIAG_OUT_OF_RANGE, EQ_DIAG_FILE_MISSING, &
+                      EQ_DIAG_INCONSISTENT_PAIR, EQ_DIAG_OUT_OF_RANGE_AFTER_DEP
   USE eq_param_registry, ONLY: eq_param_set, eq_param_set_str
   ! Rename equnit::eq_init / eq_load away from the C-visible eq_init /
   ! eq_run symbols.
@@ -386,21 +387,33 @@ CONTAINS
   !                   NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX/NRVMAX
   !                   vs the eqcom0_mod compile-time maxima).
   !   FILE_MISSING  : MODELG in {3,5,8} requires non-blank KNAMEQ.
+  !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA (the
+  !                   reattributed M0 crash class; MODELG-agnostic).
+  !   OUT_OF_RANGE_AFTER_DEP : plasma extents RR+/-RA, +/-RKAP*RA
+  !                   outside RGMIN/RGMAX x ZGMIN/ZGMAX. MODELG==2
+  !                   only — see the long comment at the check site for
+  !                   why MODELG=3 (EQDSK load) must NOT be covered.
+  !                   Mirrors app/services/optimize/guards.py's
+  !                   eq_cross_checks in task-web (AutoTASK M2-T7).
   !
   ! Future categories (left for follow-up PRs as the validation surface
-  ! grows): INCONSISTENT_PAIR, OUT_OF_RANGE_AFTER_DEP, MISSING_REQUIRED.
+  ! grows): MISSING_REQUIRED.
   !-------------------------------------------------------------------
   FUNCTION eq_api_validate(diag, diag_cap, ndiag) &
            RESULT(ierr) BIND(C, NAME="eq_validate")
     USE eqcom0_mod, ONLY: NRGM, NZGM, NPSM, NSGM, NTGM, NUGM, &
                           NRM, NTHM, NSUM, NRVM
     USE eqcom1_mod, ONLY: NSGMAX, NTGMAX, NUGMAX, NRGMAX, NZGMAX, &
-                          NPSMAX, NRMAX, NTHMAX, NSUMAX, NRVMAX
+                          NPSMAX, NRMAX, NTHMAX, NSUMAX, NRVMAX, &
+                          RGMIN, RGMAX, ZGMIN, ZGMAX
+    USE plcomm, ONLY: rkind, RR, RA, RB, RKAP
     TYPE(eq_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
+    REAL(rkind) :: z_extent
+    CHARACTER(LEN=EQ_DIAG_MSG_LEN) :: msgbuf
 
     IF (.NOT. g_initialized) THEN
        ndiag = 0
@@ -431,6 +444,61 @@ CONTAINS
        IF (LEN_TRIM(KNAMEQ) == 0) THEN
           CALL push_diag("KNAMEQ", EQ_DIAG_FILE_MISSING, &
                "MODELG=3/5/8 requires non-blank KNAMEQ (eqdata file)")
+       END IF
+    END IF
+
+    ! ---- INCONSISTENT_PAIR: the wall must enclose the plasma (RB >=
+    !      RA). MODELG-agnostic: EQAXIS's default (MDLEQF<10) axis
+    !      search box is RR +/- RB / +/-RKAP*RB (eq/eqsub.f90:55-59),
+    !      used by EQCALQ/EQCALV regardless of MODELG, so RB<RA can
+    !      starve that box of the true axis either way. Reattributed
+    !      M0 live-crash class: the crash was the ITER preset (RR=6.2,
+    !      RA=2.0 — see docs/superpowers/plans/2026-05-17-3d-tokamak-
+    !      architecture-wiki.md's "iter" preset) run through MODELG=2
+    !      mode=0 with RB left at the small-tokamak default (1.2)
+    !      instead of an enclosing wall value. Mirrors task-web
+    !      app/services/optimize/guards.py::eq_cross_checks's RB<RA
+    !      branch (gates on its own operands, independent of RR).
+    IF (RB < RA) THEN
+       WRITE(msgbuf, '(A,F0.3,A,F0.3,A)') &
+            "wall radius RB=", RB, " < minor radius RA=", RA, &
+            " (M0 crash class)"
+       CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
+    END IF
+
+    ! ---- OUT_OF_RANGE_AFTER_DEP: plasma extents (RA basis, NOT the
+    !      wall RB — task-web's app/services/optimize/guards.py was
+    !      corrected 2026-07-17 after live probing showed the RB basis
+    !      both false-rejected the p1c ground-truth optimum and didn't
+    !      match the real failure geometry) against the tabulation
+    !      grid RGMIN/RGMAX/ZGMIN/ZGMAX. SCOPED TO MODELG==2 ONLY: this
+    !      box only bounds the analytic-solve/tabulation path —
+    !      MODELG=3 (EQDSK load, eq/eq-eqdsk.f90) reads its own
+    !      rdim/zdim/rmin/zmin straight from the file and never
+    !      consults RGMIN/RGMAX. Proof this gate is required: the
+    !      eq_mcp ITER01 regression fixture (RR=6.2, RA=2.0, MODELG=3;
+    !      python/mcp-servers/eq_mcp/tests/test_server.py::
+    !      test_init_set_run_get_state_cycle_iter01) sits far outside
+    !      this box (RR+RA=8.2 >> RGMAX=4.5) yet is a legitimately-
+    !      clean, currently-tested configuration — validate() must
+    !      keep returning [] for it. A MODELG-agnostic port of
+    !      guards.py's check would regress that fixture; guards.py
+    !      itself has never hit this gap because every task-web-
+    !      registered EQ problem so far is MODELG=2.
+    IF (MODELG == 2) THEN
+       IF (RR - RA < RGMIN .OR. RR + RA > RGMAX) THEN
+          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A,F0.3,A)') &
+               "plasma R-extent [", RR - RA, ", ", RR + RA, &
+               "] outside the solver R-grid [", RGMIN, ", ", RGMAX, "]"
+          CALL push_diag("RR", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+       END IF
+
+       z_extent = RKAP * RA
+       IF (-z_extent < ZGMIN .OR. z_extent > ZGMAX) THEN
+          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A)') &
+               "plasma Z-extent +/-", z_extent, &
+               " outside the solver Z-grid [", ZGMIN, ", ", ZGMAX, "]"
+          CALL push_diag("RKAP", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
        END IF
     END IF
 

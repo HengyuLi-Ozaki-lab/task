@@ -565,6 +565,42 @@ class TestIntegration(unittest.TestCase):
             f"expected FILE_MISSING (code 4) in diagnostics: {diags}",
         )
 
+    def test_validate_m0_crash_preset_emits_nonempty_and_names_r_grid(self) -> None:
+        """M2-T7 decisive regression: the M0-verified crash case (RR=6.2,
+        RA=2.0, default RB=1.2, MODELG=2 default) must now produce a
+        non-empty validate() naming the R-grid (OUT_OF_RANGE_AFTER_DEP,
+        code 3) alongside the wall violation (INCONSISTENT_PAIR, code
+        2: RB=1.2 < RA=2.0 — the reattributed M0 crash class)."""
+        srv.handle_init()
+        srv.handle_set_params({"MODELG": 2, "RR": 6.2, "RA": 2.0})
+        diags = srv.handle_validate()
+        self.assertTrue(diags, "expected non-empty diagnostics for the M0 crash preset")
+        codes = {d["code"] for d in diags}
+        self.assertIn(2, codes, f"expected INCONSISTENT_PAIR (code 2) in {diags}")
+        self.assertIn(3, codes, f"expected OUT_OF_RANGE_AFTER_DEP (code 3) in {diags}")
+        messages = " ".join(d["message"] for d in diags)
+        self.assertIn("R-grid", messages)
+
+    def test_validate_modelg3_iter_geometry_skips_grid_extent_check(self) -> None:
+        """SCOPING REGRESSION: the R/Z-extent check (OUT_OF_RANGE_AFTER_
+        DEP) is MODELG==2 only. The ITER01 fixture geometry used by
+        test_init_set_run_get_state_cycle_iter01 below (RR=6.2, RA=2.0,
+        RB=2.1, MODELG=3) sits far outside the default R-grid under the
+        RA basis (RR+RA=8.2 >> RGMAX=4.5) yet is a legitimately-clean,
+        currently-tested EQDSK-load configuration — a MODELG-agnostic
+        port of task-web's guards.py check would regress that fixture."""
+        srv.handle_init()
+        srv.handle_set_params({
+            "MODELG": 3, "RR": 6.2, "RA": 2.0, "RKAP": 1.7,
+            "RDLT": 0.33, "RB": 2.1, "BB": 5.3, "RIP": 15.0,
+        })
+        srv.handle_set_param_str("KNAMEQ", "eqdata.ITER01")
+        diags = srv.handle_validate()
+        extent_diags = [d for d in diags if d["code"] == 3]
+        self.assertEqual(
+            extent_diags, [],
+            f"grid-extent check (code 3) must not fire for MODELG=3: {diags}")
+
     @unittest.skipUnless(
         (EQDATA_FIXTURE_DIR / "eqdata.ITER01").exists(),
         f"eqdata.ITER01 fixture missing at {EQDATA_FIXTURE_DIR}",
