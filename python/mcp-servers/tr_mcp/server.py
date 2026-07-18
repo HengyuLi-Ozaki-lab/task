@@ -182,6 +182,8 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "CHP":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
     "CK0":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
     "CK1":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
+    "CDH":    {"type": "float", "group": "transport",    "description": "turbulent heat-diffusivity sum weight"},
+    "CNH":    {"type": "float", "group": "transport",    "description": "neoclassical heat-diffusivity sum weight"},
     # --- module switches -------------------------------------------
     "MDLNB":  {"type": "int", "group": "modules", "description": "NBI heating module"},
     "MDLEC":  {"type": "int", "group": "modules", "description": "ECRF heating module"},

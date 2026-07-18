@@ -14,7 +14,7 @@
 !   - plasma scalars/arrays  (NSMAX, PA[i], PZ[i], PN[i], PNS[i], PT[i], PTS[i])
 !   - time evolution         (DT, NTMAX, NTSTEP, EPSLTR, LMAXTR)
 !   - transport switches     (MDLKAI, MDLETA, MDLAD, MDLAVK, CDW[i], CHP,
-!                             CK0, CK1)
+!                             CK0, CK1, CDH, CNH)
 !   - module switches        (MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL,
 !                             MDLJBS, MDLST, MDLNF, MDLUF)
 !
@@ -45,7 +45,7 @@ MODULE tr_param_registry
        NSMAX, PA, PZ, PN, PNS, PT, PTS, &
        RIPS, RIPE, &
        DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, &
-       MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, &
+       MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, CDH, CNH, &
        MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF, &
        MODELG, MDLIMP, NGTSTP, NGRSTP, &
        PROFN1, PROFN2, PNC, &
@@ -130,6 +130,12 @@ CONTAINS
     CASE ("CHP");    CHP   = value
     CASE ("CK0");    CK0   = value
     CASE ("CK1");    CK1   = value
+    ! AutoTASK M3: chi_s = CDH*chi_turb + CNH*chi_NCLASS sum weights
+    ! (trcoef_neoclassical.f90:190-191, ENTRY TRCFDW_AKDW). Variables
+    ! already existed in trcomm_param/trinit with 1.0 (neutral) defaults;
+    ! only the registry CASE entries were missing (p0a_plato M2-T0 finding).
+    CASE ("CDH");    CDH   = value
+    CASE ("CNH");    CNH   = value
     ! --- module switches -------------------------------------------
     CASE ("MDLNB");  MDLNB  = INT(value)
     CASE ("MDLEC");  MDLEC  = INT(value)

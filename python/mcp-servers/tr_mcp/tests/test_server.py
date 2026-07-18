@@ -434,5 +434,18 @@ class TestHeatingPowerRegistry(unittest.TestCase):
                 self.assertEqual(entry["type"], "float")
 
 
+class TestNeoclassicalTurbulentWeightRegistry(unittest.TestCase):
+    """CDH/CNH (chi_s = CDH*chi_turb + CNH*chi_NCLASS sum weights) must be
+    registered (AutoTASK M3, p0a_plato M2-T0 finding: these existed in
+    trcomm/trinit with 1.0 defaults but had no registry CASE entry)."""
+
+    def test_cdh_cnh_present(self):
+        for name in ("CDH", "CNH"):
+            with self.subTest(name=name):
+                entry = srv.PARAMETER_REGISTRY.get(name)
+                self.assertIsNotNone(entry, f"{name} missing from PARAMETER_REGISTRY")
+                self.assertEqual(entry["type"], "float")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
