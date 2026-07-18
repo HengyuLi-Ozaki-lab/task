@@ -393,6 +393,15 @@ class Eq:
         Older builds without ``eq_validate`` raise :class:`EqlibError`
         (rebuild via ``make -C eq libeqapi.so``). The method does not
         modify any eq state.
+
+        Geometry-diagnostic caveat: the RB/RA/RR/RKAP checks reflect
+        the PRE-RUN values you have set. For file-load MODELG
+        (3/5/8/9/25) the loader may overwrite them during ``run``
+        (EQRTSK reads RA/RKAP/RDLT/RB from the TASK-native file;
+        EQDSKR reconstructs RB = 1.1*RA), and EQCALQ's RB=RA clamp
+        remains the runtime backstop for a wall inside the plasma —
+        so a pre-run wall diagnostic for a file-load configuration is
+        advisory rather than a guaranteed run failure.
         """
         if self._closed:
             raise EqlibError("validate on closed Eq")

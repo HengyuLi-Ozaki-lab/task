@@ -153,12 +153,27 @@ class TestEqValidate(unittest.TestCase):
         self.assertIn(int(EqDiagCode.INCONSISTENT_PAIR), codes)
 
     def test_validate_r_extent_uses_ra_not_rb(self) -> None:
-        """R-extent basis is RA (plasma minor radius), NOT RB (wall): a
-        healthy wall (RB >= RA) that still puts RR+/-RA outside the
-        grid must independently trip OUT_OF_RANGE_AFTER_DEP naming RR,
-        with NO wall violation reported alongside it."""
+        """R-extent basis is RA (plasma minor radius), NOT RB (wall).
+
+        Discriminating case (review follow-up — the original operands
+        RR=4.0/RA=1.0/RB=1.9 fired under BOTH bases, so the test could
+        not catch an RB-basis regression): RR=4.0, RA=0.4, RB=0.6 is
+        CLEAN under the RA basis (extent [3.6, 4.4] inside [1.5, 4.5])
+        but an RB-basis implementation would fire ([3.4, 4.6] -> 4.6 >
+        RGMAX=4.5). Cleanness here is what pins the RA basis. Wall is
+        healthy (RB=0.6 >= RA=0.4) and Z-extent 1.0*0.4 is tiny, so
+        the whole diagnostics list must be empty."""
         with Eq() as eq:
-            # RR+RA = 4.0+1.0 = 5.0 > RGMAX=4.5; RB=1.9 >= RA=1.0 (healthy wall).
+            eq.set_params(MODELG=2.0, RR=4.0, RA=0.4, RB=0.6)
+            diags = eq.validate()
+        self.assertEqual(
+            diags, [],
+            "RA-basis clean case fired — extent check is using the wall RB?")
+
+        # Firing direction (kept from the original test): a healthy wall
+        # (RB >= RA) with RR+RA = 5.0 > RGMAX must trip exactly one
+        # OUT_OF_RANGE_AFTER_DEP naming RR, with NO wall diag alongside.
+        with Eq() as eq:
             eq.set_params(MODELG=2.0, RR=4.0, RA=1.0, RB=1.9)
             diags = eq.validate()
 
@@ -168,6 +183,25 @@ class TestEqValidate(unittest.TestCase):
         self.assertEqual(len(extent_diags), 1)
         self.assertEqual(extent_diags[0].param, "RR")
         self.assertIn("R-grid", extent_diags[0].message)
+
+    def test_validate_survives_unprintable_extreme_geometry(self) -> None:
+        """IOSTAT hardening pin (review follow-up): RR=1e30 makes the
+        R-extent diagnostic's F0.3 rendering exceed the CHARACTER(128)
+        msgbuf — an unguarded internal WRITE hits gfortran's "End of
+        record" and ABORTS the whole process (library-reachable abort
+        inside the function whose purpose is returning diagnostics
+        instead of crashing; reproduced live pre-fix). With IOSTAT
+        guards, validate() must SURVIVE and still return a non-empty
+        list naming RR via the static fallback message."""
+        with Eq() as eq:
+            eq.set_params(MODELG=2.0, RR=1.0e30, RA=1.0)
+            diags = eq.validate()      # pre-fix: process abort (exit 2)
+
+        self.assertTrue(diags, "expected diagnostics for RR=1e30")
+        rr_diags = [d for d in diags if d.param == "RR"]
+        self.assertEqual(len(rr_diags), 1)
+        self.assertEqual(rr_diags[0].code, EqDiagCode.OUT_OF_RANGE_AFTER_DEP)
+        self.assertIn("R-grid", rr_diags[0].message)
 
     def test_validate_z_extent_uses_kappa_times_ra(self) -> None:
         """Z-extent = RKAP*RA (RA basis) must fit ZGMIN/ZGMAX. The true
@@ -196,11 +230,12 @@ class TestEqValidate(unittest.TestCase):
         check is MODELG==2 only. The ITER01 fixture geometry (RR=6.2,
         RA=2.0) sits far outside the default R-grid under the RA basis
         (RR+RA=8.2 >> RGMAX=4.5) yet is a legitimately-clean MODELG=3
-        (EQDSK-load) configuration — see
-        test_init_set_run_get_state_cycle_iter01 in eq_mcp's tests,
-        which exercises this exact geometry end-to-end via eq_run(1).
-        A MODELG-agnostic port of guards.py's check would regress that
-        fixture, so it must stay gated to MODELG==2."""
+        (TASK-native EQRTSK load — eq/eqfile.f90's EQ_READ dispatch,
+        NOT the EQDSK reader, which serves MODELG=5/25) configuration
+        — see test_init_set_run_get_state_cycle_iter01 in eq_mcp's
+        tests, which exercises this exact geometry end-to-end via
+        eq_run(1). A MODELG-agnostic port of guards.py's check would
+        regress that fixture, so it must stay gated to MODELG==2."""
         with Eq() as eq:
             eq.set_params(MODELG=3.0, RR=6.2, RA=2.0, RB=2.1)
             eq.set_param_str("KNAMEQ", "eqdata.ITER01")

@@ -391,10 +391,17 @@ CONTAINS
   !                   reattributed M0 crash class; MODELG-agnostic).
   !   OUT_OF_RANGE_AFTER_DEP : plasma extents RR+/-RA, +/-RKAP*RA
   !                   outside RGMIN/RGMAX x ZGMIN/ZGMAX. MODELG==2
-  !                   only — see the long comment at the check site for
-  !                   why MODELG=3 (EQDSK load) must NOT be covered.
+  !                   only — see the long comment at the check site
+  !                   for the loader dispatch that motivates the gate.
   !                   Mirrors app/services/optimize/guards.py's
   !                   eq_cross_checks in task-web (AutoTASK M2-T7).
+  !
+  ! Geometry-diagnostic caveat: the RB/RA/RR/RKAP checks reflect the
+  ! PRE-RUN values. For file-load MODELG (3/5/8/9/25) the loader may
+  ! overwrite them at run time (EQRTSK reads RA/RKAP/RDLT/RB from the
+  ! TASK-native file; EQDSKR reconstructs RB = 1.1*RA —
+  ! eq-eqdsk.f90:100), and EQCALQ's RB=RA clamp (eqcalq.f90:54-55)
+  ! remains the runtime backstop for a wall inside the plasma.
   !
   ! Future categories (left for follow-up PRs as the validation surface
   ! grows): MISSING_REQUIRED.
@@ -412,6 +419,7 @@ CONTAINS
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
+    INTEGER :: ios
     REAL(rkind) :: z_extent
     CHARACTER(LEN=EQ_DIAG_MSG_LEN) :: msgbuf
 
@@ -460,9 +468,19 @@ CONTAINS
     !      app/services/optimize/guards.py::eq_cross_checks's RB<RA
     !      branch (gates on its own operands, independent of RR).
     IF (RB < RA) THEN
-       WRITE(msgbuf, '(A,F0.3,A,F0.3,A)') &
+       ! IOSTAT guard (all three diagnostic WRITEs): RR/RA/RB/RKAP are
+       ! externally settable, and an extreme value (e.g. RR=1e30,
+       ! live-reproduced) makes the F0.3 rendering overflow the
+       ! CHARACTER(128) internal file -> gfortran "End of record"
+       ! ABORTS the process without IOSTAT — a library-reachable abort
+       ! inside the function whose whole purpose is returning
+       ! diagnostics instead of crashing. On overflow substitute a
+       ! static message (kept LEN-safe and still naming the check).
+       WRITE(msgbuf, '(A,F0.3,A,F0.3,A)', IOSTAT=ios) &
             "wall radius RB=", RB, " < minor radius RA=", RA, &
             " (M0 crash class)"
+       IF (ios /= 0) msgbuf = &
+            "wall radius RB < minor radius RA (M0 crash class; values unprintable)"
        CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
     END IF
 
@@ -471,12 +489,18 @@ CONTAINS
     !      corrected 2026-07-17 after live probing showed the RB basis
     !      both false-rejected the p1c ground-truth optimum and didn't
     !      match the real failure geometry) against the tabulation
-    !      grid RGMIN/RGMAX/ZGMIN/ZGMAX. SCOPED TO MODELG==2 ONLY: this
-    !      box only bounds the analytic-solve/tabulation path —
-    !      MODELG=3 (EQDSK load, eq/eq-eqdsk.f90) reads its own
-    !      rdim/zdim/rmin/zmin straight from the file and never
-    !      consults RGMIN/RGMAX. Proof this gate is required: the
-    !      eq_mcp ITER01 regression fixture (RR=6.2, RA=2.0, MODELG=3;
+    !      grid RGMIN/RGMAX/ZGMIN/ZGMAX. SCOPED TO MODELG==2 ONLY:
+    !      this box only bounds the analytic-solve/tabulation path.
+    !      The file-load family never consults RGMIN/RGMAX — per the
+    !      EQ_READ dispatch (eq/eqfile.f90:108-119): MODELG=3/9 ->
+    !      EQRTSK (eqfile.f90; TASK-native file carrying its own RG/ZG
+    !      grids AND RA/RKAP/RDLT/RB), MODELG=5/25 -> EQDSKR
+    !      (eq-eqdsk.f90; grid rebuilt from the file's rdim/zdim),
+    !      MODELG=8 -> EQJAEAR, MODELG=15 -> equread::eqdsk. MODELG=0/1
+    !      share EQCALC's analytic path (eqcalc.f90 has no MODELG
+    !      branching) but are excluded conservatively pending live
+    !      probing. Proof the gate is required: the eq_mcp ITER01
+    !      regression fixture (RR=6.2, RA=2.0, MODELG=3;
     !      python/mcp-servers/eq_mcp/tests/test_server.py::
     !      test_init_set_run_get_state_cycle_iter01) sits far outside
     !      this box (RR+RA=8.2 >> RGMAX=4.5) yet is a legitimately-
@@ -487,17 +511,21 @@ CONTAINS
     !      registered EQ problem so far is MODELG=2.
     IF (MODELG == 2) THEN
        IF (RR - RA < RGMIN .OR. RR + RA > RGMAX) THEN
-          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A,F0.3,A)') &
+          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A,F0.3,A)', IOSTAT=ios) &
                "plasma R-extent [", RR - RA, ", ", RR + RA, &
                "] outside the solver R-grid [", RGMIN, ", ", RGMAX, "]"
+          IF (ios /= 0) msgbuf = &
+               "plasma R-extent outside the solver R-grid (values unprintable)"
           CALL push_diag("RR", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
        END IF
 
        z_extent = RKAP * RA
        IF (-z_extent < ZGMIN .OR. z_extent > ZGMAX) THEN
-          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A)') &
+          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A)', IOSTAT=ios) &
                "plasma Z-extent +/-", z_extent, &
                " outside the solver Z-grid [", ZGMIN, ", ", ZGMAX, "]"
+          IF (ios /= 0) msgbuf = &
+               "plasma Z-extent outside the solver Z-grid (values unprintable)"
           CALL push_diag("RKAP", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
        END IF
     END IF

@@ -587,8 +587,10 @@ class TestIntegration(unittest.TestCase):
         test_init_set_run_get_state_cycle_iter01 below (RR=6.2, RA=2.0,
         RB=2.1, MODELG=3) sits far outside the default R-grid under the
         RA basis (RR+RA=8.2 >> RGMAX=4.5) yet is a legitimately-clean,
-        currently-tested EQDSK-load configuration — a MODELG-agnostic
-        port of task-web's guards.py check would regress that fixture."""
+        currently-tested TASK-native-load configuration (MODELG=3 ->
+        EQRTSK per eq/eqfile.f90's EQ_READ dispatch; the EQDSK reader
+        serves MODELG=5/25) — a MODELG-agnostic port of task-web's
+        guards.py check would regress that fixture."""
         srv.handle_init()
         srv.handle_set_params({
             "MODELG": 3, "RR": 6.2, "RA": 2.0, "RKAP": 1.7,
