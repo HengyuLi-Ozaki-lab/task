@@ -504,7 +504,7 @@ CONTAINS
   FUNCTION eq_api_save() RESULT(ierr) BIND(C, NAME="eq_save")
     INTEGER(C_INT) :: ierr
     LOGICAL :: file_exists
-    INTEGER :: file_size
+    INTEGER :: file_size, ierr_save
     IF (.NOT. g_initialized) THEN
        ierr = EQ_ERR_NOT_INIT
        RETURN
@@ -518,7 +518,12 @@ CONTAINS
        ierr = EQ_ERR_INVALID
        RETURN
     END IF
-    CALL EQSAVE
+    CALL EQSAVE(ierr_save)
+    IF (ierr_save /= 0) THEN
+       ierr = EQ_ERR_CALC_FAILED
+       RETURN
+    END IF
+!   Belt and braces: the open succeeded, so also confirm an artefact exists.
     INQUIRE(FILE=TRIM(KNAMEQ), EXIST=file_exists, SIZE=file_size)
     IF ((.NOT. file_exists) .OR. (file_size <= 0)) THEN
        ierr = EQ_ERR_CALC_FAILED

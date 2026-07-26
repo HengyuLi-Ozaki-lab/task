@@ -96,7 +96,14 @@ class TestFinalizeResetsBackend(unittest.TestCase):
         )
 
     def test_finalize_is_idempotent(self):
-        """A second finalize must not raise or crash (double-DEALLOCATE guard)."""
+        """A second finalize must not raise.
+
+        Note this exercises the *Python* short-circuit: ``_ServerState.close()``
+        sets ``self.tr = None``, so the second call returns without re-entering
+        Fortran. The Fortran-level double-DEALLOCATE guard
+        (``tr/trcomm.f90``) is what makes that safe if a caller does reach it
+        twice; it is measured separately, not by this test.
+        """
         result = _run(
             """
             srv.handle_init()

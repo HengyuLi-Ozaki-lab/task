@@ -38,7 +38,8 @@ Fortran WRITE(6,...) targets OS fd 1, which is also the JSON-RPC write
 pipe to the MCP client parent.  Any Fortran diagnostic line corrupts the
 pipe and causes "Connection closed" on the client side.
 
-Fix: at startup (BEFORE any mcp/logging import touches sys.stdout):
+Fix: installed by main() immediately before the stdio server starts
+(NOT at import time -- see #227 item 1):
   1. dup fd 1 (JSON-RPC write pipe) to a fresh fd; redirect fd 1 → stderr
      so Fortran WRITE(6,...) goes to the subprocess stderr (backend log).
   2. Rebuild sys.stdout around the saved fd so the MCP framework's stdio
@@ -52,8 +53,10 @@ NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the Fortran
 library uses stdin internally; redirecting it increases crash rates.
 
 The _redirect_fortran_stdout_to_stderr context manager below is kept as
-belt-and-suspenders but is effectively a no-op: dup2(2,1) when fd 1 is
-already fd 2 is harmless, and the flushes are harmless too.
+belt-and-suspenders. Once main() has installed the isolation, dup2(2,1)
+when fd 1 is already fd 2 is harmless. For an in-process importer that never
+calls main(), it is NOT a no-op -- it is the only thing keeping Fortran
+WRITE(6) off the caller's stdout, which is why it stays.
 """
 from __future__ import annotations
 
@@ -556,9 +559,9 @@ except Exception:  # pragma: no cover — libgfortran not found; fall back to C 
 def _redirect_fortran_stdout_to_stderr():
     """Belt-and-suspenders: ensure fd 1 points at stderr around Fortran calls.
 
-    With the permanent fd-isolation applied at module load time (see the
-    module docstring), fd 1 already points at stderr for the lifetime of the
-    process.  This context manager is now effectively a no-op:
+    When main() has installed the fd-isolation, fd 1 already points at
+    stderr for the lifetime of the process and this context manager is
+    effectively a no-op:
     dup2(2, 1) when fd 1 is already fd 2 is harmless, and the flushes are
     harmless too.
 

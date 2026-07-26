@@ -764,6 +764,16 @@ jobs:
           make -C pl libpl.a
           make -C eq libeq.a
           make -C dp libdp.a
+          # trx/ and trm/ compile against trlib's .mod files (trcdbm,
+          # cytran_mod, modmmm95, modmmm7_1, mixed_Bohm_gyro_Bohm) via
+          # `-I../trlib/$(MOD)`, and neither libtr2.a target bootstraps it.
+          # Only trlib/mod/dummy is tracked, so a fresh clone has none of them.
+          make -C trlib libtrm.a
+          # equ/: `libequ.a: $(OBJS)` covers SRCS only, while equcomm.f90 (which
+          # defines aaa_mod, USEd by most of SRCS) lives in the separate SRCC/OBJC
+          # variable. Building the library target alone therefore cannot succeed
+          # from clean -- equcomm.o has to come first.
+          make -C equ obj/equcomm.o
 
       - name: Compile the uncovered modules
         # Library targets only — see the job comment.

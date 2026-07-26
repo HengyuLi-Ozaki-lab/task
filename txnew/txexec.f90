@@ -234,8 +234,12 @@ contains
              end if
 #endif
              call TXSOLV_BLOCKTRI(BL, BX, NQMAX, NRMAX, ierr_la)
-             if(ierr_la /= 0) then
-                ! Fallback to the band solver on ANY block-tridiagonal failure.
+             if(ierr_la == -2 .or. ierr_la > 0) then
+                ! Fallback to the band solver on the structural case (-2) and on
+                ! any LAPACK factorization failure (always positive, see below).
+                ! IER=-1 (BL/BX too small, txexec.f90:1092) is deliberately NOT
+                ! routed here: the fallback would call LAPACK_DGBSV with the very
+                ! dimensions just found unsatisfied. It keeps the loud error path.
                 ! -2 means BL has non-zero far blocks (the original trigger).
                 ! Other non-zero values are LAPACK factorization failures mapped
                 ! as IER = 200000/220000 + 1000*k + info -- always POSITIVE, so
