@@ -307,8 +307,8 @@ C
                END IF
                FACTN=(1.D0-FEDGE)*(1.D0-RHOL**PROFN1(1))**PROFN2(1)
      &              +FEDGE
-               PT=(PTPR(1)+2*PTPP(1))/3.D0
-               FEDGE=PTS(1)/PT(1)
+               PTAV=(PTPR(1)+2*PTPP(1))/3.D0
+               FEDGE=PTS(1)/PTAV
                FACTT=(1.D0-FEDGE)*(1.D0-RHOL**PROFT1(1))**PROFT2(1)
      &              +FEDGE
                PPS(NR)=P0*FACTN*FACTT
