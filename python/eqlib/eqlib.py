@@ -19,6 +19,7 @@ Usage::
 from __future__ import annotations
 
 import ctypes
+import os
 import weakref
 from dataclasses import dataclass
 from enum import IntEnum
@@ -301,12 +302,15 @@ class Eq:
         readable by TR via ``set_param_str("KNAMEQ", path)`` plus
         ``MODELG=3``.
 
-        Note: ``eq_save`` (and the underlying Fortran ``EQSAVE``) may
-        silently return ``EQ_OK`` even when the file was not written
-        (e.g. blank KNAMEQ, missing directory, permission denied) — the
-        Fortran wrapper swallows FWOPEN failures. This method raises on
-        non-zero return codes, but callers should verify file existence
-        after the call if a silent failure is a concern.
+        Raises :class:`EqlibError` if no non-empty file results.
+
+        The underlying Fortran ``EQSAVE`` has no error out-argument and
+        simply returns on an ``FWOPEN`` failure (blank KNAMEQ, missing
+        directory, permission denied). ``eq_api_save`` therefore verifies
+        the artefact and maps a missing/empty file to a non-zero code
+        (#227 item 3). The post-call check below repeats that at the
+        Python layer, so a stale ``libeqapi.so`` built before that fix
+        still cannot report a success that did not happen.
         """
         if self._closed:
             raise EqlibError("save on closed Eq")
@@ -320,6 +324,13 @@ class Eq:
         self.set_param_str("KNAMEQ", path)
         rc = fn()
         raise_for_rc("eq_save", rc)
+        # Defense in depth: eq_api_save verifies this too, but an older
+        # libeqapi.so returns EQ_OK unconditionally (#227 item 3).
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            raise EqlibError(
+                f"eq_save reported success but no non-empty file exists at "
+                f"{path!r} (check the directory exists and is writable)"
+            )
 
     def get_state(self) -> EqState:
         """Copy the current EQ state into an :class:`EqState`."""
