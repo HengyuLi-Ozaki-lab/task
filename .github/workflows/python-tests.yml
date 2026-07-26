@@ -171,10 +171,24 @@ jobs:
         # checkout is $GITHUB_WORKSPACE/../<repo>, so `../task` does not resolve
         # and the bpsd build dies: "No rule to make target '../task/make.header'".
         # Symlink ../task -> the checkout so the relative include is repo-name
-        # agnostic (no-op when the repo is already named task).
+        # agnostic. Guarded below: `ln` does not no-op when the repo is
+        # already named `task` (see the inline note).
         run: |
-          ln -sfn "$GITHUB_WORKSPACE" "$(dirname "$GITHUB_WORKSPACE")/task"
-          ls -ld "$(dirname "$GITHUB_WORKSPACE")/task"
+          set -e
+          link="$(dirname "$GITHUB_WORKSPACE")/task"
+          if [ "$link" = "$GITHUB_WORKSPACE" ]; then
+            # Repo is literally named `task`: ../task already resolves to the
+            # checkout, so there is nothing to do. Without this guard `ln -sfn`
+            # does NOT no-op -- the destination is a real directory, so ln falls
+            # back to link-into-directory mode and drops a self-referential
+            # `task -> .` symlink INSIDE the checkout (verified on GNU coreutils
+            # 8.32 and on BSD ln; both exit 0). Harmless today, but a symlink
+            # loop for any future recursive find/tar/artifact-glob step.
+            echo "checkout is already .../task - no symlink needed"
+          else
+            ln -sfn "$GITHUB_WORKSPACE" "$link"
+            ls -ld "$link"
+          fi
 
       - name: Build PIC support libraries (bpsd, lib, mtxp, pl, eq, dp, ob)
         # Pre-build all shared support libraries so each module Makefile
@@ -659,3 +673,113 @@ jobs:
         run: |
           python -m pytest python/totlib/tests/test_mono_pipeline_coupling.py \
                  --forked --timeout=120 --timeout-method=signal -v
+
+  uncovered-modules-build:
+    # Compile-only coverage for the modules the pytest job does NOT build.
+    #
+    # The pytest job builds tr/fp/ti/wr/wrx/eq/tot; `make -C tot libs` adds
+    # pl/dp/wmx/ob/adf11/adpost. That leaves equ/ trx/ txnew/ wf2dt/ wim/ wm/
+    # trm/ wmf/ wmfn/ with NO CI coverage at all — and every one of them is
+    # substantially touched by the bpsi merge. In PR #226 that gap let a batch
+    # of hard compile/link breakages (a bare PT added to plcomm_parm colliding
+    # with local PTs, pl_view moving plparm->plview, raw DGETRF/DGETRS with no
+    # LAPACK shim) reach human review instead of being caught by the pipeline.
+    #
+    # Scope: BUILD ONLY, and library targets rather than the standalone
+    # binaries — the binaries pull in graphics (gsaf) and MPI link paths that
+    # this headless runner deliberately does not provide. Compiling every
+    # source in these directories is what catches the defect class above.
+    #
+    # NOT included, because they do not build on `develop` either (verified
+    # byte-identical there, so they are pre-existing rather than merge
+    # regressions — adding them would make this job red on day one):
+    #   fpx    — fpcomm.f90 `IF(ALLOCATED(SAVPOS))` where SAVPOS is not
+    #            declared ALLOCATABLE in that scope
+    #   wmseki — 'pl_wmxprf'/'wmspl_prof' not found in module plprof
+    #   dpseki — links only against the MPI mtxp variant
+    # Add them here as they are fixed.
+    name: build modules not covered by pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Fortran/C build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gfortran gcc make
+          gfortran --version | head -1
+
+      - name: Clone BPSD (patched fork k-yoshimi/bpsd@develop)
+        run: |
+          set -e
+          git clone --depth 1 --branch develop \
+            https://github.com/k-yoshimi/bpsd.git "$GITHUB_WORKSPACE/../bpsd"
+          ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
+
+      - name: Provision mtxp/make.mtxp from nompi template
+        run: cp mtxp/make.mtxp.nompi mtxp/make.mtxp
+
+      - name: Provision make.header for Linux gfortran (no graphics)
+        # KEEP IN SYNC with the pytest and mono-build jobs' identically-named
+        # steps. Same caveat as there: a flag that drifts in one heredoc and
+        # not the others means CI validates a different compiler-flag shape
+        # than the artifacts we ship.
+        run: |
+          cat > make.header <<'HEADER_EOF'
+          ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
+          LAPACK = nolapack.f
+          LIBLA =
+          MODLA95 =
+          MDSPLUS = nomdsplus.f
+          MDSLIB =
+          MF77 = mpif77
+          MF90 = mpif90
+          MF95 = mpif90
+          MFC  = $(MF90)
+
+          ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
+          GFLIBS=
+          OFLAGS = -g -O3 -m64 -std=legacy
+          DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
+          FCFIXED = gfortran -ffixed-form
+          FCFREE = gfortran -ffree-form
+          MOD = mod
+          MODDIR = -Jmod
+          LD=ld
+          LDFLAGS=-r -o
+          FPP=
+          HEADER_EOF
+          head -10 make.header
+
+      - name: Build support libraries
+        # Non-PIC counterparts of the pytest job's PIC support step; these
+        # provide the .mod files the uncovered modules compile against.
+        run: |
+          set -e
+          make -C "$GITHUB_WORKSPACE/../bpsd" libbpsd.a
+          make -C lib libtask.a libgrf.a libmds.a
+          make -C mtxp libmtxnompi.o libmtxbnd.o
+          make -C pl libpl.a
+          make -C eq libeq.a
+          make -C dp libdp.a
+
+      - name: Compile the uncovered modules
+        # Library targets only — see the job comment.
+        run: |
+          set -e
+          fail=0
+          for spec in equ:libequ.a trx:libtr2.a txnew:libtx3.a wf2dt:libwf.a \
+                      wim:libwim.a trm:libtr2.a wm:libwm.a wmf:libwm.a wmfn:libwm.a; do
+            dir="${spec%%:*}"; target="${spec#*:}"
+            echo "::group::make -C $dir $target"
+            if make -C "$dir" "$target"; then
+              echo "OK   $dir/$target"
+            else
+              echo "::error title=$dir failed to build::make -C $dir $target"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$fail"

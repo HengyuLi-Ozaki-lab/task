@@ -125,10 +125,24 @@ jobs:
         # named `task`. On a differently-named repo (the task-merge sandbox) the
         # checkout is $GITHUB_WORKSPACE/../<repo>, so `../task` does not resolve
         # and the bpsd build dies "No rule to make target '../task/make.header'".
-        # Symlink ../task -> the checkout (no-op when the repo is already `task`).
+        # Symlink ../task -> the checkout. Guarded: `ln` does not no-op when
+        # the repo is already named `task` (see the inline note).
         run: |
-          ln -sfn "$GITHUB_WORKSPACE" "$(dirname "$GITHUB_WORKSPACE")/task"
-          ls -ld "$(dirname "$GITHUB_WORKSPACE")/task"
+          set -e
+          link="$(dirname "$GITHUB_WORKSPACE")/task"
+          if [ "$link" = "$GITHUB_WORKSPACE" ]; then
+            # Repo is literally named `task`: ../task already resolves to the
+            # checkout, so there is nothing to do. Without this guard `ln -sfn`
+            # does NOT no-op -- the destination is a real directory, so ln falls
+            # back to link-into-directory mode and drops a self-referential
+            # `task -> .` symlink INSIDE the checkout (verified on GNU coreutils
+            # 8.32 and on BSD ln; both exit 0). Harmless today, but a symlink
+            # loop for any future recursive find/tar/artifact-glob step.
+            echo "checkout is already .../task - no symlink needed"
+          else
+            ln -sfn "$GITHUB_WORKSPACE" "$link"
+            ls -ld "$link"
+          fi
 
       - name: Build the dependency chain (canonical `tot libs` topology)
         shell: bash
