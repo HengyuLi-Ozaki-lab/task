@@ -154,11 +154,11 @@ CONTAINS
        DO i=1,3
           node=ndelm(i,nelm)
           xa(i)=gdclip(rnode(node))
-          ya(i)=gdclip(rnode(node))
+          ya(i)=gdclip(znode(node))
        END DO
        CALL rgbf_a(pabs(ns,nelm)/fmax,rgb)
        CALL set_rgbd(rgb)
-       CALL poly2D(xa,ya,4)
+       CALL poly2D(xa,ya,3)
     END DO
     CALL grd2d_frame_end
     RETURN

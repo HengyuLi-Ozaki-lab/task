@@ -128,7 +128,7 @@ CONTAINS
     NS_C=0
     NS_Fe=0
     
-    DO NS=1,MAX(NSMAX,4)
+    DO NS=1,NSMAX
        NPM=NINT(PA(NS))
        SELECT CASE(NPA(NS))
        CASE(0)

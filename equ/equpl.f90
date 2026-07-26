@@ -89,6 +89,7 @@
 
 !----- adjust pressure profile -----
 
+      plasmaf%nrmax=0
       call bpsd_get_plasmaf(plasmaf,ierr)
       nt=plasmaf%nrmax
       ntm=nt-1
