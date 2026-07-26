@@ -605,28 +605,28 @@ def handle_get_state() -> Dict[str, Any]:
 
 
 def handle_finalize() -> str:
-    """Skip tr_finalize (SIGABRT-prone in libtrapi.so) — process exits cleanly.
+    """Finalize the TR backend, mirroring ``eq_mcp.server.handle_finalize``.
 
-    tr_finalize() crashes with SIGABRT ~40% of the time on this build of
-    libtrapi.so due to a heap-corruption bug in the Fortran cleanup path.
-    Since the MCP server process exits immediately after finalize (see
-    main() → os._exit(0)), calling tr_finalize is unnecessary: the OS will
-    reclaim all memory and file descriptors on process exit.
+    #227 item 2: this used to mark the :class:`Trlib` handle closed *without*
+    calling ``tr_finalize``, as a workaround for a SIGABRT (~40% of calls) in
+    the Fortran cleanup path.  That left ``g_initialized`` set in
+    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (tr_api.f90:77 --
+    "already initialized, just return OK") a subsequent ``init`` became a
+    no-op that did **not** restore defaults.  It also disagreed with
+    ``handle_run_and_get_state``, which needs a real finalize for its
+    fresh-init contract and therefore kept calling the very path this one
+    avoided.
 
-    We mark the Trlib handle as closed without calling tr_finalize so that
-    __del__ doesn't retry the call at process-exit time.
+    The underlying crash was a double ``DEALLOCATE`` and is fixed on this tree:
+    ``DEALLOCATE_TRCOMM`` now returns early when nothing is allocated
+    (tr/trcomm.f90).  Measured on the merged tree, gfortran-15/macOS:
+    init+close 40/40 clean, init+run+close 40/40 clean, and an explicit double
+    ``tr_finalize`` 30/30 clean (the second call returns TR_OK via the
+    not-initialized guard).  So both lifecycle paths now use the honest one.
     """
     try:
-        if STATE.tr is not None and not STATE.tr.closed:
-            # Mark closed without calling tr_finalize to avoid SIGABRT.
-            # Accessing the private _closed attribute is intentional here;
-            # the MCP server is the only caller in this scenario.
-            STATE.tr._closed = True  # type: ignore[attr-defined]
-            try:
-                STATE.tr._release_live_instance()  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        STATE.tr = None
+        with _redirect_fortran_stdout_to_stderr():
+            STATE.close()
         return "tr library finalized"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
