@@ -60,29 +60,44 @@ from __future__ import annotations
 import os as _os
 import sys as _sys
 
-# Skip the redirect dance for --print-tools / --help / similar one-shot
-# modes that print to the terminal.
-_ONESHOT_FLAGS = {"--print-tools", "--help", "-h", "--version"}
-_is_oneshot = any(a in _ONESHOT_FLAGS for a in _sys.argv[1:])
+# ---------- fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC) ----------
+# fd 1 originally points at the parent's JSON-RPC write pipe. Fortran
+# WRITE(6,...) also targets fd 1, corrupting the pipe. We dup the pipe
+# to a fresh fd and redirect fd 1 → stderr so Fortran writes go to the
+# subprocess stderr (visible in backend log; harmless to JSON-RPC).
+#
+# The MCP framework writes via sys.stdout, so we rebuild sys.stdout to
+# write to the saved (original-pipe) fd. Line buffering keeps JSON-RPC
+# records flushing per-message.
+#
+# NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the
+# Fortran library uses stdin internally; redirecting it increases crash
+# rates (~20% → ~50%).
+#
+# #227 item 1: this MUST NOT run at import time. Importing this module --
+# pytest collection, an embedding application, or a bare
+# `python -c "import eq_mcp.server"` -- previously mutated the *host*
+# process's fd 1 and replaced its sys.stdout. It is now installed
+# explicitly by main(), i.e. only when this module actually runs as the
+# stdio server.
+_FD_ISOLATION_INSTALLED = False
+_mcp_pipe_fd = None
 
-if not _is_oneshot:
-    # ---------- fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC) ----------
-    # fd 1 originally points at the parent's JSON-RPC write pipe. Fortran
-    # WRITE(6,...) also targets fd 1, corrupting the pipe. We dup the pipe
-    # to a fresh fd and redirect fd 1 → stderr so Fortran writes go to the
-    # subprocess stderr (visible in backend log; harmless to JSON-RPC).
-    #
-    # The MCP framework writes via sys.stdout, so we rebuild sys.stdout to
-    # write to the saved (original-pipe) fd. Line buffering keeps JSON-RPC
-    # records flushing per-message.
-    #
-    # NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the
-    # Fortran library uses stdin internally; redirecting it increases crash
-    # rates (~20% → ~50%).
+
+def _install_fd_isolation() -> None:
+    """Redirect fd 1 to stderr and rebuild sys.stdout on the saved pipe fd.
+
+    Idempotent. Called from main() immediately before the stdio server
+    starts; never at import time.
+    """
+    global _FD_ISOLATION_INSTALLED, _mcp_pipe_fd
+    if _FD_ISOLATION_INSTALLED:
+        return
     _mcp_pipe_fd = _os.dup(1)
     _os.dup2(2, 1)
     _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
-    # ----------------------------------------------------------------------
+    _FD_ISOLATION_INSTALLED = True
+# ----------------------------------------------------------------------
 
 import contextlib
 import ctypes
@@ -532,8 +547,9 @@ except Exception:  # pragma: no cover — libgfortran not found; fall back to C 
 # libgfortran/libeqapi.so triggers SIGABRT ~10-40% of the time due to an
 # internal heap-corruption bug in the gfortran I/O library triggered by the
 # flush sequence.  Disable it when the permanent redirect is active.
-if not _is_oneshot:
-    _HAS_GFORTRAN_FLUSH = False
+# (Decided at call time via _FD_ISOLATION_INSTALLED -- see
+# _redirect_fortran_stdout_to_stderr below -- because the redirect is no
+# longer installed at import time.)
 
 
 @contextlib.contextmanager
@@ -562,7 +578,7 @@ def _redirect_fortran_stdout_to_stderr():
         os.dup2(sys.stderr.fileno(), 1)
         yield
         # 1. Flush Fortran's internal I/O buffer for unit 6.
-        if _HAS_GFORTRAN_FLUSH:
+        if _HAS_GFORTRAN_FLUSH and not _FD_ISOLATION_INSTALLED:
             _gfortran_flush(ctypes.byref(_FORTRAN_UNIT6))
         # 2. Flush C-level stdout FILE* (defense in depth).
         _libc.fflush(_c_stdout)
@@ -981,6 +997,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             "       pip install 'mcp>=0.9'\n"
         )
         return 2
+
+    # Install the fd isolation now -- NOT at import time (#227 item 1).
+    # Everything above this point (--help, --print-tools, the MCP-missing
+    # error path) returns before we touch the host process's fds.
+    _install_fd_isolation()
 
     server = build_server()
     # FastMCP >=0.9 exposes .run() for stdio transport by default.
