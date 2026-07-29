@@ -157,6 +157,12 @@ jobs:
           # MCP_AVAILABLE=False and the stdio servers refuse to start.
           # Porting the 7 servers to the 2.x API is its own change.
           pip install 'mcp>=0.9,<2'
+          # Tripwire. MCP_AVAILABLE is set by a bare `except Exception`,
+          # so ANY future breakage of the FastMCP import path -- a bad
+          # transitive resolution, a circular import, a real regression --
+          # would silently turn the 7 server test-suites green-by-skip.
+          # In THIS environment those tests must actually run, so assert it.
+          PYTHONPATH=python:python/mcp-servers python -c "import eq_mcp.server as s; assert s.MCP_AVAILABLE, 'FastMCP import is broken -- the mcp pin regressed; the MCP suites would skip instead of run'"
           # numpy = the array dtype the python wrappers (python/<mod>lib/
           # _ffi.py) use for state arrays. It is guarded as optional there
           # (try/except ImportError), but the TEST suite assumes it present:
