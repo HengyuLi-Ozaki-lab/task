@@ -1,16 +1,71 @@
-"""eq_mcp.get_psi_rz returns serialisable JSON with nrg/nzg/psi_rz."""
+"""eq_mcp.get_psi_rz returns serialisable JSON with nrg/nzg/psi_rz.
+
+This test drives the REAL stdio transport: it spawns ``python -m eq_mcp.server``
+as a subprocess and speaks JSON-RPC to it. That needs three prerequisites which
+the six sibling MCP test modules all guard for and this one did not, so instead
+of skipping it failed with an opaque ``MCPError: Connection closed``:
+
+* the **client** half of the SDK (``ClientSession`` / ``stdio_client``);
+* the **server** half (``mcp.server.fastmcp.FastMCP``) *inside the subprocess*.
+  These are separable, which is exactly how CI failed: mcp 2.0.0 removed the
+  server half while keeping the client half, so the imports below succeeded
+  while the spawned server exited 2 with "Python MCP SDK (`mcp`) is not
+  installed" and the client only saw the pipe close;
+* a built ``eq/libeqapi.so`` for that subprocess to load.
+
+The root fix for the CI failure is the ``mcp>=0.9,<2`` pin (this package's
+pyproject and the workflow), so with a correct install the test RUNS rather
+than skips. These guards exist so that an environment which is missing a
+prerequisite reports which one, instead of failing opaquely.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 
-from mcp import ClientSession
-from mcp import StdioServerParameters
-from mcp.client.stdio import stdio_client
+import pytest
+
+_HERE = Path(__file__).resolve()
+_MCP_ROOT = _HERE.parents[2]      # .../python/mcp-servers
+_PYTHON_ROOT = _HERE.parents[3]   # .../python
+_REPO_ROOT = _HERE.parents[4]     # repo root
+
+for _extra in (str(_MCP_ROOT), str(_PYTHON_ROOT)):
+    if _extra not in sys.path:
+        sys.path.insert(0, _extra)
 
 
+def _resolved_so() -> Path:
+    env = os.environ.get("EQLIB_PATH")
+    return Path(env) if env else _REPO_ROOT / "eq" / "libeqapi.so"
+
+
+# Client half: without it this module cannot be collected at all.
+pytest.importorskip("mcp", reason="Python MCP SDK (`mcp`) not installed")
+
+from mcp import ClientSession  # noqa: E402
+from mcp import StdioServerParameters  # noqa: E402
+from mcp.client.stdio import stdio_client  # noqa: E402
+
+# Server half: checked separately, because the SUBPROCESS is what needs it.
+from eq_mcp import server as _srv  # noqa: E402
+
+
+@pytest.mark.skipif(
+    not _srv.MCP_AVAILABLE,
+    reason=(
+        "server-side MCP SDK unavailable (mcp.server.fastmcp missing; mcp 2.0 "
+        "removed it — install 'mcp>=0.9,<2'), so `python -m eq_mcp.server` "
+        "exits 2 and the stdio handshake cannot complete"
+    ),
+)
+@pytest.mark.skipif(
+    not _resolved_so().exists(),
+    reason=f"{_resolved_so()} not built; run `make -C eq libeqapi.so`",
+)
 def test_get_psi_rz_via_mcp():
     async def run():
         params = StdioServerParameters(
