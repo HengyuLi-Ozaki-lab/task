@@ -39,13 +39,25 @@ different compilers or libm vendors.
 
 ## The canonical platform
 
-**Ubuntu CI runner with gfortran 13.x**. The full set of
-`linux-gcc13` baselines under `test_run/baselines/*/metrics.json`
-was generated on clavius
-(memory `reference_clavius_baseline_regen.md`) and is exercised on
-every push by `.github/workflows/python-tests.yml` line 323's
-whole-tree pytest (which sweeps the 7 module `test_equivalence.py`
-suites).
+**Ubuntu CI runner with gfortran 13.x**. The baselines under
+`test_run/baselines/*/metrics.json` are exercised on every push by
+`.github/workflows/python-tests.yml`'s whole-tree pytest (which sweeps
+the 7 module `test_equivalence.py` suites).
+
+They no longer share one provenance, so record it per group:
+
+| baselines | generated on | how |
+|---|---|---|
+| `eq_iter01`, `eq_tst2`, `eq_jt60`, `tr_iter01`, `tr_tst2` | GitHub `ubuntu-24.04`, gfortran 13.3.0 | `regen-baselines.yml` run 30514856222, together with the four `eqdata` fixtures they read (NTVMAX 200 -> 400) |
+| `tot_ht6m_short` | GitHub `ubuntu-latest`, gfortran 13.3.0 | `d1f7f9e7`; see `docs/superpowers/plans/2026-06-29-tot-ht6m-qsolver-baseline.md` |
+| everything else | clavius | memory `reference_clavius_baseline_regen.md` |
+
+Anything regenerated from now on must come from the CI runner, not from
+clavius or a developer machine. The gap is measurable, not theoretical: a
+macOS-generated `eqdata.TST-2` scored against the CI baseline gives 10
+mismatches at 4.011e-10 -- 4x over tolerance -- and because the gate skips
+on non-Linux (#213) it is invisible on the machine that produced it. The
+clavius/CI gap that #197 tracks is the same class at ~3e-9.
 
 ## Non-Linux behavior
 
