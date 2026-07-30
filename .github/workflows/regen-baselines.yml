@@ -1,10 +1,36 @@
 name: regen-baselines
 
-# Issue #197: in-CI baseline regen for fixtures that exhibit
-# cross-host compiler-version drift (notably eq_tst2 / tr_tst2 at
-# ~3e-9 between clavius gfortran 13.3 and CI gfortran 13.2).
-# Generates metrics.json in CI's own environment, uploads as
-# artifact for the user to download and commit.
+# Issue #197: in-CI baseline regen for fixtures that exhibit cross-host
+# drift (notably eq_tst2 / tr_tst2 at ~3e-9 between clavius and CI).
+# Generates metrics.json in CI's own environment, uploads as an artifact
+# for the user to download and commit.
+#
+# NOTE on #197's framing: it attributes that drift to a compiler-VERSION
+# difference, "clavius gfortran 13.3 vs CI gfortran 13.2". The CI half of
+# that is definitely wrong, and the two halves rest on very different
+# evidence -- stated separately on purpose:
+#
+#   CI = gfortran 13.3.0. MEASURED: runs 28327720495 (2026-06-28, the run
+#   d1f7f9e7 itself cites) and 30516807586 (2026-07-30) both log
+#   `GNU Fortran (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`. The "13.2"
+#   repeated across this repo reads the gcc-defaults metapackage revision
+#   `4:13.2.0-7ubuntu1` from the apt step. The two are not adjacent and the
+#   distance varies by job: measured on run 30516807586, 4 lines in the
+#   build-only jobs and 149 in the pytest jobs.
+#
+#   clavius = gfortran 13.3.0. NOT verified here: clavius is not reachable
+#   from CI, and the three places that state it
+#   (docs/superpowers/specs/2026-05-26-platform-keyed-baselines-design.md:29,
+#   docs/superpowers/specs/2026-05-12-tot-ajrft-triangle-design.md:347,
+#   docs/superpowers/plans/2026-05-26-platform-keyed-baselines-implementation.md:1085)
+#   all cite one memory file, `reference_clavius_baseline_regen.md`, which
+#   is not in this tree. Treat as documented, not established.
+#
+# So: if the clavius docs are right, both sides are 13.3.0 and #197's stated
+# cause does not exist at all; if they are not, the cause is still not the
+# one named, because CI is not 13.2. The ~3e-9 drift itself is real and
+# measured -- only its attribution is in question, and it is NOT re-diagnosed
+# here. Generating in CI sidesteps it either way. Worth raising on #197.
 
 on:
   # NOTE: this workflow is currently UNREACHABLE, and that is a maintainer
@@ -54,7 +80,7 @@ jobs:
     #
     # KNOWN DIVERGENCE RISK (Bugbot LOW, 2026-05-13): when GitHub rotates
     # `ubuntu-latest` to a newer image, python-tests.yml will silently move
-    # to a newer gfortran while this workflow stays on 13.2. CI will then
+    # to a newer gfortran while this workflow stays on 13.3.0. CI will then
     # fail at 1e-10 against baselines this workflow produced — the same
     # class of failure #197 itself tracks. Mitigation when that happens:
     # pin python-tests.yml to `ubuntu-24.04` too (small separate PR), then
@@ -65,9 +91,11 @@ jobs:
     # when GitHub deprecates this image and regenerate baselines once.
     runs-on: ubuntu-24.04
     # Raised with the default fixture list (2 cases -> 7). Per-case
-    # `timeout` caps in test_definitions.conf now total 780s, on top of
-    # `make -C tot libs` plus three binary builds. Run 30514856222 fit
-    # inside 20 with room, so this is headroom rather than a fix.
+    # `timeout` caps in test_definitions.conf total 900s for those seven
+    # (60+60+240+240+60+120+120), and run_tests.sh re-runs eq_iter01 and
+    # eq_tst2 as dependencies in their own processes, so the worst case is
+    # ~1020s of case timeouts alone -- before `make -C tot libs` and three
+    # binary builds. 20 minutes was genuinely tight, not merely unpadded.
     timeout-minutes: 30
 
     steps:
@@ -308,7 +336,7 @@ jobs:
         # Which case writes which blob (eq/in/*.in KNAMEQ, and
         # test_run/test_definitions.conf for the dependency edges):
         #   eq_iter01          -> eqdata.ITER01    (tr_iter01 copies it via
-        #                                           run_tests.sh:369)
+        #                                           run_tests.sh:398)
         #   eq_tst2            -> eqdata.TST-2     (likewise tr_tst2)
         #   tot_ht6m_short     -> eqdata-HT6M
         #   tot_demo2014_short -> eqdata.demo2014
@@ -351,7 +379,28 @@ jobs:
           # THE point of this step. Without it a regen run can quietly ship
           # another 200-era blob and we learn about it from a red 1e-10 gate
           # days later.
-          assert hdr[7] == 400, f"{p}: NTVMAX={hdr[7]}, expected 400 -- stale blob, do NOT commit"
+          # Parsed from eq/eqinit.f90, NOT hardcoded. A literal 400 would
+          # deadlock the exact remediation this workflow IS: bump eqinit to
+          # 800, the fixture-freshness test fires and sends you here, the
+          # regen produces a correct 800 blob -- and a hardcoded check then
+          # says "expected 400, stale blob, do NOT commit" about a freshly
+          # correct file. Same rule as
+          # python/eqlib/tests/test_eqdata_fixture_freshness.py.
+          import re
+          src = open("eq/eqinit.f90").read().splitlines()
+          # IGNORECASE and the fixed-form comment markers must match
+          # test_eqdata_fixture_freshness.py exactly. They did not, briefly:
+          # the F90 modernisation this rule exists for could rename
+          # `NTVMAX` to lowercase, the pytest guard would pass, and THIS
+          # step -- the remediation that guard sends people to -- would
+          # hard-fail with "found []" on a correct source and a correct blob.
+          hits = [int(m.group(1)) for ln in src
+                  if not ln.lstrip().startswith("!")
+                  and not (ln[:1] in ("C", "c", "*") and ln[1:2] != " ")
+                  for m in [re.match(r"^\s*NTVMAX\s*=\s*(\d+)\s*(?:!.*)?$", ln, re.IGNORECASE)] if m]
+          assert len(hits) == 1, f"expected one uncommented NTVMAX default in eq/eqinit.f90, found {hits}"
+          want = hits[0]
+          assert hdr[7] == want, f"{p}: NTVMAX={hdr[7]}, eq/eqinit.f90 says {want} -- stale blob, do NOT commit"
           print(f"    header={hdr} records={count} bytes={len(d)}")
           PY
             # mkdir -p + cp, not `install -D`: -D is GNU-only (BSD install
@@ -378,13 +427,14 @@ jobs:
           find regen-output/fixtures -type f | sort | while read -r f; do sha256sum "$f"; done
 
       - name: Upload regenerated baselines as artifact
-        # `always()` so a failed NTVMAX assertion in the collect step does
-        # not also throw away the metrics.json files the 15-minute step
-        # above just produced -- that would turn the safety check into a
-        # total loss and force a full re-run to learn anything else.
-        # python-tests.yml:412 does the same on its equivalence-actuals
-        # upload, for the same reason.
-        if: ${{ always() }}
+        # Survives a failed NTVMAX assertion in the collect step, so the
+        # safety check does not also discard the metrics.json files the long
+        # step above just produced. But gated on the metrics step having RUN:
+        # with a bare always(), a failed BUILD leaves regen-output/ absent
+        # (it is created inside the metrics step) and `if-no-files-found:
+        # error` then stacks a second, misleading red on top of the Fortran
+        # failure -- the same thing the collect step was re-gated to avoid.
+        if: ${{ !cancelled() && steps.metrics.conclusion != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
           name: baselines-${{ github.run_id }}

@@ -198,7 +198,7 @@ These are checked against the compile-time maxima by `validate()`.
 | Name | Type | Default | Meaning |
 |---|---|---|---|
 | `EPSEQ`  | double | 1×10⁻⁶ | convergence tolerance for equilibrium iteration |
-| `NLPMAX` | int    | 100     | maximum number of equilibrium iterations |
+| `NLPMAX` | int    | 100    | maximum number of equilibrium iterations |
 | `EPSNW`  | double | 1×10⁻² | Newton-method convergence tolerance |
 | `DELNW`  | double | 1×10⁻² | derivative step size for Newton method |
 | `NLPNW`  | int    | 20     | maximum Newton iterations |
