@@ -9,7 +9,11 @@ on:
     # PRs #178-#183 came from Cursor Bugbot, not this workflow.
     branches: [develop, master, chore/pre-push-hook-worktree-compat]
   push:
-    branches: [develop, master, chore/pre-push-hook-worktree-compat]
+    # PROBE-ONLY branch added so this workflow runs on probe/**. Verifies
+    # the regenerated fixtures/baselines against the real 1e-10 gates on
+    # Linux -- notably test_tst2, whose #190 xfail is removed and which has
+    # therefore never been observed to pass. REVERT before merging.
+    branches: [develop, master, chore/pre-push-hook-worktree-compat, 'probe/**']
 
 # Cancel superseded runs on the same branch to save minutes
 concurrency:
