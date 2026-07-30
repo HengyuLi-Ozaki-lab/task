@@ -428,12 +428,32 @@ run_single_test() {
 
     cd "$SCRIPT_DIR"
 
-    # Check result - CLOSED message is the primary success indicator
+    # Check result. "CLOSED" is the historical success indicator, but it is
+    # emitted by GSAF's GSCLOS -- which is NOT in this repo. On a
+    # graphics-free build (make.header with an empty GFLIBS, i.e. every CI
+    # build) the module Makefiles link <mod>_static_stubs.o instead, whose
+    # GSCLOS is an empty subroutine (eq/eq_static_stubs.f90:227-228, and
+    # identically in tr/ and tot/). No log then contains "CLOSED", the
+    # `exit_code -eq 0` branch below reports FAIL (no CLOSED message), and
+    # COMPLETED_TESTS is never set -- so every dependent case is skipped as
+    # "dependency failed". That made this script unusable on any
+    # graphics-free build; the only reason it went unnoticed is that
+    # python-tests.yml invokes the binaries directly and never calls it.
+    #
+    # So accept a second, equivalent signal: a clean exit that produced the
+    # regression dump the module was asked for. That artefact is the actual
+    # object of these runs, and REGRESS_DUMP is enabled for exactly the
+    # modules checked below.
+    local dump_produced=0
+    if [[ -n "$module" && -s "$test_dir/${module}_regress.dat" ]]; then
+        dump_produced=1
+    fi
     if [[ $exit_code -eq 124 ]]; then
         echo -e "${YELLOW}TIMEOUT${NC} (exceeded ${timeout}s)"
         FAILED=$((FAILED + 1))
-    elif grep -q "CLOSED" "$log_file" 2>/dev/null; then
-        # CLOSED message found - calculation completed successfully.
+    elif grep -q "CLOSED" "$log_file" 2>/dev/null \
+         || { [[ $exit_code -eq 0 ]] && [[ $dump_produced -eq 1 ]]; }; then
+        # Calculation completed successfully.
         # For TR module, also verify numerical metrics against baseline.
         local reg_ok=1
         if [[ "$module" == "tr" || "$module" == "fp" || "$module" == "ti" || "$module" == "wr" || "$module" == "wrx" || "$module" == "eq" || "$module" == "tot" ]]; then
@@ -446,6 +466,24 @@ run_single_test() {
         if [[ $reg_ok -eq 0 ]]; then
             echo -e "${RED}REGRESSION${NC} (metrics drift; see $test_dir/regression.log)"
             FAILED=$((FAILED + 1))
+            # Still mark it complete FOR DEPENDENTS. COMPLETED_TESTS answers
+            # "did this case produce output a dependent can consume?", which
+            # is a different question from "did it match its baseline". The
+            # run reached GSCLOS/produced its dump and wrote its eqdata; a
+            # metrics drift says the BASELINE is out of date, not that the
+            # artefacts are unusable.
+            #
+            # Conflating the two made a drifted eq_iter01 skip tr_iter01 as
+            # "dependency failed", so tr_iter01's output directory was never
+            # created -- which is fatal precisely for a baseline-REGENERATION
+            # run, where every case is expected to drift. Measured on the
+            # first-ever run of regen-baselines.yml (30514627136): eq_iter01
+            # and eq_tst2 REGRESSED as expected, and tr_iter01/tr_tst2 were
+            # then skipped and produced nothing.
+            #
+            # The verdict is unchanged -- FAILED is still incremented, so the
+            # script still exits nonzero and a drift never reads as a pass.
+            COMPLETED_TESTS[$test_name]=1
         elif [[ $exit_code -ne 0 ]]; then
             echo -e "${GREEN}PASS${NC} (warning: exit code $exit_code)"
             PASSED=$((PASSED + 1))
@@ -456,7 +494,10 @@ run_single_test() {
             COMPLETED_TESTS[$test_name]=1
         fi
     elif [[ $exit_code -eq 0 ]]; then
-        echo -e "${RED}FAIL${NC} (no CLOSED message)"
+        # Clean exit, but neither "CLOSED" nor a regression dump: the run
+        # went nowhere useful. Name both missing signals -- "no CLOSED
+        # message" alone sent the graphics-free case chasing a red herring.
+        echo -e "${RED}FAIL${NC} (no CLOSED message and no ${module}_regress.dat)"
         FAILED=$((FAILED + 1))
         if [[ $VERBOSE -eq 1 ]]; then
             echo "  Last 10 lines of log:"
