@@ -56,4 +56,14 @@ MODULE trcomm_param
        MDLNB, MDLEC, MDLLH, MDLIC, MDLCD, MDLPEL, MDLJBS, MDLST, MDLNF, &
        IZERO, MDLELM, MDLPSC, NPSCMAX, MDLIMP, NRNBMAX
 
+! --- P1: additive multi-reaction fusion path (ported from trx, tr/libnf.f90).
+!     model_pnf = 0   legacy MDLNF / SIGMAM D-T path only.  DEFAULT.
+!     model_pnf = 1.. libnf multi-reaction path.  Not dispatched yet (Task 6).
+!
+!     Initialised HERE rather than in trinit, deliberately: Option A's whole
+!     guarantee is that this path is off unless asked for, and trx gets its 0
+!     from trx/trinit.f90:518, which tr has no counterpart to.  Leaving it to
+!     BSS zeroing would make the guarantee an accident.
+  INTEGER:: model_pnf = 0
+
 END MODULE trcomm_param
