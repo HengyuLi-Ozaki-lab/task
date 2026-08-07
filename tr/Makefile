@@ -31,7 +31,7 @@ SRCM=trcom0.f90 trcom1.f90 \
 
 # Core computation sources (no graphics, no interactive menu).
 # This subset will be linked into libtrapi.so in Phase L-4.
-SRCS_CORE=trlib.f90 trcoll.f90 \
+SRCS_CORE=trlib.f90 trcoll.f90 libnf.f90 \
      trcdbm.f90 trmodels.f90 \
      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
      trcoef_resistivity.f90 trcoef_adhoc.f90 \
@@ -353,6 +353,11 @@ OBJ_CORE_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
 # above). The PIC path has no per-file rules, so without these `make -j
 # libtrapi.so` can compile a consumer before trlib.mod / trcoll.mod exist.
 $(OBJDIR_PIC)/trlib.o               : $(OBJDIR_PIC)/trcomm.o
+# libnf USEs trcomm (model_pnf, nnfmax), plcomm and libspl1d.  Without this the
+# PIC build races under -j exactly as trlib/trcoll did (a640d818) -- and a
+# stale trcomm.mod makes libnf fail with "model_pnf has no IMPLICIT type",
+# which is how it bit during this port.
+$(OBJDIR_PIC)/libnf.o               : $(OBJDIR_PIC)/trcomm.o
 $(OBJDIR_PIC)/trcoll.o              : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/trlib.o
 $(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/trcoll.o
 $(OBJDIR_PIC)/trcoef_turbulence.o   : $(OBJDIR_PIC)/trcoll.o
