@@ -1,0 +1,162 @@
+! trpnf_multi.f90
+!
+! Multi-reaction fusion source, ported from trx/trpnf.f90 (P1 Task 6).
+!
+! FILE/MODULE NAMING: trx calls this `MODULE trpnf` in `trx/trpnf.f90`, but
+! tr already has a `tr/trpnf.f90` -- a bare-externals file holding the legacy
+! TRNFDT / SIGMAM / SIGMAB / TRNFDHe3.  Both would compile to `trpnf.o` in the
+! same object directory, so the port lands here as `trpnf_multi`.
+!
+! SCOPE: this ports the reaction-source half of trx's tr_pnf.  The
+! slowing-down half (TAUF/WF/VC3) is deliberately NOT ported -- see the
+! comment at the end of tr_pnf for the blocker and the evidence.
+!
+! STAGING: this path is additive.  trcalc keeps calling the legacy MDLNF
+! block unchanged and calls tr_pnf afterwards, writing only trcomm_nf arrays
+! that nothing else reads yet.  The legacy result is therefore bit-exact,
+! while the new physics is evaluated on real profiles so that P1 Task 7 can
+! cross-validate it against trx.
+
+MODULE trpnf_multi
+
+  PRIVATE
+  PUBLIC tr_prep_pnf
+  PUBLIC tr_pnf
+
+CONTAINS
+
+  ! *** resolve the per-reaction species/weight/energy caches ***
+  !
+  ! Called once after the libnf tables are initialised.  Sets
+  ! nf_multi_ready as its last action -- see trcomm_nf for why the
+  ! model_pnf gate alone is not a sufficient guard.
+
+  SUBROUTINE tr_prep_pnf(ierr)
+
+    USE trcomm_ctrl, ONLY: nnfmax
+    USE trcomm_nf
+    USE libnf
+    IMPLICIT NONE
+    INTEGER, INTENT(OUT):: ierr
+    INTEGER:: nnf, id_nf
+
+    ierr = 0
+    nf_multi_ready = .FALSE.
+
+    ! libnf owns id_nf_nnf and allocates it from nnfmax; if that has not
+    ! happened there is nothing to resolve and the caller must not dispatch.
+    IF(.NOT.ALLOCATED(id_nf_nnf)) THEN
+       ierr = 1
+       RETURN
+    END IF
+    IF(nnfmax <= 0) THEN
+       ierr = 2
+       RETURN
+    END IF
+    IF(SIZE(id_nf_nnf) < nnfmax .OR. SIZE(ns1_nnf) < nnfmax) THEN
+       ierr = 3
+       RETURN
+    END IF
+
+    DO nnf = 1, nnfmax
+       id_nf = id_nf_nnf(nnf)
+       ns1_nnf(nnf) = ns1_idnf(id_nf)
+       ns2_nnf(nnf) = ns2_idnf(id_nf)
+       nsp_nnf(nnf) = nsp_idnf(id_nf)
+       wgt_nnf(nnf) = wgt_idnf(id_nf)
+       eng_nnf(nnf) = eng_idnf(id_nf)
+       enn_nnf(nnf) = enn_idnf(id_nf)
+    END DO
+
+    nf_multi_ready = .TRUE.
+
+    RETURN
+  END SUBROUTINE tr_prep_pnf
+
+  ! *** calculate the fusion reaction sources ***
+
+  SUBROUTINE tr_pnf
+
+    USE TRCOM0, ONLY: rkind, NRMAX, NSMAX
+    USE trcomm_ctrl, ONLY: nnfmax
+    USE trcomm_profile, ONLY: RN, RT
+    USE trcomm_nf
+    USE libnf
+    IMPLICIT NONE
+    REAL(rkind):: PN1, PN2, PT1, RATE_NF, SNF
+    REAL(rkind):: wgt, eng, enn
+    INTEGER:: nnf, nr, id_nf, ns1, ns2, nsp, ns
+
+    IF(.NOT.nf_multi_ready) RETURN
+
+    SNF_NSNNFNR(1:NSMAX,1:nnfmax,1:NRMAX)   = 0.D0 ! particle source
+    PNFCL_NSNNFNR(1:NSMAX,1:nnfmax,1:NRMAX) = 0.D0 ! collisional transfer in
+    SNFNN_NNFNR(1:nnfmax,1:NRMAX)           = 0.D0 ! neutron number
+    PNFNN_NNFNR(1:nnfmax,1:NRMAX)           = 0.D0 ! neutron power
+    ! DEVIATION FROM trx (upstream defect): trx zeroes the four arrays above
+    ! but not PNF_NSNNFNR, which it then accumulates into with `+`.  Left as
+    ! upstream, the fusion power would grow without bound across timesteps.
+    PNF_NSNNFNR(1:NSMAX,1:nnfmax,1:NRMAX)   = 0.D0 ! fusion power
+
+    DO nnf = 1, nnfmax
+       id_nf = id_nf_nnf(nnf)
+       ns1 = ns1_nnf(nnf)
+       ns2 = ns2_nnf(nnf)
+       nsp = nsp_nnf(nnf)
+       wgt = wgt_nnf(nnf)
+       eng = eng_nnf(nnf)
+       enn = enn_nnf(nnf)
+       DO nr = 1, NRMAX
+          PN1 = RN(nr,ns1)
+          PN2 = RN(nr,ns2)
+          PT1 = RT(nr,ns1)
+          RATE_NF = sigmav_nf(id_nf,PT1)
+          SNF = wgt*PN1*PN2*1.D20*RATE_NF
+          SNF_NSNNFNR(ns1,nnf,nr) = SNF_NSNNFNR(ns1,nnf,nr) - SNF
+          SNF_NSNNFNR(ns2,nnf,nr) = SNF_NSNNFNR(ns2,nnf,nr) - SNF
+          SNF_NSNNFNR(nsp,nnf,nr) = SNF_NSNNFNR(nsp,nnf,nr) + SNF
+          PNF_NSNNFNR(nsp,nnf,nr) = PNF_NSNNFNR(nsp,nnf,nr) + eng*SNF*1.D20
+          IF(enn > 0.D0) THEN
+             SNFNN_NNFNR(nnf,nr) = SNFNN_NNFNR(nnf,nr) + SNF
+             PNFNN_NNFNR(nnf,nr) = PNFNN_NNFNR(nnf,nr) + enn*SNF*1.D20
+          END IF
+       END DO
+    END DO
+
+    ! --- roll-ups over reactions, as consumed downstream in trx ---
+
+    DO nr = 1, NRMAX
+       DO ns = 1, NSMAX
+          SNF_NSNR(ns,nr)   = SUM(SNF_NSNNFNR(ns,1:nnfmax,nr))
+          PNFCL_NSNR(ns,nr) = SUM(PNFCL_NSNNFNR(ns,1:nnfmax,nr))
+       END DO
+    END DO
+
+    ! --- NOT PORTED: the slowing-down block (TAUF_NNFNR stays zero) ---
+    !
+    ! trx computes a per-reaction slowing-down time from the fast-ion stored
+    ! energy `RW(NR,NNBMAX+nnf)` -- one fast-ion slot per reaction.  tr cannot
+    ! express that: RW is dimensioned (NRMAX,NFM) with NFM a compile-time
+    ! PARAMETER equal to 2 (trcom0.f90:12), slot 1 = NB and slot 2 = fusion.
+    !
+    ! Raising NFM is not a local change.  It is the solver's state-vector
+    ! dimension (YV/AY/Y(NFM,NRMAX), trcomm_mtx.f90:27, looped in trexec.f90
+    ! at 117/147 and divided at 104), it sets the total stored energy
+    ! (SUM(RW(NR,1:NFM)), trrslt_globals.f90:69), and it is written into the
+    ! binary dump header (trmenu.f90:137) that every regression baseline is
+    ! compared against.  Widening the fast-ion species dimension is therefore
+    ! its own task, not a side effect of porting the reaction sources.
+    !
+    ! Until then the legacy MDLNF path keeps computing the 1-D TAUF(NRMAX) it
+    ! always has, and this routine leaves TAUF_NNFNR at zero rather than
+    ! filling it from a single-slot RW it cannot correctly attribute.
+    !
+    ! When that task lands, port trx/trpnf.f90:94-113, and note that its
+    ! slowing-down loop reads PA(ns)/PZ(ns)/COULOG(1,ns,...) where `ns` is the
+    ! leftover DO-variable from the preceding VC3 loop (so NSMAX+1, an
+    ! unwritten slot) and never uses the `nsp` it assigns one line earlier.
+
+    RETURN
+  END SUBROUTINE tr_pnf
+
+END MODULE trpnf_multi
