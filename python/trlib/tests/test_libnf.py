@@ -152,9 +152,23 @@ def nf():
             "SYM_MODEL_PNF here rather than letting these tests skip."
         )
 
-    setup = getattr(lib, SYM_SETUP)
-    setup.restype = None
-    setup.argtypes = []
+    # P1 Task 6 gave set_usigmav_nf an INTENT(OUT) ierr: upstream it reported
+    # every failure with a bare STOP, which kills this pytest process from
+    # inside the .so (CLAUDE.md; issue #142). Passing the argument is not
+    # optional -- with argtypes=[] the callee writes its status through
+    # whatever the register happens to hold.
+    _setup = getattr(lib, SYM_SETUP)
+    _setup.restype = None
+    _setup.argtypes = [ctypes.POINTER(ctypes.c_int)]
+
+    def setup():
+        ierr = ctypes.c_int(-1)
+        _setup(ctypes.byref(ierr))
+        assert ierr.value == 0, (
+            f"{SYM_SETUP} failed with ierr={ierr.value} at "
+            f"model_pnf={model_pnf.value} (1=spline setup, 2=undefined "
+            f"model_pnf, 3=species absent)"
+        )
 
     sigmav = getattr(lib, SYM_SIGMAV)
     sigmav.restype = ctypes.c_double
@@ -188,7 +202,9 @@ def nf():
         f"""
         import ctypes
         lib = ctypes.CDLL({str(path)!r})
-        lib.{SYM_SETUP}()
+        _e = ctypes.c_int(-1)
+        lib.{SYM_SETUP}(ctypes.byref(_e))   # INTENT(OUT) ierr (Task 6)
+        assert _e.value == 0, _e.value
         f = lib.{SYM_SIGMAV}
         f.restype = ctypes.c_double
         f.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
@@ -272,7 +288,9 @@ def test_setup_survives_the_default(nf):
         f"""
         import ctypes
         lib = ctypes.CDLL({str(_lib_path())!r})
-        lib.{SYM_SETUP}()
+        _e = ctypes.c_int(-1)
+        lib.{SYM_SETUP}(ctypes.byref(_e))   # INTENT(OUT) ierr (Task 6)
+        assert _e.value == 0, _e.value
         f = lib.{SYM_SIGMAV}
         f.restype = ctypes.c_double
         f.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]

@@ -156,7 +156,14 @@ CONTAINS
   
   ! --- set spline coefficients for reaction rate sigmav
 
-  SUBROUTINE set_usigmav_nf
+  ! ierr_nf reports failure instead of the bare STOPs upstream uses: every
+  ! one of them is reachable through libtrapi.so and would take down the
+  ! host process -- pytest, or the MCP server -- rather than returning
+  ! (CLAUDE.md, Fortran library discipline; issue #142).  tr_prep is the
+  ! only caller, so widening the signature costs nothing.
+  !   1 = spline setup failed        2 = undefined model_pnf
+  !   3 = a required ion species is absent from the composition
+  SUBROUTINE set_usigmav_nf(ierr_nf)
     USE trcomm
     ! NS_* reach trx's libnf only via trx/trcomm.f90:5's USE plcomm; nothing in
     ! tr/ does that.  ONLY: is deliberate -- tr's trcomm and plcomm export
@@ -165,8 +172,11 @@ CONTAINS
     USE plcomm,ONLY: NS_D,NS_T,NS_He4,NS_He3,NS_H,NS_He5
     USE libspl1d
     IMPLICIT NONE
+    INTEGER,INTENT(OUT):: ierr_nf
     REAL(rkind),DIMENSION(10):: dsvnf
     INTEGER:: ntemp,id,ierr
+
+    ierr_nf = 0
 
     ! Spline setup moved AHEAD of the model_pnf dispatch.  Upstream it sits
     ! after CASE(0)'s RETURN, so at model_pnf=0 tempa_log stays all-zero and any
@@ -197,7 +207,8 @@ CONTAINS
     END IF
     IF(ierr.NE.0) THEN
        WRITE(6,'(A,I4)') 'XX SPL1D error in set_usvnf: id=',id
-       STOP
+       ierr_nf = 1
+       RETURN
     END IF
 
     SELECT CASE(model_pnf)
@@ -214,7 +225,8 @@ CONTAINS
        nnfmax=13
     CASE DEFAULT
        WRITE(6,*) 'XX Error libnf: undefined model_pnf: model_pnf=',model_pnf
-       STOP
+       ierr_nf = 2
+       RETURN
     END SELECT
 
     IF(ALLOCATED(id_nf_nnf)) DEALLOCATE(id_nf_nnf)
@@ -251,16 +263,37 @@ CONTAINS
        id_nf_nnf(13)=id_nf_the36
     CASE DEFAULT
        WRITE(6,*) 'XX Error libnf: undefined model_pnf: model_pnf=',model_pnf
-       STOP
+       ierr_nf = 2
+       RETURN
     END SELECT
 
+    ! DEVIATION FROM trx (upstream defect): 13 -> 14 in the first label.
+    !
+    ! 12 and 14 are the reduced-species variants -- nsmax=4 in the header
+    ! table above, against 6/7 for 2/3/4 -- which collapse the H, He3 and
+    ! He5 products onto He4 (see the model_pnf.EQ.12 / .EQ.14 remaps at the
+    ! nsp_idnf assignments below).  They therefore need only D, T and He4,
+    ! so grouping 12 with the D-T-only check is correct and 14 belongs with
+    ! it.  Upstream writes 13, which no SELECT here accepts and which the
+    ! first one rejects outright, while 14 -- accepted by CASE(4,14) above
+    ! -- matched nothing and fell through to CASE DEFAULT's STOP, killing
+    ! the process on a value the routine documents as valid.
+    !
+    ! CAVEAT for model_pnf=12: nsp_idnf(id_nf_dd3) below is inverted
+    ! relative to every sibling remap -- it hands He3 to the reduced variant
+    ! and He4 to the full one, the opposite of dd2 and the32.  So a
+    ! model_pnf=12 run that legitimately carries no He3 still reaches
+    ! nsp_idnf = NS_He3 = 0 and indexes SNF_NSNNFNR at 0.  Not fixed here:
+    ! correcting it changes which species receives the D-D neutron branch,
+    ! which is a numerical change and belongs with the Task 7 validation.
     SELECT CASE(model_pnf)
-    CASE(1,12,13)
+    CASE(1,12,14)
        IF(NS_D*NS_T*NS_He4.EQ.0) THEN
           IF(NS_D.EQ.0) WRITE(6,*)   'XX Error: libnf: NS_D=0'
           IF(NS_T.EQ.0) WRITE(6,*)   'XX Error: libnf: NS_T=0'
           IF(NS_He4.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He4=0'
-          STOP
+          ierr_nf = 3
+          RETURN
        END IF
     CASE(2,3)
        IF(NS_D*NS_T*NS_He4*NS_H*NS_He3.EQ.0) THEN
@@ -269,7 +302,8 @@ CONTAINS
           IF(NS_H.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_H=0'
           IF(NS_He4.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He4=0'
           IF(NS_He3.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He3=0'
-          STOP
+          ierr_nf = 3
+          RETURN
        END IF
     CASE(4)
        IF(NS_D*NS_T*NS_He4*NS_H*NS_He3*NS_He5.EQ.0) THEN
@@ -279,11 +313,14 @@ CONTAINS
           IF(NS_He4.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He4=0'
           IF(NS_He3.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He3=0'
           IF(NS_He5.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He5=0'
-          STOP
+          ierr_nf = 3
+          RETURN
        END IF
     CASE DEFAULT
-       WRITE(6,*) 'XX Error libnb: undefined model_pnf: model_pnf=',model_pnf
-       STOP
+       ! 'libnb' upstream -- this is libnf; the message named the wrong module.
+       WRITE(6,*) 'XX Error libnf: undefined model_pnf: model_pnf=',model_pnf
+       ierr_nf = 2
+       RETURN
     END SELECT
 
     
