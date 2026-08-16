@@ -16,6 +16,7 @@ CONTAINS
       SUBROUTINE tr_init
 
       USE trcomm
+      USE libnf, ONLY: nf_last_error
       IMPLICIT NONE
       INTEGER NS, NPSC
 
@@ -422,6 +423,20 @@ CONTAINS
 !                    first one's value and silently run the new path.
 
       model_pnf = 0
+
+!                    nnfmax and nf_last_error are the same class: module
+!                    state with only a declaration initialiser, so they
+!                    also survive finalize.  A stale nnfmax makes the next
+!                    session's ALLOCATE_TRCOMM size the trcomm_nf arrays
+!                    from the PREVIOUS run's reaction count -- ~125 KB at
+!                    the default -- which tr_prep then frees and
+!                    reallocates, giving the default path a different heap
+!                    history than a first session had.  A stale
+!                    nf_last_error reports a dead session's failure to any
+!                    external reader.
+
+      nnfmax        = 0
+      nf_last_error = 0
 
 !     ==== NBI HEATING PARAMETERS ====
 

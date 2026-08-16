@@ -23,6 +23,7 @@
       IMPLICIT NONE
       INTEGER,INTENT(OUT)    :: IERR
       INTEGER                :: NR,NS
+      INTEGER                :: nf_ierr
       REAL(rkind),SAVE:: pellet_time_start_save=-1.D0
       REAL(rkind):: t_pellet
 
@@ -151,8 +152,10 @@
 !     plausible sigmav_nf from uninitialised tables instead of aborting,
 !     so the gate has to be the flag tr_prep_pnf sets, not the input.
       IF(nf_multi_ready) THEN
-         CALL tr_pnf(IERR)
-         IF(IERR.NE.0) RETURN
+!        nf_ierr, not IERR: tr_pnf writes only diagnostics nothing reads
+!        yet, so a failure there must not abandon the step and must not
+!        overwrite a status the legacy path owns.
+         CALL tr_pnf(nf_ierr)
       END IF
 
 

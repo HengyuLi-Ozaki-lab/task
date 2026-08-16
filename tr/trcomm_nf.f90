@@ -6,9 +6,12 @@
 ! new-path state is one reviewable, removable unit and the dense allocate
 ! routine that serves the legacy MDLNF path is left untouched.
 !
-! Everything here is sized by `nnfmax`, which trcomm_ctrl defaults to 0.
-! With model_pnf = 0 (the default) nnfmax stays 0, every array below is
-! allocated zero-size, and no legacy behaviour changes.
+! Most of this is sized by `nnfmax`, which trcomm_ctrl defaults to 0, so at
+! model_pnf = 0 those arrays come out zero-size.  The two _NSNR roll-ups are
+! the exception: they are (NSTM,NRMAX) unconditionally and take real heap on
+! every run.  No legacy behaviour changes either way -- nothing outside
+! trpnf_multi reads any symbol declared here -- but the allocation is not
+! free and it shifts every address allocated after it.
 !
 ! Naming follows trx's own convention: the trailing `_NSNNFNR` / `_NNFNR` /
 ! `_NSNR` records the rank so the new arrays never collide with the legacy
@@ -71,11 +74,17 @@ CONTAINS
     INTEGER, INTENT(OUT) :: ierr
     ierr = 0
 
-    ! Both ALLOCATED tests are needed, not just the first: an earlier call
+    ! All three ALLOCATED tests are needed, not just the first: an earlier call
     ! can fail between the two ALLOCATEs and RETURN, and tr_prep's direct
     ! call does not clean up on failure the way ALLOCATE_TRCOMM's GOTO 900
-    ! path does.  SIZE() of an unallocated allocatable is undefined.
-    IF(ALLOCATED(ns1_nnf) .AND. ALLOCATED(SNF_NSNNFNR)) THEN
+    ! path does.  SIZE() of an unallocated allocatable is undefined.  SNF_NSNR
+    ! is the last array allocated, so testing it is what proves the previous
+    ! attempt ran to completion; ns1_nnf and SNF_NSNNFNR alone would early-
+    ! return on a run that failed at TAUF_NNFNR, leaving tr_pnf to write an
+    ! unallocated SNF_NSNR.  The caller cleanups are the primary defence;
+    ! this is defence in depth.
+    IF(ALLOCATED(ns1_nnf) .AND. ALLOCATED(SNF_NSNNFNR) .AND. &
+       ALLOCATED(SNF_NSNR)) THEN
        IF(SIZE(ns1_nnf) == nnfmax .AND. &
           SIZE(SNF_NSNNFNR,1) == NSTM .AND. &
           SIZE(SNF_NSNNFNR,2) == nnfmax .AND. &

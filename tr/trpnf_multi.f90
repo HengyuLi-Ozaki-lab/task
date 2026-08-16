@@ -13,9 +13,34 @@
 !
 ! STAGING: this path is additive.  trcalc keeps calling the legacy MDLNF
 ! block unchanged and calls tr_pnf afterwards, writing only trcomm_nf arrays
-! that nothing else reads yet.  The legacy result is therefore bit-exact,
-! while the new physics is evaluated on real profiles so that P1 Task 7 can
-! cross-validate it against trx.
+! that nothing else reads yet.  The legacy result is therefore bit-exact.
+!
+! NOT YET CORRECT PHYSICS -- a Task 7 prerequisite, recorded here so that
+! validation does not start from the wrong baseline.  libnf indexes species
+! through plcomm's NS_e..NS_He5, and trx resolves those against the run's
+! actual composition in trx/trprep.f90's tr_prep_ns (zero them, then walk
+! NS=1..NSMAX matching charge and mass) so an absent species comes out 0 and
+! libnf's presence check refuses the run.  tr has no counterpart: NS_* keep
+! pl/plinit.f90's defaults of 1..7 for every run.  Consequences, measured on
+! tr_iter01 (e,D,T,He4) at model_pnf=4:
+!
+!   * reaction slots 5,6 (DHe3) and 8..13 (THe3) are identically zero at
+!     every radius, because RN(:,NS_He3=5) reads a slot the composition does
+!     not have and is zero-filled;
+!   * the D-D proton branch deposits into slot NS_H=6, which in a 4-species
+!     run is not hydrogen;
+!   * libnf's species-presence check can never fire, so ierr_nf=3 is
+!     unreachable and the reaction set is never validated against the
+!     composition at all.
+!
+! Only the D-T channel is right, and only because e/D/T/He4 happens to be the
+! order plinit assumes.  Porting tr_prep_ns is not a drop-in: with NS_*
+! resolved the presence check goes live, and its case labels then have to
+! match what each model_pnf indexes rather than what the header table says --
+! model_pnf=12 reaches nsp_idnf(dd3)=NS_He3 through the inverted remap below
+! and would index 0 immediately (verified: bounds trap at the SNF_NSNNFNR
+! write).  Resolution, guard labels and multi-species fixtures are one unit
+! of work and belong with the Task 7 validation, not with this dispatch.
 
 MODULE trpnf_multi
 
@@ -53,7 +78,15 @@ CONTAINS
        ierr = 2
        RETURN
     END IF
-    IF(SIZE(id_nf_nnf) < nnfmax .OR. SIZE(ns1_nnf) < nnfmax) THEN
+    ! ns1_nnf needs its own ALLOCATED test -- SIZE() of an unallocated
+    ! allocatable is undefined -- and the comparison is /=, not <: an
+    ! array left oversized by a previous, wider nnfmax is just as wrong as
+    ! an undersized one, and `<` would wave it through.
+    IF(.NOT.ALLOCATED(ns1_nnf)) THEN
+       ierr = 3
+       RETURN
+    END IF
+    IF(SIZE(id_nf_nnf) < nnfmax .OR. SIZE(ns1_nnf) /= nnfmax) THEN
        ierr = 3
        RETURN
     END IF
@@ -77,7 +110,7 @@ CONTAINS
 
   SUBROUTINE tr_pnf(ierr)
 
-    USE TRCOM0, ONLY: rkind, NRMAX, NSMAX, NSTM
+    USE TRCOM0, ONLY: rkind, NRMAX, NSTM
     USE trcomm_ctrl, ONLY: nnfmax
     USE trcomm_profile, ONLY: RN, RT
     USE trcomm_nf
@@ -141,10 +174,16 @@ CONTAINS
        END DO
     END DO
 
+    ! Reported, not escalated.  Everything this routine writes is a
+    ! diagnostic that nothing else reads yet, so returning nonzero here
+    ! would make trcalc abandon the step -- skipping TRAJOH and the
+    ! SSIN/PIN assembly -- and kill a solve whose consumed physics is
+    ! fine.  That breaks the additive contract this port is built on.
+    ! The flag stays set for the caller; when Task 7 makes these arrays
+    ! load-bearing, this becomes a propagating error.
     IF(nf_last_error.NE.0) THEN
-       WRITE(6,*) 'XX tr_pnf: sigmav_nf failed, nf_last_error=',nf_last_error
-       ierr = 100 + nf_last_error
-       RETURN
+       WRITE(6,*) 'XX tr_pnf: sigmav_nf failed, nf_last_error=', &
+            nf_last_error,' -- fusion diagnostics for this step are void'
     END IF
 
     ! --- roll-ups over reactions, as consumed downstream in trx ---

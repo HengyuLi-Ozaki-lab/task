@@ -163,32 +163,48 @@ def _read_source_array(lib, symbol, nstm, nnfmax, nrmax):
     return list((ctypes.c_double * (nstm * nnfmax * nrmax)).from_address(addr.value))
 
 
+def _read_source_array_2d(lib, symbol, n1, n2):
+    """Read a rank-2 allocatable; see _read_source_array for the caveat."""
+    addr = ctypes.c_void_p.in_dll(lib, symbol)
+    assert addr.value, f"{symbol} is not allocated"
+    return list((ctypes.c_double * (n1 * n2)).from_address(addr.value))
+
+
 def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
     """Drive tr_pnf where it computes something, and pin the per-step reset.
 
     Every committed fixture sits at or below sigmav_nf's 1 keV table floor
-    (tr_tst2 at ~0.01 keV; tr_iter01 and tr_m0904 at exactly 1.0 keV), where
-    sigmav_nf returns 0 by design. So without raising PT the ported reaction
-    loop evaluates to zero everywhere and every assertion about it would hold
-    vacuously. This uses tr_iter01 -- a real 4-species (e,D,T,He4) case, so
-    PA/PZ/PN stay consistent -- and lifts PT well inside the table. Raising
-    NSMAX on a 2-species fixture instead does not work: the unset PA/PZ for
-    the added species yield a NaN temperature.
+    (tr_tst2 at ~0.01 keV; tr_iter01 and tr_m0904 at exactly 1.0 keV, the
+    first knot), so without raising PT the ported reaction loop evaluates to
+    zero everywhere and every assertion about it would hold vacuously. This
+    uses tr_iter01 -- a real 4-species (e,D,T,He4) case, so PA/PZ/PN stay
+    consistent -- and lifts PT well inside the table. Raising NSMAX on a
+    2-species fixture instead does not work: the unset PA/PZ for the added
+    species yield a NaN temperature.
 
-    The reset is pinned by a stoichiometric invariant rather than by
-    comparing runs of different length -- the plasma evolves between steps,
-    so a 1-step and a 5-step run legitimately differ (~18% here) and that
-    comparison cannot separate evolution from accumulation.
+    Two independent assertions, because neither alone covers the reset:
 
-    Within one reaction's slice, dd2 is D + D -> T + <p>: both reactants are
-    D and the tracked product is H, so tr_pnf subtracts SNF twice from the D
-    slot and adds it once to the H slot. Their ratio is therefore exactly -2
-    on every radius and at every step -- but only if both slots are reset at
-    entry. D is at ns=2 and H at ns=NS_H=6, and NSMAX is 4 here, so a reset
-    bounded by 1:NSMAX (as in trx, whose arrays are NSMAX-dimensioned, rather
-    than 1:NSTM as they are here) resets D and not H. After N steps the ratio
-    would read -2/N. That makes this assertion fail on exactly the defect it
-    is written for, independently of how the profiles evolve.
+    1. ABSOLUTE. SNF in the dd2 slice must equal one step's worth,
+       wgt * RN(D)^2 * 1e20 * sigmav_nf(dd2, RT(D)), recomputed here from
+       the post-run state with sigmav_nf called through the same ctypes
+       binding test_libnf.py uses. tr_pnf accumulates with +/-, so if the
+       resets were dropped entirely this reads N times too large. wgt=0.5
+       for dd2 (tr/libnf.f90).
+
+    2. STOICHIOMETRIC. Within one reaction's slice, dd2 is
+       D + D -> T + <p>: both reactants are D and the tracked product is H,
+       so the D slot takes -SNF twice and the H slot +SNF once, ratio
+       exactly -2. This one is insensitive to a symmetric loss of the reset
+       (both slots would scale together) but catches an ASYMMETRIC bound:
+       D is at ns=2 and H at NS_H=6 with NSMAX=4, so a reset bounded by
+       1:NSMAX -- as in trx, whose arrays are NSMAX-dimensioned, rather
+       than 1:NSTM as they are here -- clears D and not H. Verified
+       discriminating: restoring that bound makes the ratio read -0.039.
+
+    The -0.039 is not -2/NSTEPS. tr_pnf runs once per TRCALC, and TRCALC
+    runs LMAXTR times in the converge loop plus once after it plus once in
+    tr_eval, so the denominator is the number of tr_pnf calls (~51 over
+    these 5 steps), not the number of steps.
     """
     from .fixtures import tr_iter01_params as HOT
 
@@ -197,9 +213,13 @@ def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
 
     NSTM = 8
     NNFMAX = REACTION_COUNT[2]      # dt, dd1, dd2, dd3
-    NNF_DD2 = 3                     # 1-origin position of dd2 in id_nf_nnf
+    NNF_DD2, ID_NF_DD2, WGT_DD2 = 3, 3, 0.5   # slot, libnf id, weight
     NS_D, NS_H = 2, 6
     NSTEPS = 5
+
+    sigmav = lib.__libnf_MOD_sigmav_nf
+    sigmav.restype = ctypes.c_double
+    sigmav.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
 
     with Trlib() as tr:
         HOT.apply(tr)
@@ -216,12 +236,17 @@ def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
             "(1=id_nf range, 2=NaN or >1000 keV, 3=spline)"
         )
         assert bool(ctypes.c_int.in_dll(lib, SYM_READY).value)
+        assert ctypes.c_int.in_dll(lib, SYM_NNFMAX).value == NNFMAX, (
+            "nnfmax moved; the strides below would read the wrong elements"
+        )
 
         nsmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nsmax").value
         nrmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value
-        data = _read_source_array(
+        snf = _read_source_array(
             lib, "__trcomm_nf_MOD_snf_nsnnfnr", NSTM, NNFMAX, nrmax
         )
+        rn = _read_source_array_2d(lib, "__trcomm_profile_MOD_rn", nrmax, NSTM)
+        rt = _read_source_array_2d(lib, "__trcomm_profile_MOD_rt", nrmax, NSTM)
 
     assert NS_H > nsmax, (
         f"this case no longer reaches the out-of-NSMAX slot it exists to "
@@ -229,25 +254,39 @@ def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
     )
 
     def at(ns, nnf, nr):
-        return data[(ns - 1) + NSTM * (nnf - 1) + NSTM * NNFMAX * (nr - 1)]
+        return snf[(ns - 1) + NSTM * (nnf - 1) + NSTM * NNFMAX * (nr - 1)]
 
-    ratios = [
-        at(NS_D, NNF_DD2, nr) / at(NS_H, NNF_DD2, nr)
-        for nr in range(1, nrmax + 1)
-        if at(NS_H, NNF_DD2, nr) != 0.0
-    ]
-    assert ratios, (
-        "the D-D -> T + p channel produced nothing, so the reaction loop "
-        "did not run and the reset assertion below would be vacuous"
-    )
-    worst = max(abs(r - (-2.0)) for r in ratios)
-    assert worst < 1e-12, (
-        f"SNF_NSNNFNR(D)/SNF_NSNNFNR(H) in the dd2 slice is {min(ratios)}.."
-        f"{max(ratios)}, not -2. Both slots take one SNF per reactant/product "
-        f"per step, so a departure means one of them was not reset at entry "
-        f"-- H sits at ns={NS_H}, outside NSMAX={nsmax}, which a reset bounded "
-        f"by 1:NSMAX would skip while still resetting D at ns={NS_D}. "
-        f"After {NSTEPS} steps that reads as -2/{NSTEPS}."
+    checked = 0
+    for nr in range(1, nrmax + 1):
+        h = at(NS_H, NNF_DD2, nr)
+        if h == 0.0:
+            continue
+        checked += 1
+
+        # (1) absolute: one step's worth, not N accumulated
+        n_d = rn[(nr - 1) + nrmax * (NS_D - 1)]
+        t_d = rt[(nr - 1) + nrmax * (NS_D - 1)]
+        rate = sigmav(ctypes.byref(ctypes.c_int(ID_NF_DD2)),
+                      ctypes.byref(ctypes.c_double(t_d)))
+        expected = WGT_DD2 * n_d * n_d * 1.0e20 * rate
+        assert abs(h - expected) <= 1e-10 * abs(expected), (
+            f"SNF_NSNNFNR(H,dd2,{nr}) = {h:.9e}, expected one step's "
+            f"{expected:.9e} (ratio {h / expected:.4f}). tr_pnf accumulates, "
+            f"so a multiple of the expected value means its outputs were not "
+            f"reset at entry."
+        )
+
+        # (2) stoichiometric: D takes -SNF twice, H takes +SNF once
+        ratio = at(NS_D, NNF_DD2, nr) / h
+        assert abs(ratio + 2.0) < 1e-12, (
+            f"SNF(D)/SNF(H) at nr={nr} is {ratio}, not -2. D is inside "
+            f"NSMAX={nsmax} and H is not, so an asymmetric reset bound "
+            f"clears one and leaves the other accumulating."
+        )
+
+    assert checked, (
+        "the D-D -> T + p channel produced nothing, so the reaction loop did "
+        "not run and both assertions above were vacuous"
     )
 
 
