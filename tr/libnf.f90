@@ -140,6 +140,11 @@ MODULE libnf
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_ID   = 1  ! id_nf outside 1..13
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_TEMP = 2  ! temperature NaN or > 1000 keV
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_SPL  = 3  ! SPL1DF evaluation failed
+  ! Sticky, and each site logs only while the flag is still clear -- a NaN
+  ! at every radius otherwise produces nnfmax*NRMAX identical lines, since
+  ! tr_pnf only consults the flag after its whole loop.  Clearing the flag
+  ! re-arms the logging.  Reset in tr_init: module state survives finalize,
+  ! and a stale value reports a dead session's failure.
   INTEGER,PUBLIC:: nf_last_error = 0
 
   ! sigma_nf and sigmav_nf_int are NOT exported, on measured grounds:
@@ -281,8 +286,10 @@ CONTAINS
     ! Upstream reads CASE(1,12,13). 13 is accepted by neither SELECT above
     ! and is rejected outright by the first, so that label is dead, while 14
     ! -- which CASE(4,14) above accepts and the header table documents --
-    ! matched nothing here and fell through to CASE DEFAULT's STOP. So
-    ! model_pnf=14 killed the process on a value the routine calls valid.
+    ! matched nothing here and fell through to CASE DEFAULT, which upstream
+    ! is a STOP -- so on the unported original model_pnf=14 killed the
+    ! process on a value the routine calls valid.  In this tree that branch
+    ! had already become ierr_nf=2, so the symptom here was a refused run.
     !
     ! 14 belongs with 4, not with 1/12, even though the header table calls
     ! it an nsmax=4 variant. What matters is which species the nsp_idnf /
@@ -504,7 +511,8 @@ CONTAINS
     sigmav_nf=0.D0
 
     IF(id_nf.LT.1.OR.id_nf.GT.13) THEN
-       WRITE(6,'(A,I4)') 'XX sigmav_nf: input error: undefined id_nf: ',id_nf
+       IF(nf_last_error==0) &   ! first failure only -- see the declaration
+            WRITE(6,'(A,I4)') 'XX sigmav_nf: undefined id_nf: ',id_nf
        nf_last_error=NF_ERR_ID
        RETURN
     END IF
@@ -512,8 +520,8 @@ CONTAINS
     ! NaN fails every ordered comparison, so it would slip past both the
     ! low and high guards below and reach LOG10.  Test it explicitly.
     IF(temperature.NE.temperature) THEN
-       WRITE(6,'(A,I4)') 'XX sigmav_nf: input error: NaN temperature: id_nf=', &
-            id_nf
+       IF(nf_last_error==0) &
+            WRITE(6,'(A,I4)') 'XX sigmav_nf: NaN temperature: id_nf=',id_nf
        nf_last_error=NF_ERR_TEMP
        RETURN
     END IF
@@ -525,9 +533,9 @@ CONTAINS
     END IF
 
     IF(temperature.GT.1000.D0) THEN
-       WRITE(6,'(A,ES12.4)') &
-            'XX sigmav_nf: input error: Too high temperature: temperature=', &
-            temperature
+       IF(nf_last_error==0) &
+            WRITE(6,'(A,ES12.4)') &
+            'XX sigmav_nf: above the 1000 keV table top: ',temperature
        nf_last_error=NF_ERR_TEMP
        RETURN
     END IF
@@ -547,8 +555,10 @@ CONTAINS
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_the3,10,ierr)
     END SELECT
     IF(ierr.NE.0) THEN
-       WRITE(6,'(A,I4)')     'XX SPL1DF error in sigmav_nf: id_nf=',id_nf
-       WRITE(6,'(A,ES12.4)') '       temperature=',temperature
+       IF(nf_last_error==0) THEN
+          WRITE(6,'(A,I4)')     'XX SPL1DF error in sigmav_nf: id_nf=',id_nf
+          WRITE(6,'(A,ES12.4)') '       temperature=',temperature
+       END IF
        sigmav_nf=0.D0
        nf_last_error=NF_ERR_SPL
        RETURN
