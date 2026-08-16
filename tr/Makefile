@@ -353,10 +353,21 @@ OBJ_CORE_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
 # above). The PIC path has no per-file rules, so without these `make -j
 # libtrapi.so` can compile a consumer before trlib.mod / trcoll.mod exist.
 $(OBJDIR_PIC)/trlib.o               : $(OBJDIR_PIC)/trcomm.o
-# libnf USEs trcomm (model_pnf, nnfmax), plcomm and libspl1d.  Without this the
-# PIC build races under -j exactly as trlib/trcoll did (a640d818) -- and a
-# stale trcomm.mod makes libnf fail with "model_pnf has no IMPLICIT type",
-# which is how it bit during this port.
+# The PIC block had no rule tying trcomm.o to its submodule SOURCES, while the
+# non-PIC block has had one since forever ($(OBJDIR)/trcomm.o, below).  Without
+# it, editing trcomm_param.f90 rebuilds trcomm_param.o but NOT trcomm.o, so
+# trcomm.mod stays stale and any consumer fails with "Symbol 'model_pnf' at (1)
+# has no IMPLICIT type" -- which reads like a missing declaration and is
+# actually a stale module file.  That is exactly how it bit during this port,
+# and an earlier version of this comment wrongly credited the libnf rule below
+# with preventing it.
+$(OBJDIR_PIC)/trcomm.o              : trcomm.f90 trcom0.f90 trcom1.f90 \
+                                      trcomm_const.f90 trcomm_param.f90 \
+                                      trcomm_ctrl.f90 trcomm_globals.f90 \
+                                      trcomm_profile.f90 trcomm_mtx.f90
+# libnf USEs trcomm (model_pnf, nnfmax), plcomm and libspl1d.  This orders it
+# for the -j race that bit trlib/trcoll in a640d818; the stale-mod hazard is
+# handled by the rule above, not by this one.
 $(OBJDIR_PIC)/libnf.o               : $(OBJDIR_PIC)/trcomm.o
 $(OBJDIR_PIC)/trcoll.o              : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/trlib.o
 $(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/trcoll.o
@@ -549,6 +560,7 @@ $(OBJDIR)/trrslt_files.o   : trrslt_files.f90 trcomm.f90
 $(OBJDIR)/trrslt_print.o   : trrslt_print.f90 trcomm.f90 $(OBJDIR)/trrslt_files.o
 $(OBJDIR)/trlib.o  : trlib.f90  $(OBJDIR)/trcomm.o
 $(OBJDIR)/trcoll.o : trcoll.f90 $(OBJDIR)/trcomm.o $(OBJDIR)/trlib.o
+$(OBJDIR)/libnf.o  : libnf.f90  $(OBJDIR)/trcomm.o
 $(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trcoll.o
 $(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90 $(OBJDIR)/trcoll.o
 $(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90 $(OBJDIR)/trcoll.o
