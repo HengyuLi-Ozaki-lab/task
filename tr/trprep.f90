@@ -52,7 +52,14 @@ CONTAINS
 !     nnfmax.  The call is idempotent, so the common path costs a size
 !     comparison.
       CALL allocate_trcomm_nf(IERR)
-      IF(IERR.NE.0) RETURN
+      IF(IERR.NE.0) THEN
+!        Unlike ALLOCATE_TRCOMM, which unwinds via GOTO 900 ->
+!        DEALLOCATE_ERR_TRCOMM, this call site owns its own cleanup.
+!        Leaving a partial allocation behind would hand the next attempt a
+!        state allocate_trcomm_nf's size check cannot describe.
+         CALL deallocate_err_trcomm_nf
+         RETURN
+      END IF
 
 !     Resolves the per-reaction caches and sets nf_multi_ready, which is
 !     what trcalc gates the tr_pnf dispatch on.  At model_pnf=0 nnfmax stays

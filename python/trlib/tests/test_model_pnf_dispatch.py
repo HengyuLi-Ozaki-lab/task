@@ -13,9 +13,14 @@ Task 7.  Concretely:
 * changing only ``model_pnf`` between runs resizes the ``trcomm_nf`` arrays,
   even though ``ALLOCATE_TRCOMM``'s early-return guard does not watch
   ``nnfmax``;
-* an undefined value is refused through ``ierr`` rather than through the bare
-  ``STOP`` inside ``set_usigmav_nf``, which would kill the host process
-  (CLAUDE.md, Fortran library discipline; issue #142).
+* an undefined value is refused through ``ierr`` rather than by aborting --
+  ``set_usigmav_nf`` answered this with a bare ``STOP`` before this branch
+  converted it, and a ``STOP`` reached through the ``.so`` kills the host
+  process (CLAUDE.md, Fortran library discipline; issue #142);
+* ``model_pnf`` is reset by ``tr_init``, so a second in-process session does
+  not inherit the first one's value;
+* the reaction loop is exercised above ``sigmav_nf``'s 1 keV table floor,
+  which no committed fixture reaches on its own.
 
 The flags are read straight out of the shared library because they are
 module-scope state with no accessor on the C ABI -- adding one purely for a
@@ -41,6 +46,8 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 # gfortran mangling: __<module>_MOD_<lowercased name>
 SYM_READY = "__trcomm_nf_MOD_nf_multi_ready"
 SYM_NNFMAX = "__trcomm_ctrl_MOD_nnfmax"
+SYM_NF_ERR = "__libnf_MOD_nf_last_error"
+SYM_MODEL_PNF = "__trcomm_param_MOD_model_pnf"
 
 # From tr/libnf.f90::set_usigmav_nf. 12 and 14 are aliases of 2 and 4 that
 # select the same reaction set, so they must agree with their base value.
@@ -62,7 +69,7 @@ def _lib() -> ctypes.CDLL:
 
 
 @pytest.fixture()
-def probe(monkeypatch):
+def probe(monkeypatch):  # noqa: PT004 (yield fixture)
     """Run one fixture case at a given model_pnf; report the resulting state.
 
     Chdir into the fixtures directory because tr_tst2 is a MODELG=3 case and
@@ -81,7 +88,14 @@ def probe(monkeypatch):
                 "ready": bool(ctypes.c_int.in_dll(lib, SYM_READY).value),
             }
 
-    return run
+    try:
+        yield run
+    finally:
+        # model_pnf lives in module state that outlives a finalize. Under
+        # --forked this fixture's process dies anyway, but a plain pytest run
+        # shares one interpreter, and leaking model_pnf=14 into whatever runs
+        # next would silently put it on the new path.
+        ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value = 0
 
 
 def test_model_pnf_is_settable():
@@ -108,7 +122,14 @@ def test_reaction_count_and_arming(probe, model_pnf):
 
 
 def test_default_leaves_the_path_disarmed(probe):
-    """model_pnf=0 is the default; the legacy MDLNF path must own the run."""
+    """model_pnf=0 is the default; the legacy MDLNF path must own the run.
+
+    Arms the path first. Asserting {0, False} from a cold process would only
+    be reading the module initialisers (trcomm_ctrl.f90's nnfmax=0 and
+    trcomm_nf.f90's nf_multi_ready=.FALSE.) and would still pass with the
+    whole dispatch deleted; coming back to 0 from 4 is the real claim.
+    """
+    assert probe(4) == {"nnfmax": 13, "ready": True}
     assert probe(0) == {"nnfmax": 0, "ready": False}
 
 
@@ -118,22 +139,158 @@ def test_switching_model_pnf_resizes(probe):
     nrmax/nsmax/nszmax/nsnmax are identical across these three runs, so the
     guard short-circuits; only allocate_trcomm_nf's own size check makes the
     second and third runs correct.  Without it tr_prep_pnf refuses with
-    ierr=3 (tables and arrays disagree) and `ready` comes back False.
+    ierr=3, which tr_prep propagates and tr_api_run maps to
+    TR_ERR_CALC_FAILED -- so the symptom is a raised TrlibRunError, not a
+    False `ready`.
     """
     assert probe(1)["nnfmax"] == 1
     assert probe(4) == {"nnfmax": 13, "ready": True}
     assert probe(1) == {"nnfmax": 1, "ready": True}
 
 
-def test_undefined_model_pnf_returns_instead_of_aborting(probe):
-    """set_usigmav_nf STOPs on an unknown value; tr_prep must screen it first.
+def _read_source_array(lib, symbol, nstm, nnfmax, nrmax):
+    """Read a (NSTM,nnfmax,NRMAX) allocatable out of the loaded image.
 
-    A STOP reached through the library takes down the host process, so the
-    fact that this raises a catchable Python exception -- i.e. the
-    interpreter is still alive to raise it -- is the assertion.
+    gfortran lays an array descriptor out with base_addr as its first word,
+    so the descriptor symbol's first pointer-sized field is the data. That is
+    an implementation detail of the compiler, not a documented ABI -- it is
+    used here rather than widening the C ABI with an accessor that no caller
+    would want, and it is confined to this helper. Returns column-major data
+    flat, i.e. index (ns-1) + nstm*(nnf-1) + nstm*nnfmax*(nr-1).
+    """
+    addr = ctypes.c_void_p.in_dll(lib, symbol)
+    assert addr.value, f"{symbol} is not allocated"
+    return list((ctypes.c_double * (nstm * nnfmax * nrmax)).from_address(addr.value))
+
+
+def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
+    """Drive tr_pnf where it computes something, and pin the per-step reset.
+
+    Every committed fixture sits at or below sigmav_nf's 1 keV table floor
+    (tr_tst2 at ~0.01 keV; tr_iter01 and tr_m0904 at exactly 1.0 keV), where
+    sigmav_nf returns 0 by design. So without raising PT the ported reaction
+    loop evaluates to zero everywhere and every assertion about it would hold
+    vacuously. This uses tr_iter01 -- a real 4-species (e,D,T,He4) case, so
+    PA/PZ/PN stay consistent -- and lifts PT well inside the table. Raising
+    NSMAX on a 2-species fixture instead does not work: the unset PA/PZ for
+    the added species yield a NaN temperature.
+
+    The reset is pinned by a stoichiometric invariant rather than by
+    comparing runs of different length -- the plasma evolves between steps,
+    so a 1-step and a 5-step run legitimately differ (~18% here) and that
+    comparison cannot separate evolution from accumulation.
+
+    Within one reaction's slice, dd2 is D + D -> T + <p>: both reactants are
+    D and the tracked product is H, so tr_pnf subtracts SNF twice from the D
+    slot and adds it once to the H slot. Their ratio is therefore exactly -2
+    on every radius and at every step -- but only if both slots are reset at
+    entry. D is at ns=2 and H at ns=NS_H=6, and NSMAX is 4 here, so a reset
+    bounded by 1:NSMAX (as in trx, whose arrays are NSMAX-dimensioned, rather
+    than 1:NSTM as they are here) resets D and not H. After N steps the ratio
+    would read -2/N. That makes this assertion fail on exactly the defect it
+    is written for, independently of how the profiles evolve.
+    """
+    from .fixtures import tr_iter01_params as HOT
+
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+
+    NSTM = 8
+    NNFMAX = REACTION_COUNT[2]      # dt, dd1, dd2, dd3
+    NNF_DD2 = 3                     # 1-origin position of dd2 in id_nf_nnf
+    NS_D, NS_H = 2, 6
+    NSTEPS = 5
+
+    with Trlib() as tr:
+        HOT.apply(tr)
+        for i in range(1, 5):
+            tr.set_param(f"PT[{i}]", 20.0)   # keV, well inside the table
+            tr.set_param(f"PTS[{i}]", 2.0)
+        tr.set_param("model_pnf", 2)
+        tr.set_param("NTMAX", NSTEPS)
+        tr.run(NSTEPS)
+
+        assert ctypes.c_int.in_dll(lib, SYM_NF_ERR).value == 0, (
+            "sigmav_nf tripped a guard that used to be a bare STOP: "
+            f"nf_last_error={ctypes.c_int.in_dll(lib, SYM_NF_ERR).value} "
+            "(1=id_nf range, 2=NaN or >1000 keV, 3=spline)"
+        )
+        assert bool(ctypes.c_int.in_dll(lib, SYM_READY).value)
+
+        nsmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nsmax").value
+        nrmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value
+        data = _read_source_array(
+            lib, "__trcomm_nf_MOD_snf_nsnnfnr", NSTM, NNFMAX, nrmax
+        )
+
+    assert NS_H > nsmax, (
+        f"this case no longer reaches the out-of-NSMAX slot it exists to "
+        f"cover: NS_H={NS_H} is within NSMAX={nsmax}"
+    )
+
+    def at(ns, nnf, nr):
+        return data[(ns - 1) + NSTM * (nnf - 1) + NSTM * NNFMAX * (nr - 1)]
+
+    ratios = [
+        at(NS_D, NNF_DD2, nr) / at(NS_H, NNF_DD2, nr)
+        for nr in range(1, nrmax + 1)
+        if at(NS_H, NNF_DD2, nr) != 0.0
+    ]
+    assert ratios, (
+        "the D-D -> T + p channel produced nothing, so the reaction loop "
+        "did not run and the reset assertion below would be vacuous"
+    )
+    worst = max(abs(r - (-2.0)) for r in ratios)
+    assert worst < 1e-12, (
+        f"SNF_NSNNFNR(D)/SNF_NSNNFNR(H) in the dd2 slice is {min(ratios)}.."
+        f"{max(ratios)}, not -2. Both slots take one SNF per reactant/product "
+        f"per step, so a departure means one of them was not reset at entry "
+        f"-- H sits at ns={NS_H}, outside NSMAX={nsmax}, which a reset bounded "
+        f"by 1:NSMAX would skip while still resetting D at ns={NS_D}. "
+        f"After {NSTEPS} steps that reads as -2/{NSTEPS}."
+    )
+
+
+def test_undefined_model_pnf_returns_instead_of_aborting(probe):
+    """An unknown model_pnf must come back as ierr, not as a process abort.
+
+    Upstream, set_usigmav_nf answered this with a bare STOP, which from
+    inside a dlopened .so takes down the interpreter. It now returns
+    ierr_nf=2, tr_prep propagates it, and tr_api_run maps it to
+    TR_ERR_CALC_FAILED. So the assertion is really that the interpreter is
+    still alive to raise -- a STOP would fail this test by killing the
+    pytest-forked child, not by raising something else.
     """
     with pytest.raises(TrlibError):
         probe(UNDEFINED_MODEL_PNF)
 
     # Still usable afterwards: the refusal must not have left state wedged.
     assert probe(0)["ready"] is False
+
+
+def test_model_pnf_is_reset_by_init(monkeypatch):
+    """A second in-process session must not inherit the first one's model_pnf.
+
+    The declaration initialiser in trcomm_param.f90 is static -- it runs once
+    at image load and tr_api_init does not re-execute it -- so Option A's
+    "off unless asked for" guarantee rests on trinit's explicit reset, next
+    to MDLNF's. Without that line this test fails: the second Trlib() would
+    still see model_pnf=4 and arm the path.
+
+    Deliberately does NOT use the `probe` fixture, whose teardown zeroes
+    model_pnf and would mask exactly what is under test.
+    """
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+
+    with Trlib() as tr:
+        FIXTURE.apply(tr)
+        tr.set_param("model_pnf", 4)
+        tr.run(1)
+        assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 4
+
+    with Trlib() as tr:
+        FIXTURE.apply(tr)          # never mentions model_pnf
+        tr.run(1)
+        assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 0
+        assert bool(ctypes.c_int.in_dll(lib, SYM_READY).value) is False

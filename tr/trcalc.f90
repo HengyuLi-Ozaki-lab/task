@@ -150,7 +150,10 @@
 !     The guard is nf_multi_ready, not model_pnf>0: libnf returns a
 !     plausible sigmav_nf from uninitialised tables instead of aborting,
 !     so the gate has to be the flag tr_prep_pnf sets, not the input.
-      IF(nf_multi_ready) CALL tr_pnf
+      IF(nf_multi_ready) THEN
+         CALL tr_pnf(IERR)
+         IF(IERR.NE.0) RETURN
+      END IF
 
 
       CALL TRAJOH
