@@ -414,6 +414,15 @@ CONTAINS
 
       MDLNF  = 0
 
+!        model_pnf : ADDITIVE MULTI-REACTION FUSION PATH (P1, ported
+!                    from trx).  Reset here and not only at its
+!                    declaration: a declaration initialiser is static
+!                    and is not re-run by tr_api_init, so without this
+!                    a second in-process session would inherit the
+!                    first one's value and silently run the new path.
+
+      model_pnf = 0
+
 !     ==== NBI HEATING PARAMETERS ====
 
 !        PNBTOT : NBI TOTAL INPUT POWER (MW)

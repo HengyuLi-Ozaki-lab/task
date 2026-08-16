@@ -75,28 +75,46 @@ CONTAINS
 
   ! *** calculate the fusion reaction sources ***
 
-  SUBROUTINE tr_pnf
+  SUBROUTINE tr_pnf(ierr)
 
-    USE TRCOM0, ONLY: rkind, NRMAX, NSMAX
+    USE TRCOM0, ONLY: rkind, NRMAX, NSMAX, NSTM
     USE trcomm_ctrl, ONLY: nnfmax
     USE trcomm_profile, ONLY: RN, RT
     USE trcomm_nf
     USE libnf
     IMPLICIT NONE
+    INTEGER, INTENT(OUT):: ierr
     REAL(rkind):: PN1, PN2, PT1, RATE_NF, SNF
     REAL(rkind):: wgt, eng, enn
     INTEGER:: nnf, nr, id_nf, ns1, ns2, nsp, ns
 
+    ierr = 0
     IF(.NOT.nf_multi_ready) RETURN
 
-    SNF_NSNNFNR(1:NSMAX,1:nnfmax,1:NRMAX)   = 0.D0 ! particle source
-    PNFCL_NSNNFNR(1:NSMAX,1:nnfmax,1:NRMAX) = 0.D0 ! collisional transfer in
-    SNFNN_NNFNR(1:nnfmax,1:NRMAX)           = 0.D0 ! neutron number
-    PNFNN_NNFNR(1:nnfmax,1:NRMAX)           = 0.D0 ! neutron power
+    ! Zeroed over the full NSTM extent, not 1:NSMAX.
+    !
+    ! trx bounds these loops by NSMAX because its arrays are NSMAX-
+    ! dimensioned. Here they are NSTM-dimensioned, and the species indices
+    ! written below are plcomm's NS_* constants -- fixed at 2..7 by
+    ! pl/plinit.f90 and never re-resolved against the run's composition --
+    ! so nothing keeps them at or below NSMAX. A 4-species case at
+    ! model_pnf=2 writes ns=NS_H=6; bounding the reset at NSMAX=4 would
+    ! leave that slot accumulating `+` on every step, for the whole run.
+    ! That is the same unbounded growth the PNF_NSNNFNR note below
+    ! describes, reintroduced by the NSMAX->NSTM widening rather than
+    ! inherited from trx.
+    SNF_NSNNFNR(1:NSTM,1:nnfmax,1:NRMAX)   = 0.D0 ! particle source
+    PNFCL_NSNNFNR(1:NSTM,1:nnfmax,1:NRMAX) = 0.D0 ! collisional transfer in
+    SNFNN_NNFNR(1:nnfmax,1:NRMAX)          = 0.D0 ! neutron number
+    PNFNN_NNFNR(1:nnfmax,1:NRMAX)          = 0.D0 ! neutron power
     ! DEVIATION FROM trx (upstream defect): trx zeroes the four arrays above
     ! but not PNF_NSNNFNR, which it then accumulates into with `+`.  Left as
     ! upstream, the fusion power would grow without bound across timesteps.
-    PNF_NSNNFNR(1:NSMAX,1:nnfmax,1:NRMAX)   = 0.D0 ! fusion power
+    PNF_NSNNFNR(1:NSTM,1:nnfmax,1:NRMAX)   = 0.D0 ! fusion power
+
+    ! sigmav_nf reports out-of-band (its signature is pinned by a ctypes
+    ! binding). Clear once here, check once after the loop.
+    nf_last_error = 0
 
     DO nnf = 1, nnfmax
        id_nf = id_nf_nnf(nnf)
@@ -123,10 +141,19 @@ CONTAINS
        END DO
     END DO
 
+    IF(nf_last_error.NE.0) THEN
+       WRITE(6,*) 'XX tr_pnf: sigmav_nf failed, nf_last_error=',nf_last_error
+       ierr = 100 + nf_last_error
+       RETURN
+    END IF
+
     ! --- roll-ups over reactions, as consumed downstream in trx ---
+    !
+    ! 1:NSTM, not 1:NSMAX, for the same reason the resets above are: the
+    ! contributing species indices are not bounded by NSMAX.
 
     DO nr = 1, NRMAX
-       DO ns = 1, NSMAX
+       DO ns = 1, NSTM
           SNF_NSNR(ns,nr)   = SUM(SNF_NSNNFNR(ns,1:nnfmax,nr))
           PNFCL_NSNR(ns,nr) = SUM(PNFCL_NSNNFNR(ns,1:nnfmax,nr))
        END DO

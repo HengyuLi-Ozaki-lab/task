@@ -71,17 +71,30 @@ CONTAINS
     INTEGER, INTENT(OUT) :: ierr
     ierr = 0
 
-    IF(ALLOCATED(ns1_nnf)) THEN
+    ! Both ALLOCATED tests are needed, not just the first: an earlier call
+    ! can fail between the two ALLOCATEs and RETURN, and tr_prep's direct
+    ! call does not clean up on failure the way ALLOCATE_TRCOMM's GOTO 900
+    ! path does.  SIZE() of an unallocated allocatable is undefined.
+    IF(ALLOCATED(ns1_nnf) .AND. ALLOCATED(SNF_NSNNFNR)) THEN
        IF(SIZE(ns1_nnf) == nnfmax .AND. &
           SIZE(SNF_NSNNFNR,1) == NSTM .AND. &
           SIZE(SNF_NSNNFNR,2) == nnfmax .AND. &
           SIZE(SNF_NSNNFNR,3) == NRMAX) RETURN
-       CALL deallocate_trcomm_nf
     END IF
+    CALL deallocate_trcomm_nf
 
-    ! nnfmax == 0 (model_pnf == 0) yields zero-size arrays: allocated, so
-    ! ALLOCATED() guards and whole-array assignments stay well defined, but
-    ! costing nothing and iterated over zero times.
+    ! At nnfmax == 0 (model_pnf == 0) the nnfmax-sized arrays below come out
+    ! zero-size -- allocated, so ALLOCATED() guards and whole-array
+    ! assignments stay well defined, but iterated over zero times.
+    !
+    ! The last ALLOCATE is NOT one of them: SNF_NSNR and PNFCL_NSNR are
+    ! (NSTM,NRMAX) with no nnfmax dependence, so they take real heap on
+    ! every run -- 6.4 KB at NRMAX=50 -- and every allocation issued after
+    ! this routine lands at a different address than it did before Task 6.
+    ! That is why the bit-exactness evidence for the legacy path has to be a
+    ! measurement and not an argument, and why the measurement has to be
+    ! repeated on Linux: the hazard it must exclude is glibc handing back a
+    ! just-freed chunk, which the macOS allocator does not reproduce.
     ALLOCATE(ns1_nnf(nnfmax),ns2_nnf(nnfmax),nsp_nnf(nnfmax),STAT=ierr)
       IF(ierr /= 0) RETURN
     ALLOCATE(wgt_nnf(nnfmax),eng_nnf(nnfmax),enn_nnf(nnfmax),STAT=ierr)

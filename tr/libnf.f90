@@ -133,6 +133,15 @@ MODULE libnf
   PUBLIC set_usigmav_nf  ! set_usigmav_nf
   PUBLIC sigmav_nf       ! sigmav_nf(id_nf,temperature) Maxwellian fitting
 
+  ! sigmav_nf is a FUNCTION whose signature is pinned by test_libnf.py's
+  ! ctypes binding, so it reports failure out-of-band here instead of by
+  ! STOP.  Sticky: set on error, only ever cleared by the caller, so a
+  ! caller can clear once, run a whole loop, and check once at the end.
+  INTEGER,PARAMETER,PUBLIC:: NF_ERR_ID   = 1  ! id_nf outside 1..13
+  INTEGER,PARAMETER,PUBLIC:: NF_ERR_TEMP = 2  ! temperature NaN or > 1000 keV
+  INTEGER,PARAMETER,PUBLIC:: NF_ERR_SPL  = 3  ! SPL1DF evaluation failed
+  INTEGER,PUBLIC:: nf_last_error = 0
+
   ! sigma_nf and sigmav_nf_int are NOT exported, on measured grounds:
   !
   !   sigma_nf indexes Duane(5,6) -- an NRL-ordered table whose columns are
@@ -267,27 +276,31 @@ CONTAINS
        RETURN
     END SELECT
 
-    ! DEVIATION FROM trx (upstream defect): 13 -> 14 in the first label.
+    ! DEVIATION FROM trx (upstream defect): 13 -> 14, moved to CASE(4,14).
     !
-    ! 12 and 14 are the reduced-species variants -- nsmax=4 in the header
-    ! table above, against 6/7 for 2/3/4 -- which collapse the H, He3 and
-    ! He5 products onto He4 (see the model_pnf.EQ.12 / .EQ.14 remaps at the
-    ! nsp_idnf assignments below).  They therefore need only D, T and He4,
-    ! so grouping 12 with the D-T-only check is correct and 14 belongs with
-    ! it.  Upstream writes 13, which no SELECT here accepts and which the
-    ! first one rejects outright, while 14 -- accepted by CASE(4,14) above
-    ! -- matched nothing and fell through to CASE DEFAULT's STOP, killing
-    ! the process on a value the routine documents as valid.
+    ! Upstream reads CASE(1,12,13). 13 is accepted by neither SELECT above
+    ! and is rejected outright by the first, so that label is dead, while 14
+    ! -- which CASE(4,14) above accepts and the header table documents --
+    ! matched nothing here and fell through to CASE DEFAULT's STOP. So
+    ! model_pnf=14 killed the process on a value the routine calls valid.
     !
-    ! CAVEAT for model_pnf=12: nsp_idnf(id_nf_dd3) below is inverted
-    ! relative to every sibling remap -- it hands He3 to the reduced variant
-    ! and He4 to the full one, the opposite of dd2 and the32.  So a
-    ! model_pnf=12 run that legitimately carries no He3 still reaches
-    ! nsp_idnf = NS_He3 = 0 and indexes SNF_NSNNFNR at 0.  Not fixed here:
-    ! correcting it changes which species receives the D-D neutron branch,
-    ! which is a numerical change and belongs with the Task 7 validation.
+    ! 14 belongs with 4, not with 1/12, even though the header table calls
+    ! it an nsmax=4 variant. What matters is which species the nsp_idnf /
+    ! ns1_idnf / ns2_idnf fill below actually indexes, and at model_pnf=14
+    ! that is the same six as at model_pnf=4: the only .EQ.14 remap in this
+    ! file is the32 (below), so H survives on dd2, dhe32 and the36, He5 on
+    ! the35, and He3 is ns2 for all seven DHe3/THe3 reactions. Reading the
+    ! header table's intent instead of the code costs a real abort here.
+    !
+    ! CAVEAT for model_pnf=12, left as upstream: nsp_idnf(id_nf_dd3) is
+    ! inverted relative to every sibling remap -- it hands He3 to the
+    ! reduced variant and He4 to the full one, the opposite of dd2 and
+    ! the32 -- so 12 does index He3, which this branch does not check.
+    ! Correcting it changes which species receives the D-D neutron branch,
+    ! i.e. it is a numerical change, and belongs with the Task 7 validation
+    ! alongside the incomplete .EQ.14 remap set.
     SELECT CASE(model_pnf)
-    CASE(1,12,14)
+    CASE(1,12)
        IF(NS_D*NS_T*NS_He4.EQ.0) THEN
           IF(NS_D.EQ.0) WRITE(6,*)   'XX Error: libnf: NS_D=0'
           IF(NS_T.EQ.0) WRITE(6,*)   'XX Error: libnf: NS_T=0'
@@ -305,7 +318,7 @@ CONTAINS
           ierr_nf = 3
           RETURN
        END IF
-    CASE(4)
+    CASE(4,14)
        IF(NS_D*NS_T*NS_He4*NS_H*NS_He3*NS_He5.EQ.0) THEN
           IF(NS_D.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_D=0'
           IF(NS_T.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_T=0'
@@ -348,7 +361,12 @@ CONTAINS
        nsp_idnf(id_nf_dd2)=NS_H
     END IF
     eng_idnf(id_nf_dd2)=3.02D3*RKEV
-    enn_idnf(id_nf_dd3)=0.D0
+    ! Upstream names dd3 here, inside the dd2 block, and assigns dd3's real
+    ! value further down -- so enn_idnf(id_nf_dd2) was the one slot of the
+    ! thirteen never written, and tr_pnf branches on it (IF(enn > 0)).
+    ! 0 is also the physically right value: dd2 is D + D -> T + <p>, a
+    ! charged-particle branch that releases no neutron.
+    enn_idnf(id_nf_dd2)=0.D0
 
     ns1_idnf(id_nf_dd3)=NS_D
     ns2_idnf(id_nf_dd3)=NS_D
@@ -466,6 +484,13 @@ CONTAINS
   ! --- reaction rate of nuclear fusion: sigmav  ---
   ! ---     as a function of temperature in keV
 
+  ! Failures are reported through the module-level nf_last_error rather than
+  ! by STOP.  P1 Task 6 put this function on a live path -- tr_pnf calls it
+  ! once per (reaction, radius) on every trcalc step -- so a STOP here aborts
+  ! the host process, pytest or the MCP server, mid-solve (CLAUDE.md, Fortran
+  ! library discipline; issue #142).  The signature is deliberately unchanged:
+  ! test_libnf.py binds this symbol through ctypes with a fixed argtypes.
+  ! Callers clear nf_last_error, run their loop, and check it afterwards.
   FUNCTION sigmav_nf(id_nf,temperature)
 
     USE libspl1d
@@ -474,13 +499,27 @@ CONTAINS
     REAL(rkind),INTENT(IN):: temperature
     REAL(rkind):: sigmav_nf,temperature_log
     INTEGER:: ierr
-    
+
+    ierr=0
+    sigmav_nf=0.D0
+
     IF(id_nf.LT.1.OR.id_nf.GT.13) THEN
        WRITE(6,'(A,I4)') 'XX sigmav_nf: input error: undefined id_nf: ',id_nf
-       STOP
+       nf_last_error=NF_ERR_ID
+       RETURN
+    END IF
+
+    ! NaN fails every ordered comparison, so it would slip past both the
+    ! low and high guards below and reach LOG10.  Test it explicitly.
+    IF(temperature.NE.temperature) THEN
+       WRITE(6,'(A,I4)') 'XX sigmav_nf: input error: NaN temperature: id_nf=', &
+            id_nf
+       nf_last_error=NF_ERR_TEMP
+       RETURN
     END IF
 
     IF(temperature.LT.1.D0) THEN
+       ! Below the table floor; 0 is the intended answer, not an error.
        sigmav_nf=0.D0
        RETURN
     END IF
@@ -489,7 +528,8 @@ CONTAINS
        WRITE(6,'(A,ES12.4)') &
             'XX sigmav_nf: input error: Too high temperature: temperature=', &
             temperature
-       STOP
+       nf_last_error=NF_ERR_TEMP
+       RETURN
     END IF
 
     temperature_log=LOG10(temperature)
@@ -509,7 +549,9 @@ CONTAINS
     IF(ierr.NE.0) THEN
        WRITE(6,'(A,I4)')     'XX SPL1DF error in sigmav_nf: id_nf=',id_nf
        WRITE(6,'(A,ES12.4)') '       temperature=',temperature
-       STOP
+       sigmav_nf=0.D0
+       nf_last_error=NF_ERR_SPL
+       RETURN
     END IF
   END FUNCTION sigmav_nf
 

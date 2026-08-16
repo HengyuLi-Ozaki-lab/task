@@ -142,8 +142,9 @@ CONTAINS
     CASE ("MDLNF");  MDLNF  = INT(value)
     ! Selects the multi-reaction fusion path ported from trx (P1 Task 6).
     ! 0 (default) = legacy MDLNF only; 1/2/3/4/12/14 additionally evaluate
-    ! the ported reaction set. Validated in tr_prep, which must screen it
-    ! before libnf's set_usigmav_nf STOPs on an unknown value.
+    ! the ported reaction set.  Not range-checked here: the value is
+    ! validated where it is consumed, by set_usigmav_nf, which returns
+    ! ierr_nf=2 for anything else and which tr_prep propagates.
     ! Both spellings: the source name is lowercase (it comes from trx), but
     ! every other entry in this registry is uppercase and the CASE compare
     ! is literal, so accepting only one spelling would surprise callers.

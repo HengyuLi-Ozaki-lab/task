@@ -370,6 +370,12 @@ $(OBJDIR_PIC)/trcomm.o              : trcomm.f90 trcom0.f90 trcom1.f90 \
 # trcomm_nf USEs trcomm_ctrl (nnfmax) -- the only submodule that depends on
 # another, so it needs an ordering edge the sibling submodules do not.
 $(OBJDIR_PIC)/trcomm_nf.o           : $(OBJDIR_PIC)/trcomm_ctrl.o
+# ...and trcomm.o must be ordered AFTER it.  Listing trcomm_nf.f90 among
+# trcomm.o's prerequisites (above) forces a REBUILD when the source changes
+# but does not order the two compiles, so under -j make can compile trcomm.o
+# while trcomm_nf.mod is still being written.  The six older submodules share
+# this gap; the edge is added here for the one this port introduces.
+$(OBJDIR_PIC)/trcomm.o              : $(OBJDIR_PIC)/trcomm_nf.o
 # trpnf_multi USEs trcomm (via trcomm_nf/trcomm_ctrl/trcomm_profile) and libnf.
 $(OBJDIR_PIC)/trpnf_multi.o         : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/libnf.o
 # trprep drives the fusion init: set_usigmav_nf (libnf) before
@@ -541,6 +547,7 @@ $(OBJDIR)/trcomm_profile.o : trcomm_profile.f90 trcom0.f90
 $(OBJDIR)/trcomm_globals.o : trcomm_globals.f90 trcom0.f90
 $(OBJDIR)/trcomm_nf.o      : trcomm_nf.f90 trcom0.f90 trcomm_ctrl.f90 \
                      $(OBJDIR)/trcomm_ctrl.o
+$(OBJDIR)/trcomm.o : $(OBJDIR)/trcomm_nf.o
 $(OBJDIR)/trcomm.o : trcomm.f90 trcom0.f90 trcom1.f90 \
                      trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
                      trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90 \

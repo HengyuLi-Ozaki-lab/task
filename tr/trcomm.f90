@@ -77,7 +77,9 @@ CONTAINS
       IF(ierr /= 0) GOTO 900
     CALL allocate_trcomm_globals(ierr)
       IF(ierr /= 0) GOTO 900
-    ! Sized by nnfmax, which is 0 unless model_pnf > 0 -> zero-size arrays.
+    ! Mostly sized by nnfmax (0 unless model_pnf > 0), but not entirely:
+    ! the two _NSNR roll-ups are (NSTM,NRMAX) unconditionally, so this
+    ! does take heap even at the default.  See allocate_trcomm_nf.
     CALL allocate_trcomm_nf(ierr)
       IF(ierr /= 0) GOTO 900
 
