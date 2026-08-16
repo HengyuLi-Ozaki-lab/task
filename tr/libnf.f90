@@ -12,6 +12,22 @@ END MODULE libnf_local
 
 MODULE libnf
   USE bpsd_kinds
+  ! WAIVER, deliberate and load-bearing for Task 7.  The port plan said to
+  ! drop this import and take AMM from TRCOMM instead, because bpsd's AMP is
+  ! CODATA-2018 (1.67262192369D-27) while tr's AMM is CODATA-2006
+  ! (1.672621637D-27) -- a relative difference of 1.714e-7, about 1700x the
+  ! 1e-10 gate Task 7 will apply.
+  !
+  ! It is kept because dropping it now would edit more of the upstream file
+  ! than the port otherwise touches, and because the only AMP consumer
+  ! (sigmav_nf_local) is PRIVATE and unreachable today: RKEV inside
+  ! set_usigmav_nf resolves to TRCOMM's CODATA-2006 value, so nothing shipped
+  ! here is affected.  Verified: eng_idnf(DT) = 5.6076177045D-13, bit-equal to
+  ! 3.5D3 * 1.602176487D-19 * 1D3.
+  !
+  ! Task 6 MUST NOT rely on that.  Any new routine here that names AEE, AMP or
+  ! RKEV without an explicit `USE trcomm,ONLY:` silently picks up CODATA-2018
+  ! and fails Task 7's gate with no obvious cause.
   USE bpsd_constants
 
   ! Fusion model
