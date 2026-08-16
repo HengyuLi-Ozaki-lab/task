@@ -47,6 +47,7 @@ MODULE tr_param_registry
        DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, &
        MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, &
        MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF, &
+       model_pnf, &
        MODELG, MDLIMP, NGTSTP, NGRSTP, &
        PROFN1, PROFN2, PNC, &
        PNBTOT, PNBR0, PNBRW, PNBENG, PNBRTG, &
@@ -139,6 +140,14 @@ CONTAINS
     CASE ("MDLJBS"); MDLJBS = INT(value)
     CASE ("MDLST");  MDLST  = INT(value)
     CASE ("MDLNF");  MDLNF  = INT(value)
+    ! Selects the multi-reaction fusion path ported from trx (P1 Task 6).
+    ! 0 (default) = legacy MDLNF only; 1/2/3/4/12/14 additionally evaluate
+    ! the ported reaction set. Validated in tr_prep, which must screen it
+    ! before libnf's set_usigmav_nf STOPs on an unknown value.
+    ! Both spellings: the source name is lowercase (it comes from trx), but
+    ! every other entry in this registry is uppercase and the CASE compare
+    ! is literal, so accepting only one spelling would surprise callers.
+    CASE ("model_pnf","MODEL_PNF"); model_pnf = INT(value)
     CASE ("MDLUF");  MDLUF  = INT(value)
     ! --- heating / current-drive scalars ---------------------------
     !     NBI

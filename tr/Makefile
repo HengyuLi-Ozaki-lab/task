@@ -27,11 +27,12 @@ MODINCLUDE= -I./$(MOD) -I../pl/$(MOD) -I../eq/$(MOD) \
 SRCM=trcom0.f90 trcom1.f90 \
      trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
      trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90 \
+     trcomm_nf.f90 \
      trcomm.f90 trbpsd.f90
 
 # Core computation sources (no graphics, no interactive menu).
 # This subset will be linked into libtrapi.so in Phase L-4.
-SRCS_CORE=trlib.f90 trcoll.f90 libnf.f90 \
+SRCS_CORE=trlib.f90 trcoll.f90 libnf.f90 trpnf_multi.f90 \
      trcdbm.f90 trmodels.f90 \
      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
      trcoef_resistivity.f90 trcoef_adhoc.f90 \
@@ -364,13 +365,22 @@ $(OBJDIR_PIC)/trlib.o               : $(OBJDIR_PIC)/trcomm.o
 $(OBJDIR_PIC)/trcomm.o              : trcomm.f90 trcom0.f90 trcom1.f90 \
                                       trcomm_const.f90 trcomm_param.f90 \
                                       trcomm_ctrl.f90 trcomm_globals.f90 \
-                                      trcomm_profile.f90 trcomm_mtx.f90
+                                      trcomm_profile.f90 trcomm_mtx.f90 \
+                                      trcomm_nf.f90
+# trcomm_nf USEs trcomm_ctrl (nnfmax) -- the only submodule that depends on
+# another, so it needs an ordering edge the sibling submodules do not.
+$(OBJDIR_PIC)/trcomm_nf.o           : $(OBJDIR_PIC)/trcomm_ctrl.o
+# trpnf_multi USEs trcomm (via trcomm_nf/trcomm_ctrl/trcomm_profile) and libnf.
+$(OBJDIR_PIC)/trpnf_multi.o         : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/libnf.o
+# trprep drives the fusion init: set_usigmav_nf (libnf) before
+# ALLOCATE_TRCOMM, tr_prep_pnf (trpnf_multi) after it.
+$(OBJDIR_PIC)/trprep.o              : $(OBJDIR_PIC)/libnf.o $(OBJDIR_PIC)/trpnf_multi.o
 # libnf USEs trcomm (model_pnf, nnfmax), plcomm and libspl1d.  This orders it
 # for the -j race that bit trlib/trcoll in a640d818; the stale-mod hazard is
 # handled by the rule above, not by this one.
 $(OBJDIR_PIC)/libnf.o               : $(OBJDIR_PIC)/trcomm.o
 $(OBJDIR_PIC)/trcoll.o              : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/trlib.o
-$(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/trcoll.o
+$(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/trcoll.o $(OBJDIR_PIC)/trpnf_multi.o
 $(OBJDIR_PIC)/trcoef_turbulence.o   : $(OBJDIR_PIC)/trcoll.o
 $(OBJDIR_PIC)/trcoef_neoclassical.o : $(OBJDIR_PIC)/trcoll.o
 $(OBJDIR_PIC)/trcoef_resistivity.o  : $(OBJDIR_PIC)/trcoll.o $(OBJDIR_PIC)/trlib.o
@@ -529,9 +539,12 @@ $(OBJDIR)/trcomm_ctrl.o    : trcomm_ctrl.f90 trcom0.f90
 $(OBJDIR)/trcomm_mtx.o     : trcomm_mtx.f90 trcom0.f90
 $(OBJDIR)/trcomm_profile.o : trcomm_profile.f90 trcom0.f90
 $(OBJDIR)/trcomm_globals.o : trcomm_globals.f90 trcom0.f90
+$(OBJDIR)/trcomm_nf.o      : trcomm_nf.f90 trcom0.f90 trcomm_ctrl.f90 \
+                     $(OBJDIR)/trcomm_ctrl.o
 $(OBJDIR)/trcomm.o : trcomm.f90 trcom0.f90 trcom1.f90 \
                      trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
-                     trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90
+                     trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90 \
+                     trcomm_nf.f90
 $(OBJDIR)/trmain.o : trmain.f90 trcomm.f90 $(OBJDIR)/trrslt_print.o
 $(OBJDIR)/trmenu.o : trmenu.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trrslt_files.o $(OBJDIR)/trrslt_print.o
 $(OBJDIR)/trinit.o : trinit.f90 trcomm.f90 trcom1.f90
@@ -542,7 +555,8 @@ $(OBJDIR)/tr_dump_state.o : tr_dump_state.f90 \
                      $(OBJDIR)/trcomm_param.o $(OBJDIR)/trcomm_ctrl.o \
                      $(OBJDIR)/trcomm_profile.o $(OBJDIR)/trcom0.o
 $(OBJDIR)/trprep.o : trprep.f90 trcomm.f90 trcom1.f90 \
-                     $(OBJDIR)/tr_dump_state.o
+                     $(OBJDIR)/tr_dump_state.o \
+                     $(OBJDIR)/libnf.o $(OBJDIR)/trpnf_multi.o
 $(OBJDIR)/trprof.o : trprof.f90 trcomm.f90 trcom1.f90 trcoef_resistivity.f90
 $(OBJDIR)/trmetric.o : trmetric.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trfile.o : trfile.f90 trcomm.f90 trcom1.f90
@@ -561,7 +575,10 @@ $(OBJDIR)/trrslt_print.o   : trrslt_print.f90 trcomm.f90 $(OBJDIR)/trrslt_files.
 $(OBJDIR)/trlib.o  : trlib.f90  $(OBJDIR)/trcomm.o
 $(OBJDIR)/trcoll.o : trcoll.f90 $(OBJDIR)/trcomm.o $(OBJDIR)/trlib.o
 $(OBJDIR)/libnf.o  : libnf.f90  $(OBJDIR)/trcomm.o
-$(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trcoll.o
+$(OBJDIR)/trpnf_multi.o : trpnf_multi.f90 trcomm.f90 \
+                     $(OBJDIR)/trcomm.o $(OBJDIR)/libnf.o
+$(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trcoll.o \
+                     $(OBJDIR)/trpnf_multi.o
 $(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90 $(OBJDIR)/trcoll.o
 $(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90 $(OBJDIR)/trcoll.o
 $(OBJDIR)/trcoef_resistivity.o  : trcoef_resistivity.f90 trcomm.f90 $(OBJDIR)/trcoll.o $(OBJDIR)/trlib.o

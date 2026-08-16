@@ -16,6 +16,8 @@
            T, TAUF, TTRHOG, RDPVRHOG, SPSC, &
            pellet_time_start,pellet_time_interval, &
            number_of_pellet_repeat,icount_of_pellet
+      USE TRCOMM, ONLY : nf_multi_ready
+      USE trpnf_multi, ONLY : tr_pnf
       USE tr_cytran_mod
       USE libitp
       IMPLICIT NONE
@@ -137,7 +139,20 @@
       CASE(5:6)
          CALL TRNFDHE3
       END SELECT
-      
+
+!     --- multi-reaction fusion source, ported from trx (P1 Task 6) ---
+!     Additive, not a replacement: the MDLNF block above is untouched and
+!     still owns everything the solver reads, so model_pnf=0 (the default)
+!     and model_pnf>0 alike leave the legacy result bit-exact.  tr_pnf
+!     writes only trcomm_nf arrays, which nothing consumes yet -- it runs
+!     here so the ported physics is evaluated on real profiles for the
+!     cross-validation against trx.
+!     The guard is nf_multi_ready, not model_pnf>0: libnf returns a
+!     plausible sigmav_nf from uninitialised tables instead of aborting,
+!     so the gate has to be the flag tr_prep_pnf sets, not the input.
+      IF(nf_multi_ready) CALL tr_pnf
+
+
       CALL TRAJOH
 
       DO NR=1,NRMAX
