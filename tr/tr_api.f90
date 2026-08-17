@@ -38,6 +38,7 @@ MODULE tr_api
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_RW, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
   USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str
+  USE libnf,             ONLY: nf_finalize
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE trinit,            ONLY: trinit_fortran => tr_init
@@ -346,6 +347,11 @@ CONTAINS
     END IF
 
     CALL DEALLOCATE_TRCOMM
+    ! libnf's id_nf_nnf is per-session state that DEALLOCATE_TRCOMM cannot
+    ! reach (module cycle -- see nf_finalize).  Without this it survives
+    ! into the next init, where tr_prep_pnf's ALLOCATED guard reads .TRUE.
+    ! for a table the new session never built.
+    CALL nf_finalize
     ! Pair with the OPEN(7) in tr_api_init so re-init after finalize
     ! does not try to OPEN an already-open unit (SCRATCH would auto-
     ! delete on program exit but a same-process re-init would fail).

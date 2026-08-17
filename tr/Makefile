@@ -378,6 +378,8 @@ $(OBJDIR_PIC)/trcomm_nf.o           : $(OBJDIR_PIC)/trcomm_ctrl.o
 $(OBJDIR_PIC)/trcomm.o              : $(OBJDIR_PIC)/trcomm_nf.o
 # trinit resets libnf's nf_last_error alongside model_pnf.
 $(OBJDIR_PIC)/trinit.o              : $(OBJDIR_PIC)/libnf.o
+$(OBJDIR_PIC)/trmain.o              : $(OBJDIR_PIC)/libnf.o
+$(OBJDIR_PIC)/tr_api.o              : $(OBJDIR_PIC)/libnf.o
 # trpnf_multi USEs trcomm (via trcomm_nf/trcomm_ctrl/trcomm_profile) and libnf.
 $(OBJDIR_PIC)/trpnf_multi.o         : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/libnf.o
 # trprep drives the fusion init: set_usigmav_nf (libnf) before
@@ -557,6 +559,10 @@ $(OBJDIR)/trcomm.o : trcomm.f90 trcom0.f90 trcom1.f90 \
 $(OBJDIR)/trmain.o : trmain.f90 trcomm.f90 $(OBJDIR)/trrslt_print.o
 $(OBJDIR)/trmenu.o : trmenu.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trrslt_files.o $(OBJDIR)/trrslt_print.o
 $(OBJDIR)/trinit.o : trinit.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/libnf.o
+# tr_api_finalize and trmain call nf_finalize to release libnf's per-session
+# table; trcalc reads its nf_summary_logged latch.
+$(OBJDIR)/trmain.o : $(OBJDIR)/libnf.o
+$(OBJDIR)/tr_api.o : $(OBJDIR)/libnf.o
 $(OBJDIR)/trparm.o : trparm.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/tr_dump_state.o : tr_dump_state.f90 \
                      trcom0.f90 trcomm_param.f90 trcomm_ctrl.f90 \

@@ -132,6 +132,8 @@ MODULE libnf
 
   PUBLIC set_usigmav_nf  ! set_usigmav_nf
   PUBLIC sigmav_nf       ! sigmav_nf(id_nf,temperature) Maxwellian fitting
+  PUBLIC nf_finalize     ! release per-session state at teardown
+  PUBLIC nf_reset_log    ! re-arm the one-line-per-class latches
 
   ! sigmav_nf is a FUNCTION whose signature is pinned by test_libnf.py's
   ! ctypes binding, so it reports failure out-of-band here instead of by
@@ -154,6 +156,15 @@ MODULE libnf
   ! failure no longer aborts and a long run would otherwise emit thousands.
   INTEGER,PUBLIC:: nf_last_error  = 0
   INTEGER,PUBLIC:: nf_error_count = 0
+  ! One latch per class, not one for all of them: gating every site on the
+  ! shared counter would mean that after the first fault of a run, a fault
+  ! of a DIFFERENT kind prints nothing -- and the SPL1DF branch is the only
+  ! place the offending id_nf and temperature are ever reported.
+  LOGICAL,DIMENSION(3),PRIVATE:: nf_logged = .FALSE.
+  ! The caller-side summary latch lives here too, so it is reset by the same
+  ! tr_init sweep.  A SAVEd local in trcalc would survive finalize and go
+  ! quiet for the rest of the process after one run's first fault.
+  LOGICAL,PUBLIC:: nf_summary_logged = .FALSE.
 
   ! sigma_nf and sigmav_nf_int are NOT exported, on measured grounds:
   !
@@ -185,6 +196,32 @@ CONTAINS
   ! only caller, so widening the signature costs nothing.
   !   1 = spline setup failed        2 = undefined model_pnf
   !   3 = a required ion species is absent from the composition
+  ! Release the per-session reaction table.  Called from the same teardown
+  ! points as DEALLOCATE_TRCOMM (tr_api_finalize, trmain), not from
+  ! set_usigmav_nf: freeing on the model_pnf=0 path would add a free() to
+  ! the default sequence in any process that had run model_pnf>0, which is
+  ! the heap perturbation the bit-exactness note in trcomm_nf is about.
+  ! trcomm/trcomm_nf cannot do this themselves -- libnf's subroutine-scoped
+  ! USE trcomm makes trcomm.mod a build prerequisite of libnf.o, so a
+  ! USE libnf from either would be a module cycle.
+  ! Re-arm the logging latches without touching the tables.  tr_init calls
+  ! this; nf_finalize does it as part of teardown.
+  SUBROUTINE nf_reset_log
+    IMPLICIT NONE
+    nf_logged(:)      = .FALSE.
+    nf_summary_logged = .FALSE.
+    RETURN
+  END SUBROUTINE nf_reset_log
+
+  SUBROUTINE nf_finalize
+    IMPLICIT NONE
+    IF(ALLOCATED(id_nf_nnf)) DEALLOCATE(id_nf_nnf)
+    nf_last_error  = 0
+    nf_error_count = 0
+    CALL nf_reset_log
+    RETURN
+  END SUBROUTINE nf_finalize
+
   SUBROUTINE set_usigmav_nf(ierr_nf)
     USE trcomm
     ! NS_* reach trx's libnf only via trx/trcomm.f90:5's USE plcomm; nothing in
@@ -236,12 +273,19 @@ CONTAINS
     SELECT CASE(model_pnf)
     CASE(0) ! no fusion reaction
        nnfmax=0
-       ! Free it here too.  Upstream returns before the DEALLOCATE below, so
-       ! a table built by an earlier model_pnf>0 session survives finalize and
-       ! the next init -- and tr_prep_pnf's ALLOCATED(id_nf_nnf) guard, which
-       ! is meant to prove set_usigmav_nf ran in THIS session, reads .TRUE.
-       ! regardless.  Only the nnfmax<=0 check catches that today.
-       IF(ALLOCATED(id_nf_nnf)) DEALLOCATE(id_nf_nnf)
+       ! Deliberately does NOT free id_nf_nnf.  Freeing here would put a
+       ! new free() on the model_pnf=0 path, between tr_api_init's
+       ! ALLOCATE_TRCOMM and tr_prep's own allocations, in any process that
+       ! previously ran model_pnf>0 -- exactly the mid-sequence heap
+       ! perturbation trcomm_nf's note says has to be measured on Linux.
+       ! nf_finalize does it at teardown instead, so a second session's
+       ! default path has the same allocation history as a first one's.
+       !
+       ! Consequence, recorded because it is a real coupling: within ONE
+       ! session, going model_pnf>0 -> 0 leaves the table allocated, so
+       ! tr_prep_pnf's ALLOCATED(id_nf_nnf) guard cannot prove
+       ! set_usigmav_nf ran in this configuration.  The nnfmax<=0 check
+       ! immediately after it is what actually refuses that case.
        RETURN
     CASE(1) ! DT
        nnfmax=1
@@ -525,20 +569,24 @@ CONTAINS
     sigmav_nf=0.D0
 
     IF(id_nf.LT.1.OR.id_nf.GT.13) THEN
-       IF(nf_error_count==0) &  ! first failure of the run -- see the declaration
+       IF(.NOT.nf_logged(NF_ERR_ID)) &   ! first of this class -- see the declaration
             WRITE(6,'(A,I4)') 'XX sigmav_nf: undefined id_nf: ',id_nf
        nf_last_error=NF_ERR_ID
-       nf_error_count=nf_error_count+1
+       nf_logged(NF_ERR_ID)=.TRUE.
+       IF(nf_error_count < HUGE(nf_error_count)) &
+            nf_error_count=nf_error_count+1
        RETURN
     END IF
 
     ! NaN fails every ordered comparison, so it would slip past both the
     ! low and high guards below and reach LOG10.  Test it explicitly.
     IF(temperature.NE.temperature) THEN
-       IF(nf_error_count==0) &
+       IF(.NOT.nf_logged(NF_ERR_TEMP)) &
             WRITE(6,'(A,I4)') 'XX sigmav_nf: NaN temperature: id_nf=',id_nf
        nf_last_error=NF_ERR_TEMP
-       nf_error_count=nf_error_count+1
+       nf_logged(NF_ERR_TEMP)=.TRUE.
+       IF(nf_error_count < HUGE(nf_error_count)) &
+            nf_error_count=nf_error_count+1
        RETURN
     END IF
 
@@ -549,11 +597,13 @@ CONTAINS
     END IF
 
     IF(temperature.GT.1000.D0) THEN
-       IF(nf_error_count==0) &
+       IF(.NOT.nf_logged(NF_ERR_TEMP)) &
             WRITE(6,'(A,ES12.4)') &
             'XX sigmav_nf: above the 1000 keV table top: ',temperature
        nf_last_error=NF_ERR_TEMP
-       nf_error_count=nf_error_count+1
+       nf_logged(NF_ERR_TEMP)=.TRUE.
+       IF(nf_error_count < HUGE(nf_error_count)) &
+            nf_error_count=nf_error_count+1
        RETURN
     END IF
 
@@ -572,13 +622,15 @@ CONTAINS
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_the3,10,ierr)
     END SELECT
     IF(ierr.NE.0) THEN
-       IF(nf_error_count==0) THEN
+       IF(.NOT.nf_logged(NF_ERR_SPL)) THEN
           WRITE(6,'(A,I4)')     'XX SPL1DF error in sigmav_nf: id_nf=',id_nf
           WRITE(6,'(A,ES12.4)') '       temperature=',temperature
        END IF
        sigmav_nf=0.D0
        nf_last_error=NF_ERR_SPL
-       nf_error_count=nf_error_count+1
+       nf_logged(NF_ERR_SPL)=.TRUE.
+       IF(nf_error_count < HUGE(nf_error_count)) &
+            nf_error_count=nf_error_count+1
        RETURN
     END IF
   END FUNCTION sigmav_nf
