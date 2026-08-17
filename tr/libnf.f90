@@ -140,12 +140,20 @@ MODULE libnf
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_ID   = 1  ! id_nf outside 1..13
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_TEMP = 2  ! temperature NaN or > 1000 keV
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_SPL  = 3  ! SPL1DF evaluation failed
-  ! Sticky, and each site logs only while the flag is still clear -- a NaN
-  ! at every radius otherwise produces nnfmax*NRMAX identical lines, since
-  ! tr_pnf only consults the flag after its whole loop.  Clearing the flag
-  ! re-arms the logging.  Reset in tr_init: module state survives finalize,
-  ! and a stale value reports a dead session's failure.
-  INTEGER,PUBLIC:: nf_last_error = 0
+  ! Two observables, because one cannot serve both jobs.
+  !
+  ! nf_last_error is a PER-CALL code: tr_pnf clears it at entry and reads it
+  ! after its loop, so it describes that call only.  It cannot be the record
+  ! of whether a run failed -- tr_pnf runs ~L+2 times per timestep, so a
+  ! failure during the converge loop is erased by the next clean call.
+  !
+  ! nf_error_count is the DURABLE one: incremented at every failure, never
+  ! cleared by tr_pnf, reset only in tr_init.  It is what a caller or a test
+  ! should assert on, and it is what gates the logging -- so one fault emits
+  ! one line per run rather than one per call, which matters now that a
+  ! failure no longer aborts and a long run would otherwise emit thousands.
+  INTEGER,PUBLIC:: nf_last_error  = 0
+  INTEGER,PUBLIC:: nf_error_count = 0
 
   ! sigma_nf and sigmav_nf_int are NOT exported, on measured grounds:
   !
@@ -228,6 +236,12 @@ CONTAINS
     SELECT CASE(model_pnf)
     CASE(0) ! no fusion reaction
        nnfmax=0
+       ! Free it here too.  Upstream returns before the DEALLOCATE below, so
+       ! a table built by an earlier model_pnf>0 session survives finalize and
+       ! the next init -- and tr_prep_pnf's ALLOCATED(id_nf_nnf) guard, which
+       ! is meant to prove set_usigmav_nf ran in THIS session, reads .TRUE.
+       ! regardless.  Only the nnfmax<=0 check catches that today.
+       IF(ALLOCATED(id_nf_nnf)) DEALLOCATE(id_nf_nnf)
        RETURN
     CASE(1) ! DT
        nnfmax=1
@@ -511,18 +525,20 @@ CONTAINS
     sigmav_nf=0.D0
 
     IF(id_nf.LT.1.OR.id_nf.GT.13) THEN
-       IF(nf_last_error==0) &   ! first failure only -- see the declaration
+       IF(nf_error_count==0) &  ! first failure of the run -- see the declaration
             WRITE(6,'(A,I4)') 'XX sigmav_nf: undefined id_nf: ',id_nf
        nf_last_error=NF_ERR_ID
+       nf_error_count=nf_error_count+1
        RETURN
     END IF
 
     ! NaN fails every ordered comparison, so it would slip past both the
     ! low and high guards below and reach LOG10.  Test it explicitly.
     IF(temperature.NE.temperature) THEN
-       IF(nf_last_error==0) &
+       IF(nf_error_count==0) &
             WRITE(6,'(A,I4)') 'XX sigmav_nf: NaN temperature: id_nf=',id_nf
        nf_last_error=NF_ERR_TEMP
+       nf_error_count=nf_error_count+1
        RETURN
     END IF
 
@@ -533,10 +549,11 @@ CONTAINS
     END IF
 
     IF(temperature.GT.1000.D0) THEN
-       IF(nf_last_error==0) &
+       IF(nf_error_count==0) &
             WRITE(6,'(A,ES12.4)') &
             'XX sigmav_nf: above the 1000 keV table top: ',temperature
        nf_last_error=NF_ERR_TEMP
+       nf_error_count=nf_error_count+1
        RETURN
     END IF
 
@@ -555,12 +572,13 @@ CONTAINS
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_the3,10,ierr)
     END SELECT
     IF(ierr.NE.0) THEN
-       IF(nf_last_error==0) THEN
+       IF(nf_error_count==0) THEN
           WRITE(6,'(A,I4)')     'XX SPL1DF error in sigmav_nf: id_nf=',id_nf
           WRITE(6,'(A,ES12.4)') '       temperature=',temperature
        END IF
        sigmav_nf=0.D0
        nf_last_error=NF_ERR_SPL
+       nf_error_count=nf_error_count+1
        RETURN
     END IF
   END FUNCTION sigmav_nf

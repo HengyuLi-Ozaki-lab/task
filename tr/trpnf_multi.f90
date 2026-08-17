@@ -15,32 +15,54 @@
 ! block unchanged and calls tr_pnf afterwards, writing only trcomm_nf arrays
 ! that nothing else reads yet.  The legacy result is therefore bit-exact.
 !
-! NOT YET CORRECT PHYSICS -- a Task 7 prerequisite, recorded here so that
-! validation does not start from the wrong baseline.  libnf indexes species
-! through plcomm's NS_e..NS_He5, and trx resolves those against the run's
-! actual composition in trx/trprep.f90's tr_prep_ns (zero them, then walk
-! NS=1..NSMAX matching charge and mass) so an absent species comes out 0 and
-! libnf's presence check refuses the run.  tr has no counterpart: NS_* keep
-! pl/plinit.f90's defaults of 1..7 for every run.  Consequences, measured on
-! tr_iter01 (e,D,T,He4) at model_pnf=4:
+! NOT YET CORRECT PHYSICS FOR EVERY CHANNEL -- a Task 7 prerequisite, recorded
+! here so validation starts from the right baseline.
 !
-!   * reaction slots 5,6 (DHe3) and 8..13 (THe3) are identically zero at
-!     every radius, because RN(:,NS_He3=5) reads a slot the composition does
-!     not have and is zero-filled;
-!   * the D-D proton branch deposits into slot NS_H=6, which in a 4-species
-!     run is not hydrogen;
-!   * libnf's species-presence check can never fire, so ierr_nf=3 is
-!     unreachable and the reaction set is never validated against the
-!     composition at all.
+! libnf indexes species through plcomm's NS_e..NS_He5.  trx resolves those
+! against the run's composition in trx/trprep.f90's tr_prep_ns (zero them,
+! then walk NS=1..NSMAX matching charge and mass), so an absent species comes
+! out 0 and libnf's presence check refuses the run.  tr has no counterpart:
+! NS_* keep pl/plinit.f90's defaults of 1..7 always, and nothing in tr/ or
+! pl/ revises them.  So libnf's presence check can never fire here -- ierr_nf=3
+! is unreachable and the reaction set is never validated against the
+! composition.
 !
-! Only the D-T channel is right, and only because e/D/T/He4 happens to be the
-! order plinit assumes.  Porting tr_prep_ns is not a drop-in: with NS_*
-! resolved the presence check goes live, and its case labels then have to
-! match what each model_pnf indexes rather than what the header table says --
-! model_pnf=12 reaches nsp_idnf(dd3)=NS_He3 through the inverted remap below
-! and would index 0 immediately (verified: bounds trap at the SNF_NSNNFNR
-! write).  Resolution, guard labels and multi-species fixtures are one unit
-! of work and belong with the Task 7 validation, not with this dispatch.
+! Which channels that actually breaks is narrower than it sounds.  Measured on
+! tr_iter01 (e,D,T,He4) at model_pnf=4, PT=20 keV, dumping every slice of
+! SNF_NSNNFNR:
+!
+!   slot            ns1  ns2  nsp   verdict
+!   1  dt           D    T    He4   correct
+!   2  dd1          D    D    T     correct
+!   3  dd2          D    D    H     WRONG -- writes slot 6, not a species here
+!   4  dd3          D    D    He4   see below, and not an NS_* problem
+!   7  tt           T    T    He4   correct
+!   5,6  dhe3*                      identically zero: ns2=NS_He3=5 is a slot
+!   8-13 the3*                      the composition lacks, so RN reads 0
+!
+! Three of the five channels that evaluate are right, because e/D/T/He4 is the
+! order plinit assumes.  dd2 is the only one depositing into a non-species.
+! dd3 landing on He4 rather than He3 is the INVERTED REMAP documented at the
+! nsp_idnf assignments in libnf -- a separate upstream defect with a separate
+! cause, not a consequence of the missing resolution.
+!
+! Porting tr_prep_ns is not a drop-in:
+!   * trx's tr_prep_ns does NOT cover NS_He5 -- it neither zeroes nor assigns
+!     it, and its species walk has no mass-5 case -- so the NS_He5 term of the
+!     CASE(4,14) presence check cannot fire even in trx, and the35 would still
+!     write to a phantom slot after a verbatim port;
+!   * with NS_* resolved the rest of the presence check does go live, and its
+!     case labels then have to match what each model_pnf indexes rather than
+!     what libnf's header table says.  model_pnf=12 reaches
+!     nsp_idnf(dd3)=NS_He3 through the inverted remap while CASE(1,12) does not
+!     require He3, so it would index 0.  Reasoned from the code and observed
+!     once as a bounds trap on a working tree that carried the port; that tree
+!     was discarded, so it is NOT reproducible from this commit;
+!   * every dispatch test would need a composition supporting its model_pnf,
+!     and building a 7-species tr run trips an unrelated NEA bounds error.
+!
+! Resolution, guard labels and multi-species fixtures are one unit of work and
+! belong with the Task 7 validation, not with this dispatch.
 
 MODULE trpnf_multi
 
@@ -86,7 +108,7 @@ CONTAINS
        ierr = 3
        RETURN
     END IF
-    IF(SIZE(id_nf_nnf) < nnfmax .OR. SIZE(ns1_nnf) /= nnfmax) THEN
+    IF(SIZE(id_nf_nnf) /= nnfmax .OR. SIZE(ns1_nnf) /= nnfmax) THEN
        ierr = 3
        RETURN
     END IF
@@ -174,17 +196,16 @@ CONTAINS
        END DO
     END DO
 
-    ! Reported, not escalated.  Everything this routine writes is a
-    ! diagnostic that nothing else reads yet, so returning nonzero here
-    ! would make trcalc abandon the step -- skipping TRAJOH and the
-    ! SSIN/PIN assembly -- and kill a solve whose consumed physics is
-    ! fine.  That breaks the additive contract this port is built on.
-    ! The flag stays set for the caller; when Task 7 makes these arrays
-    ! load-bearing, this becomes a propagating error.
-    IF(nf_last_error.NE.0) THEN
-       WRITE(6,*) 'XX tr_pnf: sigmav_nf failed, nf_last_error=', &
-            nf_last_error,' -- fusion diagnostics for this step are void'
-    END IF
+    ! Reported through ierr, but the caller deliberately does not abandon
+    ! the step on it: everything this routine writes is a diagnostic that
+    ! nothing else reads yet, so returning early from trcalc would skip
+    ! TRAJOH and the SSIN/PIN assembly and kill a solve whose consumed
+    ! physics is fine.  When Task 7 makes these arrays load-bearing, the
+    ! caller starts propagating; the value is set here either way, so the
+    ! argument is not decorative and a future `ierr = <code>` cannot go
+    ! nowhere unnoticed.  The durable record is libnf's nf_error_count,
+    ! which this routine does not clear.
+    IF(nf_last_error.NE.0) ierr = 100 + nf_last_error
 
     ! --- roll-ups over reactions, as consumed downstream in trx ---
     !

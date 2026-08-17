@@ -77,14 +77,14 @@ CONTAINS
     ! All three ALLOCATED tests are needed, not just the first: an earlier call
     ! can fail between the two ALLOCATEs and RETURN, and tr_prep's direct
     ! call does not clean up on failure the way ALLOCATE_TRCOMM's GOTO 900
-    ! path does.  SIZE() of an unallocated allocatable is undefined.  SNF_NSNR
-    ! is the last array allocated, so testing it is what proves the previous
+    ! path does.  SIZE() of an unallocated allocatable is undefined.
+    ! PNFCL_NSNR is the last array allocated, so testing it proves the previous
     ! attempt ran to completion; ns1_nnf and SNF_NSNNFNR alone would early-
     ! return on a run that failed at TAUF_NNFNR, leaving tr_pnf to write an
     ! unallocated SNF_NSNR.  The caller cleanups are the primary defence;
     ! this is defence in depth.
     IF(ALLOCATED(ns1_nnf) .AND. ALLOCATED(SNF_NSNNFNR) .AND. &
-       ALLOCATED(SNF_NSNR)) THEN
+       ALLOCATED(PNFCL_NSNR)) THEN
        IF(SIZE(ns1_nnf) == nnfmax .AND. &
           SIZE(SNF_NSNNFNR,1) == NSTM .AND. &
           SIZE(SNF_NSNNFNR,2) == nnfmax .AND. &
@@ -118,7 +118,12 @@ CONTAINS
       IF(ierr /= 0) RETURN
     ALLOCATE(TAUF_NNFNR(nnfmax,NRMAX),STAT=ierr)
       IF(ierr /= 0) RETURN
-    ALLOCATE(SNF_NSNR(NSTM,NRMAX),PNFCL_NSNR(NSTM,NRMAX),STAT=ierr)
+    ! Separate statements so the guard above has a true last-allocated
+    ! sentinel: in one combined ALLOCATE, a STAT failure leaves the earlier
+    ! object allocated and the later one not.
+    ALLOCATE(SNF_NSNR(NSTM,NRMAX),STAT=ierr)
+      IF(ierr /= 0) RETURN
+    ALLOCATE(PNFCL_NSNR(NSTM,NRMAX),STAT=ierr)
       IF(ierr /= 0) RETURN
 
     ! Zero-init for the same reason trcomm_profile zero-inits BP/RDP/RPSI:

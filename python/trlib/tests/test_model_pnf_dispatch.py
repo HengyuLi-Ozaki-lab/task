@@ -47,6 +47,7 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 SYM_READY = "__trcomm_nf_MOD_nf_multi_ready"
 SYM_NNFMAX = "__trcomm_ctrl_MOD_nnfmax"
 SYM_NF_ERR = "__libnf_MOD_nf_last_error"
+SYM_NF_COUNT = "__libnf_MOD_nf_error_count"
 SYM_MODEL_PNF = "__trcomm_param_MOD_model_pnf"
 
 # From tr/libnf.f90::set_usigmav_nf. 12 and 14 are aliases of 2 and 4 that
@@ -230,9 +231,14 @@ def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
         tr.set_param("NTMAX", NSTEPS)
         tr.run(NSTEPS)
 
-        assert ctypes.c_int.in_dll(lib, SYM_NF_ERR).value == 0, (
+        # nf_error_count, not nf_last_error: tr_pnf clears the latter at
+        # entry and runs ~51 times over these 5 steps, so it only describes
+        # the final call and a failure inside the converge loop leaves no
+        # trace in it. The counter is never cleared by tr_pnf.
+        assert ctypes.c_int.in_dll(lib, SYM_NF_COUNT).value == 0, (
             "sigmav_nf tripped a guard that used to be a bare STOP: "
-            f"nf_last_error={ctypes.c_int.in_dll(lib, SYM_NF_ERR).value} "
+            f"nf_error_count={ctypes.c_int.in_dll(lib, SYM_NF_COUNT).value}, "
+            f"last code {ctypes.c_int.in_dll(lib, SYM_NF_ERR).value} "
             "(1=id_nf range, 2=NaN or >1000 keV, 3=spline)"
         )
         assert bool(ctypes.c_int.in_dll(lib, SYM_READY).value)
@@ -242,6 +248,14 @@ def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
 
         nsmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nsmax").value
         nrmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value
+        # TRCALC reassigns NRMAX to NROMAX/NRAMAX when RHOA /= 1, while these
+        # arrays keep the extent ALLOCATE_TRCOMM gave them -- the strides
+        # below would then read the wrong elements, silently.
+        rhoa = ctypes.c_double.in_dll(lib, "__trcomm_ctrl_MOD_rhoa").value
+        assert rhoa == 1.0, (
+            f"RHOA={rhoa} != 1; NRMAX is no longer the allocated extent and "
+            f"the raw-descriptor strides in this test are invalid"
+        )
         snf = _read_source_array(
             lib, "__trcomm_nf_MOD_snf_nsnnfnr", NSTM, NNFMAX, nrmax
         )
@@ -269,10 +283,11 @@ def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
         rate = sigmav(ctypes.byref(ctypes.c_int(ID_NF_DD2)),
                       ctypes.byref(ctypes.c_double(t_d)))
         expected = WGT_DD2 * n_d * n_d * 1.0e20 * rate
+        ratio_txt = f"{h / expected:.4f}" if expected else "n/a (expected 0)"
         assert abs(h - expected) <= 1e-10 * abs(expected), (
             f"SNF_NSNNFNR(H,dd2,{nr}) = {h:.9e}, expected one step's "
-            f"{expected:.9e} (ratio {h / expected:.4f}). tr_pnf accumulates, "
-            f"so a multiple of the expected value means its outputs were not "
+            f"{expected:.9e} (ratio {ratio_txt}). tr_pnf accumulates, so a "
+            f"multiple of the expected value means its outputs were not "
             f"reset at entry."
         )
 
@@ -329,6 +344,19 @@ def test_model_pnf_is_reset_by_init(monkeypatch):
         assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 4
 
     with Trlib() as tr:
+        # Read BEFORE run(). nnfmax is the assertion that needs this: by the
+        # time tr_prep has run, set_usigmav_nf's CASE(0) has set it to 0
+        # anyway, so a post-run check passes with the tr_init reset deleted.
+        # The window that matters is init..tr_prep, because tr_api_init calls
+        # ALLOCATE_TRCOMM directly -- with a stale nnfmax=13 that sizes the
+        # trcomm_nf arrays from the dead session's reaction count (~125 KB at
+        # the default) before tr_prep resizes them, giving the default path a
+        # different heap history than a first session had. That is the hazard
+        # the bit-exactness note in trcomm_nf names.
+        assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 0
+        assert ctypes.c_int.in_dll(lib, SYM_NNFMAX).value == 0
+        assert ctypes.c_int.in_dll(lib, SYM_NF_COUNT).value == 0
+
         FIXTURE.apply(tr)          # never mentions model_pnf
         tr.run(1)
         assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 0

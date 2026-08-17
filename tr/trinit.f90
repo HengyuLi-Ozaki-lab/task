@@ -16,7 +16,7 @@ CONTAINS
       SUBROUTINE tr_init
 
       USE trcomm
-      USE libnf, ONLY: nf_last_error
+      USE libnf, ONLY: nf_last_error, nf_error_count
       IMPLICIT NONE
       INTEGER NS, NPSC
 
@@ -435,8 +435,9 @@ CONTAINS
 !                    nf_last_error reports a dead session's failure to any
 !                    external reader.
 
-      nnfmax        = 0
-      nf_last_error = 0
+      nnfmax         = 0
+      nf_last_error  = 0
+      nf_error_count = 0
 
 !     ==== NBI HEATING PARAMETERS ====
 
