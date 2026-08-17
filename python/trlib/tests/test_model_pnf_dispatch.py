@@ -325,12 +325,14 @@ def test_undefined_model_pnf_returns_instead_of_aborting(probe):
 def test_session_state_is_released_and_reset_across_a_cycle(monkeypatch):
     """A second in-process session must inherit nothing from the first.
 
-    Four pieces of state, all module-scope with only declaration
-    initialisers, so all four survive finalize unless something resets them:
+    Five pieces of module-scope state that outlive a finalize unless
+    something resets them:
 
-      model_pnf, nnfmax   -- reset in tr_init
-      nf_error_count      -- reset in both nf_finalize and tr_init
-      libnf::id_nf_nnf    -- freed in nf_finalize, from tr_api_finalize
+      model_pnf, nnfmax          -- reset in tr_init only
+      nf_error_count, nf_last_error -- reset in nf_finalize and tr_init
+      libnf::id_nf_nnf           -- an ALLOCATABLE with no initialiser,
+                                    freed in nf_finalize from
+                                    tr_api_finalize
 
     Measured discrimination: deleting the nnfmax reset fails this with
     `assert 13 == 0`, and deleting the nf_finalize call fails the
@@ -481,10 +483,20 @@ def _drive_sigmav_nf(steps):
         """
         % str(_default_lib_path())
     ) + body + "\n"
+    src += '\n        print("PROBE-COMPLETE")\n'
     out = subprocess.run(
         [sys.executable, "-c", src], capture_output=True, text=True, timeout=60
     )
-    assert out.returncode == 0, f"probe died: {out.stderr[-800:]}"
+    # Judge on the OUTPUT, not the return code. A bare Fortran STOP exits 0,
+    # so a returncode check sails straight past a library-reachable abort --
+    # test_libnf.py carries the same note, having been bitten by it before.
+    # Without this sentinel a STOP reintroduced at any sigmav_nf error site
+    # would leave the counts below looking exactly right.
+    assert "PROBE-COMPLETE" in out.stdout, (
+        f"probe did not reach the end (rc={out.returncode}); the library "
+        f"aborted the host process.\nstdout:\n{out.stdout}\n"
+        f"stderr:\n{out.stderr[-800:]}"
+    )
     return out.stdout
 
 
@@ -493,8 +505,11 @@ OVER = "above the 1000 keV table top"
 NANMSG = "NaN temperature"
 BADID = "undefined id_nf"
 
-# One triple hitting all three distinct reporting sites.
-ALL_SITES = [(1, "2000.0"), (1, NAN), (99, "10.0")]
+# Three of the four nf_logged sites. The fourth, NF_LOG_SPL, fires only on a
+# SPL1DF evaluation failure, which no input to sigmav_nf can provoke once the
+# splines are built -- so it stays unpinned, and the assertions below say
+# "these three", not "every site".
+REACHABLE_SITES = [(1, "2000.0"), (1, NAN), (99, "10.0")]
 
 
 def test_each_reporting_site_logs_once_and_independently():
@@ -508,7 +523,7 @@ def test_each_reporting_site_logs_once_and_independently():
     LOG10. Collapsing NF_LOG_NAN and NF_LOG_HIGH back to one index would
     restore that defect while leaving the rest of the suite green.
     """
-    out = _drive_sigmav_nf(ALL_SITES + ALL_SITES)
+    out = _drive_sigmav_nf(REACHABLE_SITES + REACHABLE_SITES)
     assert out.count(NANMSG) == 1, (
         "the NaN site was silenced by the over-range one, so the latch is "
         f"keyed on the error code rather than the reporting site:\n{out}"
@@ -517,16 +532,104 @@ def test_each_reporting_site_logs_once_and_independently():
     assert out.count(BADID) == 1, out
 
 
-def test_nf_reset_log_re_arms_every_site():
+def test_nf_reset_log_re_arms_each_reachable_site():
     """tr_prep calls this, which is what gives each prepare a fresh voice.
 
     Without it, trmenu's second interactive R run reports nothing at all --
     tr_init runs once per process and the R handler goes straight to
     tr_prep.
     """
-    out = _drive_sigmav_nf(ALL_SITES + ["reset"] + ALL_SITES)
+    out = _drive_sigmav_nf(REACHABLE_SITES + ["reset"] + REACHABLE_SITES)
     for msg in (OVER, NANMSG, BADID):
         assert out.count(msg) == 2, (
             f"{msg!r} appeared {out.count(msg)} times, expected 2 -- "
             f"nf_reset_log did not re-arm this site:\n{out}"
         )
+
+
+def _run_hot_in_subprocess(script_body):
+    """Drive a real Trlib session in a subprocess and return its stdout.
+
+    Same reason as _drive_sigmav_nf: the diagnostics come from Fortran WRITEs
+    to unit 6. Ends with a sentinel because a library-reachable STOP exits 0.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    src = textwrap.dedent(
+        """
+        import sys, os
+        sys.path.insert(0, %r)
+        from trlib import Trlib
+        import trlib.tests.fixtures.tr_iter01_params as HOT
+        os.chdir(%r)
+        def hot(tr, pt=1.0e5):
+            HOT.apply(tr)
+            for i in range(1, 5):
+                tr.set_param("PT[%%d]" %% i, pt)
+                tr.set_param("PTS[%%d]" %% i, pt)
+            tr.set_param("model_pnf", 2)
+        """
+        % (str(Path(__file__).resolve().parents[2]), str(FIXTURES_DIR))
+    ) + textwrap.dedent(script_body) + '\nprint("PROBE-COMPLETE")\n'
+    out = subprocess.run(
+        [sys.executable, "-c", src], capture_output=True, text=True, timeout=180
+    )
+    assert "PROBE-COMPLETE" in out.stdout, (
+        f"probe did not reach the end (rc={out.returncode}):\n"
+        f"{out.stdout[-2000:]}\n{out.stderr[-800:]}"
+    )
+    return out.stdout
+
+
+def test_each_prepare_gets_a_fresh_voice():
+    """tr_prep's nf_reset_log call, pinned at the CALL SITE.
+
+    The sibling test drives nf_reset_log directly, which proves the routine
+    works but not that anything invokes it. Deleting `CALL nf_reset_log` from
+    tr_prep leaves that test green -- and that deletion is exactly the defect
+    this branch found by hand: trmenu's R handler re-preps without ever
+    returning through tr_init, so the second interactive run went silent.
+
+    Here set_param clears g_prepared, so the second run() re-preps, and the
+    over-range message must appear once per prepare.
+    """
+    out = _run_hot_in_subprocess(
+        """
+        with Trlib() as tr:
+            hot(tr)
+            tr.set_param("NTMAX", 1)
+            tr.run(1)
+            tr.set_param("NTMAX", 1)   # clears g_prepared -> next run re-preps
+            tr.run(1)
+        """
+    )
+    assert out.count(OVER) == 2, (
+        f"expected one {OVER!r} per prepare, got {out.count(OVER)}. "
+        f"tr_prep is not re-arming the latches, so every run after the first "
+        f"is silent:\n{out[-1500:]}"
+    )
+
+
+def test_trcalc_summary_is_throttled_to_one_line_per_prepare():
+    """trcalc's nf_summary_logged gate, pinned.
+
+    tr_pnf runs several times per step, so an ungated WRITE here emits one
+    line per call -- measured 22 over 5 steps at this temperature. Dropping
+    the `.NOT.nf_summary_logged` term leaves the rest of the suite green.
+    """
+    out = _run_hot_in_subprocess(
+        """
+        with Trlib() as tr:
+            hot(tr)
+            tr.set_param("NTMAX", 5)
+            tr.run(5)
+        """
+    )
+    n = out.count("XX TRCALC: tr_pnf ierr=")
+    assert n == 1, (
+        f"expected exactly 1 throttled TRCALC summary, got {n} -- tr_pnf is "
+        f"called many times per prepare, so this is one line per CALL:\n"
+        f"{out[-1500:]}"
+    )
