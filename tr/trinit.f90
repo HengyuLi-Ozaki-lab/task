@@ -424,17 +424,24 @@ CONTAINS
 
       model_pnf = 0
 
-!                    nnfmax, nf_last_error and nf_error_count are the
-!                    same class: module
-!                    state with only a declaration initialiser, so they
-!                    also survive finalize.  A stale nnfmax makes the next
-!                    session's ALLOCATE_TRCOMM size the trcomm_nf arrays
-!                    from the PREVIOUS run's reaction count -- ~125 KB at
-!                    the default -- which tr_prep then frees and
-!                    reallocates, giving the default path a different heap
-!                    history than a first session had.  A stale
-!                    nf_last_error reports a dead session's failure to any
-!                    external reader.
+!                    nnfmax survives finalize: nothing resets it but this
+!                    line, so without it the next session's
+!                    ALLOCATE_TRCOMM sizes the trcomm_nf arrays from the
+!                    dead session's reaction count -- ~125 KB at the
+!                    default -- giving the default path a different heap
+!                    history than a first session had.  That is the hazard
+!                    the bit-exactness note in trcomm_nf names, and
+!                    test_session_state_is_released_and_reset_across_a_cycle
+!                    fails without this line.
+!
+!                    nf_last_error and nf_error_count do NOT survive
+!                    finalize -- nf_finalize zeroes both.  They are reset
+!                    here as defence in depth for the window a caller can
+!                    reach by driving libnf directly through the .so
+!                    between a finalize and the next init, and against a
+!                    future re-init path that skips finalize.  nf_reset_log
+!                    re-arms the per-site logging latches; tr_prep calls it
+!                    too, which is what covers trmenu's repeated R runs.
 
       nnfmax         = 0
       nf_last_error  = 0

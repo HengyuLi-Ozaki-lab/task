@@ -376,7 +376,8 @@ $(OBJDIR_PIC)/trcomm_nf.o           : $(OBJDIR_PIC)/trcomm_ctrl.o
 # while trcomm_nf.mod is still being written.  The six older submodules share
 # this gap; the edge is added here for the one this port introduces.
 $(OBJDIR_PIC)/trcomm.o              : $(OBJDIR_PIC)/trcomm_nf.o
-# trinit resets libnf's nf_last_error alongside model_pnf.
+# trinit resets libnf's nf_last_error and nf_error_count and calls
+# nf_reset_log; trcalc reads nf_summary_logged; trprep calls nf_reset_log.
 $(OBJDIR_PIC)/trinit.o              : $(OBJDIR_PIC)/libnf.o
 # trmain.f90 is not in SRCS_CORE, so it has no PIC object -- the non-PIC
 # twin below is the one that matters for it.

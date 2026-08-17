@@ -334,14 +334,17 @@ def test_session_state_is_released_and_reset_across_a_cycle(monkeypatch):
 
     Measured discrimination: deleting the nnfmax reset fails this with
     `assert 13 == 0`, and deleting the nf_finalize call fails the
-    outlived-finalize assertion. Deleting tr_init's nf_error_count or
-    nf_last_error reset does NOT fail it, and no test can make it: those
-    two are unreachable today. tr_api_init early-returns when already
-    initialised so trinit is not re-entered without a finalize, and after
-    a finalize nf_finalize has already zeroed them. They are kept as
-    defence in depth against a future non-finalizing re-init path, not
-    because anything exercises them. model_pnf and nnfmax in the same
-    block are NOT dead -- nf_finalize does not touch those.
+    outlived-finalize assertion.
+
+    Deleting tr_init's nf_error_count or nf_last_error reset does NOT fail
+    it -- but they are not dead code, only unobserved from here.
+    nf_finalize has already zeroed both by the time the second init runs,
+    so this test cannot see the difference; a caller driving libnf directly
+    through the .so between a finalize and the next init can, because those
+    calls move the counter with no tr_api call in between. Kept for that
+    window and against a future re-init path that skips finalize.
+    model_pnf and nnfmax are a different case -- nf_finalize does not touch
+    them, and this test does pin both.
 
     Session 1 runs HOT (PT above sigmav_nf's 1 keV floor) and at
     model_pnf=4. The heat is not incidental: on a cold fixture every
@@ -436,3 +439,94 @@ def test_model_pnf_is_reset_by_init(monkeypatch):
         tr.run(1)
         assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 0
         assert bool(ctypes.c_int.in_dll(lib, SYM_READY).value) is False
+
+
+def _drive_sigmav_nf(steps):
+    """Call sigmav_nf directly in a subprocess; return its stdout.
+
+    `steps` is a list of (id_nf, temperature_expr) pairs, or the string
+    "reset" to call nf_reset_log between them.
+
+    A subprocess because the messages come from a Fortran WRITE to unit 6,
+    which pytest's capture does not reliably intercept -- the same reason
+    test_libnf.py probes in a subprocess.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    from trlib._ffi import _default_lib_path
+
+    body = "\n".join(
+        "        reset()" if st == "reset" else f"        call({st[0]}, {st[1]})"
+        for st in steps
+    )
+    src = textwrap.dedent(
+        """
+        import ctypes
+        lib = ctypes.CDLL(%r)
+        setup = lib.__libnf_MOD_set_usigmav_nf
+        setup.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        e = ctypes.c_int(-1)
+        setup(ctypes.byref(e))
+        assert e.value == 0, e.value
+        f = lib.__libnf_MOD_sigmav_nf
+        f.restype = ctypes.c_double
+        f.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_double)]
+        def call(i, t):
+            return f(ctypes.byref(ctypes.c_int(i)), ctypes.byref(ctypes.c_double(t)))
+        def reset():
+            lib.__libnf_MOD_nf_reset_log()
+        if True:
+        """
+        % str(_default_lib_path())
+    ) + body + "\n"
+    out = subprocess.run(
+        [sys.executable, "-c", src], capture_output=True, text=True, timeout=60
+    )
+    assert out.returncode == 0, f"probe died: {out.stderr[-800:]}"
+    return out.stdout
+
+
+NAN = 'float("nan")'
+OVER = "above the 1000 keV table top"
+NANMSG = "NaN temperature"
+BADID = "undefined id_nf"
+
+# One triple hitting all three distinct reporting sites.
+ALL_SITES = [(1, "2000.0"), (1, NAN), (99, "10.0")]
+
+
+def test_each_reporting_site_logs_once_and_independently():
+    """The logging latch is keyed per reporting site, not per error code.
+
+    This is the pin that was missing while the mechanism was rewritten three
+    times across review rounds. NaN and over-range both return
+    NF_ERR_TEMP, so a latch keyed on the returned code silences the NaN
+    message after any over-range one -- and NaN is the branch that exists
+    precisely because NaN slips past both ordered comparisons and reaches
+    LOG10. Collapsing NF_LOG_NAN and NF_LOG_HIGH back to one index would
+    restore that defect while leaving the rest of the suite green.
+    """
+    out = _drive_sigmav_nf(ALL_SITES + ALL_SITES)
+    assert out.count(NANMSG) == 1, (
+        "the NaN site was silenced by the over-range one, so the latch is "
+        f"keyed on the error code rather than the reporting site:\n{out}"
+    )
+    assert out.count(OVER) == 1, out
+    assert out.count(BADID) == 1, out
+
+
+def test_nf_reset_log_re_arms_every_site():
+    """tr_prep calls this, which is what gives each prepare a fresh voice.
+
+    Without it, trmenu's second interactive R run reports nothing at all --
+    tr_init runs once per process and the R handler goes straight to
+    tr_prep.
+    """
+    out = _drive_sigmav_nf(ALL_SITES + ["reset"] + ALL_SITES)
+    for msg in (OVER, NANMSG, BADID):
+        assert out.count(msg) == 2, (
+            f"{msg!r} appeared {out.count(msg)} times, expected 2 -- "
+            f"nf_reset_log did not re-arm this site:\n{out}"
+        )
