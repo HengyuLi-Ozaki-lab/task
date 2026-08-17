@@ -18,6 +18,7 @@
            number_of_pellet_repeat,icount_of_pellet
       USE TRCOMM, ONLY : nf_multi_ready
       USE trpnf_multi, ONLY : tr_pnf
+      USE libnf, ONLY : nf_summary_logged
       USE tr_cytran_mod
       USE libitp
       IMPLICIT NONE
@@ -156,12 +157,21 @@
 !        yet, so a failure there must not abandon the step and must not
 !        overwrite a status the legacy path owns.  It is still consumed --
 !        libnf's nf_error_count is the durable record, this is the
-!        per-step detail, and leaving the value unread is how the next
+!        per-CALL detail -- tr_pnf runs ~L+2 times per step, so these
+!        are not step counts -- and leaving the value unread is how the next
 !        error someone adds here would vanish.
          CALL tr_pnf(nf_ierr)
-         IF(nf_ierr.NE.0) WRITE(6,*) &
-              'XX TRCALC: tr_pnf ierr=',nf_ierr, &
-              ' -- fusion diagnostics for this step are void'
+!        Throttled the same way libnf's own sites are.  tr_pnf runs ~L+2
+!        times per step, so an unconditional WRITE here would emit one line
+!        per CALL -- ~1000 over the fixture's NTMAX=100 -- which is the
+!        volume libnf's latch exists to avoid.  nf_error_count is cleared
+!        only by tr_init, so this is once per run.
+         IF(nf_ierr.NE.0 .AND. .NOT.nf_summary_logged) THEN
+            nf_summary_logged = .TRUE.
+            WRITE(6,*) 'XX TRCALC: tr_pnf ierr=',nf_ierr, &
+                 ' -- fusion diagnostics for this call are void;', &
+                 ' libnf nf_error_count is the running total'
+         END IF
       END IF
 
 

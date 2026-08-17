@@ -16,7 +16,7 @@ CONTAINS
       SUBROUTINE tr_init
 
       USE trcomm
-      USE libnf, ONLY: nf_last_error, nf_error_count
+      USE libnf, ONLY: nf_last_error, nf_error_count, nf_reset_log
       IMPLICIT NONE
       INTEGER NS, NPSC
 
@@ -438,6 +438,7 @@ CONTAINS
       nnfmax         = 0
       nf_last_error  = 0
       nf_error_count = 0
+      CALL nf_reset_log
 
 !     ==== NBI HEATING PARAMETERS ====
 

@@ -322,6 +322,77 @@ def test_undefined_model_pnf_returns_instead_of_aborting(probe):
     assert probe(0)["ready"] is False
 
 
+def test_session_state_is_released_and_reset_across_a_cycle(monkeypatch):
+    """A second in-process session must inherit nothing from the first.
+
+    Four pieces of state, all module-scope with only declaration
+    initialisers, so all four survive finalize unless something resets them:
+
+      model_pnf, nnfmax   -- reset in tr_init
+      nf_error_count      -- reset in both nf_finalize and tr_init
+      libnf::id_nf_nnf    -- freed in nf_finalize, from tr_api_finalize
+
+    Measured discrimination: deleting the nnfmax reset fails this with
+    `assert 13 == 0`, and deleting the nf_finalize call fails the
+    outlived-finalize assertion. Deleting tr_init's nf_error_count reset
+    does NOT fail it -- nf_finalize already zeroes the counter, so that
+    reset is redundant on any path that finalizes, and is kept only for a
+    re-init that skips finalize. This test does not pin it.
+
+    Session 1 runs HOT (PT above sigmav_nf's 1 keV floor) and at
+    model_pnf=4. The heat is not incidental: on a cold fixture every
+    sigmav_nf call returns 0 without touching nf_error_count, so a counter
+    assertion here would pass with the tr_init reset deleted.
+
+    nnfmax and id_nf_nnf are read right after the second init, BEFORE run().
+    By the time tr_prep has run, set_usigmav_nf's CASE(0) has set nnfmax=0
+    and rebuilt the table anyway, so a post-run check proves nothing. The
+    window that matters is init..tr_prep, where tr_api_init calls
+    ALLOCATE_TRCOMM directly and would size the trcomm_nf arrays from the
+    dead session's reaction count.
+    """
+    from .fixtures import tr_iter01_params as HOT
+
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+
+    def id_nf_nnf_allocated():
+        return ctypes.c_void_p.in_dll(lib, "__libnf_MOD_id_nf_nnf").value is not None
+
+    with Trlib() as tr:
+        HOT.apply(tr)
+        for i in range(1, 5):
+            tr.set_param(f"PT[{i}]", 2000.0)   # above the table top -> errors
+            tr.set_param(f"PTS[{i}]", 2000.0)
+        tr.set_param("model_pnf", 4)
+        tr.set_param("NTMAX", 1)
+        tr.run(1)
+        assert ctypes.c_int.in_dll(lib, SYM_NNFMAX).value == 13
+        assert ctypes.c_int.in_dll(lib, SYM_NF_COUNT).value > 0, (
+            "session 1 was supposed to fail sigmav_nf; without that the "
+            "counter assertion below passes trivially"
+        )
+        assert id_nf_nnf_allocated()
+
+    # --- finalize has run ---
+    assert not id_nf_nnf_allocated(), (
+        "libnf's reaction table outlived finalize; the next session's "
+        "tr_prep_pnf would read ALLOCATED(id_nf_nnf) as .TRUE. for a table "
+        "it never built"
+    )
+
+    with Trlib() as tr:
+        assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 0
+        assert ctypes.c_int.in_dll(lib, SYM_NNFMAX).value == 0
+        assert ctypes.c_int.in_dll(lib, SYM_NF_COUNT).value == 0
+        assert not id_nf_nnf_allocated()
+
+        FIXTURE.apply(tr)          # never mentions model_pnf
+        tr.run(1)
+        assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 0
+        assert bool(ctypes.c_int.in_dll(lib, SYM_READY).value) is False
+
+
 def test_model_pnf_is_reset_by_init(monkeypatch):
     """A second in-process session must not inherit the first one's model_pnf.
 

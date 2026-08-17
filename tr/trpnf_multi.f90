@@ -22,8 +22,10 @@
 ! against the run's composition in trx/trprep.f90's tr_prep_ns (zero them,
 ! then walk NS=1..NSMAX matching charge and mass), so an absent species comes
 ! out 0 and libnf's presence check refuses the run.  tr has no counterpart:
-! NS_* keep pl/plinit.f90's defaults of 1..7 always, and nothing in tr/ or
-! pl/ revises them.  So libnf's presence check can never fire here -- ierr_nf=3
+! NS_* keep pl/plinit.f90's defaults of 1..7 always: nothing in tr/ touches
+! them, and pl/plprof_TOTAL.f90 reassigns four of them to those same values
+! off tr's path, so no run here ever gets composition-resolved indices.
+! Consequently libnf's presence check can never fire -- ierr_nf=3
 ! is unreachable and the reaction set is never validated against the
 ! composition.
 !
