@@ -16,7 +16,7 @@ CONTAINS
     USE trbpsd
     USE trmetric
     USE tr_dump_state_mod, ONLY : tr_dump_state_if_requested
-    USE libnf, ONLY : set_usigmav_nf
+    USE libnf, ONLY : set_usigmav_nf, nf_reset_log
     USE trpnf_multi, ONLY : tr_prep_pnf
     IMPLICIT NONE
     INTEGER,INTENT(OUT):: ierr
@@ -35,6 +35,14 @@ CONTAINS
 !     server, rather than returning (CLAUDE.md, Fortran library discipline;
 !     issue #142).  Its codes: 1 spline setup, 2 undefined model_pnf,
 !     3 a reaction's ion species is absent from the composition.
+!
+!     Re-arm the one-line-per-site logging for this run.  tr_init is not the
+!     right place on its own: the tr2 binary calls it once at process start,
+!     and trmenu's R handler goes straight to tr_prep + tr_loop -- so a
+!     second interactive run would report nothing at all.  tr_prep is on
+!     every run of both the binary and the library.
+      CALL nf_reset_log
+
       CALL set_usigmav_nf(nf_ierr)
       IF(nf_ierr.NE.0) THEN
          WRITE(6,*) 'XX tr_prep: set_usigmav_nf failed, ierr=',nf_ierr, &
