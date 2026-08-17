@@ -334,10 +334,14 @@ def test_session_state_is_released_and_reset_across_a_cycle(monkeypatch):
 
     Measured discrimination: deleting the nnfmax reset fails this with
     `assert 13 == 0`, and deleting the nf_finalize call fails the
-    outlived-finalize assertion. Deleting tr_init's nf_error_count reset
-    does NOT fail it -- nf_finalize already zeroes the counter, so that
-    reset is redundant on any path that finalizes, and is kept only for a
-    re-init that skips finalize. This test does not pin it.
+    outlived-finalize assertion. Deleting tr_init's nf_error_count or
+    nf_last_error reset does NOT fail it, and no test can make it: those
+    two are unreachable today. tr_api_init early-returns when already
+    initialised so trinit is not re-entered without a finalize, and after
+    a finalize nf_finalize has already zeroed them. They are kept as
+    defence in depth against a future non-finalizing re-init path, not
+    because anything exercises them. model_pnf and nnfmax in the same
+    block are NOT dead -- nf_finalize does not touch those.
 
     Session 1 runs HOT (PT above sigmav_nf's 1 keV floor) and at
     model_pnf=4. The heat is not incidental: on a cold fixture every

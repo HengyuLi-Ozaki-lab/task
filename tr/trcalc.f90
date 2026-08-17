@@ -161,11 +161,17 @@
 !        are not step counts -- and leaving the value unread is how the next
 !        error someone adds here would vanish.
          CALL tr_pnf(nf_ierr)
-!        Throttled the same way libnf's own sites are.  tr_pnf runs ~L+2
-!        times per step, so an unconditional WRITE here would emit one line
-!        per CALL -- ~1000 over the fixture's NTMAX=100 -- which is the
-!        volume libnf's latch exists to avoid.  nf_error_count is cleared
-!        only by tr_init, so this is once per run.
+!        Throttled, though more coarsely than libnf: libnf latches per
+!        reporting site, this is one latch for every code.  tr_pnf runs
+!        several times per step -- measured 4.3/step when every call fails
+!        (the run stops converging), ~10/step on a converging one -- so an
+!        unconditional WRITE emits one line per CALL, ~430 over the
+!        fixture's NTMAX=100.  nf_summary_logged is re-armed by nf_reset_log,
+!        which tr_prep calls -- so once per PREPARE, not per process: trmenu's
+!        R handler re-preps on every interactive run, and on the library side
+!        set_param invalidates g_prepared so a reconfigured run re-arms too.
+!        Successive tr_run calls on one prepared handle are a continuation and
+!        share the one message.
          IF(nf_ierr.NE.0 .AND. .NOT.nf_summary_logged) THEN
             nf_summary_logged = .TRUE.
             WRITE(6,*) 'XX TRCALC: tr_pnf ierr=',nf_ierr, &

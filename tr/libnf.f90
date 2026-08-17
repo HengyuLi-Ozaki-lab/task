@@ -133,12 +133,12 @@ MODULE libnf
   PUBLIC set_usigmav_nf  ! set_usigmav_nf
   PUBLIC sigmav_nf       ! sigmav_nf(id_nf,temperature) Maxwellian fitting
   PUBLIC nf_finalize     ! release per-session state at teardown
-  PUBLIC nf_reset_log    ! re-arm the one-line-per-class latches
+  PUBLIC nf_reset_log    ! re-arm the one-line-per-site latches
 
   ! sigmav_nf is a FUNCTION whose signature is pinned by test_libnf.py's
   ! ctypes binding, so it reports failure out-of-band here instead of by
-  ! STOP.  Sticky: set on error, only ever cleared by the caller, so a
-  ! caller can clear once, run a whole loop, and check once at the end.
+  ! STOP.  These are the codes it reports; the two observables that carry
+  ! them are declared below.
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_ID   = 1  ! id_nf outside 1..13
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_TEMP = 2  ! temperature NaN or > 1000 keV
   INTEGER,PARAMETER,PUBLIC:: NF_ERR_SPL  = 3  ! SPL1DF evaluation failed
@@ -149,18 +149,32 @@ MODULE libnf
   ! of whether a run failed -- tr_pnf runs ~L+2 times per timestep, so a
   ! failure during the converge loop is erased by the next clean call.
   !
-  ! nf_error_count is the DURABLE one: incremented at every failure, never
-  ! cleared by tr_pnf, reset only in tr_init.  It is what a caller or a test
-  ! should assert on, and it is what gates the logging -- so one fault emits
-  ! one line per run rather than one per call, which matters now that a
-  ! failure no longer aborts and a long run would otherwise emit thousands.
+  ! nf_error_count saturates rather than wrapping: it counts one per
+  ! (reaction, radius) per tr_pnf call, measured 13884 over 5 steps at
+  ! nnfmax=13/NRMAX=50 -- ~2.8e3/step, so ~5.6e3/step at NRMAX=100 -- and
+  ! signed overflow is UB that -fcheck=all does not catch.
+  !
+  ! nf_error_count is the DURABLE one: incremented at every failure and never
+  ! cleared by tr_pnf, so it survives the whole run.  It is what a caller or
+  ! a test should assert on.  It is reset by nf_finalize (teardown) and by
+  ! tr_init.  It does NOT gate the logging -- nf_logged below does; the
+  ! counter keeps counting after the messages stop.
   INTEGER,PUBLIC:: nf_last_error  = 0
   INTEGER,PUBLIC:: nf_error_count = 0
-  ! One latch per class, not one for all of them: gating every site on the
-  ! shared counter would mean that after the first fault of a run, a fault
-  ! of a DIFFERENT kind prints nothing -- and the SPL1DF branch is the only
-  ! place the offending id_nf and temperature are ever reported.
-  LOGICAL,DIMENSION(3),PRIVATE:: nf_logged = .FALSE.
+  ! One latch per REPORTING SITE, not per returned code.  Gating every site
+  ! on one flag means that after the first fault of a run a fault of a
+  ! different kind prints nothing -- and NaN and over-range both return
+  ! NF_ERR_TEMP, so keying the latch on the code would silence the NaN
+  ! message after any over-range one.  NaN is the more alarming of the two:
+  ! it exists because NaN fails every ordered comparison and would otherwise
+  ! reach LOG10.  The SPL1DF site is likewise the only place the offending
+  ! id_nf and temperature are ever printed.
+  INTEGER,PARAMETER,PRIVATE:: NF_LOG_ID   = 1
+  INTEGER,PARAMETER,PRIVATE:: NF_LOG_NAN  = 2
+  INTEGER,PARAMETER,PRIVATE:: NF_LOG_HIGH = 3
+  INTEGER,PARAMETER,PRIVATE:: NF_LOG_SPL  = 4
+  INTEGER,PARAMETER,PRIVATE:: NF_LOG_MAX  = 4
+  LOGICAL,DIMENSION(NF_LOG_MAX),PRIVATE:: nf_logged = .FALSE.
   ! The caller-side summary latch lives here too, so it is reset by the same
   ! tr_init sweep.  A SAVEd local in trcalc would survive finalize and go
   ! quiet for the rest of the process after one run's first fault.
@@ -187,15 +201,17 @@ MODULE libnf
 
 CONTAINS
   
-  ! --- set spline coefficients for reaction rate sigmav
+  ! Re-arm the one-line-per-site logging without touching the tables.
+  ! Called by tr_prep, so every run re-arms on both the library and the
+  ! tr2 menu path (trmenu's R handler never returns through tr_init).
+  ! tr_init calls it too, and nf_finalize does it as part of teardown.
+  SUBROUTINE nf_reset_log
+    IMPLICIT NONE
+    nf_logged(:)      = .FALSE.
+    nf_summary_logged = .FALSE.
+    RETURN
+  END SUBROUTINE nf_reset_log
 
-  ! ierr_nf reports failure instead of the bare STOPs upstream uses: every
-  ! one of them is reachable through libtrapi.so and would take down the
-  ! host process -- pytest, or the MCP server -- rather than returning
-  ! (CLAUDE.md, Fortran library discipline; issue #142).  tr_prep is the
-  ! only caller, so widening the signature costs nothing.
-  !   1 = spline setup failed        2 = undefined model_pnf
-  !   3 = a required ion species is absent from the composition
   ! Release the per-session reaction table.  Called from the same teardown
   ! points as DEALLOCATE_TRCOMM (tr_api_finalize, trmain), not from
   ! set_usigmav_nf: freeing on the model_pnf=0 path would add a free() to
@@ -204,15 +220,11 @@ CONTAINS
   ! trcomm/trcomm_nf cannot do this themselves -- libnf's subroutine-scoped
   ! USE trcomm makes trcomm.mod a build prerequisite of libnf.o, so a
   ! USE libnf from either would be a module cycle.
-  ! Re-arm the logging latches without touching the tables.  tr_init calls
-  ! this; nf_finalize does it as part of teardown.
-  SUBROUTINE nf_reset_log
-    IMPLICIT NONE
-    nf_logged(:)      = .FALSE.
-    nf_summary_logged = .FALSE.
-    RETURN
-  END SUBROUTINE nf_reset_log
-
+  !
+  ! Does NOT reset the _idnf tables (ns1/ns2/nsp/wgt/eng/enn), which are also
+  ! model_pnf-dependent and keep the dead session's values.  Harmless because
+  ! tr_prep_pnf refuses at nnfmax<=0 before reading them, and set_usigmav_nf
+  ! rewrites every slot it will use; noted so the omission is a decision.
   SUBROUTINE nf_finalize
     IMPLICIT NONE
     IF(ALLOCATED(id_nf_nnf)) DEALLOCATE(id_nf_nnf)
@@ -222,6 +234,15 @@ CONTAINS
     RETURN
   END SUBROUTINE nf_finalize
 
+  ! ierr_nf reports failure instead of the bare STOPs upstream uses: every
+  ! one of them is reachable through libtrapi.so and would take down the
+  ! host process -- pytest, or the MCP server -- rather than returning
+  ! (CLAUDE.md, Fortran library discipline; issue #142).  tr_prep is the
+  ! only caller, so widening the signature costs nothing.
+  !   1 = spline setup failed        2 = undefined model_pnf
+  !   3 = a required ion species is absent from the composition
+  !
+  ! --- set spline coefficients for reaction rate sigmav
   SUBROUTINE set_usigmav_nf(ierr_nf)
     USE trcomm
     ! NS_* reach trx's libnf only via trx/trcomm.f90:5's USE plcomm; nothing in
@@ -569,10 +590,10 @@ CONTAINS
     sigmav_nf=0.D0
 
     IF(id_nf.LT.1.OR.id_nf.GT.13) THEN
-       IF(.NOT.nf_logged(NF_ERR_ID)) &   ! first of this class -- see the declaration
+       IF(.NOT.nf_logged(NF_LOG_ID)) &   ! first of this site -- see the declaration
             WRITE(6,'(A,I4)') 'XX sigmav_nf: undefined id_nf: ',id_nf
        nf_last_error=NF_ERR_ID
-       nf_logged(NF_ERR_ID)=.TRUE.
+       nf_logged(NF_LOG_ID)=.TRUE.
        IF(nf_error_count < HUGE(nf_error_count)) &
             nf_error_count=nf_error_count+1
        RETURN
@@ -581,10 +602,10 @@ CONTAINS
     ! NaN fails every ordered comparison, so it would slip past both the
     ! low and high guards below and reach LOG10.  Test it explicitly.
     IF(temperature.NE.temperature) THEN
-       IF(.NOT.nf_logged(NF_ERR_TEMP)) &
+       IF(.NOT.nf_logged(NF_LOG_NAN)) &
             WRITE(6,'(A,I4)') 'XX sigmav_nf: NaN temperature: id_nf=',id_nf
        nf_last_error=NF_ERR_TEMP
-       nf_logged(NF_ERR_TEMP)=.TRUE.
+       nf_logged(NF_LOG_NAN)=.TRUE.
        IF(nf_error_count < HUGE(nf_error_count)) &
             nf_error_count=nf_error_count+1
        RETURN
@@ -597,11 +618,11 @@ CONTAINS
     END IF
 
     IF(temperature.GT.1000.D0) THEN
-       IF(.NOT.nf_logged(NF_ERR_TEMP)) &
+       IF(.NOT.nf_logged(NF_LOG_HIGH)) &
             WRITE(6,'(A,ES12.4)') &
             'XX sigmav_nf: above the 1000 keV table top: ',temperature
        nf_last_error=NF_ERR_TEMP
-       nf_logged(NF_ERR_TEMP)=.TRUE.
+       nf_logged(NF_LOG_HIGH)=.TRUE.
        IF(nf_error_count < HUGE(nf_error_count)) &
             nf_error_count=nf_error_count+1
        RETURN
@@ -622,13 +643,13 @@ CONTAINS
        CALL SPL1DF(temperature_log,sigmav_nf,tempa_log,usvnf_the3,10,ierr)
     END SELECT
     IF(ierr.NE.0) THEN
-       IF(.NOT.nf_logged(NF_ERR_SPL)) THEN
+       IF(.NOT.nf_logged(NF_LOG_SPL)) THEN
           WRITE(6,'(A,I4)')     'XX SPL1DF error in sigmav_nf: id_nf=',id_nf
           WRITE(6,'(A,ES12.4)') '       temperature=',temperature
        END IF
        sigmav_nf=0.D0
        nf_last_error=NF_ERR_SPL
-       nf_logged(NF_ERR_SPL)=.TRUE.
+       nf_logged(NF_LOG_SPL)=.TRUE.
        IF(nf_error_count < HUGE(nf_error_count)) &
             nf_error_count=nf_error_count+1
        RETURN

@@ -424,7 +424,8 @@ CONTAINS
 
       model_pnf = 0
 
-!                    nnfmax and nf_last_error are the same class: module
+!                    nnfmax, nf_last_error and nf_error_count are the
+!                    same class: module
 !                    state with only a declaration initialiser, so they
 !                    also survive finalize.  A stale nnfmax makes the next
 !                    session's ALLOCATE_TRCOMM size the trcomm_nf arrays
