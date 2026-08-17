@@ -133,7 +133,7 @@ MODULE libnf
   PUBLIC set_usigmav_nf  ! set_usigmav_nf
   PUBLIC sigmav_nf       ! sigmav_nf(id_nf,temperature) Maxwellian fitting
   PUBLIC nf_finalize     ! release per-session state at teardown
-  PUBLIC nf_reset_log    ! re-arm the one-line-per-site latches
+  PUBLIC nf_reset_log    ! re-arm the once-per-site logging latches
 
   ! sigmav_nf is a FUNCTION whose signature is pinned by test_libnf.py's
   ! ctypes binding, so it reports failure out-of-band here instead of by
@@ -149,10 +149,10 @@ MODULE libnf
   ! of whether a run failed -- tr_pnf runs ~L+2 times per timestep, so a
   ! failure during the converge loop is erased by the next clean call.
   !
-  ! nf_error_count saturates rather than wrapping: it counts one per
-  ! (reaction, radius) per tr_pnf call, measured 13884 over 5 steps at
-  ! nnfmax=13/NRMAX=50 -- ~2.8e3/step, so ~5.6e3/step at NRMAX=100 -- and
-  ! signed overflow is UB that -fcheck=all does not catch.
+  ! nf_error_count saturates rather than wrapping, because signed overflow
+  ! is UB and -fcheck=all does not catch it.  It gets large fast: one count
+  ! per failing (reaction, radius) per tr_pnf call, measured 14300 over 5
+  ! steps at nnfmax=13/NRMAX=50 with every point failing.
   !
   ! nf_error_count is the DURABLE one: incremented at every failure and never
   ! cleared by tr_pnf, so it survives the whole run.  It is what a caller or
@@ -202,9 +202,12 @@ MODULE libnf
 CONTAINS
   
   ! Re-arm the one-line-per-site logging without touching the tables.
-  ! Called by tr_prep, so every run re-arms on both the library and the
-  ! tr2 menu path (trmenu's R handler never returns through tr_init).
-  ! tr_init calls it too, and nf_finalize does it as part of teardown.
+  ! Called by tr_prep, so the unit of silence is one PREPARE, not one
+  ! process: trmenu's R handler re-preps every interactive run, and
+  ! set_param invalidates g_prepared on the library side.  Two paths
+  ! deliberately do NOT re-arm, being continuations of the same prepared
+  ! run: trmenu's C/CONT handler, and successive tr_run calls on one
+  ! handle.  tr_init and nf_finalize also call this.
   SUBROUTINE nf_reset_log
     IMPLICIT NONE
     nf_logged(:)      = .FALSE.
@@ -222,9 +225,12 @@ CONTAINS
   ! USE libnf from either would be a module cycle.
   !
   ! Does NOT reset the _idnf tables (ns1/ns2/nsp/wgt/eng/enn), which are also
-  ! model_pnf-dependent and keep the dead session's values.  Harmless because
-  ! tr_prep_pnf refuses at nnfmax<=0 before reading them, and set_usigmav_nf
-  ! rewrites every slot it will use; noted so the omission is a decision.
+  ! model_pnf-dependent and keep the dead session's values.  Harmless on both
+  ! routes into tr_prep_pnf: after a teardown its .NOT.ALLOCATED(id_nf_nnf)
+  ! guard fires first, because this routine freed the table; within one
+  ! session the nnfmax<=0 check does.  And set_usigmav_nf rewrites ids 1-4
+  ! unconditionally and 5-13 under model_pnf>=3, covering every slot any
+  ! nnfmax reaches.  Noted so the omission reads as a decision.
   SUBROUTINE nf_finalize
     IMPLICIT NONE
     IF(ALLOCATED(id_nf_nnf)) DEALLOCATE(id_nf_nnf)
@@ -570,13 +576,18 @@ CONTAINS
   ! --- reaction rate of nuclear fusion: sigmav  ---
   ! ---     as a function of temperature in keV
 
-  ! Failures are reported through the module-level nf_last_error rather than
-  ! by STOP.  P1 Task 6 put this function on a live path -- tr_pnf calls it
-  ! once per (reaction, radius) on every trcalc step -- so a STOP here aborts
-  ! the host process, pytest or the MCP server, mid-solve (CLAUDE.md, Fortran
-  ! library discipline; issue #142).  The signature is deliberately unchanged:
-  ! test_libnf.py binds this symbol through ctypes with a fixed argtypes.
-  ! Callers clear nf_last_error, run their loop, and check it afterwards.
+  ! Failures are reported out-of-band rather than by STOP.  P1 Task 6 put this
+  ! function on a live path -- tr_pnf calls it once per (reaction, radius) on
+  ! every TRCALC, and TRCALC runs several times per timestep -- so a STOP here
+  ! aborts the host process, pytest or the MCP server, mid-solve (CLAUDE.md,
+  ! Fortran library discipline; issue #142).  The signature is deliberately
+  ! unchanged: test_libnf.py binds this symbol through ctypes with a fixed
+  ! argtypes.
+  !
+  ! Read nf_error_count, not nf_last_error, to answer "did this run fail".
+  ! tr_pnf clears nf_last_error at entry, so a failure inside the converge loop
+  ! is erased by the next clean call.  nf_last_error is for a caller that
+  ! clears it, runs one loop and checks immediately -- what tr_pnf does.
   FUNCTION sigmav_nf(id_nf,temperature)
 
     USE libspl1d
