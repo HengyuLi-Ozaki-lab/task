@@ -163,13 +163,18 @@
          CALL tr_pnf(nf_ierr)
 !        Throttled, though more coarsely than libnf: libnf latches per
 !        reporting site, this is one latch for every code.  tr_pnf runs
-!        several times per step, at a rate that depends on the regime, not
-!        on whether it is failing: measured 4.4/step at PT=1e5 and 2.4/step
-!        at PT=1e6, both with every (reaction,radius) erroring, and ~10/step
-!        on a converging run.  So an unconditional WRITE emits one line per
-!        CALL -- several hundred over the fixture's NTMAX=100.  nf_summary_logged is re-armed by nf_reset_log,
-!        which tr_prep calls -- so once per PREPARE, not per process: trmenu's
-!        R handler re-preps on every interactive run, and on the library side
+!        several times per step, at a rate set by how many convergence
+!        iterations the solve takes -- not by whether sigmav_nf is failing.
+!        Measured with every (reaction,radius) erroring: 4.4/step at
+!        PT=1e5, but only 2.4/step at PT=1e6, where RT has gone NaN and
+!        every convergence comparison is false so the loop exits on its
+!        first iteration.  ~10/step on a converging run.  So an
+!        unconditional WRITE emits one line per CALL -- several hundred
+!        over the fixture's NTMAX=100.
+!
+!        nf_summary_logged is re-armed by nf_reset_log, which tr_prep calls
+!        -- so once per PREPARE, not per process: trmenu's R handler
+!        re-preps on every interactive run, and on the library side
 !        set_param invalidates g_prepared so a reconfigured run re-arms too.
 !        Successive tr_run calls on one prepared handle are a continuation and
 !        share the one message.

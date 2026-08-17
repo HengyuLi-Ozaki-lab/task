@@ -424,15 +424,18 @@ CONTAINS
 
       model_pnf = 0
 
-!                    nnfmax survives finalize: nothing resets it but this
-!                    line, so without it the next session's
+!                    nnfmax survives finalize.  set_usigmav_nf assigns it on
+!                    every prepare, but nothing resets it in the window
+!                    between a finalize and the next tr_prep -- so without
+!                    this line the next session's
 !                    ALLOCATE_TRCOMM sizes the trcomm_nf arrays from the
 !                    dead session's reaction count -- ~125 KB at the
 !                    default -- giving the default path a different heap
 !                    history than a first session had.  That is the hazard
 !                    the bit-exactness note in trcomm_nf names, and
+!                    Two tests fail without this line:
 !                    test_session_state_is_released_and_reset_across_a_cycle
-!                    fails without this line.
+!                    and test_model_pnf_is_reset_by_init.
 !
 !                    nf_last_error and nf_error_count do NOT survive
 !                    finalize -- nf_finalize zeroes both.  They are reset

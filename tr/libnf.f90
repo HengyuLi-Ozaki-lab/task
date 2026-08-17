@@ -168,7 +168,8 @@ MODULE libnf
   ! message after any over-range one.  NaN is the more alarming of the two:
   ! it exists because NaN fails every ordered comparison and would otherwise
   ! reach LOG10.  The SPL1DF site is likewise the only place the offending
-  ! id_nf and temperature are ever printed.
+  ! id_nf and temperature are ever printed TOGETHER (id_nf alone appears at
+  ! the bad-id and NaN sites).
   INTEGER,PARAMETER,PRIVATE:: NF_LOG_ID   = 1
   INTEGER,PARAMETER,PRIVATE:: NF_LOG_NAN  = 2
   INTEGER,PARAMETER,PRIVATE:: NF_LOG_HIGH = 3
