@@ -154,8 +154,14 @@
       IF(nf_multi_ready) THEN
 !        nf_ierr, not IERR: tr_pnf writes only diagnostics nothing reads
 !        yet, so a failure there must not abandon the step and must not
-!        overwrite a status the legacy path owns.
+!        overwrite a status the legacy path owns.  It is still consumed --
+!        libnf's nf_error_count is the durable record, this is the
+!        per-step detail, and leaving the value unread is how the next
+!        error someone adds here would vanish.
          CALL tr_pnf(nf_ierr)
+         IF(nf_ierr.NE.0) WRITE(6,*) &
+              'XX TRCALC: tr_pnf ierr=',nf_ierr, &
+              ' -- fusion diagnostics for this step are void'
       END IF
 
 
