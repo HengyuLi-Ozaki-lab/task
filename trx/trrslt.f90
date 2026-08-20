@@ -161,18 +161,20 @@
          END DO
       END DO
 
+!   ref/trx-regress-capture ONLY (oracle correction #5): W -> MW, matching
+!   POHT at l.134.  Full rationale at the fusion block below.
       DO NS=1,NSMAX
          DO NIC=1,NICMAX
             PIC_NSNIC(NS,NIC) &
-                 =SUM(PIC_NSNICNR(NS,NIC,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PIC_NSNICNR(NS,NIC,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
          END DO
          DO NLH=1,NLHMAX
             PLH_NSNLH(NS,NLH) &
-                 =SUM(PLH_NSNLHNR(NS,NLH,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PLH_NSNLHNR(NS,NLH,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
          END DO
          DO NEC=1,NECMAX
             PEC_NSNEC(NS,NEC) &
-                 =SUM(PEC_NSNECNR(NS,NEC,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PEC_NSNECNR(NS,NEC,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
          END DO
       END DO
       DO NIC=1,NICMAX
@@ -226,16 +228,18 @@
          END DO
       END DO
 
+!   ref/trx-regress-capture ONLY (oracle correction #5): W -> MW, matching
+!   POHT at l.134.  Full rationale at the fusion block below.
       DO NS=1,NSMAX
          DO NNB=1,NNBMAX
             SNB_NSNNB(NS,NNB) &
                  =SUM(SNB_NSNNBNR(NS,NNB,1:NRMAX)*DVRHO(1:NRMAX))*DR
             PNB_NSNNB(NS,NNB) &
-                 =SUM(PNB_NSNNBNR(NS,NNB,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PNB_NSNNBNR(NS,NNB,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
             PNBIN_NSNNB(NS,NNB) &
-                 =SUM(PNBIN_NSNNBNR(NS,NNB,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PNBIN_NSNNBNR(NS,NNB,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
             PNBCL_NSNNB(NS,NNB) &
-                 =SUM(PNBCL_NSNNBNR(NS,NNB,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PNBCL_NSNNBNR(NS,NNB,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
          END DO
       END DO
       DO NNB=1,NNBMAX
@@ -275,16 +279,29 @@
          END DO
       END DO
 
+!   ref/trx-regress-capture ONLY (oracle correction #5): every power volume
+!   integral in this subroutine's *legacy* channels divides by 1.D6 to go from
+!   W to MW -- POHT (l.134), PEXT (l.139), PRBT/PRCT/PRLT/PRSUMT/PCXT/PIET
+!   (l.355-360).  The newer per-channel aggregation blocks (RF, NBI, fusion,
+!   fusion-neutron) did not, so PNF_TOT entered PINT=POHT+PNB_TOT+PRF_TOT+
+!   PNF_TOT+PEXST in W against five terms in MW.  With this deck that made
+!   PINT 1e6 too large the moment model_pnf=1, collapsing TAUE1 from 55.4 s to
+!   2.26e-4 s and TAUE2 from 1.081 s to 2.26e-4 s, and inflating QF (l.499) by
+!   the same 1e6.  The solver is unaffected -- it consumes the W/m^3 profile
+!   PNF_NSNNFNR directly -- which is why WPT's fusion signal was right while
+!   every PINT-derived diagnostic was not.  Corrected at all ten sites; the
+!   particle-source integrals beside them (SNB_/SNF_/SNFNN_/SIE/SPEL/SPSC) are
+!   in 1/s and correctly carry no conversion.
       DO NNF=1,NNFMAX
          DO NS=1,NSMAX
             SNF_NSNNF(NS,NNF) &
                  =SUM(SNF_NSNNFNR(NS,NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR
             PNF_NSNNF(NS,NNF) &
-                 =SUM(PNF_NSNNFNR(NS,NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PNF_NSNNFNR(NS,NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
             PNFIN_NSNNF(NS,NNF) &
-                 =SUM(PNFIN_NSNNFNR(NS,NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PNFIN_NSNNFNR(NS,NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
             PNFCL_NSNNF(NS,NNF) &
-                 =SUM(PNFCL_NSNNFNR(NS,NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR
+                 =SUM(PNFCL_NSNNFNR(NS,NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
          END DO
       END DO
 
@@ -321,11 +338,13 @@
          PNFNN_NR(NR)=SUM(PNF_NNFNR(1:NNFMAX,NR))
       END DO
 
+!   ref/trx-regress-capture ONLY (oracle correction #5): W -> MW, matching
+!   POHT at l.134.  Full rationale at the fusion block above.
       DO NNF=1,NNFMAX
          SNFNN_NNF(NNF) &
               =SUM(SNFNN_NNFNR(NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR
          PNFNN_NNF(NNF) &
-              =SUM(PNFNN_NNFNR(NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR
+              =SUM(PNFNN_NNFNR(NNF,1:NRMAX)*DVRHO(1:NRMAX))*DR/1.D6
       END DO
 
       SNFNN_TOT=SUM(SNFNN_NNF(1:NNFMAX))
