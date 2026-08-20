@@ -48,6 +48,21 @@ CONTAINS
 !     successive tr_run calls on one library handle.
       CALL nf_reset_log
 
+!     One refusal: MDLNF together with model_pnf.  Both write SNF/PNF/TAUF
+!     and tr_pnf runs after the MDLNF block, so the legacy result would be
+!     silently discarded rather than combined -- and combining them would
+!     double-count the same D-T alphas, once from SIGMAM and once from libnf.
+!
+!     model_pnf >= 2 is NOT refused.  It evaluates every trcomm_nf array but
+!     publishes none of them, because tr has one fusion fast-ion slot
+!     (NFM=2, slot 2); it is diagnostic-only rather than invalid.
+      IF(model_pnf.NE.0 .AND. MDLNF.NE.0) THEN
+         WRITE(6,*) 'XX tr_prep: model_pnf and MDLNF are both nonzero', &
+              ' (model_pnf=',model_pnf,' MDLNF=',MDLNF,')'
+         ierr = 10
+         RETURN
+      END IF
+
       CALL set_usigmav_nf(nf_ierr)
       IF(nf_ierr.NE.0) THEN
          WRITE(6,*) 'XX tr_prep: set_usigmav_nf failed, ierr=',nf_ierr, &

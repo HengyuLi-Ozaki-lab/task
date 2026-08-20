@@ -1,3 +1,35 @@
+> **SUPERSEDED IN PART — read this first (P1 Task 7).**
+>
+> `metrics.json` beside this file was RE-CAPTURED in Task 7 from a reference
+> binary carrying four corrections to trx's fusion path (a 1e6 cm^3/s->m^3/s
+> error in the reaction rate, a doubled RKEV in the alpha birth speed, a dead
+> loop counter used as a species index, and `PNF_NSNNFNR` accumulated without
+> reset). They are listed in full in
+> `test_run/baselines/tr_fus_dt_hot/SOURCE.md`, which is authoritative for
+> anything the two disagree on, and are reported upstream as
+> k-yoshimi/task#235 and #236.
+>
+> Every measured number below predates those corrections. Specifically:
+>
+> | below | actual, on the committed capture |
+> |---|---|
+> | `WPT` 4.3245989445 vs 4.3236370200, rel 2.2e-4 | rel **4.0e-9** |
+> | `BETA0` rel 1.6e-1 as the largest signal | rel **1.1e-6** |
+> | determinism `sha256 1bba5692…` | superseded |
+> | the `NTMAX` conditioning table, incl. **76.5** at NTMAX=5 | **1.00** — the
+>   amplification was a product of the 1e6 error and does not survive its fix |
+> | "a hot PT=10 keV variant thermally runs away" | it does not; the runaway
+>   was the same 1e6 error, and the hot deck is now the primary oracle |
+>
+> What still holds: the case definition, the constant-reconciliation section,
+> the harness-registration note, and the observation that `TAUE1`/`TAUE2` are
+> a 0/0 diagnostic here and should be excluded from comparisons.
+>
+> This deck is retained as a near-threshold companion. Its fusion signal is
+> 4.0e-9, five orders below the hot deck's, so it is a weak test of fusion --
+> which is itself the finding: most of what looked like fusion in the original
+> capture was the unit error.
+
 # tr_fus_dt — DT-fusion (model_pnf=1) 1e-10 reference oracle
 
 Generated for **P1 Task 2** of the TRX↔TR consolidation plan

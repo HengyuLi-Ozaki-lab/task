@@ -25,9 +25,12 @@ MODULE libnf
   ! here is affected.  Verified: eng_idnf(DT) = 5.6076177045D-13, bit-equal to
   ! 3.5D3 * 1.602176487D-19 * 1D3.
   !
-  ! Task 6 MUST NOT rely on that.  Any new routine here that names AEE, AMP or
-  ! RKEV without an explicit `USE trcomm,ONLY:` silently picks up CODATA-2018
-  ! and fails Task 7's gate with no obvious cause.
+  ! Nothing here may rely on that.  A new routine naming AEE or AMP without an
+  ! explicit `USE trcomm,ONLY:` silently picks up CODATA-2018 and lands ~1.7e-7
+  ! off, ~1700x the 1e-10 gate, with no obvious cause.  RKEV is different: it
+  ! is not in bpsd_constants at all, so naming it bare is a compile error
+  ! rather than a silent wrong value.  Consumers should import from this
+  ! module with an explicit ONLY list, as trpnf_multi does.
   USE bpsd_constants
 
   ! Fusion model
@@ -666,6 +669,27 @@ CONTAINS
             nf_error_count=nf_error_count+1
        RETURN
     END IF
+
+!     UPSTREAM DEFECT, corrected here and in the reference oracle.
+!
+!     The svnf_* tables above are in cm^3/s, but every consumer needs m^3/s:
+!     tr_pnf's SNF = wgt*PN1*PN2*1.D20*RATE_NF has RN in 1e20 m^-3.  The same
+!     table exists upstream as trm/libsigma.f90's sigmavma_dt, and BOTH of its
+!     consumers there convert -- trm/trpnf.f90 and trx/trsigmavnf.f90 each
+!     write `*(1E-6)`.  The libnf rewrite copied the table forward and dropped
+!     the conversion, so every fusion rate came out 1e6 too large.
+!
+!     Checked against Bosch-Hale (Nucl. Fusion 32 (1992) 611): read as cm^3/s
+!     the table reproduces the published D-T reactivity to within 0.80-1.01
+!     over 1-100 keV and peaks at 8.7e-16 cm^3/s; read as m^3/s it would sit
+!     1e6 above the physical D-T maximum.
+!
+!     Applied at the one computed exit, so it covers all five tables and every
+!     caller exactly once; the below-floor branch RETURNs 0 earlier and needs
+!     no scale.  The matching correction in the oracle is task-trx-ref
+!     trx/libnf.f90 on branch ref/trx-regress-capture.
+      sigmav_nf=sigmav_nf*1.D-6
+
   END FUNCTION sigmav_nf
 
   ! --- sigmav_nf by integeral over energy ---

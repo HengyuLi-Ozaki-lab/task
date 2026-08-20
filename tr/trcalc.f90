@@ -16,7 +16,7 @@
            T, TAUF, TTRHOG, RDPVRHOG, SPSC, &
            pellet_time_start,pellet_time_interval, &
            number_of_pellet_repeat,icount_of_pellet
-      USE TRCOMM, ONLY : nf_multi_ready
+      USE TRCOMM, ONLY : nf_multi_ready, nnfmax
       USE trpnf_multi, ONLY : tr_pnf
       USE libnf, ONLY : nf_summary_logged
       USE tr_cytran_mod
@@ -143,19 +143,21 @@
       END SELECT
 
 !     --- multi-reaction fusion source, ported from trx (P1 Task 6) ---
-!     Additive, not a replacement: the MDLNF block above is untouched and
-!     still owns everything the solver reads, so model_pnf=0 (the default)
-!     and model_pnf>0 alike leave the legacy result bit-exact.  tr_pnf
-!     writes only trcomm_nf arrays, which nothing consumes yet -- it runs
-!     here so the ported physics is evaluated on real profiles for the
-!     cross-validation against trx.
+!     At model_pnf=0 this is inert and the legacy result is bit-exact.  At
+!     model_pnf/=0 with nnfmax==1 tr_pnf REPLACES what the MDLNF block would
+!     have written into SNF/PNF/TAUF -- which is why tr_prep refuses the two
+!     switches together, and why MDLNF=0 leaves SNF/PNF at the zeros TRCALC
+!     wrote above and TAUF at the 1.0 the CASE(0) branch sets, all three for
+!     tr_pnf to overwrite.  At nnfmax>1 nothing is
+!     published and the path stays diagnostic-only.
 !     The guard is nf_multi_ready, not model_pnf>0: libnf returns a
 !     plausible sigmav_nf from uninitialised tables instead of aborting,
 !     so the gate has to be the flag tr_prep_pnf sets, not the input.
       IF(nf_multi_ready) THEN
-!        nf_ierr, not IERR: tr_pnf writes only diagnostics nothing reads
-!        yet, so a failure there must not abandon the step and must not
-!        overwrite a status the legacy path owns.  It is still consumed --
+!        Into nf_ierr first, not straight into IERR: whether a tr_pnf
+!        failure should abandon the step depends on whether this path is
+!        publishing, which is decided below.  Writing IERR here would
+!        also clobber a status the legacy path owns.  It is still consumed --
 !        libnf's nf_error_count is the durable record, this is the
 !        per-CALL detail -- tr_pnf runs ~L+2 times per step, so these
 !        are not step counts -- and leaving the value unread is how the next
@@ -183,6 +185,17 @@
             WRITE(6,*) 'XX TRCALC: tr_pnf ierr=',nf_ierr, &
                  ' -- fusion diagnostics for this call are void;', &
                  ' libnf nf_error_count is the running total'
+         END IF
+!        Propagated since Task 7, but only when the path is publishing.
+!        At nnfmax==1 SNF/PNF/TAUF drive the solve, so a sigmav_nf failure
+!        would otherwise let the step continue with fusion silently zeroed.
+!        At nnfmax>1 nothing published, so the failure is a dead diagnostic
+!        and aborting would break the additive contract.  After the WRITE
+!        above, not before: returning first suppresses the one per-call
+!        diagnostic.  IERR is TRCALC's status; trexec and trloop check it.
+         IF(nf_ierr.NE.0 .AND. nnfmax.EQ.1) THEN
+            IERR = nf_ierr
+            RETURN
          END IF
       END IF
 

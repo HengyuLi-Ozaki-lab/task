@@ -385,8 +385,10 @@ $(OBJDIR_PIC)/trinit.o              : $(OBJDIR_PIC)/libnf.o
 $(OBJDIR_PIC)/tr_api.o              : $(OBJDIR_PIC)/libnf.o
 $(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/libnf.o
 $(OBJDIR_PIC)/trprep.o              : $(OBJDIR_PIC)/libnf.o
-# trpnf_multi USEs trcomm (via trcomm_nf/trcomm_ctrl/trcomm_profile) and libnf.
-$(OBJDIR_PIC)/trpnf_multi.o         : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/libnf.o
+# trpnf_multi USEs trcomm (via trcomm_nf/trcomm_ctrl/trcomm_profile), libnf,
+# and trlib (COULOG/HY, for the slowing-down block).
+$(OBJDIR_PIC)/trpnf_multi.o         : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/libnf.o \
+                                      $(OBJDIR_PIC)/trlib.o
 # trprep drives the fusion init: set_usigmav_nf (libnf) before
 # ALLOCATE_TRCOMM, tr_prep_pnf (trpnf_multi) after it.
 $(OBJDIR_PIC)/trprep.o              : $(OBJDIR_PIC)/libnf.o $(OBJDIR_PIC)/trpnf_multi.o
@@ -598,7 +600,8 @@ $(OBJDIR)/trlib.o  : trlib.f90  $(OBJDIR)/trcomm.o
 $(OBJDIR)/trcoll.o : trcoll.f90 $(OBJDIR)/trcomm.o $(OBJDIR)/trlib.o
 $(OBJDIR)/libnf.o  : libnf.f90  $(OBJDIR)/trcomm.o
 $(OBJDIR)/trpnf_multi.o : trpnf_multi.f90 trcomm.f90 \
-                     $(OBJDIR)/trcomm.o $(OBJDIR)/libnf.o
+                     $(OBJDIR)/trcomm.o $(OBJDIR)/libnf.o \
+                     $(OBJDIR)/trlib.o
 $(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trcoll.o \
                      $(OBJDIR)/trpnf_multi.o
 $(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90 $(OBJDIR)/trcoll.o
