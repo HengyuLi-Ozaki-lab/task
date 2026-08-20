@@ -126,6 +126,7 @@ wrx/libwrxapi.so
 wrx/obj/pic/
 wrx/mod_pic/
 wrx/tests/c_abi/test_run_so
+tr/libtrapi.so
 
 # ti L-4: libtiapi.so build artefacts
 ti/libtiapi.so

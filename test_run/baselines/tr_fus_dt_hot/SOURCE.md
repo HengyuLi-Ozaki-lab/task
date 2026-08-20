@@ -12,13 +12,16 @@ by kyoshimi `tr` with `model_pnf=1`. It is the primary P1 Task 7 oracle; the
 | Extractor | `test_run/scripts/extract_tr_metrics.py` |
 | Case | `modelg=2` analytic geometry, species e/D/T/He4, `NSMAX=4`, `NRMAX=50`, `NTMAX=5`, `PT=10 keV`, `PTS=1 keV` (edge is one tenth of core), `RIPS=2 -> RIPE=3` |
 | Determinism | two consecutive runs give a bit-identical `tr_regress.dat` |
+| Deck caveat | `PROFN2` is `PROFN2(NSM)` in trx and a bare scalar in kyoshimi, so the two decks are *not* byte-comparable on that line -- see "The two decks are not byte-identical, on purpose" |
 
 ## The reference is patched, and this section is the list
 
-`trx` as shipped cannot serve as a 1e-10 oracle for fusion. Four defects on its
-fusion path were found, each verified against an authority outside the codebase
-before being corrected, and each carries a `ref/trx-regress-capture ONLY`
-comment at its site. Reported upstream alongside k-yoshimi/task#235.
+`trx` as shipped cannot serve as a 1e-10 oracle for fusion. Five defects were
+found, each verified against an authority outside the codebase before being
+corrected, and each carries a `ref/trx-regress-capture ONLY` comment at its
+site. 1-4 are on the fusion path and are reported upstream alongside
+k-yoshimi/task#235; 5 is a diagnostic-only unit slip spanning four subsystems
+and is reported separately.
 
 1. **Reaction rate 1e6 too large.** The `svnf_*` tables in `trx/libnf.f90` are
    in cm^3/s, and `sigmav_nf` returned them unconverted, while its consumer
@@ -50,6 +53,29 @@ comment at its site. Reported upstream alongside k-yoshimi/task#235.
    power grew linearly in the number of `tr_pnf` calls — measured 1x, 2x, 3x
    on successive calls of this deck, reaching a factor of order the call count
    (~40 over 5 steps).
+
+5. **W not converted to MW in ten power volume integrals.** Every power
+   integral in the *legacy* channels of `trx/trrslt.f90`'s `TR_GLOBAL`
+   divides by `1.D6` -- `POHT`, `PEXT`, `PRBT`/`PRCT`/`PRLT`/`PRSUMT`/
+   `PCXT`/`PIET`. None of the newer per-channel aggregation blocks did: RF
+   (`PIC`/`PLH`/`PEC`), NBI (`PNB`/`PNBIN`/`PNBCL`), fusion (`PNF`/`PNFIN`/
+   `PNFCL`) and fusion-neutron (`PNFNN`). So `PNF_TOT` entered
+   `PINT = POHT+PNB_TOT+PRF_TOT+PNF_TOT+PEXST` in W against five terms in
+   MW, inflating `PINT` by 1e6 the moment `model_pnf=1`: `TAUE1` collapsed
+   55.4 s -> 2.26e-4 s, `TAUE2` 1.081 s -> 2.26e-4 s, and `QF` was 1e6 high.
+   The authority is internal and unambiguous -- the eight legacy siblings in
+   the same subroutine, and the `[MW/...]` axis labels in `trx/trgrar.f90`.
+   The solver never sees it: it consumes the W/m^3 profile `PNF_NSNNFNR`
+   directly, which is why `WPT` carried a correct fusion signal while every
+   `PINT`-derived diagnostic did not. The particle-source integrals beside
+   these (`SNB_`, `SNF_`, `SNFNN_`, `SIE`, `SPEL`, `SPSC`) are in 1/s and
+   correctly take no conversion.
+
+   A sixth, **not** corrected: `SNFNN_NR`/`PNFNN_NR` are summed from the
+   charged-particle arrays `SNF_NNFNR`/`PNF_NNFNR` while the `_NNF` totals
+   four lines later use `SNFNN_NNFNR`/`PNFNN_NNFNR`. The two are
+   inconsistent, but which is intended is an upstream question and no oracle
+   channel reads them.
 
 ## What this oracle does NOT exercise
 
@@ -88,18 +114,41 @@ line in the port — has **zero coverage from this oracle**. It is covered only
 by `test_model_pnf_publishes_into_the_solver_arrays`, which checks that it is
 non-zero and non-negative, not that it is right.
 
-**And the channel `SNF` feeds is the one the reference is worst at.** The trx
-capture's ion densities do not close against its own electron density, while
-kyoshimi's do exactly:
+An earlier revision of this file recorded a third gap here: a 62%
+quasineutrality deficit in the reference's edge ion densities. That was an
+artefact of the capture deck, not of `trx` -- see the next section -- and
+does not exist. Both codes close quasineutrality exactly, at every `NR`.
 
-| NR | n_e (both, identical) | kyoshimi Σ Z_i n_i | trx Σ Z_i n_i |
-|---|---|---|---|
-| 1 | 9.999865e-02 | 9.999865e-02 | 9.999550e-02 |
-| 25 | 9.636862e-02 | 9.636862e-02 | 8.845502e-02 |
-| 50 | 6.001157e-02 | 6.001157e-02 | 2.269606e-02 |
+## The two decks are not byte-identical, on purpose
 
-A 62% quasineutrality deficit at the edge. Until that is understood, this
-capture should not be used to validate anything a particle source touches.
+`PROFN2` is declared `PROFN2(NSM)` in `trx` -- see `trx/trparm.f90`'s
+`&TR ... PROFN1,PROFN2,PROFN3:NSM` -- and as a bare scalar in kyoshimi `tr`,
+whose help text lists `PROFN1,PROFN2,PROFT1,PROFT2,PROFU1,PROFU2` outside the
+`:NSM` group. One value therefore means *every species* on the kyoshimi side
+and *species 1 only* on the trx side, where 2..4 stay at `pl/plinit.f90`'s
+0.5. The reference deck now spells all `NSMAX` values out and carries a
+comment saying why; the kyoshimi deck keeps the single scalar, which is what
+its namelist accepts.
+
+This is worth stating plainly because the two decks were byte-identical apart
+from a graphics filename, so the divergence read as a code difference for as
+long as it stood. It was the whole of what earlier revisions of this file
+recorded as a structural, initialisation-side gap between the codes:
+
+| | before | after |
+|---|---|---|
+| T=0, all 564 `metrics.json` fields | -- | 560 bit-identical, worst **5.7e-16** |
+| after 5 steps, median | 4.0e-2 | **2.5e-8** |
+| after 5 steps, worst | 1.64 at `RN[50]` | **6.7e-4** at `AJ[48]` |
+| entries above 1e-3 | 128+ / 562 | **0** / 514 |
+| reference edge quasineutrality | 62% deficit | closes exactly |
+
+A trap worth recording: writing the four-element form into the *kyoshimi* deck
+does not fail loudly. gfortran's namelist read assigns as it parses, so
+`PROFN2=0.15D0,0.15D0,0.15D0,0.15D0` against a scalar sets it to 0.15 and
+*then* reports `## PARM INPUT ERROR.` -- the value lands, the error is
+cosmetic, and the run is indistinguishable from the scalar form. The reverse
+(one value into trx) is silent in both directions.
 
 ## Why 10 keV, and why the 1 keV case was not enough
 
@@ -115,16 +164,15 @@ deck but for that one line. Amplification is the largest relative change over
 all entries of `metrics.json` for a relative 1e-12 perturbation of `PN(1)`,
 the method the 1 keV `SOURCE.md` documents.
 
-| | fusion signal, rel. `WPT` | 1e-12 perturbation amplification | margin under 1e-10 |
-|---|---|---|---|
-| 1 keV | 4.0e-09 | 1.00 | ~1.0e6x |
-| 10 keV | **1.0e-03** | 1.56 | ~6.4e5x |
+| | fusion signal, rel. `WPT` | 1e-12 perturbation amplification | resolution floor | margin under 1e-10 |
+|---|---|---|---|---|
+| 1 keV | 6.2e-09 | 1.00 (`RN[2][1]`) | 1.0e-16 | ~1.0e6x |
+| 10 keV | **1.11e-03** | 2.32 (`AJ[48]`) | 2.3e-16 | ~4.3e5x |
 
-**The hot case wins on signal alone -- 2.6e5x more of it -- and is very
-slightly WORSE conditioned.** Both are far enough from the tolerance for that
-not to matter: amplification x double-precision rounding is the floor a
-comparison can resolve, so 1.56 x 1e-16 = 1.6e-16 still leaves ~6.4e5x of
-headroom.
+**The hot case wins on signal alone -- 1.8e5x more of it -- and is somewhat
+WORSE conditioned.** Both are far enough from the tolerance for that not to
+matter: amplification x double-precision rounding is the floor a comparison
+can resolve, so 2.32 x 1e-16 = 2.3e-16 still leaves ~4.3e5x of headroom.
 
 The 1 keV `SOURCE.md` records an amplification of 76.5 for its own deck. That
 figure was measured before the corrections, and it does not survive them: with
@@ -132,16 +180,22 @@ the 1e6 unit error in place the case was strongly nonlinear, and removing it
 takes the amplification to 1.00. Do not carry 76.5 forward; it describes a
 binary that no longer exists.
 
-For orientation, the kyoshimi side gives rel. `WPT` = 1.11e-3 on the same deck
-against the reference's 1.04e-3 -- they agree to 7.3%.
+For orientation, the kyoshimi side gives rel. `WPT` = 1.1132e-3 on the same
+deck against the reference's 1.1129e-3 -- they agree to 6.8e-4.
 
 The 1 keV capture is retained and was re-taken with the corrected binary. Its
 signal is genuine but small, which is itself the finding: most of what looked
 like fusion in the original 1 keV capture was defect 1.
 
-**`TAUE1`/`TAUE2` are meaningless here** and should be excluded from any
-comparison. With no external heating the energy confinement time is a 0/0
-diagnostic; it was already flagged in the 1 keV `SOURCE.md`.
+**`TAUE1`/`TAUE2` are ordinary comparison channels.** Earlier revisions of
+this file, and the 1 keV `SOURCE.md`, said the opposite -- that with no
+external heating the confinement time is a 0/0 diagnostic and must be
+excluded. That was wrong twice over. `PINT` is not near zero here: it is the
+ohmic 0.539 MW. What made `TAUE` look degenerate was defect 5, which put
+`PNF_TOT` into `PINT` in W. Corrected, both codes track each other:
+`TAUE1` 55.44 -> 44.59 s on the reference against 55.47 -> 44.60 s on
+kyoshimi, the `model_pnf` differentials agreeing to 1.6e-3, and `TAUE2` to
+3.5e-3.
 
 ## Constants
 
@@ -161,44 +215,60 @@ diverge are `AEE`/`AME`/`AMP`; `AMP` by 1.714e-7, about 1700x the 1e-10 gate.
 
 ## Known open gap
 
-The whole-solve comparison does **not** reach 1e-10, for a reason outside
-fusion, and the gap is larger than a scalar-only summary suggests. Comparing a
-kyoshimi `model_pnf=1` run against this baseline.  The enumeration is every
-scalar and every profile field of `metrics.json` with `TAUE1`/`TAUE2`
-dropped, 562 entries, of which 50 are the integer `NR` index columns that
-can never differ -- they are left in for reproducibility but they pad the
-sample with guaranteed zeros, which is why the median below is 4.0e-2 and
-not the 4.6e-2 of the 512 comparable entries.  Relative error is
-`|k-b|/|b|`; `compare_metrics.py` normalises by `max(|a|,|b|)` instead, under
-which the worst entry reads 0.62 rather than 1.64:
+The whole-solve comparison does **not** reach 1e-10, and the reason is now
+narrow and locatable. Comparing a kyoshimi `model_pnf=1` run against this
+baseline over every scalar and every profile field of `metrics.json` -- 564
+entries, of which 50 are the integer `NR` index columns that can never differ
+and are excluded below. Relative error is `|k-b|/|b|`; `compare_metrics.py`
+normalises by `max(|a|,|b|)` instead, which can only make these smaller:
 
 | | |
 |---|---|
-| median relative difference | 4.0e-2 |
-| entries above 6.8e-2 | 160 / 562 |
-| entries above 1e-1 | 128 / 562 |
-| worst | 1.64 at `RN[50]` (He4) |
+| median relative difference | 2.5e-8 |
+| 90th percentile | 3.1e-4 |
+| worst | **6.7e-4** at `AJ[48]` |
+| entries above 1e-3 | 0 / 514 |
+| entries above 1e-4 | 209 / 514 |
 
-It is structural, not noise: it grows monotonically toward the edge and is
-bit-identical between the 1 keV and 10 keV captures. With fusion OFF on both
-sides the scalars differ by 4.6e-2..6.8e-2, and the difference is already
-present at `T=0` before any time evolution (on the 1 keV deck, kyoshimi
-`WP` 4.82 MJ / `Q0` 7.385 against trx 4.49 / 8.196), so it originates in
-initial-profile construction. The quasineutrality violation above is part of
-the same picture.
+The four worst after `AJ[48]` are `TAUE2` (5.9e-4) and the core points of the
+temperature profile, `RT[1..4][1]` at 3.2e-4.
 
-Against that, the fusion differentials agree to 3.8e-2..1.6e-1 — the same
-order as the baseline gap, which is the most that can be said while the gap
-stands. The tighter figure is per-call: instrumenting the first `tr_pnf` call
-on both sides gave `TAUF` agreeing to 3.6e-6 and `SNF`/`PNF` to 6.3e-5. That
-was a one-off measurement with temporary `WRITE`s in both trees; the
-instrumentation is not committed and the number is **not reproducible from
-this tree**. Treat it as an upper bound on the port's own error, not a
-measurement of it — the two codes' input states already differ.
+**It is not in initialisation.** Run both codes at `NTMAX=0` and 560 of the
+564 fields are bit-identical, the remaining four -- `AJ[29]`, `AJ[36]`,
+`QP[50]`, `Q0` -- differing at 5.7e-16, i.e. last-bit. The divergence appears
+in the first transport step and grows slowly: measured with fusion OFF on both
+sides, `WPT` differs by 0.0 at `NTMAX=1`, 1.9e-4 at 2, and 2.9e-4 at 5. So it
+is a transport-layer difference between the two forks, not a profile-
+construction difference, and it has nothing to do with the fusion port.
 
-Closing the initialisation gap is a separate task. Until it lands, the
-absolute 1e-10 gate is unreachable here for reasons that have nothing to do
-with the fusion port.
+(A caution on reading `NTMAX=1`: with `NTSTEP=5` the scalar diagnostics are
+evaluated only at initialisation, so a `NTMAX=1` dump pairs `T=0` scalars with
+post-step profile arrays. Use `NTMAX=0` for a true initial-state comparison.)
+
+Against that floor, the fusion differentials -- `model_pnf=1` minus
+`model_pnf=0`, taken separately in each code and then compared -- agree as
+follows:
+
+| channel | signal, rel. to `model_pnf=0` | differential agreement |
+|---|---|---|
+| `Q0` | 6.0e-6 | 8.0e-5 |
+| `ALI` | -4.4e-6 | 1.1e-4 |
+| `BETA0`, `BETAP0` | 2.8e-3 | 6.0e-4 |
+| `WPT`, `BETAA`, `BETAN` | 1.11e-3 | 6.8e-4 |
+| `TAUE1` | -0.196 | 1.6e-3 |
+| `TAUE2` | 1.0e-3 | 3.5e-3 |
+
+The differential does **not** cancel the fork's transport difference, and the
+agreement column is the same order as the 2.9e-4 baseline: the two codes'
+fusion perturbations land on slightly different states, so 6.8e-4 is the floor
+this construction can resolve, not a measurement of the port's error. An
+earlier one-off instrumentation of the first `tr_pnf` call gave `TAUF`
+agreeing to 3.6e-6 and `SNF`/`PNF` to 6.3e-5; that instrumentation is not
+committed and the figures are **not reproducible from this tree**. Treat them
+as the tighter upper bound they are.
+
+Closing the transport-step gap is a separate task. Until it lands the absolute
+1e-10 gate is unreachable here, for reasons outside fusion.
 
 ## Reproduce
 
