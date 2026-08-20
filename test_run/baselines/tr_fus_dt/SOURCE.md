@@ -10,12 +10,16 @@
 > authoritative for anything the two disagree on.  Corrections 1-4 are reported
 > upstream as k-yoshimi/task#235 and #236.
 >
-> Every measured number below predates all of that.  Specifically:
+> The body below is MIXED.  The first three "Verification and characteristics"
+> bullets and the `TAUE1`/`TAUE2` half of Known caveats bullet 1 were
+> re-measured on the committed capture and are current; every other measured
+> number below predates the corrections.  Specifically:
 >
 > | below | actual, on the committed capture |
 > |---|---|
-> | `WPT` 4.3245989445 vs 4.3236370200, rel 2.2e-4 | `WPT` **4.4978791306** |
-> | `BETA0` rel 1.6e-1 as the largest signal | rel **1.1e-6** |
+> | `WPT` 4.3245989445 vs 4.3236370200, rel 2.2e-4 | `WPT` **4.4978791303379255** |
+> | `BETA0` rel 1.6e-1 as the largest signal | the largest is `BETAP0` at rel
+>   **1.4e-6**, `BETA0` next at **1.37e-6** |
 > | determinism `sha256 1bba5692…` | superseded |
 > | the `NTMAX` conditioning table, incl. **76.5** at NTMAX=5 | **1.00** — the
 >   amplification was a product of the 1e6 error and does not survive its fix |
@@ -71,6 +75,13 @@ Generated for **P1 Task 2** of the TRX↔TR consolidation plan
 
 ## EXACT trx input used for the capture
 
+> **One line of this block is no longer what produced the capture.** `PROFN2`
+> is corrected below to the four-species form the reference deck now carries;
+> as originally printed (a single `0.15D0`) the block reproduces only 104 of
+> the 564 fields in the `metrics.json` beside this file, worst rel 2.19 at
+> `RT[49][1]`. The live deck is `task-trx-ref/trx/in/trx_fus_dt.in`, which the
+> `## Reproduce` section reads directly and which reproduces all 564.
+
 Lives in the worktree at `trx/in/trx_fus_dt.in`. Fed on stdin with
 `env TR_REGRESS_DUMP=1 ./tr2 < in/trx_fus_dt.in`. The leading `0 / f /
 <name>.gs / c` is the GSAF prologue (quiet device → FILE → name → CONTINUE),
@@ -93,7 +104,10 @@ PN=0.1D0,0.045D0,0.045D0,0.005D0
 PNS=0.01D0,0.0045D0,0.0045D0,0.0005D0
 PT=1.0D0,1.0D0,1.0D0,1.0D0
 PTS=0.1D0,0.1D0,0.1D0,0.1D0
-PROFN2=0.15D0
+! PROFN2 is PROFN2(NSM) in trx and a bare scalar in kyoshimi tr, so one value
+! here would set species 1 only and leave 2..4 at trx/trinit.f90's 0.5, which
+! is NOT the kyoshimi deck's meaning.  All NSMAX values are spelled out.
+PROFN2=0.15D0,0.15D0,0.15D0,0.15D0
 model_pnf=1
 DT=0.02D0
 NRMAX=50
@@ -164,7 +178,7 @@ Files patched (worktree paths under `task-trx-ref/trx/`):
   re-exports the bpsd originals; without this, `AEE`/`AME`/`AMP` become an
   *ambiguous reference* in every routine that does `USE trcomm` + `USE libnf`
   (trpnf, trprep) once trcomm shadows them.
-- **`libnf.f90:495,516`** — the DT reaction-rate reduced mass
+- **`libnf.f90:509,530`** — the DT reaction-rate reduced mass
   `pm_local = PA(nsp_idnf(id_nf))*AMP` (`sigmav_nf_int`, which reads `AMP`
   directly from `bpsd_constants`, bypassing TRCOMM) now uses a local
   `AMP_kyoshimi = 1.672621637D-27`. `RKEV` used elsewhere in `libnf` comes via
@@ -187,23 +201,39 @@ in the port. That is the natural kyoshimi convention (kyoshimi `tr` never uses
 
 ## Verification and characteristics
 
+The first three bullets below were re-measured against the capture that now sits
+beside this file; the figures the original revision carried are in the
+supersession table at the top.
+
 - **Deterministic:** repeated runs of the patched `tr2` on the input above
-  produce a bit-identical `tr_regress.dat` (sha256 `1bba5692198b4610…`).
-- **`model_pnf` is exercised:** `model_pnf=1` vs `=0` differ well above the
-  tolerance — `WPT` 4.3245989445 vs 4.3236370200 (rel 2.2e-4), `BETAN`
-  0.0518484897 vs 0.0518369570. That `WPT` split is ~2e6x the 1e-10 tolerance;
-  the largest single signal is `BETA0` (1.93112210e-4 vs 2.23879583e-4, rel
-  1.6e-1, ~1.6e9x). Either way the case genuinely discriminates the fusion model.
+  produce a bit-identical `tr_regress.dat` (sha256 `2ae8c4a49f69209b…`).
+- **`model_pnf` is exercised, but barely:** `model_pnf=1` vs `=0`, same binary,
+  same deck but for that line — `WPT` 4.497879130 vs 4.497879102, rel
+  **6.2e-9**, i.e. 62x the 1e-10 tolerance. The largest single signal is
+  `BETAP0` at rel 1.40e-6 (1.4e4x), with `BETA0` at 1.37e-6. That is a real
+  signal and it is reproducible, but 62x is not a comfortable margin, and it
+  is why `tr_fus_dt_hot` (rel `WPT` 1.11e-3, 1.1e7x) replaced this deck as the
+  primary Task 7 oracle.
 - **Profiles are physical:** positive densities decreasing outward
-  (min `RN` 1.13e-3), temperatures cooling core→edge (1.017→0.059 keV,
-  min `RT` 5.89e-2), no NaN/Inf. D and T **densities** are bit-identical; their
-  **temperatures** differ by up to 5.5e-3 relative, as the mass ratio (PA=2 vs 3)
-  requires -- not a symmetry violation.
+  (min `RN` 3.00e-3), temperatures cooling core→edge (species 1, 1.0218 →
+  0.0418 keV; min `RT` over all species 4.02e-2), no NaN/Inf. D and T
+  **densities** are bit-identical; their **temperatures** differ by up to
+  2.98e-3 relative, as the mass ratio (PA=2 vs 3) requires -- not a symmetry
+  violation.
 - **Conditioned for a 1e-10 comparison:** see the next section. This is the
   property that actually makes the file usable as an oracle, and it is why
   `NTMAX=5` rather than the 20 originally captured.
 
 ## Numerical conditioning — why `NTMAX=5`
+
+> **SUPERSEDED — the whole ladder below, not only its `NTMAX=5` row.** Every
+> figure in it was measured with the 1e6 reaction-rate error in place, which
+> is what made the case nonlinear; the preamble records that `NTMAX=5` goes
+> from 76.5 to 1.00 once it is fixed, and the same mechanism applies at every
+> row. In particular the `NTMAX` 10→12 discontinuity described under the table
+> is **unverified** on the corrected binary: Task 7 re-ran the probe only at
+> `NTMAX=5`, on both this deck (1.00) and the hot deck (2.32). Treat the
+> ladder as a record of what the uncorrected binary did.
 
 A 1e-10 oracle is only meaningful if the case does not amplify floating-point
 rounding past the tolerance. This was **measured**, not assumed, by perturbing
@@ -228,30 +258,42 @@ or an `IF` threshold taking a different path), most plausibly driven by the
 scalars `BETAP0` (0.31), `Q0` (8.3) and `WPT` (4.06) amplify by 1e9–1e11, so a
 1e-10 comparison there would be decided by rounding, not by physics.
 
-The capture is therefore taken at **`NTMAX=5`**, comfortably below the cliff and
-still exercising fusion at ~1e9x the tolerance.
+The capture is therefore taken at **`NTMAX=5`**. It still exercises fusion, but
+at ~62x the tolerance (rel `WPT` 6.2e-9 against 1e-10; the largest single
+field, `BETAP0`, is 1.4e4x) -- not the ~1e9x an earlier revision claimed, which
+was the pre-correction `BETA0` signal.
 
-> The first capture of this oracle was made at `NTMAX=20` and is **not** usable;
-> if you regenerate, keep `NTMAX ≤ 10` and re-run the perturbation probe above.
+> The first capture of this oracle was made at `NTMAX=20`. Whether it is
+> usable on the corrected binary is unmeasured -- the cliff that ruled it out
+> was a product of the 1e6 error. If you regenerate at any `NTMAX`, re-run the
+> perturbation probe and record what it gives; do not carry the ladder's
+> numbers, in either direction.
 
 ### Known caveats (for Task 7)
 - **No external heating** (this case exercises `model_pnf` in isolation, with no
-  NBI/EC — avoids cross-dialect heating-model ambiguity). Consequently the energy
-  confinement time is ill-defined (`TAUE1`/`TAUE2` ≈ 4.3e-7, a near-0/0
-  diagnostic vs ~1.5 s in the heated `tr_m0904` case). They are numerically
-  reproducible here (amplification ~9) but physically meaningless; exclude them
-  if a comparison ever proves fragile.
+  NBI/EC — avoids cross-dialect heating-model ambiguity). **SUPERSEDED from
+  here:** the original revision concluded that the confinement time is
+  therefore a near-0/0 diagnostic (`TAUE1`/`TAUE2` ≈ 4.3e-7) and must be
+  excluded. It is not. `PINT` is the ohmic power, not zero, and the collapse
+  was oracle correction #5 -- `PNF_TOT` entering `PINT` in W against five
+  terms in MW. On the committed capture `TAUE1` is **1.3796 s** and `TAUE2`
+  **2.1269 s**, and the hot deck's counterparts are the two most sensitive
+  *scalar* channels in `test_fusion_differential_matches_the_trx_reference`
+  (three `RT` entries beat `TAUE2`, four beat `TAUE1`). Do not
+  exclude them.
 - A hot no-heating variant (PT=10 keV, `model_pnf=1`) **thermally runs away**
   (fusion self-heating with no loss balance → negative RT crash), so the low-T
   case is the stable choice.
 - **Constant reconciliation is mandatory, but the 1e-10 margin is thin.** The
-  OLD↔NEW constants differ by ~1.7e-7; with the measured amplification of ~76 at
-  `NTMAX=5` an unreconciled build lands ~1.3e-5 away from kyoshimi — five orders
-  above the tolerance. (An earlier note in this file attributed a 35 % `BETA0`
+  OLD↔NEW constants differ by ~1.7e-7 (`AMP` by 1.714e-7); with the corrected
+  amplification of 1.00 at `NTMAX=5` an unreconciled build lands ~1.7e-7 away
+  from kyoshimi — about 1.7e3x, three orders above the tolerance. (The ~76
+  amplification this bullet used to invoke does not survive the corrections;
+  see the marker above the ladder.) (An earlier note in this file attributed a 35 % `BETA0`
   swing to the constants; that was an artefact of the ill-conditioned `NTMAX=20`
   capture, where *any* 1e-7 perturbation produces ~30 %. The conclusion stands;
   the evidence for it did not.)
-- Task 7 should still confirm cross-host (Mac↔Linux, gfortran-15↔13.2)
+- Task 7 should still confirm cross-host (Mac↔Linux, gfortran-15↔13.3)
   reproducibility before treating a mismatch as a port bug.
 
 ## Reproduce
@@ -259,8 +301,8 @@ still exercising fusion at ~1e9x the tolerance.
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-trx-ref/trx
 env TR_REGRESS_DUMP=1 ./tr2 < in/trx_fus_dt.in > /tmp/trx_dt.log
-python3 ../../task-kyoshimi/test_run/scripts/extract_tr_metrics.py tr_regress.dat \
-  > ../../task-kyoshimi/test_run/baselines/tr_fus_dt/metrics.json
+python3 ../../task-p1-libnf/test_run/scripts/extract_tr_metrics.py tr_regress.dat \
+  > ../../task-p1-libnf/test_run/baselines/tr_fus_dt/metrics.json
 ```
 
 ## Harness registration (plan Step 9 / deviation #5)
@@ -274,7 +316,9 @@ and comparing against `baselines/<case>/metrics.json`; it never reads
 `test_definitions.conf` and no pytest enumerates `baselines/` or the conf. The
 conf is consumed only by the bash `run_tests.sh` (unusable locally on macOS bash
 3.2) and the manual `workflow_dispatch` `regen-baselines.yml` (default fixtures
-`eq_tst2 tr_tst2`, `|| true`). So registering cannot make CI red. Note: running
-`run_tests.sh tr_fus_dt` against the **current** kyoshimi `tr` will fail (no
-`model_pnf` until Tasks 4-6) — this case is not runnable end-to-end until the
-port lands (Task 7).
+`eq_iter01 eq_tst2 tot_demo2014_short tot_ht6m_short eq_jt60 tr_iter01
+tr_tst2`, `|| true`). So registering cannot make CI red. Note: `model_pnf` landed in `553b86a4`, so
+this case now runs end-to-end; `run_tests.sh tr_fus_dt` reports REGRESSION
+because it does not match at 1e-10 (308 of 514 value fields exceed it, median
+rel 2.2e-7, worst 2.5e-4 at `RT[48][1]`). `test_definitions.conf` flags exactly
+that as expected drift.

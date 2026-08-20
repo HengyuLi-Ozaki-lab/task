@@ -3,14 +3,24 @@ f
 tr_fus_dt.gs
 c
 ! DT-fusion regression case (model_pnf=1) for kyoshimi TR.
-! Physically identical to the bpsi trx reference capture in
+! Physically equivalent to the bpsi trx reference capture in
 ! test_run/baselines/tr_fus_dt/ (see SOURCE.md).  Analytic geometry
 ! (modelg=2, self-contained, no eq dependency); species e/D/T/He4.
-! NOTE: model_pnf is added to kyoshimi tr by P1 Tasks 4-6.  The case IS
-! registered in test_definitions.conf (which no pytest/CI job reads), but it
-! is NOT runnable end-to-end against tr until that port lands -- see Task 7.
-! NTMAX=5 is mandatory: the case is ill-conditioned for NTMAX>=12 and cannot
-! support a 1e-10 comparison there (SOURCE.md, "Numerical conditioning").
+!
+! NOT byte-identical to the reference deck, and must not be made so: PROFN2
+! is a bare scalar here and PROFN2(NSM) in trx, so the single value below
+! covers every species while the reference deck spells all four out.
+!
+! This is the WEAK companion to tr_fus_dt_hot, which is the primary Task 7
+! oracle.  Its fusion signal is rel WPT 6.2e-9 -- 62x the 1e-10 tolerance,
+! against the hot deck's 1.1e7x.  model_pnf landed in 553b86a4, so the case
+! runs end-to-end; it is registered in test_definitions.conf (which no
+! pytest/CI job reads) and is expected to report REGRESSION there, because it
+! does not match at 1e-10 for reasons outside fusion.
+! NTMAX=5 is kept from the original capture.  The NTMAX>=12 ill-conditioning
+! that used to make it mandatory was an artefact of a 1e6 unit error in the
+! reference and has not been re-measured -- see SOURCE.md, "Numerical
+! conditioning", which is marked superseded.
    modelg=2
    RR=8.481D0
    RA=2.574D0
