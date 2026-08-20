@@ -20,6 +20,7 @@ CONTAINS
       USE trexec
       USE libitp
       USE equnit
+      USE trregress, ONLY : tr_regress_dump_if_enabled
       IMPLICIT NONE
       INTEGER,INTENT(OUT):: IERR
       INTEGER:: nr
@@ -82,6 +83,7 @@ CONTAINS
 
 9000  CONTINUE
       RIPS=RIPE
+      CALL tr_regress_dump_if_enabled   ! reference capture (env-guarded)
       RETURN
     END SUBROUTINE tr_loop
   END MODULE trloop

@@ -66,6 +66,14 @@ CONTAINS
     PNFCL_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0 ! collisional transfer in
     SNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron number
     PNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron power
+!   ref/trx-regress-capture ONLY (oracle correction #4): PNF_NSNNFNR is
+!   accumulated with `+` at the bottom of this routine but was the one output
+!   of the five not reset here, so the alpha birth power grew linearly in the
+!   number of tr_pnf calls -- measured 1x, 2x, 3x on successive calls of the
+!   10 keV DT deck, i.e. a factor of order the call count (~40 over 5 steps)
+!   by the end of a run.  Its four siblings are reset, which is what makes
+!   the omission look unintended rather than a deliberate running total.
+    PNF_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0 ! fusion power
     
     DO nnf=1,nnfmax
        id_nf=id_nf_nnf(nnf)
@@ -105,10 +113,29 @@ CONTAINS
        DO nnf=1,nnfmax
           nsp=nsp_nnf(nnf)
           WF = RW(NR,NNBMAX+NNF)
-          VF =SQRT(2.D0*eng_nnf(nnf)*RKEV/(PA(ns)*AMP))
+!         ref/trx-regress-capture ONLY (oracle corrections #2 and #3).
+!
+!         #2  eng_nnf is ALREADY in joules -- libnf.f90 sets
+!             eng_idnf(id_nf_dt)=3.5D3*RKEV -- so the RKEV that stood here
+!             was applied twice.  Every other reader of eng honours the
+!             joules convention (trpnf.f90's PNF_/PNFNN_ lines use eng and
+!             enn bare), and both siblings apply exactly one RKEV to a
+!             keV-valued energy: trx's own trpnb.f90 and kyoshimi's
+!             tr/trpnf.f90.  Unfixed, VF came out 1.27e-8 of its true value
+!             and TAUF was noise -- negative at Te=10 keV.
+!
+!         #3  ns is the terminated counter of the DO NS=1,NSMAX loop above,
+!             so it held NSMAX+1, not a species.  For this deck that is 5,
+!             and trinit.f90's `DO NS=5,NSM` fallback gives PA(5)=PZ(5)=1
+!             instead of the alpha's PA(4)=4, PZ(4)=2.  nsp -- the reaction's
+!             product species, assigned just above and otherwise unused --
+!             is the intended index.  TAUS happens to be unaffected here
+!             (PA/PZ**2 is 1 both ways), so the error reaches TAUF only
+!             through VF, which was 2x too large.
+          VF =SQRT(2.D0*eng_nnf(nnf)/(PA(nsp)*AMP))
           HYF=HY(VF/VCR)
-          TAUS = 0.2D0*PA(ns)*ABS(TE)**1.5D0 &
-               /(PZ(ns)**2*ANE*COULOG(1,ns,ANE,TE))
+          TAUS = 0.2D0*PA(nsp)*ABS(TE)**1.5D0 &
+               /(PZ(nsp)**2*ANE*COULOG(1,nsp,ANE,TE))
           TAUF(NNF,NR)= 0.5D0*TAUS*(1.D0-HYF)
        END DO
     END DO

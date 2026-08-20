@@ -9,6 +9,12 @@ END MODULE libnf_local
 MODULE libnf
   USE bpsd_kinds
   USE bpsd_constants
+! ref/trx-regress-capture ONLY: do NOT re-export bpsd's (CODATA-2018) AEE/AME/AMP.
+! trcomm_parm now shadows these with kyoshimi trcomm_const values; letting libnf
+! also re-export the bpsd originals makes AEE/AME/AMP an ambiguous reference in
+! every routine that does `USE trcomm` + `USE libnf` (trpnf, trprep, ...). libnf's
+! own DT reduced mass uses the local AMP_kyoshimi below, so it needs none of these.
+  PRIVATE :: AEE, AME, AMP
 
   ! Fusion model
   !   model_pnf=0 : no fusion reaction
@@ -427,6 +433,20 @@ CONTAINS
        WRITE(6,'(A,ES12.4)') '       temperature=',temperature
        STOP
     END IF
+
+!   ref/trx-regress-capture ONLY (oracle correction #1): the svnf_* tables
+!   above are in cm^3/s, but every consumer of sigmav_nf needs m^3/s --
+!   trpnf.f90's SNF=wgt*PN1*PN2*1.D20*RATE_NF has RN in 1e20 m^-3.  The same
+!   table lives in trm/libsigma.f90:12-14 as sigmavma_dt, and BOTH of its
+!   consumers convert: trm/trpnf.f90:307 and trx/trsigmavnf.f90:26 each write
+!   `*(1E-6)`.  The libnf rewrite copied the table forward and dropped it.
+!   Cross-checked against Bosch-Hale (NF 32 (1992) 611): read as cm^3/s the
+!   table reproduces the published DT reactivity to 0.80-1.01 over 1-100 keV,
+!   peaking at 8.7e-16 cm^3/s; read as m^3/s it would exceed the physical DT
+!   peak by 1e6.  Applied here, at the function's one computed exit, so it
+!   covers all five tables and every caller exactly once (the low-T branch
+!   RETURNs 0 earlier and needs no scale).
+    sigmav_nf=sigmav_nf*1.D-6
   END FUNCTION sigmav_nf
 
   ! --- sigmav_nf by integeral over energy ---
@@ -483,6 +503,10 @@ CONTAINS
     REAL(rkind):: sigmav_nf_int
     REAL(rkind):: error_int,H0,EPS
     INTEGER:: ILST
+!   ref/trx-regress-capture ONLY: use kyoshimi trcomm_const.f90:19 (AMM) proton
+!   mass instead of plcomm/bpsd_constants AMP (1.67262192369E-27) so the DT
+!   reaction-rate reduced mass matches a future kyoshimi tr port at 1e-10.
+    REAL(rkind),PARAMETER:: AMP_kyoshimi = 1.672621637D-27
 
     IF(id_nf.LT.1.OR.id_nf.GT.6) THEN
        WRITE(6,'(A,I4)') 'XX sigmav_nf: input error: undefined id_nf: ',id_nf
@@ -503,7 +527,7 @@ CONTAINS
 
     id_nf_local=id_nf
     temperature_local=temperature
-    pm_local=PA(nsp_idnf(id_nf))*AMP
+    pm_local=PA(nsp_idnf(id_nf))*AMP_kyoshimi
 
     H0=1.D-4
     EPS=1.D-6

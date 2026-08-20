@@ -2,9 +2,23 @@
 
 MODULE trcomm_parm
 
-  USE plcomm
+  USE plcomm, AEE_bpsd => AEE, AME_bpsd => AME, AMP_bpsd => AMP
   USE commpi
   IMPLICIT NONE
+
+! ---- ref/trx-regress-capture ONLY: reconcile physical constants with kyoshimi tr ----
+! bpsi trx inherits AEE/AME/AMP from bpsd_constants (CODATA-2018) via plcomm, but
+! kyoshimi tr/trcomm_const.f90 uses the older CODATA-2006 values. To make this
+! THROWAWAY reference dump bit-comparable at 1e-10 with a future kyoshimi tr that
+! has model_pnf ported in, override the three divergent constants here so every
+! `USE TRCOMM` consumer (trcoll FTAUE/FTAUI, trcalc, trcoef, trexec, trinit's
+! PA(NS_e)=AME/AMP electron default, ...) and RKEV (=AEE*1.D3, below) see kyoshimi's
+! values. plcomm's originals remain reachable as AEE_bpsd/AME_bpsd/AMP_bpsd.
+! PI, VC, RMU0, EPS0 are already identical between the two and are left untouched.
+  REAL(rkind), PARAMETER :: AEE = 1.602176487D-19  ! == kyoshimi trcomm_const.f90:17 (bpsd: 1.602176634E-19)
+  REAL(rkind), PARAMETER :: AME = 9.10938215D-31   ! == kyoshimi trcomm_const.f90:18 (bpsd: 9.1093837015E-31)
+  REAL(rkind), PARAMETER :: AMP = 1.672621637D-27  ! == kyoshimi trcomm_const.f90:19 AMM (bpsd: 1.67262192369E-27)
+! -------------------------------------------------------------------------------------
 
 ! IMPORTED FROM plcomm
 !     RR,RA,RKAP,RDLT,BB,RIP,

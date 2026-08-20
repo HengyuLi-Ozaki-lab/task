@@ -35,7 +35,7 @@ SRCS=trcomm.f90 trlib.f90 trbpsd.f90 libnf.f90 \
      trrslt.f90 trpnb.f90 trprf.f90 trpel.f90 trpsc.f90 \
      trgout.f90 trgrar.f90 trgrat.f90 trgrap.f90 trgrae.f90 \
      trgrad.f90 trgram.f90 trgsub.f90 trfout.f90 \
-     trloop.f90 trmenu.f90
+     trregress.f90 trloop.f90 trmenu.f90
 
 SRC2D=trg2d.f90
 SRC3D=trg3d.f90
@@ -123,7 +123,8 @@ $(OBJDIR)/trfile.o : trfile.f90 trcomm.f90
 $(OBJDIR)/trbpsd.o : trbpsd.f90 trcomm.f90
 $(OBJDIR)/tradat.o : tradat.f90 trcomm.f90
 $(OBJDIR)/trcoll.o : trcoll.f90 trcomm.f90
-$(OBJDIR)/trloop.o : trloop.f90 trcomm.f90
+$(OBJDIR)/trregress.o : trregress.f90 trcomm.f90
+$(OBJDIR)/trloop.o : trloop.f90 trcomm.f90 trregress.f90
 $(OBJDIR)/trexec.o : trexec.f90 trcomm.f90 trprof.f90
 $(OBJDIR)/trpl.o : trpl.f90 trcomm.f90
 $(OBJDIR)/trrslt.o : trrslt.f90 trcomm.f90
