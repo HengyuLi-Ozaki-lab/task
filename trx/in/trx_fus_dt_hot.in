@@ -15,7 +15,7 @@ PT=10.0D0,10.0D0,10.0D0,10.0D0
 PTS=1.0D0,1.0D0,1.0D0,1.0D0
 ! PROFN2 is PROFN2(NSM) in trx (see trx/trparm.f90's '&TR ... PROFN1,PROFN2,PROFN3:NSM'),
 ! but a bare scalar in kyoshimi tr, where one value covers every species.  Writing one
-! value here would set species 1 only and leave 2..4 at plinit's 0.5, which is NOT the
+! value here would set species 1 only and leave 2..4 at trx/trinit.f90's 0.5, NOT the
 ! kyoshimi deck's meaning and breaks quasineutrality.  Spell all NSMAX values out.
 PROFN2=0.15D0,0.15D0,0.15D0,0.15D0
 model_pnf=1
