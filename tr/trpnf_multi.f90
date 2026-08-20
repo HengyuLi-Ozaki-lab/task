@@ -7,13 +7,18 @@
 ! TRNFDT / SIGMAM / SIGMAB / TRNFDHe3.  Both would compile to `trpnf.o` in the
 ! same object directory, so the port lands here as `trpnf_multi`.
 !
-! SCOPE: this ports the reaction-source half of trx's tr_pnf.  The
-! slowing-down half (TAUF/WF/VC3) is deliberately NOT ported -- see the
-! comment at the end of tr_pnf for the blocker and the evidence.
+! SCOPE: the reaction sources and, since P1 Task 7, the slowing-down block
+! and the publication of SNF/PNF/TAUF into the arrays the solver reads.
 !
-! STAGING: this path is additive.  trcalc keeps calling the legacy MDLNF
-! block unchanged and calls tr_pnf afterwards, writing only trcomm_nf arrays
-! that nothing else reads yet.  The legacy result is therefore bit-exact.
+! STAGING: at model_pnf = 0 this path is inert and the legacy result is
+! bit-exact -- that guarantee is unchanged, and the equivalence baselines
+! rest on it.  At model_pnf /= 0 it is NOT additive: it drives the solve,
+! and tr_prep refuses model_pnf together with MDLNF because both write the
+! same three arrays.
+!
+! Only nnfmax == 1 publishes.  model_pnf >= 2 still evaluates every
+! trcomm_nf array but publishes none of them, so it stays diagnostic-only --
+! NOT refused, just not wired, because tr has one fusion fast-ion slot.
 !
 ! NOT YET CORRECT PHYSICS FOR EVERY CHANNEL -- a Task 7 prerequisite, recorded
 ! here so validation starts from the right baseline.
@@ -84,7 +89,15 @@ CONTAINS
 
     USE trcomm_ctrl, ONLY: nnfmax
     USE trcomm_nf
-    USE libnf
+    ! ONLY, not a bare USE: libnf does a module-level USE bpsd_constants and
+    ! re-exports AEE/AME/AMP (CODATA-2018) and PI.  A bare USE here puts them
+    ! in scope alongside trcomm_const's.  PI is bit-identical between the
+    ! two, so it only ever produces an ambiguous-reference error (which is
+    ! how this was found).  AEE/AME/AMP genuinely differ -- AMP by 1.7e-7,
+    ! ~1700x the 1e-10 gate.  RKEV is not in bpsd_constants at all, so
+    ! naming it without USE trcomm is a compile error, not a silent value.
+    USE libnf, ONLY: id_nf_nnf, ns1_idnf, ns2_idnf, nsp_idnf, &
+         wgt_idnf, eng_idnf, enn_idnf
     IMPLICIT NONE
     INTEGER, INTENT(OUT):: ierr
     INTEGER:: nnf, id_nf
@@ -134,15 +147,24 @@ CONTAINS
 
   SUBROUTINE tr_pnf(ierr)
 
-    USE TRCOM0, ONLY: rkind, NRMAX, NSTM
+    USE TRCOM0, ONLY: rkind, NRMAX, NSMAX, NSTM
     USE trcomm_ctrl, ONLY: nnfmax
-    USE trcomm_profile, ONLY: RN, RT
+    USE trcomm_const, ONLY: PI, AME, AMM, RKEV
+    USE trcomm_param, ONLY: PA, PZ
+    ! Aliased: the local scalar SNF below is one reaction's rate, while these
+    ! are the run-wide legacy profiles the solver reads.  The alias keeps the
+    ! two apart at every use site rather than by declaration order.
+    USE trcomm_profile, ONLY: RN, RT, &
+         SNF_leg => SNF, PNF_leg => PNF, TAUF_leg => TAUF
+    USE trlib, ONLY: COULOG, HY
     USE trcomm_nf
-    USE libnf
+    USE libnf, ONLY: id_nf_nnf, sigmav_nf, nf_last_error   ! ONLY: see tr_prep_pnf
     IMPLICIT NONE
     INTEGER, INTENT(OUT):: ierr
     REAL(rkind):: PN1, PN2, PT1, RATE_NF, SNF
     REAL(rkind):: wgt, eng, enn
+    REAL(rkind):: ANE, TE, P1, VC3, VCR, VF, HYF, TAUS
+    INTEGER, PARAMETER:: NS_ELECTRON = 1   ! tr's convention; see TRNFDT
     INTEGER:: nnf, nr, id_nf, ns1, ns2, nsp, ns
 
     ierr = 0
@@ -198,15 +220,19 @@ CONTAINS
        END DO
     END DO
 
-    ! Reported through ierr, but the caller deliberately does not abandon
-    ! the step on it: everything this routine writes is a diagnostic that
-    ! nothing else reads yet, so returning early from trcalc would skip
-    ! TRAJOH and the SSIN/PIN assembly and kill a solve whose consumed
-    ! physics is fine.  When Task 7 makes these arrays load-bearing, the
-    ! caller starts propagating; the value is set here either way, so the
-    ! argument is not decorative and a future `ierr = <code>` cannot go
-    ! nowhere unnoticed.  The durable record is libnf's nf_error_count,
+    ! Task 7 made these arrays load-bearing, so this now propagates.
+    !
+    ! A sigmav_nf failure returns 0, which without propagation would leave
+    ! SNF and PNF zeroed across the whole radius while TAUF is still
+    ! computed from the profiles: the step would proceed with fusion
+    ! silently switched off, and since the summary latch is per-prepare a
+    ! whole run would say so once.  Acceptable while nothing read these
+    ! arrays; not now.  The durable record remains libnf's nf_error_count,
     ! which this routine does not clear.
+    ! Always reported.  Whether it ABORTS the step is the caller's call --
+    ! trcalc aborts only when this path is publishing, because at nnfmax > 1
+    ! nothing here reaches the solver and a failed diagnostic must not kill
+    ! a step whose consumed physics is fine.
     IF(nf_last_error.NE.0) ierr = 100 + nf_last_error
 
     ! --- roll-ups over reactions, as consumed downstream in trx ---
@@ -221,29 +247,70 @@ CONTAINS
        END DO
     END DO
 
-    ! --- NOT PORTED: the slowing-down block (TAUF_NNFNR stays zero) ---
+    ! --- alpha slowing-down, and publication to the legacy arrays ---
     !
-    ! trx computes a per-reaction slowing-down time from the fast-ion stored
-    ! energy `RW(NR,NNBMAX+nnf)` -- one fast-ion slot per reaction.  tr cannot
-    ! express that: RW is dimensioned (NRMAX,NFM) with NFM a compile-time
-    ! PARAMETER equal to 2 (trcom0.f90:12), slot 1 = NB and slot 2 = fusion.
+    ! Both are gated on nnfmax == 1.  tr carries exactly ONE fusion fast-ion
+    ! slot -- RW is (NRMAX,NFM) with NFM a compile-time PARAMETER of 2, slot 1
+    ! NB and slot 2 fusion (trcom0.f90) -- so a single reaction maps onto it
+    ! and more than one does not.  Widening NFM is not local: it is the
+    ! solver's state-vector dimension (YV/AY/Y, trcomm_mtx.f90), it sets the
+    ! total stored energy (trrslt_globals.f90), and it is written into the
+    ! binary dump header (trmenu.f90) that every regression baseline compares
+    ! against.  Until that lands, model_pnf >= 2 still evaluates every
+    ! trcomm_nf array but publishes none of them.  tr_prep does NOT refuse
+    ! it -- its only refusal is MDLNF together with model_pnf.
     !
-    ! Raising NFM is not a local change.  It is the solver's state-vector
-    ! dimension (YV/AY/Y(NFM,NRMAX), trcomm_mtx.f90:27, looped in trexec.f90
-    ! at 117/147 and divided at 104), it sets the total stored energy
-    ! (SUM(RW(NR,1:NFM)), trrslt_globals.f90:69), and it is written into the
-    ! binary dump header (trmenu.f90:137) that every regression baseline is
-    ! compared against.  Widening the fast-ion species dimension is therefore
-    ! its own task, not a side effect of porting the reaction sources.
+    ! The reference this is matched against is bpsi trx on branch
+    ! ref/trx-regress-capture, with four corrections applied to its fusion
+    ! path (a 1e6 cm^3/s->m^3/s error in the reaction rate, a doubled RKEV in
+    ! the birth speed, a dead loop counter used as a species index, and
+    ! PNF_NSNNFNR accumulated without reset).  See
+    ! test_run/baselines/tr_fus_dt_hot/SOURCE.md.
     !
-    ! Until then the legacy MDLNF path keeps computing the 1-D TAUF(NRMAX) it
-    ! always has, and this routine leaves TAUF_NNFNR at zero rather than
-    ! filling it from a single-slot RW it cannot correctly attribute.
-    !
-    ! When that task lands, port trx/trpnf.f90:94-113, and note that its
-    ! slowing-down loop reads PA(ns)/PZ(ns)/COULOG(1,ns,...) where `ns` is the
-    ! leftover DO-variable from the preceding VC3 loop (so NSMAX+1, an
-    ! unwritten slot) and never uses the `nsp` it assigns one line earlier.
+    ! AMM, not bpsd's AMP: the reference shadows AMP with kyoshimi's
+    ! CODATA-2006 value (1.672621637D-27), so these are the same number.  Do
+    ! not reach for libnf's re-exported AMP here -- that one is CODATA-2018
+    ! and lands 1.7e-7 off, ~1700x the 1e-10 gate.
+
+    IF(nnfmax /= 1) RETURN
+
+    DO nr = 1, NRMAX
+       ANE = RN(nr,NS_ELECTRON)
+       TE  = RT(nr,NS_ELECTRON)
+       P1  = 3.D0*SQRT(0.5D0*PI)*AME/ANE*(ABS(TE)*RKEV/AME)**1.5D0
+       VC3 = 0.D0
+       DO ns = 1, NSMAX
+          IF(PZ(ns) > 0.D0) &                      ! sum over ions
+               VC3 = VC3 + P1*RN(nr,ns)*PZ(ns)**2/(PA(ns)*AMM)
+       END DO
+       VCR = VC3**(1.D0/3.D0)
+
+       nsp = nsp_nnf(1)
+       VF  = SQRT(2.D0*eng_nnf(1)/(PA(nsp)*AMM))   ! eng_nnf is already in J
+       HYF = HY(VF/VCR)
+       TAUS = 0.2D0*PA(nsp)*ABS(TE)**1.5D0 &
+            /(PZ(nsp)**2*ANE*COULOG(1,nsp,ANE,TE))
+       TAUF_NNFNR(1,nr) = 0.5D0*TAUS*(1.D0-HYF)
+
+       ! --- publish: these are what the solver actually reads ---
+       !
+       ! tr_prep refuses model_pnf /= 0 together with MDLNF /= 0, so nothing
+       ! the legacy TRNFDT wrote is being overwritten here -- at MDLNF = 0
+       ! TRCALC has already zeroed SNF and PNF and set TAUF to a placeholder
+       ! 1.0, and this replaces all three.
+       !
+       ! NOT published, because the reference has no writer for them and
+       ! inventing one would make this code the oracle rather than the thing
+       ! under test: PFIN, PFCL, RNF, RTF.  In trx, PNFCL_NSNNFNR is zeroed
+       ! and never assigned, so the alpha energy that leaves RW at rate
+       ! 1/TAUF is discarded instead of heating the thermal species.  This
+       ! oracle therefore does not exercise collisional transfer at all; that
+       ! is recorded in the baseline's SOURCE.md, and closing it means adding
+       ! the physics on BOTH sides, not here alone.
+       TAUF_leg(nr) = TAUF_NNFNR(1,nr)
+       SNF_leg(nr)  = SNF_NSNR(nsp,nr)
+       PNF_leg(nr)  = PNF_NSNNFNR(nsp,1,nr)
+    END DO
 
     RETURN
   END SUBROUTINE tr_pnf

@@ -8,7 +8,8 @@ spline reproduces the reactivity the existing code already computes.
 
 Every tolerance below comes from a sweep run against this repo's own
 libtrapi.so, not from a specification. The measured ratio
-`sigmav_nf(DT,T) * 1e-6 / SIGMAM(T,T)` is:
+`sigmav_nf(DT,T) / SIGMAM(T,T)` is (both sides m^3/s; the 1e-6 that once
+stood in this formula moved into sigmav_nf in Task 7):
 
       T[keV]     ratio          T[keV]     ratio
            1    1.0021              30    0.9823
@@ -23,8 +24,9 @@ libtrapi.so, not from a specification. The measured ratio
 Two things that measurement settled, both contrary to what the project report
 says:
 
-* **Units.** `svnf_*` is tabulated in cm^3/s and `SIGMAM` returns m^3/s, so the
-  comparison needs a 1e-6 factor. Confirmed by the ratio landing on 1.0 at
+* **Units.** `svnf_*` is tabulated in cm^3/s and `SIGMAM` returns m^3/s.
+  sigmav_nf now applies the conversion itself, so no factor belongs here.
+  Confirmed by the ratio landing on 1.0 at
   every table point rather than by reading a comment.
 * **Where they disagree.** The report describes a low-temperature overshoot
   below ~3 keV with good behaviour above. That is not what the sweep shows.
@@ -89,7 +91,6 @@ FUSION_BAND = (5.0, 7.0, 10.0, 15.0, 20.0, 30.0, 50.0, 70.0, 100.0)
 
 TOL_TABLE = 0.06  # measured worst |ratio-1| over TABLE_POINTS: 0.0579 at 500 keV
 TOL_BAND = 0.02   # measured worst over FUSION_BAND: 0.0177 at 30 keV
-CM3_PER_M3 = 1.0e-6
 
 
 def _parses_as_float(stdout: str) -> bool:
@@ -233,7 +234,12 @@ def nf():
     class NF:
         @staticmethod
         def sigmav_dt(t_kev: float) -> float:
-            """libnf's D-T <sigma v>, in cm^3/s as tabulated."""
+            """libnf's D-T <sigma v>, in m^3/s.
+
+        The svnf_* tables are tabulated in cm^3/s; sigmav_nf converts at
+        its exit, so what comes back here is already m^3/s and directly
+        comparable with SIGMAM.
+        """
             i = ctypes.c_int(ID_NF_DT)
             t = ctypes.c_double(float(t_kev))
             return sigmav(ctypes.byref(i), ctypes.byref(t))
@@ -246,7 +252,12 @@ def nf():
 
         @staticmethod
         def ratio(t_kev: float) -> float:
-            return NF.sigmav_dt(t_kev) * CM3_PER_M3 / NF.sigmam(t_kev)
+            # No unit factor: sigmav_nf now returns m^3/s, the same units as
+            # SIGMAM. Until Task 7 it returned the raw cm^3/s table and this
+            # line carried a 1e-6, which meant the test could not have
+            # noticed the missing conversion -- it asserted the ratio the
+            # defect produced. The bare ratio pins the units too.
+            return NF.sigmav_dt(t_kev) / NF.sigmam(t_kev)
 
     return NF
 
@@ -322,7 +333,7 @@ def test_matches_sigmam_at_table_points(nf, t_kev):
     """
     r = nf.ratio(t_kev)
     assert abs(r - 1.0) < TOL_TABLE, (
-        f"sigmav_nf(DT,{t_kev} keV)*1e-6 / SIGMAM = {r:.4f}, off by "
+        f"sigmav_nf(DT,{t_kev} keV) / SIGMAM = {r:.4f}, off by "
         f"{abs(r - 1.0) * 100:.2f}% (limit {TOL_TABLE * 100:.0f}%).\n"
         "Both are meant to be the same analytic D-T fit, svnf_dt being it "
         "tabulated. A miss here means the spline construction, the table, or "
@@ -341,7 +352,7 @@ def test_matches_sigmam_in_fusion_band(nf, t_kev):
     """
     r = nf.ratio(t_kev)
     assert abs(r - 1.0) < TOL_BAND, (
-        f"sigmav_nf(DT,{t_kev} keV)*1e-6 / SIGMAM = {r:.4f}, off by "
+        f"sigmav_nf(DT,{t_kev} keV) / SIGMAM = {r:.4f}, off by "
         f"{abs(r - 1.0) * 100:.2f}% (limit {TOL_BAND * 100:.0f}%)"
     )
 

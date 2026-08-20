@@ -1,0 +1,42 @@
+0
+f
+tr_fus_dt_hot.gs
+c
+! DT-fusion regression case at 10 keV (model_pnf=1) for kyoshimi TR.
+! Physically identical to the bpsi trx reference capture in
+! test_run/baselines/tr_fus_dt_hot/ (see SOURCE.md).  Analytic geometry
+! (modelg=2, self-contained, no eq dependency); species e/D/T/He4.
+!
+! This is the PRIMARY Task 7 oracle, in place of the 1 keV tr_fus_dt case.
+! The 1 keV case was chosen when a 10 keV variant appeared to run away
+! thermally -- but that runaway was an artefact of a 1e6 unit error in the
+! reference's reaction rate (svnf_* tables are cm^3/s, consumed as m^3/s).
+! With that corrected the hot case is stable and carries ~2.6e5x more fusion
+! signal (rel. WPT 1.0e-3 against 4.0e-9).  It is marginally WORSE conditioned
+! (1e-12 perturbation amplified 1.56 against 1.00), which does not matter at
+! this distance from the tolerance -- both leave ~1e6x of margin.
+!
+! The numbers above are reference-side and are derived in
+! test_run/baselines/tr_fus_dt_hot/SOURCE.md; that file is authoritative if
+! these ever disagree.  NTMAX=5 is kept from the cold case.
+   modelg=2
+   RR=8.481D0
+   RA=2.574D0
+   RKAP=1.816D0
+   RDLT=0.3478D0
+   BB=5.953D0
+   NSMAX=4
+   PN=0.1D0,0.045D0,0.045D0,0.005D0
+   PNS=0.01D0,0.0045D0,0.0045D0,0.0005D0
+   PT=10.0D0,10.0D0,10.0D0,10.0D0
+   PTS=1.0D0,1.0D0,1.0D0,1.0D0
+   PROFN2=0.15D0
+   model_pnf=1
+   DT=0.02D0
+   NRMAX=50
+   NTMAX=5
+   NTSTEP=5
+   RIPS=2.D0
+   RIPE=3.D0
+r
+q

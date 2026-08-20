@@ -25,8 +25,12 @@ Task 7.  Concretely:
 The flags are read straight out of the shared library because they are
 module-scope state with no accessor on the C ABI -- adding one purely for a
 test would widen the ABI for no caller.  Both are plain integers/logicals, so
-``ctypes.c_int.in_dll`` is well defined here (unlike the allocatable arrays,
-which are descriptors and are deliberately not poked at).
+``ctypes.c_int.in_dll`` is well defined for them. The allocatable arrays are
+read too, through the first word of their gfortran descriptor -- see
+``_read_source_array``. That is a compiler implementation detail rather than a
+documented ABI, so it is confined to the two helpers that do it, and used only
+where the alternative would be widening the C ABI with an accessor no caller
+wants.
 """
 from __future__ import annotations
 
@@ -227,6 +231,10 @@ def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
         for i in range(1, 5):
             tr.set_param(f"PT[{i}]", 20.0)   # keV, well inside the table
             tr.set_param(f"PTS[{i}]", 2.0)
+        # tr_iter01 ships MDLNF=1, and tr_prep refuses both switches at once:
+        # they write the same SNF/PNF/TAUF and would double-count the D-T
+        # alphas, once from SIGMAM and once from libnf.
+        tr.set_param("MDLNF", 0)
         tr.set_param("model_pnf", 2)
         tr.set_param("NTMAX", NSTEPS)
         tr.run(NSTEPS)
@@ -373,6 +381,7 @@ def test_session_state_is_released_and_reset_across_a_cycle(monkeypatch):
         for i in range(1, 5):
             tr.set_param(f"PT[{i}]", 2000.0)   # above the table top -> errors
             tr.set_param(f"PTS[{i}]", 2000.0)
+        tr.set_param("MDLNF", 0)   # mutually exclusive with model_pnf
         tr.set_param("model_pnf", 4)
         tr.set_param("NTMAX", 1)
         tr.run(1)
@@ -419,6 +428,7 @@ def test_model_pnf_is_reset_by_init(monkeypatch):
 
     with Trlib() as tr:
         FIXTURE.apply(tr)
+        tr.set_param("MDLNF", 0)   # mutually exclusive with model_pnf
         tr.set_param("model_pnf", 4)
         tr.run(1)
         assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 4
@@ -566,6 +576,10 @@ def _run_hot_in_subprocess(script_body):
         os.chdir(%r)
         def hot(tr, pt=1.0e5):
             HOT.apply(tr)
+            # tr_iter01 ships MDLNF=1; tr_prep refuses both switches at
+            # once because they write the same SNF/PNF/TAUF and would
+            # double-count the D-T alphas, SIGMAM once and libnf once.
+            tr.set_param("MDLNF", 0)
             for i in range(1, 5):
                 tr.set_param("PT[%%d]" %% i, pt)
                 tr.set_param("PTS[%%d]" %% i, pt)
@@ -633,3 +647,156 @@ def test_trcalc_summary_is_throttled_to_one_line_per_prepare():
         f"called many times per prepare, so this is one line per CALL:\n"
         f"{out[-1500:]}"
     )
+
+
+# --- P1 Task 7: the publish into the arrays the solver reads ---
+
+def _hot_dt(tr):
+    """A 10 keV D-T configuration on tr_iter01, with MDLNF disarmed."""
+    from .fixtures import tr_iter01_params as HOT
+
+    HOT.apply(tr)
+    tr.set_param("MDLNF", 0)
+    for i in range(1, 5):
+        tr.set_param(f"PT[{i}]", 10.0)
+        tr.set_param(f"PTS[{i}]", 1.0)
+
+
+def _profiles(lib, nrmax):
+    """SNF, PNF and TAUF -- the three arrays tr_pnf publishes."""
+    out = {}
+    for name, sym in (("SNF", "__trcomm_profile_MOD_snf"),
+                      ("PNF", "__trcomm_profile_MOD_pnf"),
+                      ("TAUF", "__trcomm_profile_MOD_tauf")):
+        addr = ctypes.c_void_p.in_dll(lib, sym)
+        assert addr.value, f"{sym} is not allocated"
+        out[name] = list((ctypes.c_double * nrmax).from_address(addr.value))
+    return out
+
+
+def test_model_pnf_publishes_into_the_solver_arrays(monkeypatch):
+    """model_pnf=1 must move SNF, PNF and TAUF -- otherwise it drives nothing.
+
+    Task 6 left the path writing only trcomm_nf arrays that nothing reads, so
+    model_pnf changed no output at all. This is the assertion that would have
+    caught that, and that catches a regression of the three publish lines in
+    tr_pnf: delete them and every other test in this file still passes.
+
+    At MDLNF=0 TRCALC zeroes SNF/PNF and sets TAUF=1.0 every step, so the
+    model_pnf=0 values below are those placeholders, not stale data.
+    """
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+
+    def run(model_pnf):
+        with Trlib() as tr:
+            _hot_dt(tr)
+            tr.set_param("model_pnf", model_pnf)
+            tr.set_param("NTMAX", 1)
+            tr.run(1)
+            nrmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value
+            return _profiles(lib, nrmax)
+
+    off, on = run(0), run(1)
+
+    assert all(v == 0.0 for v in off["SNF"]), "MDLNF=0 should leave SNF zeroed"
+    assert all(v == 0.0 for v in off["PNF"]), "MDLNF=0 should leave PNF zeroed"
+    assert all(v == 1.0 for v in off["TAUF"]), "MDLNF=0 sets TAUF to 1.0"
+
+    assert any(v != 0.0 for v in on["SNF"]), (
+        "model_pnf=1 left SNF at zero -- tr_pnf is not publishing the particle "
+        "source, so the ported path drives nothing"
+    )
+    assert any(v != 0.0 for v in on["PNF"]), "model_pnf=1 left PNF at zero"
+    assert any(v != 1.0 for v in on["TAUF"]), (
+        "TAUF is still the 1.0 placeholder -- the slowing-down block did not run"
+    )
+    # The alpha source is positive and its power follows it.
+    assert min(on["SNF"]) >= 0.0, "the He4 source must not go negative"
+    assert min(on["PNF"]) >= 0.0
+
+
+def test_model_pnf_ge_2_stays_diagnostic_only(monkeypatch):
+    """nnfmax > 1 evaluates the reaction set but publishes nothing.
+
+    tr carries one fusion fast-ion slot, so only a single reaction can be
+    wired. This pins that the gate is a gate and not an accident: with it
+    removed, model_pnf=2 would publish a one-reaction slice of a four-reaction
+    set.
+    """
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+    with Trlib() as tr:
+        _hot_dt(tr)
+        tr.set_param("model_pnf", 2)
+        tr.set_param("NTMAX", 1)
+        tr.run(1)
+        assert ctypes.c_int.in_dll(lib, SYM_NNFMAX).value == 4
+        assert bool(ctypes.c_int.in_dll(lib, SYM_READY).value)
+        nrmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value
+        p = _profiles(lib, nrmax)
+    assert all(v == 0.0 for v in p["SNF"]), "nnfmax>1 must not publish SNF"
+    assert all(v == 0.0 for v in p["PNF"]), "nnfmax>1 must not publish PNF"
+    assert all(v == 1.0 for v in p["TAUF"]), "nnfmax>1 must not publish TAUF"
+
+
+def test_mdlnf_and_model_pnf_together_are_refused(monkeypatch):
+    """Both write SNF/PNF/TAUF; tr_pnf runs second and would silently win.
+
+    Combining them would also count the same D-T alphas twice, once from
+    SIGMAM and once from libnf. tr_prep refuses with ierr=10.
+    """
+    monkeypatch.chdir(FIXTURES_DIR)
+    with pytest.raises(TrlibError):
+        with Trlib() as tr:
+            from .fixtures import tr_iter01_params as HOT
+
+            HOT.apply(tr)          # ships MDLNF=1
+            tr.set_param("model_pnf", 1)
+            tr.run(1)
+
+
+def test_a_publishing_failure_aborts_the_step(monkeypatch):
+    """The other half of the reporting/propagation split.
+
+    At nnfmax == 1 the path publishes, so a sigmav_nf failure must abort
+    rather than let the step continue with SNF and PNF silently zeroed while
+    TAUF is still computed from the profiles. Its complement -- that a failure
+    at nnfmax > 1 must NOT abort, because nothing published -- is pinned by
+    the three hot tests above, which run at model_pnf=2 and 4 and expect the
+    run to complete.
+
+    Without this, deleting the whole propagation block from trcalc leaves the
+    suite green: the "do not abort a dead diagnostic" side was protected and
+    the "do abort a live one" side was not.
+    """
+    from .fixtures import tr_iter01_params as HOT
+
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+
+    # The assertions live INSIDE the context: leaving it calls tr_finalize,
+    # which calls nf_finalize, which zeroes both counters. pytest.raises
+    # swallows the exception so the block continues.
+    with Trlib() as tr:
+        HOT.apply(tr)
+        tr.set_param("MDLNF", 0)
+        for i in range(1, 5):
+            tr.set_param(f"PT[{i}]", 2000.0)   # above the 1000 keV table top
+            tr.set_param(f"PTS[{i}]", 2000.0)
+        tr.set_param("model_pnf", 1)           # nnfmax == 1 -> publishing
+        with pytest.raises(TrlibError):
+            tr.run(1)
+
+        # tr_api_run flattens every failure to TR_ERR_CALC_FAILED, so the
+        # raise alone cannot say WHERE it came from -- tr_prep's refusal
+        # surfaces identically. Pin the origin: sigmav_nf must have run and
+        # failed on its temperature guard, which is what tr_pnf propagated.
+        assert ctypes.c_int.in_dll(lib, SYM_NF_COUNT).value > 0, (
+            "nothing tripped sigmav_nf, so the abort came from elsewhere -- "
+            "this test would then pass for the wrong reason"
+        )
+        assert ctypes.c_int.in_dll(lib, SYM_NF_ERR).value == 2, (
+            "expected NF_ERR_TEMP (2), the >1000 keV guard; got "
+            f"{ctypes.c_int.in_dll(lib, SYM_NF_ERR).value}"
+        )
