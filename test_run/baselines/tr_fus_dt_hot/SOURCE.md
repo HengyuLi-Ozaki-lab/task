@@ -17,10 +17,12 @@ by kyoshimi `tr` with `model_pnf=1`. It is the primary P1 Task 7 oracle; the
 ## The reference is patched, and this section is the list
 
 `trx` as shipped cannot serve as a 1e-10 oracle for fusion. Five defects were
-found, each verified against an authority outside the codebase before being
-corrected, and each carries a `ref/trx-regress-capture ONLY` comment at its
-site. 1-4 are on the fusion path and are reported upstream alongside
-k-yoshimi/task#235; 5 is a diagnostic-only unit slip spanning four subsystems
+found, each verified before being corrected -- defect 1 against an authority
+outside the codebase (Bosch-Hale), defects 2-5 against internal authorities
+that are unambiguous where they are cited -- and each carries a
+`ref/trx-regress-capture ONLY` comment at its site. 1-4 are on the fusion path and are reported upstream as k-yoshimi/task#235
+(defects 2-4) and #236 (defect 1); 5 is a diagnostic-only unit slip spanning
+four subsystems
 and is reported separately.
 
 1. **Reaction rate 1e6 too large.** The `svnf_*` tables in `trx/libnf.f90` are
@@ -50,9 +52,12 @@ and is reported separately.
 
 4. **`PNF_NSNNFNR` accumulated without reset.** It is the one output of five
    not zeroed at entry while being accumulated with `+`, so the alpha birth
-   power grew linearly in the number of `tr_pnf` calls — measured 1x, 2x, 3x
-   on successive calls of this deck, reaching a factor of order the call count
-   (~40 over 5 steps).
+   power grew linearly in the number of `tr_pnf` calls — measured 1.0000x,
+   2.0019x, 3.0037x on successive calls of this deck, reaching a factor of
+   order the call count. The corrected build makes 46 calls over these five
+   steps, counted with a `SAVE` counter at the routine entry; the defective
+   build makes more, because the inflated alpha source costs the implicit
+   solve extra iterations.
 
 5. **W not converted to MW in ten power volume integrals.** Every power
    integral in the *legacy* channels of `trx/trrslt.f90`'s `TR_GLOBAL`
@@ -63,13 +68,27 @@ and is reported separately.
    `PINT = POHT+PNB_TOT+PRF_TOT+PNF_TOT+PEXST` in W against five terms in
    MW, inflating `PINT` by 1e6 the moment `model_pnf=1`: `TAUE1` collapsed
    55.4 s -> 2.26e-4 s, `TAUE2` 1.081 s -> 2.26e-4 s, and `QF` was 1e6 high.
-   The authority is internal and unambiguous -- the eight legacy siblings in
-   the same subroutine, and the `[MW/...]` axis labels in `trx/trgrar.f90`.
+   The authority is internal and unambiguous, in three independent places.
+   `trx/trprf.f90:18-20` is a **second writer** of `PIC_TOT`/`PLH_TOT`/
+   `PEC_TOT`, setting them to `SUM(PICIN)` etc. -- the namelist input powers,
+   in MW -- so before the fix `trrslt.f90:194-196` overwrote MW values with W
+   and the same variable meant different things depending on which subroutine
+   ran last. `trx/trhelp.f90:243` documents `PNB_TOT: NBI TOTAL INPUT POWER
+   (MW)`. And the eight legacy siblings in `TR_GLOBAL` itself all divide,
+   as do the `[MW/...]` axis labels in `trx/trgrar.f90`. Kyoshimi `tr`'s own
+   `trrslt_globals.f90:192-220` divides on every counterpart; trx is the
+   outlier fork here, which is also why `TAUE1` works as an oracle channel at
+   all.
    The solver never sees it: it consumes the W/m^3 profile `PNF_NSNNFNR`
    directly, which is why `WPT` carried a correct fusion signal while every
    `PINT`-derived diagnostic did not. The particle-source integrals beside
    these (`SNB_`, `SNF_`, `SNFNN_`, `SIE`, `SPEL`, `SPSC`) are in 1/s and
    correctly take no conversion.
+
+   One of the ten cannot be observed from anywhere: `PNFNN_NNF` feeds
+   `PNFNN_TOT`, which has no reader in `trx` outside its declaration, and its
+   `NNF>1` entries reach `GVT` only at `NNFMAX>=2`. It is corrected by class,
+   not by measurement.
 
    A sixth, **not** corrected: `SNFNN_NR`/`PNFNN_NR` are summed from the
    charged-particle arrays `SNF_NNFNR`/`PNF_NNFNR` while the `_NNF` totals
@@ -100,7 +119,12 @@ fast-alpha energy.
 
 **2. The particle source is not in the loop.** `MDLEQN` defaults to 0
 (`tr/trinit.f90`) and neither deck overrides it, so the density equations are
-never assembled and `SSIN` — the only consumer of `SNF` — is never evaluated.
+never entered into the reduced solve — the run's `NEQ` table gives `NST=0` on
+all four `NSV=1` rows — so `SNF`'s contribution is assembled and then dropped.
+(An earlier revision said `SSIN` is never evaluated. It is: `tr/trcalc.f90:219`
+writes `SSIN(NR,4)=SNF(NR)+…` under a guard on `MDLEQ0`, which is 0. And `SNF`
+has other readers, `tr/trrslt_globals.f90`'s `SNFT` among them. The conclusion
+below is unchanged; only the mechanism was wrong.)
 Measured on this deck, `model_pnf=1` against `model_pnf=0`:
 
 | | max relative change over 200 entries |
@@ -117,7 +141,8 @@ non-zero and non-negative, not that it is right.
 An earlier revision of this file recorded a third gap here: a 62%
 quasineutrality deficit in the reference's edge ion densities. That was an
 artefact of the capture deck, not of `trx` -- see the next section -- and
-does not exist. Both codes close quasineutrality exactly, at every `NR`.
+does not exist. Both codes close quasineutrality to round-off, identically --
+worst 1.4e-15 relative at `NR=46`, exactly zero at 7 of the 50 radii.
 
 ## The two decks are not byte-identical, on purpose
 
@@ -125,23 +150,39 @@ does not exist. Both codes close quasineutrality exactly, at every `NR`.
 `&TR ... PROFN1,PROFN2,PROFN3:NSM` -- and as a bare scalar in kyoshimi `tr`,
 whose help text lists `PROFN1,PROFN2,PROFT1,PROFT2,PROFU1,PROFU2` outside the
 `:NSM` group. One value therefore means *every species* on the kyoshimi side
-and *species 1 only* on the trx side, where 2..4 stay at `pl/plinit.f90`'s
-0.5. The reference deck now spells all `NSMAX` values out and carries a
+and *species 1 only* on the trx side, where 2..4 stay at `trx/trinit.f90`'s
+0.5. (Both `pl/plinit.f90` and `trx/trinit.f90` write 0.5, but `trmain.f90`
+calls `pl_init` before `tr_init`, so trinit is the operative writer -- visible
+in `PROFN3`, where the two disagree and the run reports trinit's 0.0.) The reference deck now spells all `NSMAX` values out and carries a
 comment saying why; the kyoshimi deck keeps the single scalar, which is what
 its namelist accepts.
 
-This is worth stating plainly because the two decks were byte-identical apart
-from a graphics filename, so the divergence read as a code difference for as
-long as it stood. It was the whole of what earlier revisions of this file
+This is worth stating plainly because the two decks carried the same value on
+every parameter line -- 19 keys, zero mismatches -- so the divergence read as a
+code difference for as long as it stood. (They were never byte-identical: the
+kyoshimi deck has a comment header and three-space indentation, and spells
+`modelg` in lower case. Comparing parameter *values* is what could not see
+this, because a scalar-vs-array difference does not show up there.) It was the whole of what earlier revisions of this file
 recorded as a structural, initialisation-side gap between the codes:
+
+Both columns are the same 514 entries -- every scalar and profile field of
+`metrics.json` except the 50 integer `NR` index columns, which can never
+differ -- against the same unchanged kyoshimi `model_pnf=1` run. Earlier
+revisions quoted a 562-entry figure that included the index columns and
+dropped `TAUE`; that convention is not used anywhere in this file any more.
 
 | | before | after |
 |---|---|---|
-| T=0, all 564 `metrics.json` fields | -- | 560 bit-identical, worst **5.7e-16** |
-| after 5 steps, median | 4.0e-2 | **2.5e-8** |
-| after 5 steps, worst | 1.64 at `RN[50]` | **6.7e-4** at `AJ[48]` |
-| entries above 1e-3 | 128+ / 562 | **0** / 514 |
-| reference edge quasineutrality | 62% deficit | closes exactly |
+| T=0 | -- | 510 / 514 bit-identical, worst **5.7e-16** |
+| after 5 steps, median | 4.7e-2 | **4.8e-8** |
+| after 5 steps, 90th pct | 3.0e-1 | **3.1e-4** |
+| after 5 steps, worst | 1.8e5 (`TAUE1`) | **6.7e-4** (`AJ[48]`) |
+| entries above 1e-2 | 400 / 514 | **0** / 514 |
+| entries above 1e-3 | 446 / 514 | **0** / 514 |
+| reference edge quasineutrality | 62% deficit | closes to 1.4e-15 |
+
+The 1.8e5 worst in the "before" column is `TAUE1` under defect 5; the deck
+alone accounts for the median and the profile entries.
 
 A trap worth recording: writing the four-element form into the *kyoshimi* deck
 does not fail loudly. gfortran's namelist read assigns as it parses, so
@@ -180,8 +221,11 @@ the 1e6 unit error in place the case was strongly nonlinear, and removing it
 takes the amplification to 1.00. Do not carry 76.5 forward; it describes a
 binary that no longer exists.
 
-For orientation, the kyoshimi side gives rel. `WPT` = 1.1132e-3 on the same
-deck against the reference's 1.1129e-3 -- they agree to 6.8e-4.
+For orientation, the kyoshimi side gives rel. `WPT` = 1.113271e-3 on the same
+deck against the reference's 1.112831e-3 -- they agree to 4.0e-4. That is a
+different quantity from the 6.8e-4 differential agreement reported under
+"Known open gap": each side is normalised by its own `model_pnf=0` `WPT`, and
+those two differ by 2.9e-4.
 
 The 1 keV capture is retained and was re-taken with the corrected binary. Its
 signal is genuine but small, which is itself the finding: most of what looked
@@ -224,26 +268,28 @@ normalises by `max(|a|,|b|)` instead, which can only make these smaller:
 
 | | |
 |---|---|
-| median relative difference | 2.5e-8 |
+| median relative difference | 4.8e-8 |
 | 90th percentile | 3.1e-4 |
 | worst | **6.7e-4** at `AJ[48]` |
 | entries above 1e-3 | 0 / 514 |
 | entries above 1e-4 | 209 / 514 |
 
-The four worst after `AJ[48]` are `TAUE2` (5.9e-4) and the core points of the
+The five worst after `AJ[48]` are `TAUE2` (5.9e-4) and the core points of the
 temperature profile, `RT[1..4][1]` at 3.2e-4.
 
 **It is not in initialisation.** Run both codes at `NTMAX=0` and 560 of the
 564 fields are bit-identical, the remaining four -- `AJ[29]`, `AJ[36]`,
-`QP[50]`, `Q0` -- differing at 5.7e-16, i.e. last-bit. The divergence appears
-in the first transport step and grows slowly: measured with fusion OFF on both
-sides, `WPT` differs by 0.0 at `NTMAX=1`, 1.9e-4 at 2, and 2.9e-4 at 5. So it
-is a transport-layer difference between the two forks, not a profile-
+`QP[50]`, `Q0` -- differing at worst 5.7e-16, i.e. last-bit. The divergence
+appears once the solve starts and grows slowly: measured with fusion OFF on
+both sides, `WPT` differs by 1.9e-4 after two steps and 2.9e-4 after five. So
+it is a transport-layer difference between the two forks, not a profile-
 construction difference, and it has nothing to do with the fusion port.
 
-(A caution on reading `NTMAX=1`: with `NTSTEP=5` the scalar diagnostics are
-evaluated only at initialisation, so a `NTMAX=1` dump pairs `T=0` scalars with
-post-step profile arrays. Use `NTMAX=0` for a true initial-state comparison.)
+(`NTMAX=1` is missing from that sequence deliberately. With `NTSTEP=5` the
+scalar diagnostics are evaluated only at initialisation, so a `NTMAX=1` dump
+pairs `T=0` scalars with post-step profile arrays -- its `WPT` reads 0.0
+because it is still the `T=0` value, not because a step changed nothing. Use
+`NTMAX=0` for a true initial-state comparison and `NTMAX>=2` for the growth.)
 
 Against that floor, the fusion differentials -- `model_pnf=1` minus
 `model_pnf=0`, taken separately in each code and then compared -- agree as
@@ -260,8 +306,10 @@ follows:
 
 The differential does **not** cancel the fork's transport difference, and the
 agreement column is the same order as the 2.9e-4 baseline: the two codes'
-fusion perturbations land on slightly different states, so 6.8e-4 is the floor
-this construction can resolve, not a measurement of the port's error. An
+fusion perturbations land on slightly different states, so **3.5e-3** -- the
+worst channel in the table, `TAUE2` -- is the floor this construction can
+resolve, not a measurement of the port's error. `WPT`'s 6.8e-4 is the floor
+for that one channel. An
 earlier one-off instrumentation of the first `tr_pnf` call gave `TAUF`
 agreeing to 3.6e-6 and `SNF`/`PNF` to 6.3e-5; that instrumentation is not
 committed and the figures are **not reproducible from this tree**. Treat them

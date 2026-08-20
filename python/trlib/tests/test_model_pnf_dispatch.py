@@ -721,10 +721,18 @@ def test_model_pnf_publishes_into_the_solver_arrays(monkeypatch):
 
 # --- P1 Task 7: the whole-solve fusion differential, against trx ---
 
-# test_run/inputs/tr_fus_dt_hot.in, minus NRMAX (not in tr_param_registry;
-# trinit.f90's default is already the deck's 50).  Reproduces the committed
-# reference captures bit-for-bit through the C ABI -- verified against the
-# standalone tr2 binary on the same deck, all scalars at rel 0.0.
+# test_run/inputs/tr_fus_dt_hot.in, with two deliberate differences: NRMAX is
+# omitted (it has no CASE in tr_param_registry, and trinit.f90:376 already
+# defaults it to the deck's 50), and MDLNF=0 is added (also already the
+# trinit.f90:416 default, but the legacy path must be off for this comparison
+# and saying so beats relying on a default).  Every other name IS registered,
+# and tr_param_registry's CASE DEFAULT returns ierr=1 which raise_for_ierr
+# turns into an exception, so nothing here can be silently dropped.  The
+# Through the C ABI this reproduces the standalone kyoshimi tr2 run of the same
+# deck bit-for-bit, all 514 fields at rel 0.0.  It does NOT reproduce the
+# committed *reference* captures -- 204 of 514 fields match, worst 6.7e-4 at
+# AJ[48].  That gap is the two forks' transport divergence, which is exactly
+# what comparing differentials is for.
 HOT_DECK = dict(
     MODELG=2, RR=8.481, RA=2.574, RKAP=1.816, RDLT=0.3478, BB=5.953,
     NSMAX=4, PROFN2=0.15, DT=0.02, NTMAX=5, NTSTEP=5,
@@ -733,21 +741,45 @@ HOT_DECK = dict(
 HOT_PN = (0.1, 0.045, 0.045, 0.005)
 HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 
-# Measured agreement between the two codes' differentials, worst channel
-# TAUE2 at 3.5e-3.  The floor is not the port: with fusion off the two forks
+# One tolerance for both channel sets, sized off the noisier one.  Measured
+# worst: scalars 3.5e-3 (TAUE2), RT 5.1e-3 (NR=28, species 2) -- so 2e-2
+# leaves 3.9x.  The floor is not the port.  With fusion off the two forks
 # already differ by 2.9e-4 in WPT after these five steps (they are identical
 # at T=0 to 5.7e-16), so each code's fusion perturbation lands on a slightly
-# different state.  Tightening this belongs with closing that gap --
-# test_run/baselines/tr_fus_dt_hot/SOURCE.md, "Known open gap".  The failure
-# modes this guards against are all orders away: the cm^3/s reaction rate is
-# 1e6, the un-reset PNF accumulator ~40x, the doubled RKEV larger still.
+# different state.  Tightening belongs with closing that gap --
+# test_run/baselines/tr_fus_dt_hot/SOURCE.md, "Known open gap".
+#
+# What this resolves: the perturbation is 1.1e-3 relative, small enough that
+# the response is linear, so a systematic factor error eps in the ported alpha
+# power shows up as rel ~ eps.  2e-2 therefore catches a ~2% error in alpha
+# heating -- a wrong branching ratio, the 3.5/17.6 MeV split misapplied
+# (19.9%), a dropped term -- not merely the order-of-magnitude defects the
+# port's history supplies (the cm^3/s rate is 1e6, the un-reset PNF
+# accumulator ~40x, the doubled RKEV larger still).
+#
+# The two profile channels not used here fail for a different reason than a
+# loose tolerance: both carry points where the reference shows no fusion
+# signal, which trips FUSION_SIGNAL_FLOOR below before the tolerance check is
+# reached.  AJ has 3 such points of 50 (worst rel 6.4e-2 at NR=42, where the
+# reference signal is 1.3e-8); QP has 10, including NR=50 where d_ref is
+# exactly zero.  Over the points that DO clear the floor both are quiet -- AJ
+# 2.3e-3, QP 3.5e-3, comparable to RT's 5.1e-3.  So the margin here is a
+# property of the channel selection, not of the construction, and anyone
+# adding a channel must re-measure rather than assume.
 FUSION_DIFFERENTIAL_TOL = 2e-2
 FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",
                    "TAUE1", "TAUE2", "Q0", "ALI")
 
+# Every compared entry must show a reference signal at least this large,
+# relative to its model_pnf=0 value.  Guards against comparing noise: an exact
+# `d_ref != 0` passes on a last-bit difference.  Measured smallest real
+# signals are ALI at 4.4e-6 and RT's quietest point at 1.3e-6, so this sits
+# an order below the physics and eight above double-precision rounding.
+FUSION_SIGNAL_FLOOR = 1e-7
+
 
 def _run_hot_deck(model_pnf):
-    """The Task 7 oracle deck through the C ABI. Returns the scalar block."""
+    """The Task 7 oracle deck through the C ABI. Returns the whole state."""
     with Trlib() as tr:
         for name, value in HOT_DECK.items():
             tr.set_param(name, value)
@@ -758,7 +790,19 @@ def _run_hot_deck(model_pnf):
             tr.set_param(f"PTS[{i}]", 1.0)
         tr.set_param("model_pnf", model_pnf)
         tr.run(HOT_DECK["NTMAX"])
-        return tr.get_state().to_dict()["scalars"]
+        return tr.get_state().to_dict()
+
+
+def _differentials(ref_on, ref_off, on, off, entries):
+    """(label, d_ref, d_kyo, rel) for each (label, getter) in entries."""
+    out = []
+    for label, get in entries:
+        d_ref = get(ref_on) - get(ref_off)
+        d_kyo = get(on) - get(off)
+        base = abs(get(ref_off))
+        out.append((label, d_ref, d_kyo, base,
+                    abs(d_kyo - d_ref) / abs(d_ref) if d_ref else float("inf")))
+    return out
 
 
 def test_fusion_differential_matches_the_trx_reference(monkeypatch):
@@ -767,10 +811,25 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
     Both reference captures are committed, so the comparison is a *differential*
     -- (model_pnf=1 minus model_pnf=0), taken separately in each code and then
     compared -- rather than an absolute baseline diff.  That matters twice
-    over.  It is the only construction that isolates the port from the two
-    forks' unrelated transport-layer divergence, and it is far less
+    over.  It suppresses the two forks' unrelated transport-layer divergence
+    far better than any absolute comparison, though not completely -- the
+    residual is what sets the floor documented below -- and it is far less
     compiler-sensitive than an absolute capture, which is why this runs
     everywhere while test_equivalence.py's 1e-10 cases are Linux-canonical.
+
+    RT is compared per (NR, species) as well, because the scalars here are all
+    species-summed, volume-integrated or axis-extrapolated: a wrong radial
+    *shape* of PNF redistributes the power while leaving its volume integral --
+    and so WPT, BETA* and TAUE -- nearly unchanged, and would otherwise be
+    invisible.  The per-species resolution is free rather than load-bearing on
+    this path: no alpha power reaches the thermal species at all (PFCL is
+    zeroed in trcalc and never written, MDLNF=0), so a mis-split is currently
+    unreachable.  It would matter the day PNFCL is implemented.  RN is
+    deliberately
+    not compared -- MDLEQN=0 leaves the density equations unassembled, so the
+    reference's own RN differential is identically zero at all 200 points and
+    there is nothing to compare against.  That gap is real and is what
+    SOURCE.md's "What this oracle does NOT exercise" is about.
 
     Absolute agreement against the baseline is 6.7e-4 at worst and does NOT
     reach 1e-10; SOURCE.md's "Known open gap" says why, and it is not fusion.
@@ -778,37 +837,79 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
     monkeypatch.chdir(FIXTURES_DIR)
 
     ref_off = json.loads((HOT_BASELINE_DIR / "metrics_model_pnf_0.json")
-                         .read_text())["scalars"]
-    ref_on = json.loads((HOT_BASELINE_DIR / "metrics.json")
-                        .read_text())["scalars"]
+                         .read_text())
+    ref_on = json.loads((HOT_BASELINE_DIR / "metrics.json").read_text())
 
     off, on = _run_hot_deck(0), _run_hot_deck(1)
 
-    worst = (0.0, None)
-    for key in FUSION_CHANNELS:
-        d_ref = ref_on[key] - ref_off[key]
-        d_kyo = on[key] - off[key]
-        assert d_ref != 0.0, (
-            f"{key}: the reference shows no fusion response at all -- the "
-            f"committed captures are not a model_pnf=0/1 pair"
+    # The grid is an unpinned dependency otherwise: HOT_DECK deliberately does
+    # not set NRMAX, and NSMAX/NT reaching the library is assumed by every
+    # index below.  Cheap to state, and it fails loudly if a default moves.
+    for grid in ("NRMAX", "NSMAX", "NT"):
+        expected = ref_on[grid]
+        assert ref_off[grid] == expected, (
+            f"{grid}: the two committed captures disagree ({ref_off[grid]} vs "
+            f"{expected}) -- they are not the same case"
         )
-        rel = abs(d_kyo - d_ref) / abs(d_ref)
-        if rel > worst[0]:
-            worst = (rel, key)
-        assert rel <= FUSION_DIFFERENTIAL_TOL, (
-            f"{key}: fusion differential {d_kyo:.9e} against the trx "
-            f"reference's {d_ref:.9e}, rel {rel:.3e} > "
-            f"{FUSION_DIFFERENTIAL_TOL:.1e}\n"
-            f"  kyoshimi model_pnf=0/1: {off[key]:.9e} / {on[key]:.9e}\n"
-            f"  reference model_pnf=0/1: {ref_off[key]:.9e} / {ref_on[key]:.9e}"
+        for label, got in (("model_pnf=0", off[grid]), ("model_pnf=1", on[grid])):
+            assert got == expected, (
+                f"{grid}: this run has {got}, the reference capture has "
+                f"{expected} ({label}). The deck is not reproducing the "
+                f"oracle -- comparing differentials across grids is meaningless"
+            )
+
+    entries = [(k, lambda d, k=k: d["scalars"][k]) for k in FUSION_CHANNELS]
+    for nr in range(ref_on["NRMAX"]):
+        for ns in range(ref_on["NSMAX"]):
+            entries.append((
+                f"RT[NR={nr + 1}][s={ns + 1}]",
+                lambda d, nr=nr, ns=ns: d["profile"][nr]["RT"][ns],
+            ))
+
+    rows = _differentials(ref_on, ref_off, on, off, entries)
+
+    quiet = [(lb, dr, base) for lb, dr, _, base, _ in rows
+             if base and abs(dr) / base <= FUSION_SIGNAL_FLOOR]
+    assert not quiet, (
+        f"{len(quiet)} of {len(rows)} compared entries show no reference "
+        f"fusion signal above {FUSION_SIGNAL_FLOOR:.0e} relative -- the "
+        f"committed captures are not a model_pnf=0/1 pair, or the case "
+        f"changed. First: {quiet[0][0]} d_ref={quiet[0][1]:.3e} "
+        f"base={quiet[0][2]:.3e}"
+    )
+
+    bad = [r for r in rows if r[4] > FUSION_DIFFERENTIAL_TOL]
+    if bad:
+        worst = max(bad, key=lambda r: r[4])
+        detail = "\n".join(
+            f"    {lb:22s} kyoshimi {dk:+.9e}  reference {dr:+.9e}  "
+            f"rel {rel:.3e}"
+            for lb, dr, dk, _, rel in sorted(bad, key=lambda r: -r[4])[:12]
+        )
+        raise AssertionError(
+            f"{len(bad)} of {len(rows)} fusion differentials exceed "
+            f"{FUSION_DIFFERENTIAL_TOL:.1e}; worst {worst[0]} at "
+            f"rel {worst[4]:.3e}\n"
+            f"  (differential = model_pnf=1 minus model_pnf=0, taken "
+            f"separately in each code)\n{detail}"
         )
 
-    # The signal has to be there at all: a port that publishes nothing would
-    # give d_kyo = 0 on every channel, and 0 against the reference's non-zero
-    # d_ref is caught above -- but only as a ratio.  State it directly.
-    assert abs(on["WPT"] - off["WPT"]) / abs(off["WPT"]) > 1e-4, (
-        "model_pnf=1 moved WPT by less than 1e-4 relative; the reference "
-        "moves it by 1.11e-3, so the ported path is not driving the solve"
+    # A reference regenerated from a build with fusion effectively disabled
+    # would give a tiny-but-nonzero d_ref that a matching kyoshimi tracks, so
+    # every ratio above passes while nothing is being validated. Pin the
+    # absolute size of the signal against the committed reference's own.
+    signal = abs(on["scalars"]["WPT"] - off["scalars"]["WPT"]) \
+        / abs(off["scalars"]["WPT"])
+    ref_signal = abs(ref_on["scalars"]["WPT"] - ref_off["scalars"]["WPT"]) \
+        / abs(ref_off["scalars"]["WPT"])
+    assert ref_signal > 1e-4, (
+        f"the committed reference's own WPT fusion signal is {ref_signal:.3e}, "
+        f"below the 1.11e-3 it was captured at -- the baselines have been "
+        f"regenerated from a build that is not running fusion"
+    )
+    assert signal > 1e-4, (
+        f"model_pnf=1 moved WPT by {signal:.3e} relative; the reference moves "
+        f"it by {ref_signal:.3e}, so the ported path is not driving the solve"
     )
 
 
