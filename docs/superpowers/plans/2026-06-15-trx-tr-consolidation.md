@@ -176,6 +176,15 @@ git commit -m "docs(tr): record P1 trx->tr port decisions (MDLNF policy, FTAUE/F
 > confirm cross-host (Mac↔Linux, gfortran-15↔13.2) reproducibility before treating a
 > mismatch as a port bug.
 
+**Editorial note (Task 7, after the fact).** The figures in the quoted review
+do not survive the five oracle corrections listed in
+`test_run/baselines/tr_fus_dt_hot/SOURCE.md`; that file is authoritative. The
+amplification of 76.5 was a product of the 1e6 reaction-rate error and is 1.00
+once it is fixed. Task 7 did re-run the probe on the corrected binaries at the
+same `NTMAX=5`: 1.00 for the 1 keV deck, 2.32 for the 10 keV deck that
+replaced it as the primary oracle. Cross-host reproducibility is still
+unconfirmed.
+
 **Files:**
 - Create: `task/trx/trregress.f90` (copy of the kyoshimi dumper)
 - Modify: `task/trx/trloop.f90`, `task/trx/Makefile`

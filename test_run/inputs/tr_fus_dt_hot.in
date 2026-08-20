@@ -7,14 +7,21 @@ c
 ! test_run/baselines/tr_fus_dt_hot/ (see SOURCE.md).  Analytic geometry
 ! (modelg=2, self-contained, no eq dependency); species e/D/T/He4.
 !
+! NOT byte-identical to the reference deck, and must not be made so: PROFN2
+! is a bare scalar here and PROFN2(NSM) in trx, so the single value below
+! covers every species while the reference deck has to spell all four out.
+! Writing four values here still "works" -- gfortran assigns as it parses,
+! so the first lands and the rest raise a cosmetic `## PARM INPUT ERROR.`
+! -- which makes the mistake invisible.  Leave it as one value.
+!
 ! This is the PRIMARY Task 7 oracle, in place of the 1 keV tr_fus_dt case.
 ! The 1 keV case was chosen when a 10 keV variant appeared to run away
 ! thermally -- but that runaway was an artefact of a 1e6 unit error in the
 ! reference's reaction rate (svnf_* tables are cm^3/s, consumed as m^3/s).
-! With that corrected the hot case is stable and carries ~2.6e5x more fusion
-! signal (rel. WPT 1.0e-3 against 4.0e-9).  It is marginally WORSE conditioned
-! (1e-12 perturbation amplified 1.56 against 1.00), which does not matter at
-! this distance from the tolerance -- both leave ~1e6x of margin.
+! With that corrected the hot case is stable and carries ~1.8e5x more fusion
+! signal (rel. WPT 1.11e-3 against 6.2e-9).  It is somewhat WORSE conditioned
+! (1e-12 perturbation amplified 2.32 against 1.00), which does not matter at
+! this distance from the tolerance -- it still leaves ~4.3e5x of margin.
 !
 ! The numbers above are reference-side and are derived in
 ! test_run/baselines/tr_fus_dt_hot/SOURCE.md; that file is authoritative if

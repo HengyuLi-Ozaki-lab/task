@@ -35,6 +35,7 @@ wants.
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 from pathlib import Path
 
@@ -46,6 +47,8 @@ from trlib.errors import TrlibError
 from .fixtures import tr_tst2_params as FIXTURE
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
+REPO = Path(__file__).resolve().parents[3]
+HOT_BASELINE_DIR = REPO / "test_run" / "baselines" / "tr_fus_dt_hot"
 
 # gfortran mangling: __<module>_MOD_<lowercased name>
 SYM_READY = "__trcomm_nf_MOD_nf_multi_ready"
@@ -714,6 +717,99 @@ def test_model_pnf_publishes_into_the_solver_arrays(monkeypatch):
     # The alpha source is positive and its power follows it.
     assert min(on["SNF"]) >= 0.0, "the He4 source must not go negative"
     assert min(on["PNF"]) >= 0.0
+
+
+# --- P1 Task 7: the whole-solve fusion differential, against trx ---
+
+# test_run/inputs/tr_fus_dt_hot.in, minus NRMAX (not in tr_param_registry;
+# trinit.f90's default is already the deck's 50).  Reproduces the committed
+# reference captures bit-for-bit through the C ABI -- verified against the
+# standalone tr2 binary on the same deck, all scalars at rel 0.0.
+HOT_DECK = dict(
+    MODELG=2, RR=8.481, RA=2.574, RKAP=1.816, RDLT=0.3478, BB=5.953,
+    NSMAX=4, PROFN2=0.15, DT=0.02, NTMAX=5, NTSTEP=5,
+    RIPS=2.0, RIPE=3.0, MDLNF=0,
+)
+HOT_PN = (0.1, 0.045, 0.045, 0.005)
+HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
+
+# Measured agreement between the two codes' differentials, worst channel
+# TAUE2 at 3.5e-3.  The floor is not the port: with fusion off the two forks
+# already differ by 2.9e-4 in WPT after these five steps (they are identical
+# at T=0 to 5.7e-16), so each code's fusion perturbation lands on a slightly
+# different state.  Tightening this belongs with closing that gap --
+# test_run/baselines/tr_fus_dt_hot/SOURCE.md, "Known open gap".  The failure
+# modes this guards against are all orders away: the cm^3/s reaction rate is
+# 1e6, the un-reset PNF accumulator ~40x, the doubled RKEV larger still.
+FUSION_DIFFERENTIAL_TOL = 2e-2
+FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",
+                   "TAUE1", "TAUE2", "Q0", "ALI")
+
+
+def _run_hot_deck(model_pnf):
+    """The Task 7 oracle deck through the C ABI. Returns the scalar block."""
+    with Trlib() as tr:
+        for name, value in HOT_DECK.items():
+            tr.set_param(name, value)
+        for i in range(1, 5):
+            tr.set_param(f"PN[{i}]", HOT_PN[i - 1])
+            tr.set_param(f"PNS[{i}]", HOT_PNS[i - 1])
+            tr.set_param(f"PT[{i}]", 10.0)
+            tr.set_param(f"PTS[{i}]", 1.0)
+        tr.set_param("model_pnf", model_pnf)
+        tr.run(HOT_DECK["NTMAX"])
+        return tr.get_state().to_dict()["scalars"]
+
+
+def test_fusion_differential_matches_the_trx_reference(monkeypatch):
+    """The Task 7 validation, as a test rather than a number in a document.
+
+    Both reference captures are committed, so the comparison is a *differential*
+    -- (model_pnf=1 minus model_pnf=0), taken separately in each code and then
+    compared -- rather than an absolute baseline diff.  That matters twice
+    over.  It is the only construction that isolates the port from the two
+    forks' unrelated transport-layer divergence, and it is far less
+    compiler-sensitive than an absolute capture, which is why this runs
+    everywhere while test_equivalence.py's 1e-10 cases are Linux-canonical.
+
+    Absolute agreement against the baseline is 6.7e-4 at worst and does NOT
+    reach 1e-10; SOURCE.md's "Known open gap" says why, and it is not fusion.
+    """
+    monkeypatch.chdir(FIXTURES_DIR)
+
+    ref_off = json.loads((HOT_BASELINE_DIR / "metrics_model_pnf_0.json")
+                         .read_text())["scalars"]
+    ref_on = json.loads((HOT_BASELINE_DIR / "metrics.json")
+                        .read_text())["scalars"]
+
+    off, on = _run_hot_deck(0), _run_hot_deck(1)
+
+    worst = (0.0, None)
+    for key in FUSION_CHANNELS:
+        d_ref = ref_on[key] - ref_off[key]
+        d_kyo = on[key] - off[key]
+        assert d_ref != 0.0, (
+            f"{key}: the reference shows no fusion response at all -- the "
+            f"committed captures are not a model_pnf=0/1 pair"
+        )
+        rel = abs(d_kyo - d_ref) / abs(d_ref)
+        if rel > worst[0]:
+            worst = (rel, key)
+        assert rel <= FUSION_DIFFERENTIAL_TOL, (
+            f"{key}: fusion differential {d_kyo:.9e} against the trx "
+            f"reference's {d_ref:.9e}, rel {rel:.3e} > "
+            f"{FUSION_DIFFERENTIAL_TOL:.1e}\n"
+            f"  kyoshimi model_pnf=0/1: {off[key]:.9e} / {on[key]:.9e}\n"
+            f"  reference model_pnf=0/1: {ref_off[key]:.9e} / {ref_on[key]:.9e}"
+        )
+
+    # The signal has to be there at all: a port that publishes nothing would
+    # give d_kyo = 0 on every channel, and 0 against the reference's non-zero
+    # d_ref is caught above -- but only as a ratio.  State it directly.
+    assert abs(on["WPT"] - off["WPT"]) / abs(off["WPT"]) > 1e-4, (
+        "model_pnf=1 moved WPT by less than 1e-4 relative; the reference "
+        "moves it by 1.11e-3, so the ported path is not driving the solve"
+    )
 
 
 def test_model_pnf_ge_2_stays_diagnostic_only(monkeypatch):
