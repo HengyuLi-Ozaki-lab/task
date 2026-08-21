@@ -941,6 +941,20 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # control alongside every number.  Do not characterise what the test
 # "detects".
 #
+# Because those four sites are unguarded, they were verified BY HAND against
+# the reference at this commit, which is the compensating control:
+#
+#   VC3   port  P1*RN(nr,ns)*PZ(ns)**2/(PA(ns)*AMM)
+#         trx   P1*RN(NR,NS)*PZ(NS)**2/(PA(NS)*AMP)   -- same, AMM/AMP is
+#               the deliberate CODATA reconciliation
+#         and tr/trpnf.f90's three explicit terms VCD3/VCT3/VCA3 each carry
+#         PZ(n)**2, so the collapse into one DO loop is faithful to both
+#   TAUS  character-for-character identical to trx/trpnf.f90:138-139,
+#         TE = RT(nr,NS_ELECTRON) as there
+#   loops three DO nr = 1, NRMAX against the reference's three DO NR=1,NRMAX
+#
+# If you touch any of them, re-do that comparison; nothing in the suite will.
+#
 # Two mechanical traps in doing that, both hit here: `edit; touch; make`
 # can silently measure the previous .so under Make's 1-second mtime
 # granularity (rm the .o and the .so instead), and any harness that does not
