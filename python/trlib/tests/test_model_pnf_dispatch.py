@@ -759,8 +759,9 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # alpha heating -- a wrong branching ratio, the 3.5/17.6 MeV split misapplied
 # (19.9%), a dropped term -- not merely the order-of-magnitude defects the
 # port's history supplies (the cm^3/s rate is 1e6, the un-reset PNF
-# accumulator a factor of order its 46 calls over these five steps, the
-# doubled RKEV larger still).
+# accumulator a factor of order the call count -- 46 over these five steps on
+# the corrected build, more on the defective one -- the doubled RKEV larger
+# still).
 #
 # The two profile channels not used here fail for a different reason than a
 # loose tolerance: both carry points where the reference shows no fusion
@@ -831,12 +832,12 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
     *shape* of PNF redistributes the power while leaving its volume integral --
     and so WPT, BETA* and TAUE -- nearly unchanged, and would otherwise be
     invisible.  The per-species resolution is free rather than load-bearing on
-    this path: no alpha power reaches the thermal species at all.  PFCL's only
-    writers are TRNFDT and TRNFDHe3, and trcalc.f90's SELECT CASE(MDLNF) calls
-    neither at MDLNF=0, which this deck sets -- so a mis-split is currently
-    unreachable.  It would matter the day PNFCL is implemented.
-    RN is deliberately not compared: MDLEQN=0 leaves the density equations out
-    of the reduced solve, so the
+    this path: no alpha power reaches the thermal species at all.  PFCL enters
+    PIN, and it is zeroed every step at trcalc.f90:57; its only other writers
+    are TRNFDT and TRNFDHe3, which SELECT CASE(MDLNF) reaches at 1:4 and 5:6 --
+    not at the 0 this deck sets.  So a mis-split is currently unreachable, and
+    would matter the day PNFCL is implemented.  RN is deliberately not compared:
+    MDLEQN=0 leaves the density equations out of the reduced solve, so the
     reference's own RN differential is identically zero at all 200 points and
     there is nothing to compare against.  That gap is real and is what
     SOURCE.md's "What this oracle does NOT exercise" is about.
