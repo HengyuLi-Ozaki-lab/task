@@ -30,25 +30,38 @@
 >   terms in MW.  They are now **1.3796 s** and **2.1269 s** and are ordinary
 >   comparison channels |
 > | `PROFN2=0.15D0` in the capture deck | trx reads `PROFN2(NSM)`, so that set
->   species 1 only and left 2..4 at plinit's 0.5; kyoshimi's `PROFN2` is a
+>   species 1 only and left 2..4 at `trx/trinit.f90`'s 0.5; kyoshimi's
+>   `PROFN2` is a
 >   scalar covering every species.  The deck now spells all NSMAX values out |
 >
-> What still holds: the case definition, the constant-reconciliation section,
-> and the harness-registration note.
+> What still holds: the constant-reconciliation section, and the
+> harness-registration note apart from its 1e-10 framing. The case
+> *parameters* still hold; the sentence stating what the capture is FOR
+> ("to be matched at 1e-10 ... once model_pnf is ported") does not -- the
+> port landed and does not match. See the heading note below.
 >
 > This deck is retained as a near-threshold companion.  Its fusion signal is
 > 6.2e-9, five orders below the hot deck's 1.11e-3, so it is a weak test of
 > fusion -- which is itself the finding: most of what looked like fusion in the
 > original capture was the unit error.
 
-# tr_fus_dt — DT-fusion (model_pnf=1) 1e-10 reference oracle
+# tr_fus_dt — DT-fusion (model_pnf=1) reference capture, 1 keV
+
+> The title of this file used to end "1e-10 reference oracle". It is not
+> one: the port landed in `553b86a4` and this deck does not match at 1e-10
+> (308 of 514 value fields exceed it), for reasons outside fusion that
+> `tr_fus_dt_hot/SOURCE.md`'s "Known open gap" sets out. It is retained as
+> the weak companion to that deck -- fusion signal rel `WPT` 6.2e-9 against
+> the hot deck's 1.11e-3.
 
 Generated for **P1 Task 2** of the TRX↔TR consolidation plan
 (`docs/superpowers/plans/2026-06-15-trx-tr-consolidation.md`, Task 2).
 
 `metrics.json` is a high-precision (`1PE24.16`) regression capture from the
-**bpsi `trx`** transport code, to be matched at 1e-10 by kyoshimi `tr` once
-`model_pnf` is ported in by P1 Tasks 4-6 (compared in Task 7).
+**bpsi `trx`** transport code. It was written to be matched at 1e-10 by
+kyoshimi `tr` once `model_pnf` was ported in by P1 Tasks 4-6; the port
+landed and the match does not hold, at 1e-10 or near it. What Task 7 does
+compare, and against which deck, is in `tr_fus_dt_hot/SOURCE.md`.
 
 ## Provenance
 
@@ -75,7 +88,9 @@ Generated for **P1 Task 2** of the TRX↔TR consolidation plan
 
 ## EXACT trx input used for the capture
 
-> **One line of this block is no longer what produced the capture.** `PROFN2`
+> **This block is no longer verbatim what produced the capture.** The live
+> deck also carries explanatory `!` comments this block does not; those are
+> inert to the namelist read. The one line that MATTERS is `PROFN2`
 > is corrected below to the four-species form the reference deck now carries;
 > as originally printed (a single `0.15D0`) the block reproduces only 104 of
 > the 564 fields in the `metrics.json` beside this file, worst rel 2.19 at
@@ -281,9 +296,12 @@ was the pre-correction `BETA0` signal.
   *scalar* channels in `test_fusion_differential_matches_the_trx_reference`
   (three `RT` entries beat `TAUE2`, four beat `TAUE1`). Do not
   exclude them.
-- A hot no-heating variant (PT=10 keV, `model_pnf=1`) **thermally runs away**
-  (fusion self-heating with no loss balance → negative RT crash), so the low-T
-  case is the stable choice.
+- **SUPERSEDED.** This bullet said a hot no-heating variant (PT=10 keV,
+  `model_pnf=1`) *thermally runs away* (fusion self-heating with no loss
+  balance → negative RT crash), so the low-T case is the stable choice. The
+  runaway was the 1e6 reaction-rate error; corrected, the hot deck is stable
+  and is now the **primary** Task 7 oracle. See
+  `tr_fus_dt_hot/SOURCE.md`, "Why 10 keV".
 - **Constant reconciliation is mandatory, but the 1e-10 margin is thin.** The
   OLD↔NEW constants differ by ~1.7e-7 (`AMP` by 1.714e-7); with the corrected
   amplification of 1.00 at `NTMAX=5` an unreconciled build lands ~1.7e-7 away
@@ -318,7 +336,11 @@ conf is consumed only by the bash `run_tests.sh` (unusable locally on macOS bash
 3.2) and the manual `workflow_dispatch` `regen-baselines.yml` (default fixtures
 `eq_iter01 eq_tst2 tot_demo2014_short tot_ht6m_short eq_jt60 tr_iter01
 tr_tst2`, `|| true`). So registering cannot make CI red. Note: `model_pnf` landed in `553b86a4`, so
-this case now runs end-to-end; `run_tests.sh tr_fus_dt` reports REGRESSION
-because it does not match at 1e-10 (308 of 514 value fields exceed it, median
-rel 2.2e-7, worst 2.5e-4 at `RT[48][1]`). `test_definitions.conf` flags exactly
-that as expected drift.
+this case now runs end-to-end and `run_tests.sh tr_fus_dt` would report
+REGRESSION. `run_tests.sh` itself cannot run here (macOS bash 3.2, as above),
+so the drift was measured by driving `tr/tr2` on `inputs/tr_fus_dt.in` with
+`TR_REGRESS_DUMP=1` and diffing the extracted metrics against this baseline:
+308 of 514 value fields exceed 1e-10, median rel 2.2e-7, worst 2.5e-4 at
+`RT[48][1]` (this file's 1-based `RT[NR][species]` labelling;
+`compare_metrics.py` prints the same entry 0-based as `profile[47].RT[0]`).
+`test_definitions.conf` flags exactly that as expected drift.

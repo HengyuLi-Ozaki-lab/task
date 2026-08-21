@@ -727,7 +727,8 @@ def test_model_pnf_publishes_into_the_solver_arrays(monkeypatch):
 # trinit.f90:416 default, but the legacy path must be off for this comparison
 # and saying so beats relying on a default).  Every other name IS registered,
 # and tr_param_registry's CASE DEFAULT returns ierr=1 which raise_for_ierr
-# turns into an exception, so nothing here can be silently dropped.  The
+# turns into an exception, so nothing here can be silently dropped.
+#
 # Through the C ABI this reproduces the standalone kyoshimi tr2 run of the same
 # deck bit-for-bit, all 514 fields at rel 0.0.  It does NOT reproduce the
 # committed *reference* captures -- 204 of 514 fields match, worst 6.7e-4 at
@@ -741,9 +742,10 @@ HOT_DECK = dict(
 HOT_PN = (0.1, 0.045, 0.045, 0.005)
 HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 
-# One tolerance for both channel sets, sized off the noisier one.  Measured
-# worst: scalars 3.5e-3 (TAUE2), RT 5.1e-3 (NR=28, species 2) -- so 2e-2
-# leaves 3.9x.  The floor is not the port.  With fusion off the two forks
+# One tolerance for both channel sets, sized off the noisier one: RT, worst
+# 5.1e-3 at RT[NR=28][s=2], so 2e-2 leaves 3.9x.  That is THE margin -- the
+# scalars' own worst (TAUE2, 3.5e-3) never binds, because RT trips first at
+# every error size.  The floor is not the port.  With fusion off the two forks
 # already differ by 2.9e-4 in WPT after these five steps (they are identical
 # at T=0 to 5.7e-16), so each code's fusion perturbation lands on a slightly
 # different state.  Tightening belongs with closing that gap --
@@ -751,11 +753,14 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 #
 # What this resolves: the perturbation is 1.1e-3 relative, small enough that
 # the response is linear, so a systematic factor error eps in the ported alpha
-# power shows up as rel ~ eps.  2e-2 therefore catches a ~2% error in alpha
-# heating -- a wrong branching ratio, the 3.5/17.6 MeV split misapplied
+# power shows up as rel ~ eps.  Scaling the kyoshimi differential by (1+eps)
+# over all 209 entries, the first crosses 2e-2 at eps = 1.5% (RT[28][2] at
+# 2.019e-2; 5 entries at 1.75%, 185 at 2%).  So this catches a ~1.5% error in
+# alpha heating -- a wrong branching ratio, the 3.5/17.6 MeV split misapplied
 # (19.9%), a dropped term -- not merely the order-of-magnitude defects the
 # port's history supplies (the cm^3/s rate is 1e6, the un-reset PNF
-# accumulator ~40x, the doubled RKEV larger still).
+# accumulator a factor of order its 46 calls over these five steps, the
+# doubled RKEV larger still).
 #
 # The two profile channels not used here fail for a different reason than a
 # loose tolerance: both carry points where the reference shows no fusion
@@ -794,7 +799,11 @@ def _run_hot_deck(model_pnf):
 
 
 def _differentials(ref_on, ref_off, on, off, entries):
-    """(label, d_ref, d_kyo, rel) for each (label, getter) in entries."""
+    """(label, d_ref, d_kyo, base, rel) for each (label, getter) in entries.
+
+    ``base`` is |value at model_pnf=0| on the reference side -- the scale the
+    signal floor is measured against.
+    """
     out = []
     for label, get in entries:
         d_ref = get(ref_on) - get(ref_off)
@@ -822,11 +831,12 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
     *shape* of PNF redistributes the power while leaving its volume integral --
     and so WPT, BETA* and TAUE -- nearly unchanged, and would otherwise be
     invisible.  The per-species resolution is free rather than load-bearing on
-    this path: no alpha power reaches the thermal species at all (PFCL is
-    zeroed in trcalc and never written, MDLNF=0), so a mis-split is currently
-    unreachable.  It would matter the day PNFCL is implemented.  RN is
-    deliberately
-    not compared -- MDLEQN=0 leaves the density equations unassembled, so the
+    this path: no alpha power reaches the thermal species at all.  PFCL's only
+    writers are TRNFDT and TRNFDHe3, and trcalc.f90's SELECT CASE(MDLNF) calls
+    neither at MDLNF=0, which this deck sets -- so a mis-split is currently
+    unreachable.  It would matter the day PNFCL is implemented.
+    RN is deliberately not compared: MDLEQN=0 leaves the density equations out
+    of the reduced solve, so the
     reference's own RN differential is identically zero at all 200 points and
     there is nothing to compare against.  That gap is real and is what
     SOURCE.md's "What this oracle does NOT exercise" is about.
@@ -868,8 +878,24 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
 
     rows = _differentials(ref_on, ref_off, on, off, entries)
 
+    # A channel whose reference model_pnf=0 value is exactly zero has no scale
+    # to measure a signal against, so the floor below cannot be applied to it.
+    # Skipping it silently would let a dead channel pass -- metrics.json has
+    # two such scalars today (AJRFT, RQ1), neither in FUSION_CHANNELS, and the
+    # comment above invites adding channels.  Refuse instead.
+    unscaled = [(lb, dr) for lb, dr, _, base, _ in rows if not base]
+    assert not unscaled, (
+        f"{len(unscaled)} of {len(rows)} compared entries have a reference "
+        f"model_pnf=0 value of exactly zero, so FUSION_SIGNAL_FLOOR has no "
+        f"scale to apply and this comparison cannot say anything about them. "
+        f"Choose channels with a non-zero baseline. First: {unscaled[0][0]} "
+        f"(d_ref={unscaled[0][1]:.3e})"
+    )
+
+    # With `unscaled` empty, `base` is non-zero everywhere below, so a zero
+    # d_ref lands here rather than reaching the tolerance check as rel = inf.
     quiet = [(lb, dr, base) for lb, dr, _, base, _ in rows
-             if base and abs(dr) / base <= FUSION_SIGNAL_FLOOR]
+             if abs(dr) / base <= FUSION_SIGNAL_FLOOR]
     assert not quiet, (
         f"{len(quiet)} of {len(rows)} compared entries show no reference "
         f"fusion signal above {FUSION_SIGNAL_FLOOR:.0e} relative -- the "
