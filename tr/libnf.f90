@@ -3,7 +3,7 @@
 MODULE libnf_local
   USE bpsd_kinds
   INTEGER:: id_nf_local
-  ! pm_local receives PA(nsp_idnf(id_nf))*AMP (~6.7e-27 kg) and is then a
+  ! pm_local receives PA(nsp_idnf(id_nf))*AMM (~6.7e-27 kg) and is then a
   ! DIVISOR in sigmav_nf_local.  Declared INTEGER upstream, which truncates it
   ! to 0 and divides by zero the moment that path is reached.
   REAL(rkind):: pm_local
@@ -19,10 +19,13 @@ MODULE libnf
   ! 1e-10 gate Task 7 will apply.
   !
   ! It is kept because dropping it now would edit more of the upstream file
-  ! than the port otherwise touches, and because the only AMP consumer
-  ! (sigmav_nf_local) is PRIVATE and unreachable today: RKEV inside
-  ! set_usigmav_nf resolves to TRCOMM's CODATA-2006 value, so nothing shipped
-  ! here is affected.  Verified: eng_idnf(DT) = 5.6076177045D-13, bit-equal to
+  ! than the port otherwise touches.  There is no longer any AMP consumer in
+  ! this module to justify it: the one that existed, sigmav_nf_int's
+  ! pm_local, now takes trcomm_const's AMM, and the only surviving AMP token
+  ! outside comments is the PRIVATE line below.  So PRIVATE is the whole of
+  ! what stands between a future routine here and a silent 1.7e-7.  (RKEV
+  ! inside set_usigmav_nf resolves to TRCOMM's CODATA-2006 value, so nothing
+  ! shipped here is affected.)  Verified: eng_idnf(DT) = 5.6076177045D-13, bit-equal to
   ! 3.5D3 * 1.602176487D-19 * 1D3.
   !
   ! Nothing here may rely on that.  A new routine naming AEE or AMP without an
@@ -759,7 +762,12 @@ CONTAINS
 !   ~1700x the 1e-10 gate.  The reference solves this with a local
 !   AMP_kyoshimi PARAMETER (trx/libnf.f90:509); here trcomm_const already
 !   holds the value, so use it rather than copy the literal.  This function
-!   is PRIVATE and has no caller today -- the fix is for whoever revives it.
+!   is PRIVATE and has no caller today -- the fix is for whoever revives it,
+!   who should know the constant is not the only thing wrong here: nsp_idnf
+!   selects the PRODUCT species (He4, PA=4) where the Maxwellian reactivity
+!   integral wants the REACTANT reduced mass (D+T = 2*3/5 = 1.2 amu).  That
+!   is ~1.83x in velocity, seven orders larger than the 1.714e-7 above.
+!   Upstream's, and the reference carries it too.
     USE trcomm_const, ONLY: AMM
     USE libnf_local
     USE libde

@@ -22,6 +22,10 @@ CONTAINS
 
       CALL TR_EDGE_DETERMINER(0)
       CALL TR_EDGE_SELECTOR(0)
+!     Note: unlike TRCALC/TRMDLT this routine widens and never narrows, so
+!     tr_prep returns with NRMAX=NROMAX at RHOA/=1 until the first TRCALC
+!     narrows it.  Left as upstream has it -- it is a missing narrow, not a
+!     missed early exit, and callers may be relying on the wide value.
       IF(RHOA.NE.1.D0) NRMAX=NROMAX
       DO NR=1,NRMAX
          RG(NR) = DBLE(NR)*DR

@@ -800,7 +800,19 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 #
 # RT catches a 0.1% shape error at 5x its tolerance while all nine scalars
 # see nothing at 1%.  Between them the test covers both classes; either
-# alone covers one.  ~0.85% gain and ~0.1% shape are comfortably inside a
+# alone covers one.
+#
+# That 0.1% is a property of RT[28]'s node position on THIS deck at THIS
+# step count, not of the channel.  Excluding the four RT[28][*] entries,
+# shape detection is ~0.9% -- indistinguishable from the gain figure: at
+# shape eps=0.001 the worst remaining entry is TAUE2 at 0.26x its
+# tolerance, and at eps=0.01 it is RT[27][1] at 1.11x.  Those same four
+# entries carry the four weakest reference signals of all 209 (13.0x,
+# 14.6x, 15.1x, 27.2x FUSION_SIGNAL_FLOOR).  If the node drifts toward
+# zero the floor assert fires and this test goes red, which is fine.  If
+# it drifts away, the amplification collapses and shape detection silently
+# degrades by an order of magnitude with nothing failing.  Re-measure the
+# shape row if the deck, the grid or NTMAX ever changes.  ~0.85% gain and ~0.1% shape are comfortably inside a
 # wrong branching ratio, the 3.5/17.6 MeV split misapplied (19.9%), or a
 # dropped term -- and far inside the
 # port's history supplies (the cm^3/s rate is 1e6, the un-reset PNF
@@ -819,6 +831,34 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # adding a channel must re-measure -- by injection, not by scaling the
 # output, and with BOTH a gain and a shape injection, since a channel can
 # be excellent at one and blind to the other.
+#
+# AND AT EACH PUBLISHED OUTPUT SEPARATELY.  Gain and shape decompose the
+# radial structure of one perturbation; they say nothing about WHICH of
+# tr_pnf's three published arrays carried it.  Injecting at sigmav_nf moves
+# SNF_leg, PNF_leg and TAUF_leg together, so it cannot separate them.
+# Injected one at a time:
+#
+#   TAUF_leg(nr) *= 1.10   ->  TAUE2 1.702e-1 (14.2x), RT[28][3] 1.074
+#                              (53.7x), 9 of 209 over tolerance
+#   SNF_leg(nr)  *= 1.10   ->  209 of 209 BIT-IDENTICAL to zero error
+#   SNF_leg(nr)   = 0.D0   ->  209 of 209 BIT-IDENTICAL to zero error
+#
+# Deleting the alpha particle source outright is invisible here, at any
+# magnitude: MDLEQN=0 keeps the density equations out of the reduced solve,
+# so SNF's contribution to SSIN is assembled and dropped.  SNF_leg is the
+# highest-risk line in the port -- it converts trx's signed per-species
+# array to kyoshimi's single positive scalar -- and this test does not
+# cover it.  Its only guard is
+# test_model_pnf_publishes_into_the_solver_arrays, which checks that it is
+# non-zero and non-negative, not that it is right.  See
+# test_run/baselines/tr_fus_dt_hot/SOURCE.md, "What this oracle does NOT
+# exercise".
+#
+# The statement that survives all of this, and every clause is one
+# measurement: THIS TEST DETECTS ERRORS IN PNF AND TAUF -- ~0.85% for the
+# volume-integral component, ~0.1% for the volume-neutral one while
+# RT[28] holds its node (~0.9% if it moves) -- AND NOTHING IN SNF AT ANY
+# MAGNITUDE.
 FUSION_DIFFERENTIAL_TOL_SCALAR = 1.2e-2
 FUSION_DIFFERENTIAL_TOL_PROFILE = 2e-2
 FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",

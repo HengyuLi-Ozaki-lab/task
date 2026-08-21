@@ -110,10 +110,10 @@ and is reported separately.
    The unit correction is still right -- a W/m^3 integral belongs in MW
    however the array got its contents -- but on the five that read
    uninitialised memory it makes the printed number *plausible* rather than
-   obviously 1e6-scaled, which is worth knowing. (`PNFCL_NSNNFNR` is the
-   sixth and is deterministically zero, so its printed number is 0 --
-   neither plausible nor obviously wrong.) All of this is upstream's, not introduced here, and is
-   reported with the correction.
+   obviously 1e6-scaled, which is worth knowing. (The remaining one,
+   `PNFCL_NSNNFNR`, is deterministically zero, so its printed number is 0 --
+   neither plausible nor obviously wrong.) All of this is upstream's, not
+   introduced here, and is reported with the correction.
 
    A sixth, **not** corrected: `SNFNN_NR`/`PNFNN_NR` are summed from the
    charged-particle arrays `SNF_NNFNR`/`PNF_NNFNR` while the `_NNF` totals
@@ -162,6 +162,21 @@ per-species array to kyoshimi's single positive scalar, and the highest-risk
 line in the port — has **zero coverage from this oracle**. It is covered only
 by `test_model_pnf_publishes_into_the_solver_arrays`, which checks that it is
 non-zero and non-negative, not that it is right.
+
+That is measured, not inferred. Injecting at each of `tr_pnf`'s three
+published arrays in turn and recomputing all 209 differentials of
+`test_fusion_differential_matches_the_trx_reference`:
+
+| injection | worst scalar | worst `RT` | over tolerance |
+|---|---|---|---|
+| `TAUF_leg` x 1.10 | `TAUE2` 1.702e-1 (14.2x) | `RT[28][3]` 1.074 (53.7x) | 9 / 209 |
+| `SNF_leg` x 1.10 | `TAUE2` 3.530e-3 | `RT[28][2]` 5.112e-3 | **0 / 209** |
+| `SNF_leg` = 0 | `TAUE2` 3.530e-3 | `RT[28][2]` 5.112e-3 | **0 / 209** |
+
+Both `SNF` rows are **bit-identical to the zero-error run in all 209
+entries**. Deleting the alpha particle source outright is invisible, at any
+magnitude, because `MDLEQN=0` keeps the density equations out of the reduced
+solve. `PNF` and `TAUF` are covered; `SNF` is not.
 
 An earlier revision of this file recorded a third gap here: a 62%
 quasineutrality deficit in the reference's edge ion densities. That was an
@@ -354,6 +369,16 @@ the most sensitive entry in the test by two orders of magnitude while every
 scalar is blind -- a volume integral is exactly what a shape error
 preserves. Detection is ~0.85% on gain and ~0.1% on shape; one tolerance
 sized off `RT` would have given 1.65% on gain and nothing better on shape.
+
+The ~0.1% belongs to `RT[28]`'s node position on this deck at this step
+count, not to the channel. Excluding the four `RT[28][*]` entries, shape
+detection is ~0.9%: at shape `eps`=0.001 the worst remaining entry is
+`TAUE2` at 0.26x its tolerance, at `eps`=0.01 it is `RT[27][1]` at 1.11x.
+Those four also carry the weakest reference signals of all 209 — 13.0x,
+14.6x, 15.1x and 27.2x `FUSION_SIGNAL_FLOOR`. If the node drifts toward
+zero the floor assert fires and the test goes red; if it drifts away, shape
+detection degrades an order of magnitude with nothing failing. Re-measure
+the shape row if the deck, the grid or `NTMAX` changes.
 
 The differential does **not** cancel the fork's transport difference, and the
 agreement column is the same order as the 2.9e-4 baseline: the two codes'
