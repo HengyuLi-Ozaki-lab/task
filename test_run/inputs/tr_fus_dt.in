@@ -10,6 +10,9 @@ c
 ! NOT byte-identical to the reference deck, and must not be made so: PROFN2
 ! is a bare scalar here and PROFN2(NSM) in trx, so the single value below
 ! covers every species while the reference deck spells all four out.
+! Writing four values here still "works" -- gfortran assigns as it parses,
+! so the first lands and the rest raise a cosmetic `## PARM INPUT ERROR.`
+! -- which makes the mistake invisible.  Leave it as one value.
 !
 ! This is the WEAK companion to tr_fus_dt_hot, which is the primary Task 7
 ! oracle.  Its fusion signal is rel WPT 6.2e-9 -- 62x the 1e-10 tolerance,

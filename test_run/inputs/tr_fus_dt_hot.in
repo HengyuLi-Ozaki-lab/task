@@ -3,7 +3,7 @@ f
 tr_fus_dt_hot.gs
 c
 ! DT-fusion regression case at 10 keV (model_pnf=1) for kyoshimi TR.
-! Physically identical to the bpsi trx reference capture in
+! Physically equivalent to the bpsi trx reference capture in
 ! test_run/baselines/tr_fus_dt_hot/ (see SOURCE.md).  Analytic geometry
 ! (modelg=2, self-contained, no eq dependency); species e/D/T/He4.
 !

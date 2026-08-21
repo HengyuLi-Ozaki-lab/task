@@ -7,7 +7,7 @@ by kyoshimi `tr` with `model_pnf=1`. It is the primary P1 Task 7 oracle; the
 | Item | Value |
 |---|---|
 | Source tree | `task-trx-ref`, branch `ref/trx-regress-capture` |
-| Input | `trx/in/trx_fus_dt_hot.in` (physics-identical to `test_run/inputs/tr_fus_dt_hot.in`) |
+| Input | `trx/in/trx_fus_dt_hot.in` (physically equivalent to `test_run/inputs/tr_fus_dt_hot.in`, but not byte-identical -- see Deck caveat) |
 | Dumper | `trx/trregress.f90`, env-guarded by `TR_REGRESS_DUMP=1` |
 | Extractor | `test_run/scripts/extract_tr_metrics.py` |
 | Case | `modelg=2` analytic geometry, species e/D/T/He4, `NSMAX=4`, `NRMAX=50`, `NTMAX=5`, `PT=10 keV`, `PTS=1 keV` (edge is one tenth of core), `RIPS=2 -> RIPE=3` |
@@ -140,9 +140,11 @@ non-zero and non-negative, not that it is right.
 
 An earlier revision of this file recorded a third gap here: a 62%
 quasineutrality deficit in the reference's edge ion densities. That was an
-artefact of the capture deck, not of `trx` -- see the next section -- and
-does not exist. Both codes close quasineutrality to round-off, identically --
-worst 1.4e-15 relative at `NR=46`, exactly zero at 7 of the 50 radii.
+artefact of the capture deck, not of `trx` -- see the next section. The
+deficit was real as measured (62.18% at `NR=50`) but it was the deck's, and
+with the deck corrected there is no gap to record: both codes close
+quasineutrality to round-off, identically -- worst 1.4e-15 relative at
+`NR=46`, exactly zero at 7 of the 50 radii.
 
 ## The two decks are not byte-identical, on purpose
 
@@ -277,9 +279,10 @@ normalises by `max(|a|,|b|)` instead, which can only make these smaller:
 The five worst after `AJ[48]` are `TAUE2` (5.9e-4) and the core points of the
 temperature profile, `RT[1..4][1]` at 3.2e-4.
 
-**It is not in initialisation.** Run both codes at `NTMAX=0` and 560 of the
-564 fields are bit-identical, the remaining four -- `AJ[29]`, `AJ[36]`,
-`QP[50]`, `Q0` -- differing at worst 5.7e-16, i.e. last-bit. The divergence
+**It is not in initialisation.** Run both codes at `NTMAX=0` and 510 of the
+514 are bit-identical, the remaining four -- `AJ[29]`, `AJ[36]`, `QP[50]`,
+`Q0` -- differing at worst 5.7e-16, i.e. last-bit. (All four are non-index
+fields, so this is 560 of 564 on the index-inclusive count.) The divergence
 appears once the solve starts and grows slowly: measured with fusion OFF on
 both sides, `WPT` differs by 1.9e-4 after two steps and 2.9e-4 after five. So
 it is a transport-layer difference between the two forks, not a profile-
@@ -295,7 +298,7 @@ Against that floor, the fusion differentials -- `model_pnf=1` minus
 `model_pnf=0`, taken separately in each code and then compared -- agree as
 follows:
 
-| channel | signal, rel. to `model_pnf=0` | differential agreement |
+| scalar channel | signal, rel. to `model_pnf=0` | differential agreement |
 |---|---|---|
 | `Q0` | 6.0e-6 | 8.0e-5 |
 | `ALI` | -4.4e-6 | 1.1e-4 |
@@ -304,12 +307,17 @@ follows:
 | `TAUE1` | -0.196 | 1.6e-3 |
 | `TAUE2` | 1.0e-3 | 3.5e-3 |
 
+The table is the nine scalars. `test_fusion_differential_matches_the_trx_reference`
+also compares `RT` per (NR, species), 200 more entries whose worst is
+**5.1e-3** at `RT[NR=28][s=2]` -- noisier than any scalar, and the entry that
+sizes the test's tolerance.
+
 The differential does **not** cancel the fork's transport difference, and the
 agreement column is the same order as the 2.9e-4 baseline: the two codes'
-fusion perturbations land on slightly different states, so **3.5e-3** -- the
-worst channel in the table, `TAUE2` -- is the floor this construction can
-resolve, not a measurement of the port's error. `WPT`'s 6.8e-4 is the floor
-for that one channel. An
+fusion perturbations land on slightly different states. So **5.1e-3** over
+the 209 entries actually compared -- 3.5e-3 if you restrict to the scalars,
+6.8e-4 for `WPT` alone -- is the floor this construction can resolve, not a
+measurement of the port's error. An
 earlier one-off instrumentation of the first `tr_pnf` call gave `TAUF`
 agreeing to 3.6e-6 and `SNF`/`PNF` to 6.3e-5; that instrumentation is not
 committed and the figures are **not reproducible from this tree**. Treat them
@@ -328,4 +336,9 @@ python3 ../../task-p1-libnf/test_run/scripts/extract_tr_metrics.py tr_regress.da
 ```
 
 `run_tests.sh` cannot drive this on macOS — it needs `declare -A`, and the
-system bash is 3.2. Drive the binary directly as above.
+system bash is 3.2. Drive the binary directly as above. Every comparison
+figure in this file was obtained that way, not through `run_tests.sh`:
+`tr/tr2` and `trx/tr2` on their respective decks under `TR_REGRESS_DUMP=1`,
+extracted with `extract_tr_metrics.py`, diffed field by field. Labels here
+are 1-based `FIELD[NR][species]`; `compare_metrics.py` prints the same
+entries 0-based as `profile[NR-1].FIELD[species-1]`.
