@@ -12,10 +12,17 @@
 >
 > The body below is MIXED.  Current, re-measured against the capture that now
 > sits beside this file: the first three "Verification and characteristics"
-> bullets, the `TAUE1`/`TAUE2` half of Known caveats bullet 1, the figures in
-> the heading note and the harness-registration note, and the field counts in
-> the EXACT-input warning.  Every other measured number below predates the
-> corrections.  Specifically:
+> bullets; the `TAUE1`/`TAUE2` half of Known caveats bullet 1; the figures in
+> the heading note and the harness-registration note; the field counts in the
+> EXACT-input warning; the re-run probe figures above the conditioning ladder
+> (1.00 here, 2.32 on the hot deck); the ~62x / 1.4e4x fusion-signal figures
+> under the ladder; and the 1.00-amplification arithmetic in the
+> constant-reconciliation bullet.  Every other measured number below predates
+> the corrections.
+>
+> That list is maintained by hand and has already been wrong twice.  If any
+> number below disagrees with `tr_fus_dt_hot/SOURCE.md`, that file wins.
+> Specifically:
 >
 > | below | actual, on the committed capture |
 > |---|---|
@@ -96,9 +103,10 @@ compare, and against which deck, is in `tr_fus_dt_hot/SOURCE.md`.
 > below to the four-species form the reference deck now carries;
 > as originally printed (a single `0.15D0`) the block reproduces only 54 of
 > the 514 value fields in the `metrics.json` beside this file (104 of 564 if
-> the 50 integer `NR` index columns, which can never differ, are counted; this
-> file uses the 514 count throughout), worst rel 2.19 at `RT[49][1]`. The live deck is `task-trx-ref/trx/in/trx_fus_dt.in`, which the
-> `## Reproduce` section reads directly and which reproduces all 564.
+> the 50 integer `NR` index columns, which can never differ, are counted; drift
+> counts in this file use the 514 basis), worst rel 2.19 at `RT[49][1]`. The
+> live deck is `task-trx-ref/trx/in/trx_fus_dt.in`, which the `## Reproduce`
+> section reads directly and which reproduces all 514.
 
 Lives in the worktree at `trx/in/trx_fus_dt.in`. Fed on stdin with
 `env TR_REGRESS_DUMP=1 ./tr2 < in/trx_fus_dt.in`. The leading `0 / f /

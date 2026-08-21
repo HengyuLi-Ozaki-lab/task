@@ -4,6 +4,16 @@
 
 **Goal:** Make `tr` the single canonical transport module by hand-porting bpsi `trx`'s newer fusion physics (the `model_pnf` multi-reaction framework + supporting modules) into the kyoshimi-modernized, module-split, C-ABI/MCP-bearing `tr`, then archiving `trx` and `trm` — preserving every existing result bit-for-bit (`model_pnf=0` default ⇒ inert) and validating the *new* fusion paths against a 1e-10 reference captured from the bpsi `trx` executable.
 
+> **Editorial note (Task 7, after the fact).** The "1e-10" in the Goal above,
+> in the Architecture line below, in the file table, and in Task 2's heading
+> did not survive contact with the measurement. The reference captures are
+> sound and are committed, but kyoshimi `tr` does not match them at 1e-10 and
+> the reason is outside fusion: the two forks differ in the transport step
+> (identical to rounding at `NTMAX=0`, separating from the first step). Task 7
+> validates the fusion *differential* instead. Read Task 7's editorial note
+> before acting on any 1e-10 gate in this document;
+> `test_run/baselines/tr_fus_dt_hot/SOURCE.md` is authoritative throughout.
+
 **Architecture:** Test-oracle-first. We (1) build a 1e-10 reference from bpsi `trx` by porting the existing `trregress.f90` dumper into it, then (2) port physics into kyoshimi `tr` in inert-then-active order: collision modules → fusion data model (default off) → `libnf` → `trpnf`/dispatch → enable `model_pnf=1..4` against the reference. Every structural step is gated by "existing `tr` regression unchanged at 1e-10"; every new-physics step is gated by "matches bpsi-`trx` at 1e-10". The kyoshimi `tr` `trcomm.f90` is split into 6 sub-modules, so bpsi's monolithic `trcomm` declarations must be routed into the correct sub-module.
 
 **Tech Stack:** Fortran 90 (free-form `.f90`, MODULE, ALLOCATABLE), `gfortran-mp-15 -ffree-form`, the `tr/Makefile` targets `tr2` / `libtrapi.so` / `tr_api_check_all`, the `test_run/` 1e-10 harness (`run_tests.sh`, `trregress.f90` env-guarded dump `TR_REGRESS_DUMP=1`, `extract_tr_metrics.py`, `compare_metrics.py`), `tr_param_registry.f90` (C-ABI param dispatch), `python/trlib` + `tr_mcp`.
@@ -671,14 +681,17 @@ grep -nE 'AJNB|PEC_NSNECNR' /Users/lihengyu/Research_Project/MS10/TASK/task-kyos
 ```
 If bpsi `trx` writes these and the kyoshimi `tr` NBI/RF current path differs, port the species-resolved assembly from bpsi `trx/trpnb.f90`/`trcalc.f90`. (Arrays already declared+allocated in Task 4.) If the kyoshimi `tr` NBI path already produces equivalent currents, **skip** — these arrays were declared for completeness and stay inert.
 
-- [ ] **Step 2: If porting, mirror bpsi assembly, rebuild, and re-run all regression incl. `tr_fus_dt`**
+- [ ] **Step 2: If porting, mirror bpsi assembly, rebuild, and re-run all regression**
+  (NOT including `tr_fus_dt` / `tr_fus_dt_hot` -- see the gate note below.)
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr && make tr2 && make libtrapi.so
 cd ../test_run && ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2
 ```
-Expected: all `OK ... 1e-10`. `tr_fus_dt` is deliberately NOT in this gate --
-it is an expected-drift case (see the Task 7 editorial note and
-`test_definitions.conf`), so including it would make the gate permanently red.
+Expected: all `OK ... 1e-10`. `tr_fus_dt` and `tr_fus_dt_hot` are deliberately
+NOT in this gate -- both are registered as expected-drift (see the Task 7
+editorial note and `test_definitions.conf`), and `run_tests.sh` hard-codes
+1e-10 with no tolerance field in the conf format, so including either would
+make the gate permanently red with no repair short of editing the harness.
 
 - [ ] **Step 3: Commit (only if Step 1 required a port)**
 ```bash
@@ -763,9 +776,11 @@ cd ../test_run && ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_t
 ```
 Expected: all `CLOSED` + `OK ... 1e-10` + `tr_api_check_all OK`. `tr_fus_dt`
 and `tr_fus_dt_hot` are excluded for the reason in the Task 7 editorial note;
-their guard is
+`tr_fus_dt_hot`'s guard is
 `test_model_pnf_dispatch.py::test_fusion_differential_matches_the_trx_reference`,
-which the pytest job already runs.
+which the pytest job already runs.  `tr_fus_dt` has **no** automated guard --
+nothing in `python/` reads `test_run/baselines/tr_fus_dt/`.  It is retained as
+documentation of the weak-signal case, not as a test.
 
 - [ ] **Step 4: Commit**
 ```bash
