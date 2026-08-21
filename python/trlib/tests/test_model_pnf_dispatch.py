@@ -875,19 +875,78 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # test_run/baselines/tr_fus_dt_hot/SOURCE.md, "What this oracle does NOT
 # exercise".
 #
-# The statement that survives all of this, every clause one measurement:
+# WHAT THIS MEASURES IS FIDELITY TO trx, NOT CORRECTNESS.  The port was
+# written by reading the reference -- 462 of 490 non-comment lines of
+# trx/libnf.f90 appear verbatim in tr/libnf.f90 and the whole DT block is
+# byte-identical -- so a shared error moves d_ref and d_kyo by the same
+# factor and cancels.  Measured, +20% on sigmav_nf in BOTH trees with the
+# reference captures regenerated from the injected trx:
 #
-#   THIS TEST DETECTS ERRORS IN PNF AND TAUF, BUT NOT EQUALLY.  Gain at
-#   ~0.85% in both, TAUF with more margin.  Shape at ~0.1% in PNF and
-#   ~0.2% in TAUF, and in both cases that is RT[28] sitting on its node --
-#   if it moves, PNF shape degrades to ~0.9% and TAUF shape has no
-#   detector left.  AND NOTHING IN SNF AT ANY MAGNITUDE.
+#   control (no injection)                 worst 0.2942x   0/209
+#   +20% in both, captures regenerated     worst 0.2944x   0/209
 #
-# Three earlier revisions of this comment each stated a true measurement
-# and then inflated its scope -- output-scaling read as injection, a gain
-# injection read as all errors, a PNF injection read as all three arrays.
-# If you extend this, enumerate what you measured; do not characterise
-# what the test 'detects'.
+# The injection is live -- the reference's own fusion signal moves
+# 1.1128e-3 -> 1.3352e-3 -- and the comparison does not move at all.  What
+# guards accuracy is test_libnf.py's SIGMAM cross-check, which the capture
+# cannot shift: deleting the 1 keV svnf_dt knot leaves this test at 0.3016x
+# and 0/209, and turns test_matches_sigmam_at_table_points[1.0] red.  The
+# two are complementary; neither alone is sufficient.
+#
+# THE STATEMENT, every clause one measurement, and note that each number is
+# the threshold of ONE injected perturbation -- port-side, uniform over the
+# whole table, full radial support, applied to the published array, on a
+# D/T-symmetric deck -- not the threshold of a class:
+#
+#   THIS TEST DETECTS DIVERGENCES FROM trx IN PNF AND TAUF, BUT NOT
+#   EQUALLY.  Port-side gain, applied uniformly to sigmav, at ~0.85% in
+#   both (TAUF with more margin).  Port-side shape at ~0.1% in PNF and
+#   ~0.2% in TAUF for the one edge-weighted, single-signed radial form
+#   injected, and in both cases that is RT[28] sitting on its node -- if it
+#   moves, PNF shape degrades to ~0.9% and TAUF shape has no detector left.
+#   AND NOTHING IN SNF AT ANY MAGNITUDE, NOTHING SHARED WITH THE REFERENCE,
+#   AND NOTHING AT NR = NRMAX.
+#
+# Four single-token defects that pass this test, all measured here against a
+# verified 0.2942x control, each restored afterwards:
+#
+#   PZ(ns)**2 -> PZ(ns) in the VC3 loop        0.8964x  0/209  24 passed
+#     (the same typo eight lines later, in TAUS, is caught at 313.66x and
+#      155/209 -- and the port collapsed three explicit PZ(2..4)**2 terms of
+#      tr/trpnf.f90 into that one loop, so it is the likely slip)
+#   ABS(TE) -> ABS(RT(nr,nsp)) in TAUS         0.2808x  0/209  104 passed
+#     (BELOW the zero-error control: quieter than no error at all)
+#   publish loop DO nr = 1, NRMAX-1            0.2941x  0/209  104 passed
+#   svnf_dt 1 keV knot -> 1.0D-30              0.3016x  0/209  (test_libnf
+#                                                              catches it)
+#
+# The first three are attenuated for structural reasons worth knowing.
+# TAUF_leg = 0.5*TAUS*(1-HY(VF/VCR)), and HY enters only through (1-HY), so
+# anything reaching TAUF through HY alone is damped by HYF/(1-HYF) -- 0.009
+# to 0.209 on this deck, i.e. 8.5x to 70x less detectable than TAUS itself.
+# VC3/VCR and HY's return value are in that set; PA(nsp) and eng_nnf are
+# not.  And coverage decays outward with the local alpha power: PNF_leg is
+# exactly 0 at NRMAX on 49 of 50 calls (RT(50,2) = 0.64 keV, under
+# sigmav_nf's 1 keV floor), so an off-by-one in any of tr_pnf's three radial
+# loops is invisible.  FUSION_SIGNAL_FLOOR cannot help there -- it reads
+# d_ref, and RT[50][*] carries 2716x the floor because that signal is
+# transported in from the interior while the local source is dead.
+#
+# Five earlier revisions of this comment each stated a true measurement and
+# then inflated its scope: output-scaling read as injection, a gain
+# injection read as all errors, a PNF injection read as all three arrays, a
+# port-side threshold read as a threshold on errors.  The scope of a
+# threshold is the perturbation it was measured on -- which side of the
+# comparison, which input, which radial form, which factor, which radius,
+# which deck.  If you extend this, enumerate all six and quote a verified
+# control alongside every number.  Do not characterise what the test
+# "detects".
+#
+# Two mechanical traps in doing that, both hit here: `edit; touch; make`
+# can silently measure the previous .so under Make's 1-second mtime
+# granularity (rm the .o and the .so instead), and any harness that does not
+# chdir into the fixtures directory does not reproduce the deck and reports
+# nonsense at zero error.  A run without a 0.2942x control is not a
+# measurement.
 FUSION_DIFFERENTIAL_TOL_SCALAR = 1.2e-2
 FUSION_DIFFERENTIAL_TOL_PROFILE = 2e-2
 FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",
