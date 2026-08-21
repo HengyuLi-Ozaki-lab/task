@@ -31,11 +31,21 @@ MODULE libnf
   ! is not in bpsd_constants at all, so naming it bare is a compile error
   ! rather than a silent wrong value.  Consumers should import from this
   ! module with an explicit ONLY list, as trpnf_multi does -- but the ONLY
-  ! lists are discipline, and this is the structural guard behind them: do not
-  ! re-export the three that differ.  The reference carries the same line
-  ! (task-trx-ref trx/libnf.f90).  libnf's own DT reduced mass uses the local
-  ! AMP_kyoshimi below, so it needs none of these; PI is bit-identical between
-  ! the two sources and is left exported.
+  ! lists are discipline, and the line below is the structural guard behind
+  ! them: do not re-export the three that differ.  The reference carries the
+  ! same line (task-trx-ref trx/libnf.f90:17).
+  !
+  ! Note what PRIVATE does and does not do.  It stops re-export; it does NOT
+  ! touch host association inside this module, so a bare AMP in a procedure
+  ! here still resolves to bpsd's.  sigmav_nf_int did exactly that until this
+  ! commit -- see the USE trcomm_const there.  And the protection matters more
+  ! than a `USE trcomm` in the consumer would suggest: kyoshimi's
+  ! trcomm_const names the proton mass AMM, not AMP, so `USE trcomm` offers no
+  ! competing AMP and cannot make the collision visible.  For AEE/AME it is
+  ! the other way round -- trcomm_const does export those, so a bare USE of
+  ! both modules would have been an ambiguous-reference compile error, loud
+  ! rather than silent.  PI is bit-identical between the two sources and is
+  ! left exported.
   USE bpsd_constants
   PRIVATE :: AEE, AME, AMP
 
@@ -744,6 +754,13 @@ CONTAINS
   FUNCTION sigmav_nf_int(id_nf,temperature)
 
     USE plcomm
+!   AMM, not plcomm's (or bpsd's) AMP: both of those are CODATA-2018
+!   (1.67262192369D-27) and differ from kyoshimi's proton mass by 1.714e-7,
+!   ~1700x the 1e-10 gate.  The reference solves this with a local
+!   AMP_kyoshimi PARAMETER (trx/libnf.f90:509); here trcomm_const already
+!   holds the value, so use it rather than copy the literal.  This function
+!   is PRIVATE and has no caller today -- the fix is for whoever revives it.
+    USE trcomm_const, ONLY: AMM
     USE libnf_local
     USE libde
     IMPLICIT NONE
@@ -772,7 +789,7 @@ CONTAINS
 
     id_nf_local=id_nf
     temperature_local=temperature
-    pm_local=PA(nsp_idnf(id_nf))*AMP
+    pm_local=PA(nsp_idnf(id_nf))*AMM
 
     H0=1.D-4
     EPS=1.D-6

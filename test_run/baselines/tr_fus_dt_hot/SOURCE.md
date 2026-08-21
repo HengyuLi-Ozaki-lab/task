@@ -60,7 +60,7 @@ and is reported separately.
    solve extra iterations.
 
 5. **W not converted to MW in ten power volume integrals.** Every power
-   integral in the *legacy* channels of `trx/trrslt.f90`'s `TR_GLOBAL`
+   integral in the *legacy* channels of `trx/trrslt.f90`'s `TRGLOB`
    divides by `1.D6` -- `POHT`, `PEXT`, `PRBT`/`PRCT`/`PRLT`/`PRSUMT`/
    `PCXT`/`PIET`. None of the newer per-channel aggregation blocks did: RF
    (`PIC`/`PLH`/`PEC`), NBI (`PNB`/`PNBIN`/`PNBCL`), fusion (`PNF`/`PNFIN`/
@@ -74,7 +74,7 @@ and is reported separately.
    in MW -- so before the fix `trrslt.f90:194-196` overwrote MW values with W
    and the same variable meant different things depending on which subroutine
    ran last. `trx/trhelp.f90:243` documents `PNB_TOT: NBI TOTAL INPUT POWER
-   (MW)`. And the eight legacy siblings in `TR_GLOBAL` itself all divide,
+   (MW)`. And the eight legacy siblings in `TRGLOB` itself all divide,
    as do the `[MW/...]` axis labels in `trx/trgrar.f90`. Kyoshimi `tr`'s own
    `trrslt_globals.f90:192-220` divides on every counterpart; trx is the
    outlier fork here, which is also why `TAUE1` works as an oracle channel at
@@ -85,16 +85,20 @@ and is reported separately.
    these (`SNB_`, `SNF_`, `SNFNN_`, `SIE`, `SPEL`, `SPSC`) are in 1/s and
    correctly take no conversion.
 
-   **Only one of the ten is exercised by this deck**, and half of them sit on
+   **Only one of the ten is exercised by this deck**, and six of them sit on
    quantities that are separately broken. `PNF_NSNNF` is the one this
    capture measures. Of the rest:
 
    - `PNFIN_NSNNFNR` and `PNBIN_NSNNBNR` have **no writer anywhere in
      `trx`** -- declaration, `ALLOCATE` without zero-init, `DEALLOCATE`, and
      reads in `trrslt.f90`, nothing else. So `PNFIN_TOT` and `PNBIN_TOT`
-     integrate uninitialised heap. (`trm/trpnf.f90` and `trx/trpnb.f90` both
-     write the *per-channel* `_NNFNR`/`_NNBNR` forms, which `trrslt.f90`
-     then overwrites from the never-written 3-D array.)
+     integrate uninitialised heap. The two are not symmetric:
+     `trx/trpnb.f90:496` *does* write the per-channel `PNBIN_NNBNR` with
+     physics, which `trrslt.f90:226` then overwrites from the never-written
+     3-D array -- so NBI loses good data. Fusion has no writer inside `trx`
+     at all (`trx/trpnf.f90` contains no `PNFIN` token); the one in
+     `trm/trpnf.f90:282` is a different fork directory and is not in this
+     build.
    - `PIC_NSNICNR`/`PLH_NSNLHNR`/`PEC_NSNECNR` are assigned in exactly one
      place, `trx/trprf.f90:23-25`, which only *zeroes* them and only when
      total RF power is <= 0 -- so with RF on they are read uninitialised too.
@@ -104,9 +108,11 @@ and is reported separately.
      declaration; its `NNF>1` entries reach `GVT` only at `NNFMAX>=2`.
 
    The unit correction is still right -- a W/m^3 integral belongs in MW
-   however the array got its contents -- but on those five sites it makes
-   the printed number *plausible* rather than obviously 1e6-scaled, which
-   is worth knowing. All of this is upstream's, not introduced here, and is
+   however the array got its contents -- but on the five that read
+   uninitialised memory it makes the printed number *plausible* rather than
+   obviously 1e6-scaled, which is worth knowing. (`PNFCL_NSNNFNR` is the
+   sixth and is deterministically zero, so its printed number is 0 --
+   neither plausible nor obviously wrong.) All of this is upstream's, not introduced here, and is
    reported with the correction.
 
    A sixth, **not** corrected: `SNFNN_NR`/`PNFNN_NR` are summed from the
@@ -328,15 +334,26 @@ follows:
 
 The table is the nine scalars. `test_fusion_differential_matches_the_trx_reference`
 also compares `RT` per (NR, species), 200 more entries whose worst is
-**5.1e-3** at `RT[NR=28][s=2]` -- noisier than any scalar, but *not* the
-entry that binds. `RT[28]` sits on the node of the RT fusion differential
-(`RT[27][*]` carry the opposite sign), so its near-zero denominator both
-inflates its zero-error residual and makes it the least responsive to a
-real error. Measured by injecting one -- `sigmav_nf` scaled by `(1+eps)`,
-rebuilt, re-solved -- `TAUE2` binds from `eps` ~ 0.5% upward and `RT[28][2]`
-never does. The test therefore holds the two families to different
-tolerances (scalars 1.2e-2, `RT` 2.0e-2) and detects ~0.85%; one tolerance
-sized off `RT` would have detected only ~1.65%.
+**5.1e-3** at `RT[NR=28][s=2]`, noisier than any scalar. `RT[28]` sits on
+the node of the RT fusion differential (`RT[27][*]` carry the opposite
+sign), so its denominator is near zero -- and that single property cuts
+both ways depending on the defect, which is why the two families are held
+to different tolerances (scalars 1.2e-2, `RT` 2.0e-2) and why neither may
+be dropped:
+
+| injected defect | worst scalar | worst `RT` |
+|---|---|---|
+| gain, `eps`=1.5% (`sigmav_nf` x (1+eps)) | `TAUE2` 1.85e-2 | -- |
+| shape, `eps`=0.1% (radial, volume-neutral) | `TAUE2` 3.17e-3, **below its own 3.53e-3 floor** | `RT[28][3]` 9.98e-2 = **5.0x** tolerance |
+| shape, `eps`=1% | `Q0` 4.76e-3, still invisible | `RT[28][3]` 9.56e-1 = **47.8x** |
+
+For a gain error the node moves with the error, `RT[28][2]`'s differential
+scales by only ~0.61*`eps`, and `TAUE2` binds from `eps` ~ 0.5% upward. For
+a shape error the near-zero denominator amplifies instead, and `RT[28]` is
+the most sensitive entry in the test by two orders of magnitude while every
+scalar is blind -- a volume integral is exactly what a shape error
+preserves. Detection is ~0.85% on gain and ~0.1% on shape; one tolerance
+sized off `RT` would have given 1.65% on gain and nothing better on shape.
 
 The differential does **not** cancel the fork's transport difference, and the
 agreement column is the same order as the 2.9e-4 baseline: the two codes'
