@@ -89,13 +89,16 @@ CONTAINS
 
     USE trcomm_ctrl, ONLY: nnfmax
     USE trcomm_nf
-    ! ONLY, not a bare USE: libnf does a module-level USE bpsd_constants and
-    ! re-exports AEE/AME/AMP (CODATA-2018) and PI.  A bare USE here puts them
-    ! in scope alongside trcomm_const's.  PI is bit-identical between the
-    ! two, so it only ever produces an ambiguous-reference error (which is
-    ! how this was found).  AEE/AME/AMP genuinely differ -- AMP by 1.7e-7,
-    ! ~1700x the 1e-10 gate.  RKEV is not in bpsd_constants at all, so
-    ! naming it without USE trcomm is a compile error, not a silent value.
+    ! ONLY, not a bare USE: libnf does a module-level USE bpsd_constants, so
+    ! a bare USE here puts bpsd's constants in scope alongside
+    ! trcomm_const's.  libnf now carries PRIVATE :: AEE, AME, AMP, so the
+    ! three that genuinely differ -- AMP by 1.7e-7, ~1700x the 1e-10 gate --
+    ! are no longer re-exported and a bare USE could not pick them up.  PI
+    ! still is, and is bit-identical between the two, so it only ever
+    ! produces an ambiguous-reference error (which is how this was found).
+    ! RKEV is not in bpsd_constants at all, so naming it without USE trcomm
+    ! is a compile error, not a silent value.  The ONLY list is kept anyway:
+    ! it is what makes the PRIVATE line unnecessary rather than load-bearing.
     USE libnf, ONLY: id_nf_nnf, ns1_idnf, ns2_idnf, nsp_idnf, &
          wgt_idnf, eng_idnf, enn_idnf
     IMPLICIT NONE
