@@ -30,8 +30,14 @@ MODULE libnf
   ! off, ~1700x the 1e-10 gate, with no obvious cause.  RKEV is different: it
   ! is not in bpsd_constants at all, so naming it bare is a compile error
   ! rather than a silent wrong value.  Consumers should import from this
-  ! module with an explicit ONLY list, as trpnf_multi does.
+  ! module with an explicit ONLY list, as trpnf_multi does -- but the ONLY
+  ! lists are discipline, and this is the structural guard behind them: do not
+  ! re-export the three that differ.  The reference carries the same line
+  ! (task-trx-ref trx/libnf.f90).  libnf's own DT reduced mass uses the local
+  ! AMP_kyoshimi below, so it needs none of these; PI is bit-identical between
+  ! the two sources and is left exported.
   USE bpsd_constants
+  PRIVATE :: AEE, AME, AMP
 
   ! Fusion model
   !   model_pnf=0 : no fusion reaction

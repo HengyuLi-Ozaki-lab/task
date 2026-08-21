@@ -106,7 +106,15 @@
 
       IF(MDNCLS.NE.0) THEN
          CALL TR_NCLASS(IERR)
-         IF(IERR.NE.0) RETURN
+!        Entry widened NRMAX to NROMAX; the normal exit below narrows it back
+!        to NRAMAX.  An early RETURN has to do the same, or the caller keeps
+!        a session whose NRMAX is the wider value.  Dormant at RHOA=1 (the
+!        default, and what both fusion decks use), but through the C ABI a
+!        caught error leaves the session alive and reusable.
+         IF(IERR.NE.0) THEN
+            IF(RHOA.NE.1.D0) NRMAX=NRAMAX
+            RETURN
+         END IF
       ENDIF
 
       CALL TRCOEF
@@ -195,6 +203,7 @@
 !        diagnostic.  IERR is TRCALC's status; trexec and trloop check it.
          IF(nf_ierr.NE.0 .AND. nnfmax.EQ.1) THEN
             IERR = nf_ierr
+            IF(RHOA.NE.1.D0) NRMAX=NRAMAX   ! see the TR_NCLASS return above
             RETURN
          END IF
       END IF
