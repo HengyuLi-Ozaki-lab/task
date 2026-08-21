@@ -24,8 +24,13 @@ CONTAINS
       CALL TR_EDGE_SELECTOR(0)
 !     Note: unlike TRCALC/TRMDLT this routine widens and never narrows, so
 !     tr_prep returns with NRMAX=NROMAX at RHOA/=1 until the first TRCALC
-!     narrows it.  Left as upstream has it -- it is a missing narrow, not a
-!     missed early exit, and callers may be relying on the wide value.
+!     narrows it.  Left as upstream has it: it is a missing narrow, not a
+!     missed early exit, and two callers DO depend on the wide value --
+!     tr_prof_impurity and tr_prof_current (trprep.f90:173,181) both run
+!     after this and initialise the outer region.  A narrow added here would
+!     truncate them; if the asymmetry is ever closed the place is the end of
+!     tr_prep.  Unreachable through the C ABI anyway -- RHOA has no CASE in
+!     tr_param_registry, so RHOA/=1 is namelist-only.
       IF(RHOA.NE.1.D0) NRMAX=NROMAX
       DO NR=1,NRMAX
          RG(NR) = DBLE(NR)*DR

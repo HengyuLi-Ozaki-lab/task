@@ -98,7 +98,10 @@ CONTAINS
     ! produces an ambiguous-reference error (which is how this was found).
     ! RKEV is not in bpsd_constants at all, so naming it without USE trcomm
     ! is a compile error, not a silent value.  The ONLY list is kept anyway:
-    ! it is what makes the PRIVATE line unnecessary rather than load-bearing.
+    ! at THIS call site it is what makes the PRIVATE line redundant.
+    ! Module-wide the ordering is the other way round -- libnf's own header
+    ! calls PRIVATE the structural guard and the ONLY lists discipline,
+    ! because it is the guard that covers call sites nobody has written yet.
     USE libnf, ONLY: id_nf_nnf, ns1_idnf, ns2_idnf, nsp_idnf, &
          wgt_idnf, eng_idnf, enn_idnf
     IMPLICIT NONE

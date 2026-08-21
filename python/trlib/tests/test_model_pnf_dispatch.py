@@ -53,6 +53,7 @@ HOT_BASELINE_DIR = REPO / "test_run" / "baselines" / "tr_fus_dt_hot"
 # gfortran mangling: __<module>_MOD_<lowercased name>
 SYM_READY = "__trcomm_nf_MOD_nf_multi_ready"
 SYM_NNFMAX = "__trcomm_ctrl_MOD_nnfmax"
+SYM_MDLEQN = "__trcomm_ctrl_MOD_mdleqn"
 SYM_NF_ERR = "__libnf_MOD_nf_last_error"
 SYM_NF_COUNT = "__libnf_MOD_nf_error_count"
 SYM_MODEL_PNF = "__trcomm_param_MOD_model_pnf"
@@ -834,18 +835,38 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 #
 # AND AT EACH PUBLISHED OUTPUT SEPARATELY.  Gain and shape decompose the
 # radial structure of one perturbation; they say nothing about WHICH of
-# tr_pnf's three published arrays carried it.  Injecting at sigmav_nf moves
-# SNF_leg, PNF_leg and TAUF_leg together, so it cannot separate them.
-# Injected one at a time:
+# tr_pnf's three published arrays carried it -- and an injection at
+# sigmav_nf does NOT spread across all three.  TAUF_NNFNR is built from RN,
+# RT, eng_nnf and COULOG and has no dependence on the reaction rate at all,
+# while SNF is provably inert (below).  Measured: sigmav_nf x1.10 and
+# PNF_leg x1.10 give differentials that are BIT-IDENTICAL in all 209
+# entries.  So every gain and shape figure above was measured at PNF and
+# only at PNF.  Injected one array at a time:
 #
-#   TAUF_leg(nr) *= 1.10   ->  TAUE2 1.702e-1 (14.2x), RT[28][3] 1.074
-#                              (53.7x), 9 of 209 over tolerance
+#   PNF_leg(nr)  *= 1.10   ->  TAUE2 8.61x tol, 209 of 209 over
+#   TAUF_leg(nr) *= 1.10   ->  TAUE2 14.2x tol, RT[28][3] 53.7x,
+#                              9 of 209 over
 #   SNF_leg(nr)  *= 1.10   ->  209 of 209 BIT-IDENTICAL to zero error
 #   SNF_leg(nr)   = 0.D0   ->  209 of 209 BIT-IDENTICAL to zero error
 #
+# TAUF is not PNF's equal on shape.  Same (T-8)/8 radial form applied to
+# TAUF_leg:
+#
+#   eps=0.001  ->  worst 0.81x tol (RT[28][3])   0 of 209 over -- PASSES
+#   eps=0.002  ->  worst 1.39x                   3 of 209 over
+#   eps=0.01   ->  worst 6.02x, worst scalar     4 of 209 over, all of
+#                  0.19x (below its own floor)   them RT[28][*]
+#
+# So a 0.1% TAUF shape error passes; TAUF needs ~0.2%.  And the RT[28]
+# fallback is PNF-only: excluding those four entries leaves PNF shape at
+# ~0.9% but leaves TAUF shape with no detector at any magnitude tested.
+#
 # Deleting the alpha particle source outright is invisible here, at any
 # magnitude: MDLEQN=0 keeps the density equations out of the reduced solve,
-# so SNF's contribution to SSIN is assembled and dropped.  SNF_leg is the
+# so SNF's contribution to SSIN is assembled and dropped.  Note there are
+# two independent gates, not one -- SNF's other consumer is TRPELB
+# (tr/trpel.f90:109,112,120), which TRPELT skips on PELTOT<=0 and again on
+# MDLPEL==0.  Setting MDLEQN=1 to buy SNF coverage would open one door.  SNF_leg is the
 # highest-risk line in the port -- it converts trx's signed per-species
 # array to kyoshimi's single positive scalar -- and this test does not
 # cover it.  Its only guard is
@@ -854,11 +875,19 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # test_run/baselines/tr_fus_dt_hot/SOURCE.md, "What this oracle does NOT
 # exercise".
 #
-# The statement that survives all of this, and every clause is one
-# measurement: THIS TEST DETECTS ERRORS IN PNF AND TAUF -- ~0.85% for the
-# volume-integral component, ~0.1% for the volume-neutral one while
-# RT[28] holds its node (~0.9% if it moves) -- AND NOTHING IN SNF AT ANY
-# MAGNITUDE.
+# The statement that survives all of this, every clause one measurement:
+#
+#   THIS TEST DETECTS ERRORS IN PNF AND TAUF, BUT NOT EQUALLY.  Gain at
+#   ~0.85% in both, TAUF with more margin.  Shape at ~0.1% in PNF and
+#   ~0.2% in TAUF, and in both cases that is RT[28] sitting on its node --
+#   if it moves, PNF shape degrades to ~0.9% and TAUF shape has no
+#   detector left.  AND NOTHING IN SNF AT ANY MAGNITUDE.
+#
+# Three earlier revisions of this comment each stated a true measurement
+# and then inflated its scope -- output-scaling read as injection, a gain
+# injection read as all errors, a PNF injection read as all three arrays.
+# If you extend this, enumerate what you measured; do not characterise
+# what the test 'detects'.
 FUSION_DIFFERENTIAL_TOL_SCALAR = 1.2e-2
 FUSION_DIFFERENTIAL_TOL_PROFILE = 2e-2
 FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",
@@ -947,6 +976,19 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
     # The grid is an unpinned dependency otherwise: HOT_DECK deliberately does
     # not set NRMAX, and NSMAX/NT reaching the library is assumed by every
     # index below.  Cheap to state, and it fails loudly if a default moves.
+    # MDLEQN=0 is load-bearing twice over -- it is why SNF has no coverage
+    # and why RN is not compared -- and HOT_DECK cannot pin it, because
+    # MDLEQN has no CASE in tr_param_registry.  Read it back instead: if
+    # trinit.f90's default ever moves, both of those statements silently
+    # stop being true.
+    mdleqn = ctypes.c_int.in_dll(_lib(), SYM_MDLEQN).value
+    assert mdleqn == 0, (
+        f"MDLEQN is {mdleqn}, not the 0 this comparison assumes. The density\n"
+        f"equations are now in the reduced solve, so SNF_leg is no longer\n"
+        f"inert and RN is no longer identically zero -- the coverage\n"
+        f"statement above and the committed captures both need re-deriving."
+    )
+
     for grid in ("NRMAX", "NSMAX", "NT"):
         expected = ref_on[grid]
         assert ref_off[grid] == expected, (

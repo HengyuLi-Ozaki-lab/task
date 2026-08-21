@@ -25,7 +25,10 @@ MODULE libnf
   ! outside comments is the PRIVATE line below.  So PRIVATE is the whole of
   ! what stands between a future routine here and a silent 1.7e-7.  (RKEV
   ! inside set_usigmav_nf resolves to TRCOMM's CODATA-2006 value, so nothing
-  ! shipped here is affected.)  Verified: eng_idnf(DT) = 5.6076177045D-13, bit-equal to
+  ! shipped here is affected.)  Note the scope: PRIVATE is the whole of what
+  ! stands between a CONSUMER's bare `USE libnf` and a silent 1.7e-7.  Inside
+  ! this module nothing does -- host association is untouched, which is
+  ! exactly the trap sigmav_nf_int fell into.  See the paragraph below.  Verified: eng_idnf(DT) = 5.6076177045D-13, bit-equal to
   ! 3.5D3 * 1.602176487D-19 * 1D3.
   !
   ! Nothing here may rely on that.  A new routine naming AEE or AMP without an
@@ -766,8 +769,11 @@ CONTAINS
 !   who should know the constant is not the only thing wrong here: nsp_idnf
 !   selects the PRODUCT species (He4, PA=4) where the Maxwellian reactivity
 !   integral wants the REACTANT reduced mass (D+T = 2*3/5 = 1.2 amu).  That
-!   is ~1.83x in velocity, seven orders larger than the 1.714e-7 above.
-!   Upstream's, and the reference carries it too.
+!   is ~1.83x in velocity for DT, seven orders larger than the 1.714e-7
+!   above.  The factor is reaction-dependent, so do not carry 1.83 forward:
+!   DD1 gives 1.73x (nsp=NS_T, PA=3, mu=1.0), and the model_pnf=12 DD2
+!   variant where nsp=NS_H (PA=1) is accidentally exact.  Upstream's, and
+!   the reference carries it too.
     USE trcomm_const, ONLY: AMM
     USE libnf_local
     USE libde

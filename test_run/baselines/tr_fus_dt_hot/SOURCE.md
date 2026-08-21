@@ -169,6 +169,7 @@ published arrays in turn and recomputing all 209 differentials of
 
 | injection | worst scalar | worst `RT` | over tolerance |
 |---|---|---|---|
+| `PNF_leg` x 1.10 | `TAUE2` 8.61x tol | `RT[27][4]` 5.06x tol | 209 / 209 |
 | `TAUF_leg` x 1.10 | `TAUE2` 1.702e-1 (14.2x) | `RT[28][3]` 1.074 (53.7x) | 9 / 209 |
 | `SNF_leg` x 1.10 | `TAUE2` 3.530e-3 | `RT[28][2]` 5.112e-3 | **0 / 209** |
 | `SNF_leg` = 0 | `TAUE2` 3.530e-3 | `RT[28][2]` 5.112e-3 | **0 / 209** |
@@ -176,7 +177,21 @@ published arrays in turn and recomputing all 209 differentials of
 Both `SNF` rows are **bit-identical to the zero-error run in all 209
 entries**. Deleting the alpha particle source outright is invisible, at any
 magnitude, because `MDLEQN=0` keeps the density equations out of the reduced
-solve. `PNF` and `TAUF` are covered; `SNF` is not.
+solve. (Two independent gates, not one: `SNF`'s other consumer is `TRPELB`,
+which `TRPELT` skips on `PELTOT<=0` and again on `MDLPEL==0`.)
+
+An injection at `sigmav_nf` does **not** reach all three. `TAUF_NNFNR` is
+built from `RN`, `RT`, `eng_nnf` and `COULOG` with no dependence on the
+reaction rate, and `SNF` is inert — measured, `sigmav_nf` x 1.10 and
+`PNF_leg` x 1.10 give differentials bit-identical in all 209 entries. So
+every gain and shape figure in the section above was measured at `PNF`
+alone. `TAUF` is not `PNF`'s equal on shape: the same radial form applied
+to `TAUF_leg` gives 0.81x tolerance at `eps`=0.001 (**0 / 209, passes**),
+1.39x at 0.002, and 6.02x at 0.01 — where the only entries over tolerance
+are the four `RT[28][*]` and the worst scalar, 0.19x, is below its own
+floor. So `TAUF` shape needs ~0.2%, and the `RT[28]`-exclusion fallback
+quoted above is `PNF`-only: without those four entries `TAUF` shape has no
+detector at any magnitude tested.
 
 An earlier revision of this file recorded a third gap here: a 62%
 quasineutrality deficit in the reference's edge ion densities. That was an
@@ -367,8 +382,10 @@ scales by only ~0.61*`eps`, and `TAUE2` binds from `eps` ~ 0.5% upward. For
 a shape error the near-zero denominator amplifies instead, and `RT[28]` is
 the most sensitive entry in the test by two orders of magnitude while every
 scalar is blind -- a volume integral is exactly what a shape error
-preserves. Detection is ~0.85% on gain and ~0.1% on shape; one tolerance
-sized off `RT` would have given 1.65% on gain and nothing better on shape.
+preserves. Detection is ~0.85% on gain and ~0.1% on shape **at `PNF`**;
+see "What this oracle does NOT exercise" for what that does and does not
+say about `TAUF` and `SNF`. One tolerance sized off `RT` would have given
+1.65% on gain and nothing better on shape.
 
 The ~0.1% belongs to `RT[28]`'s node position on this deck at this step
 count, not to the channel. Excluding the four `RT[28][*]` entries, shape
