@@ -743,16 +743,26 @@ HOT_PN = (0.1, 0.045, 0.045, 0.005)
 HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 
 # One tolerance per channel family, because the two families have different
-# noise structure and it is NOT the noisier one that binds.
+# noise structure and different sensitivity, and NEITHER dominates.
 #
 # Zero-error residuals: scalars worst 3.5e-3 (TAUE2), RT worst 5.1e-3
-# (RT[NR=28][s=2]).  RT is the noisier -- but RT[28] sits on the NODE of the
-# RT fusion differential (RT[27][*] carry the opposite sign), so its
-# denominator is near zero.  That is what makes its zero-error residual the
-# largest AND what makes it the LEAST responsive to a real error: the node
-# moves with the error, so scaling the alpha power by (1+eps) moves
-# RT[28][2]'s differential by only ~0.61*eps while every other entry moves by
-# ~eps.  Sizing one tolerance off it would be sizing off an artefact.
+# (RT[NR=28][s=2]).  RT is the noisier, and the reason is structural:
+# RT[28] sits on the NODE of the RT fusion differential (RT[27][*] carry the
+# opposite sign), so its denominator is near zero.  That one property cuts
+# both ways, and which way depends on the defect:
+#
+#   * GAIN error (alpha power off by a uniform factor).  The node moves with
+#     the error, so RT[28][2]'s differential scales by only ~0.61*eps where
+#     every other entry scales by ~eps.  RT is the LEAST responsive family
+#     here and TAUE2 binds.
+#   * SHAPE error (PNF redistributed in radius, volume integral ~unchanged).
+#     The near-zero denominator now amplifies: RT[28] is the MOST sensitive
+#     entry in the test by two orders of magnitude, and every scalar is
+#     blind, because a volume integral is what a shape error preserves.
+#
+# So the two families are not redundant and neither may be dropped.  Do not
+# read "RT never binds" out of the gain table below -- it is the whole of
+# the shape coverage, which is what the docstring says RT is here for.
 #
 # The floor is not the port.  With fusion off the two forks
 # already differ by 2.9e-4 in WPT after these five steps (they are identical
@@ -773,12 +783,26 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 #   0.015    1.850e-2               (0 of 209 over 2e-2 -- a real 1.5% PASSES)
 #   0.017    2.050e-2               (1 of 209 over 2e-2)
 #
-# TAUE2 binds from eps ~ 0.5% upward; RT never does.  A single 2e-2 tolerance
-# would therefore detect only ~1.65%.  Split, this detects ~0.85%, with more
-# than 3.4x of margin on both families (1.2e-2/3.530e-3 = 3.40x,
-# 2.0e-2/5.112e-3 = 3.91x).  That is comfortably inside a wrong branching
-# ratio, the 3.5/17.6 MeV split misapplied (19.9%), or a dropped term -- and
-# far inside the
+# For a GAIN error, TAUE2 binds from eps ~ 0.5% upward and RT never does; a
+# single 2e-2 tolerance would therefore have detected only ~1.65%.  Split,
+# this detects ~0.85%, with more than 3.4x of margin on both families
+# (1.2e-2/3.530e-3 = 3.40x, 2.0e-2/5.112e-3 = 3.91x).
+#
+# For a SHAPE error the ranking reverses completely.  Injecting
+# sigmav_nf *= 1 + eps*(temperature-8)/8 -- radius-dependent, near
+# volume-neutral:
+#
+#   shape eps   worst scalar                     worst RT
+#   0.001       TAUE2 3.174e-3  (BELOW its own    RT[28][3] 9.984e-2 = 4.99x
+#                                3.530e-3 floor,   its tolerance
+#                                i.e. invisible)
+#   0.01        Q0    4.762e-3  (still invisible) RT[28][3] 9.562e-1 = 47.8x
+#
+# RT catches a 0.1% shape error at 5x its tolerance while all nine scalars
+# see nothing at 1%.  Between them the test covers both classes; either
+# alone covers one.  ~0.85% gain and ~0.1% shape are comfortably inside a
+# wrong branching ratio, the 3.5/17.6 MeV split misapplied (19.9%), or a
+# dropped term -- and far inside the
 # port's history supplies (the cm^3/s rate is 1e6, the un-reset PNF
 # accumulator a factor of order the call count -- 46 over these five steps on
 # the corrected build, more on the defective one -- the doubled RKEV larger
@@ -793,7 +817,8 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # 2.3e-3, QP 3.5e-3, comparable to RT's 5.1e-3.  So these margins are a
 # property of the channel selection, not of the construction, and anyone
 # adding a channel must re-measure -- by injection, not by scaling the
-# output.
+# output, and with BOTH a gain and a shape injection, since a channel can
+# be excellent at one and blind to the other.
 FUSION_DIFFERENTIAL_TOL_SCALAR = 1.2e-2
 FUSION_DIFFERENTIAL_TOL_PROFILE = 2e-2
 FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",

@@ -108,9 +108,11 @@
          CALL TR_NCLASS(IERR)
 !        Entry widened NRMAX to NROMAX; the normal exit below narrows it back
 !        to NRAMAX.  An early RETURN has to do the same, or the caller keeps
-!        a session whose NRMAX is the wider value.  Dormant at RHOA=1 (the
-!        default, and what both fusion decks use), but through the C ABI a
-!        caught error leaves the session alive and reusable.
+!        a session whose NRMAX is the wider value.
+!        Reachable only from standalone tr2: RHOA has no CASE in
+!        tr_param_registry and trinit sets it to 1.D0, so through the C ABI
+!        it is always 1 and these lines are defensive there.  trparm's
+!        NAMELIST /TR/ does accept it, and trmenu re-runs on a live session.
          IF(IERR.NE.0) THEN
             IF(RHOA.NE.1.D0) NRMAX=NRAMAX
             RETURN

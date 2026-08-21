@@ -116,6 +116,13 @@
       GOTO 20
  10   WRITE(6,*) 'XX NEW FILE OPEN ERROR : IOSTAT = ',IST
       CLOSE(21)
+!     Entry widened NRMAX to NROMAX and the normal exit below narrows it
+!     back; this error path has to do the same or the caller keeps the
+!     wider value.  Same shape as the two returns in TRCALC.  Reachable
+!     only from standalone tr2 -- trmenu.f90 is in SRCS_MENU and is not
+!     linked into libtrapi.so -- which is also the only path on which
+!     RHOA can be set away from 1.
+      IF(RHOA.NE.1.D0) NRMAX=NRAMAX
       RETURN
 
  20   WRITE(21,610) 'DEV   = ',KUFDEV
