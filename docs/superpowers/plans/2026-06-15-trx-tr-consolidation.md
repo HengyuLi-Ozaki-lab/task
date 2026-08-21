@@ -4,14 +4,26 @@
 
 **Goal:** Make `tr` the single canonical transport module by hand-porting bpsi `trx`'s newer fusion physics (the `model_pnf` multi-reaction framework + supporting modules) into the kyoshimi-modernized, module-split, C-ABI/MCP-bearing `tr`, then archiving `trx` and `trm` — preserving every existing result bit-for-bit (`model_pnf=0` default ⇒ inert) and validating the *new* fusion paths against a 1e-10 reference captured from the bpsi `trx` executable.
 
-> **Editorial note (Task 7, after the fact).** The "1e-10" in the Goal above,
-> in the Architecture line below, in the file table, and in Task 2's heading
-> did not survive contact with the measurement. The reference captures are
-> sound and are committed, but kyoshimi `tr` does not match them at 1e-10 and
-> the reason is outside fusion: the two forks differ in the transport step
-> (identical to rounding at `NTMAX=0`, separating from the first step). Task 7
-> validates the fusion *differential* instead. Read Task 7's editorial note
-> before acting on any 1e-10 gate in this document;
+> **Editorial note (head of document, Task 7 after the fact).** This document
+> states two different 1e-10 gates. **Only one of them died.**
+>
+> - *"matches bpsi-`trx` at 1e-10"* -- the second gate in the Architecture
+>   line below, and the sense of "1e-10" in the Goal above, in the file table
+>   and in Task 2's heading. This one did not survive the measurement. The
+>   reference captures are sound and are committed, but kyoshimi `tr` does not
+>   match them at 1e-10, and the reason is outside fusion: the two forks
+>   differ in the transport step (identical to rounding at `NTMAX=0`,
+>   separating from the first step). Task 7 validates the fusion
+>   *differential* instead.
+> - *"existing `tr` regression unchanged at 1e-10"* -- the first gate in the
+>   Architecture line, and the one at `tr_m0904` / `tr_iter01` / `tr_tst2` in
+>   every task's regression step. **Unaffected, still green, and still
+>   binding.** It is the invariant the whole port rests on: the legacy
+>   `MDLNF` path must stay bit-exact, which is why `model_pnf` defaults to 0.
+>   Do not read the retraction above as softening it.
+>
+> Before acting on any gate that compares against the **bpsi-`trx` reference**,
+> read the editorial note at the head of Task 7;
 > `test_run/baselines/tr_fus_dt_hot/SOURCE.md` is authoritative throughout.
 
 **Architecture:** Test-oracle-first. We (1) build a 1e-10 reference from bpsi `trx` by porting the existing `trregress.f90` dumper into it, then (2) port physics into kyoshimi `tr` in inert-then-active order: collision modules → fusion data model (default off) → `libnf` → `trpnf`/dispatch → enable `model_pnf=1..4` against the reference. Every structural step is gated by "existing `tr` regression unchanged at 1e-10"; every new-physics step is gated by "matches bpsi-`trx` at 1e-10". The kyoshimi `tr` `trcomm.f90` is split into 6 sub-modules, so bpsi's monolithic `trcomm` declarations must be routed into the correct sub-module.
@@ -186,7 +198,7 @@ git commit -m "docs(tr): record P1 trx->tr port decisions (MDLNF policy, FTAUE/F
 > confirm cross-host (Mac↔Linux, gfortran-15↔13.2) reproducibility before treating a
 > mismatch as a port bug.
 
-**Editorial note (Task 7, after the fact).** The figures in the quoted review
+**Editorial note (Task 2, written during Task 7).** The figures in the quoted review
 do not survive the five oracle corrections listed in
 `test_run/baselines/tr_fus_dt_hot/SOURCE.md`; that file is authoritative. The
 amplification of 76.5 was a product of the 1e6 reaction-rate error and is 1.00
@@ -621,7 +633,8 @@ git commit -m "feat(tr): wire additive model_pnf fusion dispatch (tr_prep_pnf/tr
 
 **Files:** none new (uses the `tr_fus_dt` case from Task 2).
 
-**Editorial note (after the fact).** The four steps below are kept as written,
+**Editorial note (head of Task 7, after the fact).** The four steps below are
+kept as written,
 but three of their expectations do not survive what Task 7 measured. Read this
 first; `test_run/baselines/tr_fus_dt_hot/SOURCE.md` is authoritative.
 
@@ -688,8 +701,8 @@ cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr && make tr2 && ma
 cd ../test_run && ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2
 ```
 Expected: all `OK ... 1e-10`. `tr_fus_dt` and `tr_fus_dt_hot` are deliberately
-NOT in this gate -- both are registered as expected-drift (see the Task 7
-editorial note and `test_definitions.conf`), and `run_tests.sh` hard-codes
+NOT in this gate -- both are registered as expected-drift (see the editorial
+note at the head of Task 7 and `test_definitions.conf`), and `run_tests.sh` hard-codes
 1e-10 with no tolerance field in the conf format, so including either would
 make the gate permanently red with no repair short of editing the harness.
 
@@ -769,13 +782,15 @@ grep -nE '\btrx\b|\btrm\b' /Users/lihengyu/Research_Project/MS10/TASK/task-kyosh
 ```
 Expected: no remaining build references (archive/ is not built).
 
-- [ ] **Step 3: Full regression — everything green**
+- [ ] **Step 3: Regression sweep — the cases listed below green**
+  (NOT bare `./run_tests.sh`, which runs every registered case including the
+  two expected-drift fusion rows -- see the gate note below.)
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr && make tr2 && make libtrapi.so && make tr_api_check_all
 cd ../test_run && ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2 && ./run_tests.sh trlib_equivalence
 ```
 Expected: all `CLOSED` + `OK ... 1e-10` + `tr_api_check_all OK`. `tr_fus_dt`
-and `tr_fus_dt_hot` are excluded for the reason in the Task 7 editorial note;
+and `tr_fus_dt_hot` are excluded for the reason in the editorial note at the head of Task 7;
 `tr_fus_dt_hot`'s guard is
 `test_model_pnf_dispatch.py::test_fusion_differential_matches_the_trx_reference`,
 which the pytest job already runs.  `tr_fus_dt` has **no** automated guard --

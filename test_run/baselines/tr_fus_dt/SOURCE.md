@@ -14,11 +14,14 @@
 > sits beside this file: the first three "Verification and characteristics"
 > bullets; the `TAUE1`/`TAUE2` half of Known caveats bullet 1; the figures in
 > the heading note and the harness-registration note; the field counts in the
-> EXACT-input warning; the re-run probe figures above the conditioning ladder
+> EXACT-input warning (its rel 2.19 included, not only the counts); the re-run
+> probe figures above the conditioning ladder
 > (1.00 here, 2.32 on the hot deck); the ~62x / 1.4e4x fusion-signal figures
 > under the ladder; and the 1.00-amplification arithmetic in the
-> constant-reconciliation bullet.  Every other measured number below predates
-> the corrections.
+> constant-reconciliation bullet.  Every other measured number below -- and
+> every conclusion drawn from one, such as Verification bullet 4's claim that
+> the conditioning is "what actually makes the file usable as an oracle" --
+> predates the corrections.
 >
 > That list is maintained by hand and has already been wrong twice.  If any
 > number below disagrees with `tr_fus_dt_hot/SOURCE.md`, that file wins.
