@@ -71,7 +71,8 @@ CONTAINS
 !   of the five not reset here, so the alpha birth power grew linearly in the
 !   number of tr_pnf calls -- measured 1.0000x, 2.0019x, 3.0037x on successive
 !   calls of the 10 keV DT deck, i.e. a factor of order the call count by the
-!   end of a run.  The corrected build makes 46 calls over that deck's 5 steps.  Its four siblings are reset, which is what makes
+!   end of a run.  The corrected build makes 46 calls over that deck's
+!   5 steps.  Its four siblings are reset, which is what makes
 !   the omission look unintended rather than a deliberate running total.
     PNF_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0 ! fusion power
     
