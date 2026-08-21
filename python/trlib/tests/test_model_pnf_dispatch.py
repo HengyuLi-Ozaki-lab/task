@@ -909,15 +909,19 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # Four single-token defects that pass this test, all measured here against a
 # verified 0.2942x control, each restored afterwards:
 #
-#   PZ(ns)**2 -> PZ(ns) in the VC3 loop        0.8964x  0/209  24 passed
+# ('passed' is python/trlib/tests, all 104 -- the scope is stated because a
+# number without one is what this block is about.)
+#
+#   PZ(ns)**2 -> PZ(ns) in the VC3 loop        0.8964x  0/209  104 passed
 #     (the same typo eight lines later, in TAUS, is caught at 313.66x and
 #      155/209 -- and the port collapsed three explicit PZ(2..4)**2 terms of
 #      tr/trpnf.f90 into that one loop, so it is the likely slip)
 #   ABS(TE) -> ABS(RT(nr,nsp)) in TAUS         0.2808x  0/209  104 passed
 #     (BELOW the zero-error control: quieter than no error at all)
 #   publish loop DO nr = 1, NRMAX-1            0.2941x  0/209  104 passed
-#   svnf_dt 1 keV knot -> 1.0D-30              0.3016x  0/209  (test_libnf
-#                                                              catches it)
+#   svnf_dt 1 keV knot -> 1.0D-30              0.3016x  0/209  103 passed:
+#     test_libnf.py::test_matches_sigmam_at_table_points[1.0] is the one
+#     that goes red, and it is the only one in the four
 #
 # The first three are attenuated for structural reasons worth knowing.
 # TAUF_leg = 0.5*TAUS*(1-HY(VF/VCR)), and HY enters only through (1-HY), so
@@ -949,8 +953,13 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 #               the deliberate CODATA reconciliation
 #         and tr/trpnf.f90's three explicit terms VCD3/VCT3/VCA3 each carry
 #         PZ(n)**2, so the collapse into one DO loop is faithful to both
-#   TAUS  character-for-character identical to trx/trpnf.f90:138-139,
-#         TE = RT(nr,NS_ELECTRON) as there
+#   TAUS  token-for-token identical to trx/trpnf.f90:138-139 (indentation
+#         differs -- trx nests it one DO deeper), TE = RT(nr,NS_ELECTRON)
+#         as there.  That last equivalence is conditional: trx resolves
+#         NS_e dynamically to the first species with NPA(NS)==0
+#         (trx/trprep.f90:122-136) and pl/plinit.f90:142 puts the electron
+#         in slot 1, so it holds on every committed fixture and not by
+#         construction
 #   loops three DO nr = 1, NRMAX against the reference's three DO NR=1,NRMAX
 #
 # If you touch any of them, re-do that comparison; nothing in the suite will.
