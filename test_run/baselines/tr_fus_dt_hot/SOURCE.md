@@ -85,10 +85,29 @@ and is reported separately.
    these (`SNB_`, `SNF_`, `SNFNN_`, `SIE`, `SPEL`, `SPSC`) are in 1/s and
    correctly take no conversion.
 
-   One of the ten cannot be observed from anywhere: `PNFNN_NNF` feeds
-   `PNFNN_TOT`, which has no reader in `trx` outside its declaration, and its
-   `NNF>1` entries reach `GVT` only at `NNFMAX>=2`. It is corrected by class,
-   not by measurement.
+   **Only one of the ten is exercised by this deck**, and half of them sit on
+   quantities that are separately broken. `PNF_NSNNF` is the one this
+   capture measures. Of the rest:
+
+   - `PNFIN_NSNNFNR` and `PNBIN_NSNNBNR` have **no writer anywhere in
+     `trx`** -- declaration, `ALLOCATE` without zero-init, `DEALLOCATE`, and
+     reads in `trrslt.f90`, nothing else. So `PNFIN_TOT` and `PNBIN_TOT`
+     integrate uninitialised heap. (`trm/trpnf.f90` and `trx/trpnb.f90` both
+     write the *per-channel* `_NNFNR`/`_NNBNR` forms, which `trrslt.f90`
+     then overwrites from the never-written 3-D array.)
+   - `PIC_NSNICNR`/`PLH_NSNLHNR`/`PEC_NSNECNR` are assigned in exactly one
+     place, `trx/trprf.f90:23-25`, which only *zeroes* them and only when
+     total RF power is <= 0 -- so with RF on they are read uninitialised too.
+   - `PNFCL_NSNNFNR` is zeroed at `trx/trpnf.f90:66` and never assigned,
+     which is gap 1 above.
+   - `PNFNN_NNF` feeds `PNFNN_TOT`, which has no reader in `trx` outside its
+     declaration; its `NNF>1` entries reach `GVT` only at `NNFMAX>=2`.
+
+   The unit correction is still right -- a W/m^3 integral belongs in MW
+   however the array got its contents -- but on those five sites it makes
+   the printed number *plausible* rather than obviously 1e6-scaled, which
+   is worth knowing. All of this is upstream's, not introduced here, and is
+   reported with the correction.
 
    A sixth, **not** corrected: `SNFNN_NR`/`PNFNN_NR` are summed from the
    charged-particle arrays `SNF_NNFNR`/`PNF_NNFNR` while the `_NNF` totals
@@ -309,8 +328,15 @@ follows:
 
 The table is the nine scalars. `test_fusion_differential_matches_the_trx_reference`
 also compares `RT` per (NR, species), 200 more entries whose worst is
-**5.1e-3** at `RT[NR=28][s=2]` -- noisier than any scalar, and the entry that
-sizes the test's tolerance.
+**5.1e-3** at `RT[NR=28][s=2]` -- noisier than any scalar, but *not* the
+entry that binds. `RT[28]` sits on the node of the RT fusion differential
+(`RT[27][*]` carry the opposite sign), so its near-zero denominator both
+inflates its zero-error residual and makes it the least responsive to a
+real error. Measured by injecting one -- `sigmav_nf` scaled by `(1+eps)`,
+rebuilt, re-solved -- `TAUE2` binds from `eps` ~ 0.5% upward and `RT[28][2]`
+never does. The test therefore holds the two families to different
+tolerances (scalars 1.2e-2, `RT` 2.0e-2) and detects ~0.85%; one tolerance
+sized off `RT` would have detected only ~1.65%.
 
 The differential does **not** cancel the fork's transport difference, and the
 agreement column is the same order as the 2.9e-4 baseline: the two codes'

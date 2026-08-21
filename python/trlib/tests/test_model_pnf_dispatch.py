@@ -742,22 +742,43 @@ HOT_DECK = dict(
 HOT_PN = (0.1, 0.045, 0.045, 0.005)
 HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 
-# One tolerance for both channel sets, sized off the noisier one: RT, worst
-# 5.1e-3 at RT[NR=28][s=2], so 2e-2 leaves 3.9x.  That is THE margin -- the
-# scalars' own worst (TAUE2, 3.5e-3) never binds, because RT trips first at
-# every error size.  The floor is not the port.  With fusion off the two forks
+# One tolerance per channel family, because the two families have different
+# noise structure and it is NOT the noisier one that binds.
+#
+# Zero-error residuals: scalars worst 3.5e-3 (TAUE2), RT worst 5.1e-3
+# (RT[NR=28][s=2]).  RT is the noisier -- but RT[28] sits on the NODE of the
+# RT fusion differential (RT[27][*] carry the opposite sign), so its
+# denominator is near zero.  That is what makes its zero-error residual the
+# largest AND what makes it the LEAST responsive to a real error: the node
+# moves with the error, so scaling the alpha power by (1+eps) moves
+# RT[28][2]'s differential by only ~0.61*eps while every other entry moves by
+# ~eps.  Sizing one tolerance off it would be sizing off an artefact.
+#
+# The floor is not the port.  With fusion off the two forks
 # already differ by 2.9e-4 in WPT after these five steps (they are identical
 # at T=0 to 5.7e-16), so each code's fusion perturbation lands on a slightly
 # different state.  Tightening belongs with closing that gap --
 # test_run/baselines/tr_fus_dt_hot/SOURCE.md, "Known open gap".
 #
-# What this resolves: the perturbation is 1.1e-3 relative, small enough that
-# the response is linear, so a systematic factor error eps in the ported alpha
-# power shows up as rel ~ eps.  Scaling the kyoshimi differential by (1+eps)
-# over all 209 entries, the first crosses 2e-2 at eps = 1.5% (RT[28][2] at
-# 2.019e-2; 5 entries at 1.75%, 185 at 2%).  So this catches a ~1.5% error in
-# alpha heating -- a wrong branching ratio, the 3.5/17.6 MeV split misapplied
-# (19.9%), a dropped term -- not merely the order-of-magnitude defects the
+# What this resolves, measured by injecting a real systematic error -- libnf's
+# sigmav_nf scaled by (1+eps), rebuilt, re-solved -- rather than by scaling
+# the output differential, which is not the same experiment and gives the
+# wrong answer (it makes RT[28][2] look like the binding entry):
+#
+#   eps      scalar worst (TAUE2)   RT worst (RT[28][2])
+#   0        3.530e-3               5.112e-3
+#   0.006    9.519e-3               8.809e-3
+#   0.007    1.052e-2               9.423e-3
+#   0.008    1.152e-2               1.004e-2
+#   0.015    1.850e-2               (0 of 209 over 2e-2 -- a real 1.5% PASSES)
+#   0.017    2.050e-2               (1 of 209 over 2e-2)
+#
+# TAUE2 binds from eps ~ 0.5% upward; RT never does.  A single 2e-2 tolerance
+# would therefore detect only ~1.65%.  Split, this detects ~0.85%, with more
+# than 3.4x of margin on both families (1.2e-2/3.530e-3 = 3.40x,
+# 2.0e-2/5.112e-3 = 3.91x).  That is comfortably inside a wrong branching
+# ratio, the 3.5/17.6 MeV split misapplied (19.9%), or a dropped term -- and
+# far inside the
 # port's history supplies (the cm^3/s rate is 1e6, the un-reset PNF
 # accumulator a factor of order the call count -- 46 over these five steps on
 # the corrected build, more on the defective one -- the doubled RKEV larger
@@ -769,10 +790,12 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # reached.  AJ has 3 such points of 50 (worst rel 6.4e-2 at NR=42, where the
 # reference signal is 1.3e-8); QP has 10, including NR=50 where d_ref is
 # exactly zero.  Over the points that DO clear the floor both are quiet -- AJ
-# 2.3e-3, QP 3.5e-3, comparable to RT's 5.1e-3.  So the margin here is a
+# 2.3e-3, QP 3.5e-3, comparable to RT's 5.1e-3.  So these margins are a
 # property of the channel selection, not of the construction, and anyone
-# adding a channel must re-measure rather than assume.
-FUSION_DIFFERENTIAL_TOL = 2e-2
+# adding a channel must re-measure -- by injection, not by scaling the
+# output.
+FUSION_DIFFERENTIAL_TOL_SCALAR = 1.2e-2
+FUSION_DIFFERENTIAL_TOL_PROFILE = 2e-2
 FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",
                    "TAUE1", "TAUE2", "Q0", "ALI")
 
@@ -800,18 +823,21 @@ def _run_hot_deck(model_pnf):
 
 
 def _differentials(ref_on, ref_off, on, off, entries):
-    """(label, d_ref, d_kyo, base, rel) for each (label, getter) in entries.
+    """(label, d_ref, d_kyo, base, rel, tol) per (label, getter, tol) entry.
 
     ``base`` is |value at model_pnf=0| on the reference side -- the scale the
-    signal floor is measured against.
+    signal floor is measured against.  ``tol`` rides along because the two
+    channel families are held to different tolerances; see the table above
+    FUSION_DIFFERENTIAL_TOL_SCALAR.
     """
     out = []
-    for label, get in entries:
+    for label, get, tol in entries:
         d_ref = get(ref_on) - get(ref_off)
         d_kyo = get(on) - get(off)
         base = abs(get(ref_off))
         out.append((label, d_ref, d_kyo, base,
-                    abs(d_kyo - d_ref) / abs(d_ref) if d_ref else float("inf")))
+                    abs(d_kyo - d_ref) / abs(d_ref) if d_ref else float("inf"),
+                    tol))
     return out
 
 
@@ -869,12 +895,14 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
                 f"oracle -- comparing differentials across grids is meaningless"
             )
 
-    entries = [(k, lambda d, k=k: d["scalars"][k]) for k in FUSION_CHANNELS]
+    entries = [(k, lambda d, k=k: d["scalars"][k],
+                FUSION_DIFFERENTIAL_TOL_SCALAR) for k in FUSION_CHANNELS]
     for nr in range(ref_on["NRMAX"]):
         for ns in range(ref_on["NSMAX"]):
             entries.append((
                 f"RT[NR={nr + 1}][s={ns + 1}]",
                 lambda d, nr=nr, ns=ns: d["profile"][nr]["RT"][ns],
+                FUSION_DIFFERENTIAL_TOL_PROFILE,
             ))
 
     rows = _differentials(ref_on, ref_off, on, off, entries)
@@ -884,7 +912,7 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
     # Skipping it silently would let a dead channel pass -- metrics.json has
     # two such scalars today (AJRFT, RQ1), neither in FUSION_CHANNELS, and the
     # comment above invites adding channels.  Refuse instead.
-    unscaled = [(lb, dr) for lb, dr, _, base, _ in rows if not base]
+    unscaled = [(lb, dr) for lb, dr, _, base, _, _ in rows if not base]
     assert not unscaled, (
         f"{len(unscaled)} of {len(rows)} compared entries have a reference "
         f"model_pnf=0 value of exactly zero, so FUSION_SIGNAL_FLOOR has no "
@@ -895,7 +923,7 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
 
     # With `unscaled` empty, `base` is non-zero everywhere below, so a zero
     # d_ref lands here rather than reaching the tolerance check as rel = inf.
-    quiet = [(lb, dr, base) for lb, dr, _, base, _ in rows
+    quiet = [(lb, dr, base) for lb, dr, _, base, _, _ in rows
              if abs(dr) / base <= FUSION_SIGNAL_FLOOR]
     assert not quiet, (
         f"{len(quiet)} of {len(rows)} compared entries show no reference "
@@ -905,18 +933,22 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
         f"base={quiet[0][2]:.3e}"
     )
 
-    bad = [r for r in rows if r[4] > FUSION_DIFFERENTIAL_TOL]
+    # Rank by how far over its OWN tolerance an entry is, so the worst
+    # reported is the worst offender and not merely the largest number.
+    bad = [r for r in rows if r[4] > r[5]]
     if bad:
-        worst = max(bad, key=lambda r: r[4])
+        worst = max(bad, key=lambda r: r[4] / r[5])
         detail = "\n".join(
             f"    {lb:22s} kyoshimi {dk:+.9e}  reference {dr:+.9e}  "
-            f"rel {rel:.3e}"
-            for lb, dr, dk, _, rel in sorted(bad, key=lambda r: -r[4])[:12]
+            f"rel {rel:.3e} (tol {tol:.1e})"
+            for lb, dr, dk, _, rel, tol in sorted(bad, key=lambda r: -r[4] / r[5])[:12]
         )
         raise AssertionError(
-            f"{len(bad)} of {len(rows)} fusion differentials exceed "
-            f"{FUSION_DIFFERENTIAL_TOL:.1e}; worst {worst[0]} at "
-            f"rel {worst[4]:.3e}\n"
+            f"{len(bad)} of {len(rows)} fusion differentials exceed their "
+            f"tolerance (scalars {FUSION_DIFFERENTIAL_TOL_SCALAR:.1e}, "
+            f"RT {FUSION_DIFFERENTIAL_TOL_PROFILE:.1e}); worst {worst[0]} "
+            f"at rel {worst[4]:.3e}, {worst[4] / worst[5]:.2f}x its "
+            f"tolerance\n"
             f"  (differential = model_pnf=1 minus model_pnf=0, taken "
             f"separately in each code)\n{detail}"
         )
