@@ -298,6 +298,71 @@ ohmic 0.539 MW. What made `TAUE` look degenerate was defect 5, which put
 kyoshimi, the `model_pnf` differentials agreeing to 1.6e-3, and `TAUE2` to
 3.5e-3.
 
+## What these numbers are not thresholds for
+
+Every figure above is the threshold of **one injected perturbation** —
+port-side, uniform over the whole reactivity table, full radial support,
+applied to the published array, on a D/T-symmetric deck. None of them bounds a
+class. Five things pass this comparison outright; each was measured here
+against a verified 0.2942x zero-error control and restored afterwards.
+
+**1. Anything shared with the reference.** The port was written by reading
+`trx` — 462 of 490 non-comment lines of `trx/libnf.f90` appear verbatim in
+`tr/libnf.f90`, and the whole D-T block is byte-identical — so a common error
+moves both legs of the differential equally and cancels. Injecting +20% on
+`sigmav_nf` in **both** trees and regenerating both captures from the injected
+reference:
+
+| | worst | over tolerance |
+|---|---|---|
+| control | 0.2942x | 0 / 209 |
+| +20% in both, captures regenerated | **0.2944x** | 0 / 209 |
+
+The injection is live — the reference's own fusion signal moves 1.1128e-3 →
+1.3352e-3 — and the comparison does not move. **This is a fidelity gate, not
+an accuracy one.** What guards accuracy is `test_libnf.py`'s SIGMAM
+cross-check, which no re-capture can shift.
+
+**2. A single table knot.** Deleting the 1 keV `svnf_dt` knot (→ `1.0D-30`)
+gives 0.3016x, 0 / 209 here — and turns
+`test_libnf.py::test_matches_sigmam_at_table_points[1.0]` red. A 1% error on
+the 5 keV knot is caught here at 105.8x. Coverage per knot spans four orders
+because the deck's `Te` never sits on the low one; `tr_iter01` and `tr_m0904`
+both run at exactly 1.0 keV.
+
+**3. Factors that reach `TAUF` only through `HY`.**
+`TAUF_leg = 0.5*TAUS*(1-HY(VF/VCR))`, so `d(ln TAUF)/d(ln HY) = -HYF/(1-HYF)`,
+which is 0.009–0.209 on this deck: 8.5x (core) to 70x (edge) less detectable
+than `TAUS` itself. `VC3`/`VCR` and `HY`'s return value are in that set;
+`PA(nsp)` and `eng_nnf` are not. Consequence, measured: `trpnf_multi.f90` has
+two `PZ(...)**2` eight lines apart in the same expression. Dropping the square
+in `TAUS` is caught at 313.7x and 155 / 209; dropping it in the `VC3` loop
+gives **0.8964x, 0 / 209, whole suite green**. The port collapsed three
+explicit `PZ(2..4)**2` terms of `tr/trpnf.f90` into that one loop, so it is
+exactly where a transcription slip would land. It is small here only because
+this deck's sole multiply-charged species is a 0.5%-density alpha ash.
+
+**4. A sign-changing radial form.** The ~0.1%/~0.2% shape figures were measured
+on an edge-weighted, nearly single-signed form. `RT[28]` is a single-radius
+amplifier, so it sees a shape error only in proportion to that error's
+projection onto one radius. Reading `RT(nr,nsp)` instead of `TE` in `TAUS` —
+one token, and `Ta-Te` crosses zero twice on this deck — gives **0.2808x,
+below the zero-error control**, 0 / 209, whole suite green.
+
+**5. The outermost radius.** `PNF_leg(NRMAX)` is exactly 0 on 49 of the 50
+`tr_pnf` calls (`RT(50,2)` falls to 0.64 keV, under `sigmav_nf`'s 1 keV
+floor), so the outer cell contributes nothing to accumulate. Stopping the
+publish loop at `NRMAX-1` gives **0.2941x, 0 / 209, 104 passed**.
+`FUSION_SIGNAL_FLOOR` cannot help: it reads `d_ref`, and `RT[50][*]` carries
+2716x the floor because that signal is transported in from the interior while
+the local source is dead.
+
+Reported but **not** re-measured here: the D and T density slots are
+interchangeable on every committed fixture (`PN` is D/T-symmetric and
+`MDLEQN=0` freezes the densities), so `PN2 = RN(nr,ns1)` — n_D² instead of
+n_D n_T — is claimed bit-identical here and ~2x the alpha power on an
+asymmetric deck.
+
 ## Constants
 
 Unchanged from the 1 keV capture: `trx/trcomm.f90` shadows bpsd's CODATA-2018
@@ -382,10 +447,12 @@ scales by only ~0.61*`eps`, and `TAUE2` binds from `eps` ~ 0.5% upward. For
 a shape error the near-zero denominator amplifies instead, and `RT[28]` is
 the most sensitive entry in the test by two orders of magnitude while every
 scalar is blind -- a volume integral is exactly what a shape error
-preserves. Detection is ~0.85% on gain and ~0.1% on shape **at `PNF`**;
-see "What this oracle does NOT exercise" for what that does and does not
-say about `TAUF` and `SNF`. One tolerance sized off `RT` would have given
-1.65% on gain and nothing better on shape.
+preserves. Detection is ~0.85% on gain and ~0.1% on shape **at `PNF`, injected on the
+port side only**; see "What this oracle does NOT exercise" for what that does
+and does not say about `TAUF` and `SNF`, and "What these numbers are not
+thresholds for" below for the five classes they do not bound at all. One
+tolerance sized off `RT` would have given 1.65% on gain and nothing better on
+shape.
 
 The ~0.1% belongs to `RT[28]`'s node position on this deck at this step
 count, not to the channel. Excluding the four `RT[28][*]` entries, shape
