@@ -97,3 +97,6 @@ adpost/test-adpost
 ti/ti
 cv/cv
 cv/cvj
+
+# trx: standalone binary from the regress-capture build
+trx/tr2
