@@ -10,10 +10,12 @@
 > authoritative for anything the two disagree on.  Corrections 1-4 are reported
 > upstream as k-yoshimi/task#235 and #236.
 >
-> The body below is MIXED.  The first three "Verification and characteristics"
-> bullets and the `TAUE1`/`TAUE2` half of Known caveats bullet 1 were
-> re-measured on the committed capture and are current; every other measured
-> number below predates the corrections.  Specifically:
+> The body below is MIXED.  Current, re-measured against the capture that now
+> sits beside this file: the first three "Verification and characteristics"
+> bullets, the `TAUE1`/`TAUE2` half of Known caveats bullet 1, the figures in
+> the heading note and the harness-registration note, and the field counts in
+> the EXACT-input warning.  Every other measured number below predates the
+> corrections.  Specifically:
 >
 > | below | actual, on the committed capture |
 > |---|---|
@@ -90,11 +92,12 @@ compare, and against which deck, is in `tr_fus_dt_hot/SOURCE.md`.
 
 > **This block is no longer verbatim what produced the capture.** The live
 > deck also carries explanatory `!` comments this block does not; those are
-> inert to the namelist read. The one line that MATTERS is `PROFN2`
-> is corrected below to the four-species form the reference deck now carries;
-> as originally printed (a single `0.15D0`) the block reproduces only 104 of
-> the 564 fields in the `metrics.json` beside this file, worst rel 2.19 at
-> `RT[49][1]`. The live deck is `task-trx-ref/trx/in/trx_fus_dt.in`, which the
+> inert to the namelist read. The line that MATTERS is `PROFN2`, corrected
+> below to the four-species form the reference deck now carries;
+> as originally printed (a single `0.15D0`) the block reproduces only 54 of
+> the 514 value fields in the `metrics.json` beside this file (104 of 564 if
+> the 50 integer `NR` index columns, which can never differ, are counted; this
+> file uses the 514 count throughout), worst rel 2.19 at `RT[49][1]`. The live deck is `task-trx-ref/trx/in/trx_fus_dt.in`, which the
 > `## Reproduce` section reads directly and which reproduces all 564.
 
 Lives in the worktree at `trx/in/trx_fus_dt.in`. Fed on stdin with

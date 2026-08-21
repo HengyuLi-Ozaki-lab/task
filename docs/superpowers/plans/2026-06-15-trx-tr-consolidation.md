@@ -611,6 +611,33 @@ git commit -m "feat(tr): wire additive model_pnf fusion dispatch (tr_prep_pnf/tr
 
 **Files:** none new (uses the `tr_fus_dt` case from Task 2).
 
+**Editorial note (after the fact).** The four steps below are kept as written,
+but three of their expectations do not survive what Task 7 measured. Read this
+first; `test_run/baselines/tr_fus_dt_hot/SOURCE.md` is authoritative.
+
+- **`tr_fus_dt` is no longer the case to drive.** A 10 keV variant,
+  `tr_fus_dt_hot`, replaced it as the primary oracle: fusion signal rel `WPT`
+  1.11e-3 against this deck's 6.2e-9. This deck is retained as a weak
+  companion.
+- **1e-10 is not reachable, and not for a fusion reason.** Step 1's "OK:
+  metrics match within tol=1e-10" does not happen: 308 of 514 fields exceed it
+  on this deck. The residual is a transport-layer difference between the two
+  forks -- at `NTMAX=0` the two codes agree to rounding on this deck (499 of
+  514 value fields bit-identical, worst 5.0e-16; 510 of 514 and 5.7e-16 on the
+  10 keV deck) and diverge from the first step. So Step 2's four suspects, all
+  fusion-side, are the wrong places to look; that list was written before the
+  cause was located. What Task 7 validates instead is the *differential*
+  (`model_pnf=1` minus `=0`, taken in each code and compared), pinned by
+  `test_model_pnf_dispatch.py::test_fusion_differential_matches_the_trx_reference`.
+- **Step 3 cannot be done as written.** `tr` carries one fusion fast-ion slot,
+  so `model_pnf>=2` evaluates its reaction set but publishes nothing --
+  `test_model_pnf_ge_2_stays_diagnostic_only` pins that gate. There is no
+  `model_pnf=2,3,4` solve to drive to 1e-10 until `NFM` is widened.
+- The `cd .../task-kyoshimi/test_run` paths are stale: the work is in
+  `task-p1-libnf`, and `task-kyoshimi` has no `tr_fus_dt` baseline. And
+  `run_tests.sh` needs `declare -A`, so it does not run on this Mac's bash 3.2
+  at all -- the figures above were measured by driving `tr/tr2` directly.
+
 - [ ] **Step 1: Run the DT-fusion case — expect RED first if anything is mis-wired**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run
@@ -647,9 +674,11 @@ If bpsi `trx` writes these and the kyoshimi `tr` NBI/RF current path differs, po
 - [ ] **Step 2: If porting, mirror bpsi assembly, rebuild, and re-run all regression incl. `tr_fus_dt`**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr && make tr2 && make libtrapi.so
-cd ../test_run && ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2 && ./run_tests.sh tr_fus_dt
+cd ../test_run && ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2
 ```
-Expected: all `OK ... 1e-10`.
+Expected: all `OK ... 1e-10`. `tr_fus_dt` is deliberately NOT in this gate --
+it is an expected-drift case (see the Task 7 editorial note and
+`test_definitions.conf`), so including it would make the gate permanently red.
 
 - [ ] **Step 3: Commit (only if Step 1 required a port)**
 ```bash
@@ -730,9 +759,13 @@ Expected: no remaining build references (archive/ is not built).
 - [ ] **Step 3: Full regression — everything green**
 ```bash
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr && make tr2 && make libtrapi.so && make tr_api_check_all
-cd ../test_run && ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2 && ./run_tests.sh tr_fus_dt && ./run_tests.sh trlib_equivalence
+cd ../test_run && ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2 && ./run_tests.sh trlib_equivalence
 ```
-Expected: all `CLOSED` + `OK ... 1e-10` + `tr_api_check_all OK`.
+Expected: all `CLOSED` + `OK ... 1e-10` + `tr_api_check_all OK`. `tr_fus_dt`
+and `tr_fus_dt_hot` are excluded for the reason in the Task 7 editorial note;
+their guard is
+`test_model_pnf_dispatch.py::test_fusion_differential_matches_the_trx_reference`,
+which the pytest job already runs.
 
 - [ ] **Step 4: Commit**
 ```bash
