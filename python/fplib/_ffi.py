@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -96,10 +97,25 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+# Handles returned by os.add_dll_directory. Keep them referenced: a directory
+# leaves the DLL search path again when its handle is garbage-collected.
+_DLL_DIR_HANDLES: list = []
+
+
+def _lib_filename() -> str:
+    """``libfpapi.dll`` on Windows, ``libfpapi.so`` everywhere else.
+
+    macOS keeps the ``.so`` name because that is what ``make libfpapi.so``
+    produces there, even though the file is a Mach-O dylib.
+    """
+    return "libfpapi.dll" if sys.platform == "win32" else "libfpapi.so"
+
+
 def _candidate_paths() -> list:
     """All library paths that :func:`load_library` will try in order."""
     root = _repo_root()
-    return [root / "fp" / "libfpapi.so", root / "lib" / "libfpapi.so"]
+    name = _lib_filename()
+    return [root / "fp" / name, root / "lib" / name]
 
 
 def _default_lib_path() -> Path:
@@ -166,6 +182,12 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
             f"Tried FPLIB_PATH and {tried}. "
             "Build it via `make -C fp libfpapi.so` or set FPLIB_PATH."
         )
+    if sys.platform == "win32":
+        # Python 3.8+ no longer resolves a DLL's own dependencies through
+        # PATH. The gfortran runtime (libgfortran-5.dll, libquadmath-0.dll,
+        # libgcc_s_seh-1.dll, libwinpthread-1.dll) ships next to this DLL,
+        # so put that directory on the search path.
+        _DLL_DIR_HANDLES.append(os.add_dll_directory(str(p.parent)))
     # ctypes.RTLD_LAZY may not be defined on all Python builds; fall
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
