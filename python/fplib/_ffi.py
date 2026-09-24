@@ -8,8 +8,10 @@ Library-path resolution order (first match wins):
 
 1. explicit ``path`` argument to :func:`load_library`
 2. ``FPLIB_PATH`` environment variable
-3. ``<repo>/fp/libfpapi.so`` (standard L-4 build location)
-4. ``<repo>/lib/libfpapi.so`` (install-style location, future-proofing)
+3. ``<repo>/fp/libfpapi.so`` (standard L-4 build location; ``libfpapi.dll``
+   on Windows)
+4. ``<repo>/lib/libfpapi.so`` (install-style location, future-proofing;
+   ``libfpapi.dll`` on Windows)
 
 The package layout is ``python/fplib/_ffi.py`` so the repository root is
 two parents above this file (``__file__.parents[2]``).
@@ -98,9 +100,10 @@ def _repo_root() -> Path:
 
 
 # Handles returned by os.add_dll_directory, keyed by directory. Kept so each
-# directory is registered once however often a library is opened (eq_mcp
-# builds a fresh Eq() after every finalize), and so it could later be removed
-# with close(). Dropping a handle does NOT unregister its directory.
+# directory is registered once however often a library is opened (the MCP
+# servers build a fresh library handle after every finalize), and so it
+# could later be removed with close(). Dropping a handle does NOT unregister
+# its directory.
 _DLL_DIR_HANDLES: dict = {}
 
 
@@ -188,12 +191,14 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
         # Python 3.8+ no longer resolves a DLL's dependencies through PATH.
         # The gfortran runtime (libgfortran-5.dll, libquadmath-0.dll,
         # libgcc_s_seh-1.dll, libwinpthread-1.dll) ships next to this DLL.
-        # ctypes' default winmode already searches the loaded DLL's own
-        # directory for its dependencies; registering it too is a second
-        # line of defence. Never pass winmode=0 to "fix" a load error: that
+        # ctypes' default winmode searches the loaded DLL's own directory
+        # for its dependencies once the name is a full path, which the line
+        # below guarantees; registering the directory too is a second line
+        # of defence. Never pass winmode=0 to "fix" a load error: that
         # skips registered directories and restores the PATH/cwd search.
         # AddDllDirectory rejects relative paths, hence abspath.
         dll_dir = os.path.abspath(p.parent)
+        p = Path(dll_dir) / p.name
         key = os.path.normcase(dll_dir)
         if key not in _DLL_DIR_HANDLES:
             _DLL_DIR_HANDLES[key] = os.add_dll_directory(dll_dir)
