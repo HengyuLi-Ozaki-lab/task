@@ -81,6 +81,35 @@ def test_windows_relative_path_is_made_absolute(monkeypatch, tmp_path):
     monkeypatch.setattr(_ffi, "_apply_prototypes", lambda handle: handle)
     _ffi.load_library("libtrapi.dll")
     assert calls[0] == ("dir", os.path.realpath(str(tmp_path)))
+    assert calls[1] == ("load", os.path.join(os.path.realpath(str(tmp_path)), "libtrapi.dll"))
+
+
+def test_windows_registrations_are_keyed_case_insensitively(monkeypatch, tmp_path):
+    monkeypatch.setattr(_ffi.os.path, "normcase", str.lower)
+    dir_upper = tmp_path / "D"
+    dir_lower = tmp_path / "d"
+    dir_upper.mkdir(exist_ok=True)
+    dir_lower.mkdir(exist_ok=True)
+    lib_upper = dir_upper / "libtrapi.dll"
+    lib_lower = dir_lower / "libtrapi.dll"
+    lib_upper.write_bytes(b"")
+    lib_lower.write_bytes(b"")
+    calls = []
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(_ffi, "_DLL_DIR_HANDLES", {})
+    monkeypatch.setattr(_ffi.os, "add_dll_directory",
+                        lambda d: calls.append(("dir", d)) or object(), raising=False)
+
+    class FakeCDLL:
+        def __init__(self, path, mode=0):
+            calls.append(("load", path))
+
+    monkeypatch.setattr(_ffi.ctypes, "CDLL", FakeCDLL)
+    monkeypatch.setattr(_ffi, "_apply_prototypes", lambda handle: handle)
+    _ffi.load_library(str(lib_upper))
+    _ffi.load_library(str(lib_lower))
+    assert [c for c in calls if c[0] == "dir"] == [("dir", str(dir_upper))]
+    assert len(_ffi._DLL_DIR_HANDLES) == 1
 
 
 def test_windows_missing_library_names_the_dll(monkeypatch, tmp_path):
