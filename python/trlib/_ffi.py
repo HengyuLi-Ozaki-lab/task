@@ -133,9 +133,11 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-# Handles returned by os.add_dll_directory. Keep them referenced: a directory
-# leaves the DLL search path again when its handle is garbage-collected.
-_DLL_DIR_HANDLES: list = []
+# Handles returned by os.add_dll_directory, keyed by directory. Kept so each
+# directory is registered once however often a library is opened (eq_mcp
+# builds a fresh Eq() after every finalize), and so it could later be removed
+# with close(). Dropping a handle does NOT unregister its directory.
+_DLL_DIR_HANDLES: dict = {}
 
 
 def _lib_filename() -> str:
@@ -260,16 +262,23 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     if not p.exists():
         tried = [str(x) for x in _candidate_paths()]
         raise FileNotFoundError(
-            f"libtrapi.so not found at {p}. "
+            f"{_lib_filename()} not found at {p}. "
             f"Tried TRLIB_PATH and {tried}. "
             "Build it via `make -C tr libtrapi.so` or set TRLIB_PATH."
         )
     if sys.platform == "win32":
-        # Python 3.8+ no longer resolves a DLL's own dependencies through
-        # PATH. The gfortran runtime (libgfortran-5.dll, libquadmath-0.dll,
-        # libgcc_s_seh-1.dll, libwinpthread-1.dll) ships next to this DLL,
-        # so put that directory on the search path.
-        _DLL_DIR_HANDLES.append(os.add_dll_directory(str(p.parent)))
+        # Python 3.8+ no longer resolves a DLL's dependencies through PATH.
+        # The gfortran runtime (libgfortran-5.dll, libquadmath-0.dll,
+        # libgcc_s_seh-1.dll, libwinpthread-1.dll) ships next to this DLL.
+        # ctypes' default winmode already searches the loaded DLL's own
+        # directory for its dependencies; registering it too is a second
+        # line of defence. Never pass winmode=0 to "fix" a load error: that
+        # skips registered directories and restores the PATH/cwd search.
+        # AddDllDirectory rejects relative paths, hence abspath.
+        dll_dir = os.path.abspath(p.parent)
+        key = os.path.normcase(dll_dir)
+        if key not in _DLL_DIR_HANDLES:
+            _DLL_DIR_HANDLES[key] = os.add_dll_directory(dll_dir)
     # ctypes.RTLD_LAZY may not be defined on all Python builds; fall
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
