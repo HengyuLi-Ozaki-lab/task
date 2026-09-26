@@ -434,6 +434,13 @@ def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
 if platform.system() == "Darwin":
     _libc = ctypes.CDLL("libSystem.dylib")
     _c_stdout = ctypes.c_void_p.in_dll(_libc, "__stdoutp")
+elif platform.system() == "Windows":
+    # The Universal CRT, shared by CPython and MinGW-w64 UCRT64 gfortran.
+    # Its stdout FILE* is not an exported variable but __acrt_iob_func(1).
+    _libc = ctypes.CDLL("ucrtbase")
+    _libc.__acrt_iob_func.argtypes = [ctypes.c_uint]
+    _libc.__acrt_iob_func.restype = ctypes.c_void_p
+    _c_stdout = ctypes.c_void_p(_libc.__acrt_iob_func(1))
 else:  # Linux
     _libc = ctypes.CDLL("libc.so.6")
     _c_stdout = ctypes.c_void_p.in_dll(_libc, "stdout")
@@ -447,10 +454,10 @@ _libc.fflush.restype = ctypes.c_int
 # the redirect has been torn down.
 #
 # setvbuf(FILE *stream, char *buf, int mode, size_t size)
-#   _IONBF = 2 on glibc and macOS libc.
+#   _IONBF = 2 on glibc and macOS libc, 4 in the Windows UCRT.
 _libc.setvbuf.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_size_t]
 _libc.setvbuf.restype = ctypes.c_int
-_IONBF = 2
+_IONBF = 4 if platform.system() == "Windows" else 2   # <stdio.h>: UCRT 0x0004
 _libc.setvbuf(_c_stdout, None, _IONBF, 0)
 
 # Flush Fortran's own I/O buffer for unit 6 (stdout).
