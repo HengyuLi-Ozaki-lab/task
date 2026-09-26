@@ -95,6 +95,18 @@ if not _is_oneshot:
         _mcp_pipe_fd = _os.dup(1)
         _os.dup2(2, 1)
         _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
+        if _sys.platform == "win32":
+            # Windows serialises every operation on a synchronous pipe: while
+            # the MCP reader thread waits in ReadFile on stdin, the gfortran
+            # runtime's start-up fstat()/isatty() of fd 0 -- run when the DLL
+            # loads, inside the first tool call -- blocks forever. The MCP
+            # reader keeps the pipe on a fresh fd; fd 0 becomes NUL. (The
+            # POSIX note above about stdin does not apply: this is Windows only.)
+            _mcp_in_fd = _os.dup(0)
+            _null_fd = _os.open(_os.devnull, _os.O_RDONLY)
+            _os.dup2(_null_fd, 0)
+            _os.close(_null_fd)
+            _sys.stdin = _os.fdopen(_mcp_in_fd, "r", encoding="utf-8")
         _sys._task_mcp_stdout_isolated = True
     # ----------------------------------------------------------------------
 
