@@ -176,6 +176,15 @@ class TestFplibLifecycle(unittest.TestCase):
             self.assertGreaterEqual(st.nrmax, 0)
             self.assertGreaterEqual(st.nsamax, 0)
 
+    def test_real_library_fills_the_global_scalars(self):
+        """What fp_get_state actually writes: a library built before the
+        scalars were added (or a broken fill) leaves them at 0.0."""
+        with Fplib() as fp:
+            fp.run(2)
+            scalars = fp.get_state().scalars
+        self.assertGreater(scalars["PLASMA_VOLUME"], 0.0)
+        self.assertGreater(scalars["STORED_ENERGY"], 0.0)
+
     def test_double_close_idempotent(self):
         fp = Fplib()
         fp.close()

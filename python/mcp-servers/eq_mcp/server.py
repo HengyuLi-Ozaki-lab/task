@@ -79,9 +79,15 @@ if not _is_oneshot:
     # NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the
     # Fortran library uses stdin internally; redirecting it increases crash
     # rates (~20% → ~50%).
-    _mcp_pipe_fd = _os.dup(1)
-    _os.dup2(2, 1)
-    _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
+    #
+    # Once per process: tot_mcp imports several of these servers, and a
+    # second dup(1) would save the already-redirected stderr as the
+    # "JSON-RPC pipe" -- every response would then go to stderr.
+    if not getattr(_sys, "_task_mcp_stdout_isolated", False):
+        _mcp_pipe_fd = _os.dup(1)
+        _os.dup2(2, 1)
+        _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
+        _sys._task_mcp_stdout_isolated = True
     # ----------------------------------------------------------------------
 
 import contextlib
