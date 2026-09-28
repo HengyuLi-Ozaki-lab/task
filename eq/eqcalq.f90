@@ -28,8 +28,8 @@
       USE eqcom3_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
-      INTEGER :: NPS, IERRQ
-      REAL(rkind) :: PSIPLO, PSIPHI, PSIPQ
+      INTEGER :: NPS, IERRQ, IOS
+      REAL(rkind) :: PSIPLO, PSIPHI, PSIPQ, PSIPTOL
 
       IERR=0
 !
@@ -75,35 +75,63 @@
       CALL EQSETS(IERR)
 !
 !     ----- QQPS: q on the psi-surface grid PSIPS -----
-!     A g-eqdsk load reads QQPS from the file's q column: EQ_READ
-!     sends exactly MODELG=5/25 to EQDSKR and then calls EQCALQ, and
-!     eq_load calls it again.  Leave that column alone (the MODELG=5
-!     branches of EQSETP/DPPFUNC/DTTFUNC likewise use the file's
-!     derivative columns).  No other path sets QQPS -- EQRTSK's
-!     binary format (MODELG=3/9) does not store it and EQCALC does
-!     not compute it -- so resample the per-NR q profile onto PSIPS
-!     with UQPS, the spline of QPS on PSIP built in EQSETS above.
-!     A PSIPS point outside the PSIP range (e.g. the edge of a grid
-!     saved after a g-eqdsk load whose axis psi differs from the one
-!     EQAXIS finds) is clamped to the nearest end, as FNPSIP clamps
-!     to the PSIT range, so SPL1DF cannot report 1/2 (out of range).
-!     Its one remaining error, 9 (degenerate PSIP grid, no value),
-!     fails the run: a unit-6 message would not reach API callers,
-!     whose stdout the MCP servers isolate.
+!     EQDSKR (a g-eqdsk load) reads QQPS from the file's q column and
+!     sets QQPS_FROM_FILE.  EQ_READ clears the flag before every load
+!     and EQLOOP whenever the equilibrium is re-solved, so while it is
+!     set QQPS still belongs to this equilibrium: leave it alone.  No
+!     other path sets QQPS (EQRTSK's binary format does not store it,
+!     EQCALC does not compute it), so otherwise resample the per-NR q
+!     profile onto PSIPS with UQPS, the spline of QPS on PSIP built in
+!     EQSETS above.
+!     The plasma spans PSIP(1)..PSIPA.  A PSIPS point less than 5% of
+!     that span outside it (the file's axis psi differs a little from
+!     the one EQAXIS finds; measured cases are within 1%) is clamped
+!     to the nearest end, so the edge point gets q at the LCFS with or
+!     without the vacuum extension of PSIP.  A point further out means
+!     PSIPS does not describe this equilibrium, so the run fails
+!     (IERR=201) rather than invent values; SPL1DF's degenerate-grid
+!     error 9 fails it too (IERR=202).  On failure QQPS is zeroed and
+!     EQ_ERRMSG says why, for the C API's eq_last_error (the MCP
+!     servers isolate the unit-6 log).
 !
-      IF(MODELG.NE.5.AND.MODELG.NE.25) THEN
-         PSIPLO=MIN(PSIP(1),PSIP(NRMAX))
-         PSIPHI=MAX(PSIP(1),PSIP(NRMAX))
+      IF(.NOT.QQPS_FROM_FILE) THEN
+         PSIPLO=MIN(PSIP(1),PSIPA)
+         PSIPHI=MAX(PSIP(1),PSIPA)
+         PSIPTOL=0.05D0*(PSIPHI-PSIPLO)
+         IERRQ=0
          DO NPS=1,NPSMAX
-            PSIPQ=MIN(MAX(PSIPS(NPS),PSIPLO),PSIPHI)
-            CALL SPL1DF(PSIPQ,QQPS(NPS),PSIP,UQPS,NRMAX,IERRQ)
-            IF(IERRQ.NE.0) THEN
-               WRITE(6,*) 'XX EQCALQ: SPL1DF for QQPS: IERR=',IERRQ
-               QQPS(1:NPSMAX)=0.D0
-               IF(IERR.EQ.0) IERR=IERRQ
+            IF(PSIPS(NPS).LT.PSIPLO-PSIPTOL.OR. &
+               PSIPS(NPS).GT.PSIPHI+PSIPTOL) THEN
+               WRITE(EQ_ERRMSG,'(A,I0,A,1PE11.4,A,1PE11.4,A,1PE11.4,A)', &
+                    IOSTAT=IOS) 'EQCALQ: PSIPS(',NPS,')=',PSIPS(NPS), &
+                    ' is more than 5% outside the plasma psi range [', &
+                    PSIPLO,',',PSIPHI, &
+                    ']: the psi-surface grid does not match this equilibrium'
+               IERRQ=201
                EXIT
             ENDIF
          ENDDO
+         IF(IERRQ.EQ.0) THEN
+!           Stay inside the PSIP grid too, in case it stops short of
+!           PSIPA, so SPL1DF never extrapolates.
+            PSIPLO=MAX(PSIPLO,MIN(PSIP(1),PSIP(NRMAX)))
+            PSIPHI=MIN(PSIPHI,MAX(PSIP(1),PSIP(NRMAX)))
+            DO NPS=1,NPSMAX
+               PSIPQ=MIN(MAX(PSIPS(NPS),PSIPLO),PSIPHI)
+               CALL SPL1DF(PSIPQ,QQPS(NPS),PSIP,UQPS,NRMAX,IERRQ)
+               IF(IERRQ.NE.0) THEN
+                  EQ_ERRMSG='EQCALQ: the flux-surface grid is degenerate' &
+                       //' (PSIP(1) = PSIP(NRMAX)); cannot resample q'
+                  IERRQ=202
+                  EXIT
+               ENDIF
+            ENDDO
+         ENDIF
+         IF(IERRQ.NE.0) THEN
+            WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+            QQPS(1:NPSMAX)=0.D0
+            IF(IERR.EQ.0) IERR=IERRQ
+         ENDIF
       ENDIF
 !
 !     ----- Phase L-0 regression dump (env-guarded, no-op unless

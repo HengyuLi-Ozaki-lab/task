@@ -162,6 +162,8 @@
 !$$$     &              (-TTPS(i)*DPPPS(i)/BB-DTTPS(i)*BB/RMU0)/(2.D0*PI)
 !$$$      ENDDO
 !
+!     QQPS is the file's q column: EQCALQ must keep it.
+      QQPS_FROM_FILE=.TRUE.
       return
 !
  2000 format (6a8,3i4)

@@ -79,4 +79,15 @@ MODULE eqcom1_mod
   REAL(8) :: RSU(NSUM+1), ZSU(NSUM+1)
   REAL(8) :: RSW(NSUM+1), ZSW(NSUM+1)
 
+  ! --- QQPS provenance and failure reason ---
+  !   QQPS_FROM_FILE: QQPS holds the q column of the g-eqdsk file that
+  !     EQDSKR just read, so EQCALQ must not overwrite it. EQ_READ
+  !     clears it before every load and EQLOOP whenever the equilibrium
+  !     is re-solved; eq_init / eq_finalize reset it.
+  !   EQ_ERRMSG: why the last load / EQCALQ failed, for the C API's
+  !     eq_last_error (the MCP servers isolate the unit-6 log). eq_run
+  !     clears it on entry.
+  LOGICAL :: QQPS_FROM_FILE = .FALSE.
+  CHARACTER(LEN=256) :: EQ_ERRMSG = ' '
+
 END MODULE eqcom1_mod

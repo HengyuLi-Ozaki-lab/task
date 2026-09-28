@@ -20,6 +20,7 @@ extern "C" {
  *                 return EQ_ERR_NOT_IMPL pending L-4.
  *   - eq_save   : NEW in Task 1.1. Writes TASK-internal binary to KNAMEQ.
  *                 Returns EQ_OK unconditionally; caller must verify file.
+ *   - eq_last_error : why the most recent eq_run failed (see below).
  *
  * Memory note: every array in eq_state_t is fixed-size (max-capacity).
  * Valid runtime slots are 1..nrmax / 1..npsmax / 1..nrgmax / etc.;
@@ -164,6 +165,20 @@ int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
 /* Write current EQ state to KNAMEQ binary; returns EQ_OK unconditionally.
    Caller MUST verify file existence afterward (see Task 1.2 Python wrapper). */
 int eq_save(void);
+
+/*
+ * Reason the most recent eq_run failed, e.g. the file that could not be
+ * loaded or why the psi-surface grid did not match the equilibrium.
+ * Copies at most buflen-1 characters into buf and NUL-terminates it.
+ * The text is empty after a successful eq_run (eq_run clears it on
+ * entry) and after eq_init / eq_finalize.
+ *
+ * Return values:
+ *   EQ_OK           — buf holds the (possibly empty) reason
+ *   EQ_ERR_INVALID  — buflen < 1; buf is not touched
+ *   EQ_ERR_NOT_INIT — eq_init has not been called yet
+ */
+int eq_last_error(char* buf, int buflen);
 
 #ifdef __cplusplus
 }

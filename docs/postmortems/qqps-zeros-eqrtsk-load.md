@@ -1,16 +1,16 @@
 # `QQPS` is all zeros after `MODELG=3` (EQRTSK) loads
 
-**Date:** 2026-05-10 (fix); 2026-09-28 (review follow-up)
-**Component:** `eq/` (TASK/EQ Fortran library)
+**Date:** 2026-05-10 (fix); 2026-09-28 (two review follow-ups)
+**Component:** `eq/` (TASK/EQ Fortran library), its C API and `eqlib`
 **Severity:** Low. A silent data-quality bug: no crash, and callers that
 use the per-`NR` `profile[].QPS` field are unaffected.
 **Affects:** every consumer of `EqState.qqps` (the C-API / Python wire
-field documented as "q profile (psi-surface)") after a binary EQDSK load
-via `equnit::eq_load(MODELG=3)`, including the `eq` MCP server's
-`get_state` payload.
-**Fixed in:** `EQCALQ` (`eq/eqcalq.f90`), in two commits: the first fill
-(cherry-picked as 97025c6e) and a follow-up after the pre-push reviews.
-See "Fix" and "Review follow-up" below.
+field documented as "q profile (psi-surface)"), including the `eq` MCP
+server's `get_state` payload and task-web's q(ψ) plot.
+**Fixed in:** `EQCALQ` (`eq/eqcalq.f90`), in three commits: the first
+fill (97025c6e) and two follow-ups after pre-push reviews (ccfe533a and
+the commit that added this revision of the document). See "Fix" and
+"Review follow-ups" below.
 
 ---
 
@@ -26,14 +26,19 @@ slot in COMMON kept its zero-initialised value, and the C ABI getter
 
 This is a TASK source-code bug, not an MCP or Python wrapper bug.
 
-Final behaviour after the fix:
+Final behaviour:
 
-| Load path | `QQPS` |
+| Situation | `QQPS` |
 | --- | --- |
-| `MODELG=5` / `25` (g-eqdsk text, `EQDSKR`) | The file's q column, untouched |
-| Everything else (`MODELG=3`/`9` `EQRTSK`, `8`, `15`, `EQCALC` solves) | The per-`NR` q profile resampled onto `PSIPS` |
-| A `PSIPS` point outside the `PSIP` range | Clamped to the nearest end of the range (q on the first or last flux surface) |
-| Degenerate `PSIP` grid (`SPL1DF` error 9) | `EQCALQ` fails; `eq_run` returns `EQ_ERR_CALC_FAILED` |
+| Just after a g-eqdsk load (`MODELG=5`/`25`, `EQDSKR`) | The file's q column, untouched |
+| Any other load (`MODELG=3`/`9`, `8`, `15`), any `EQCALC` solve, or a re-solve after a g-eqdsk load | The per-`NR` q profile resampled onto `PSIPS` |
+| A `PSIPS` point within 5% of the plasma span outside `[PSIP(1), PSIPA]` | Clamped to the nearest end, so the edge value equals `QSURF` |
+| A `PSIPS` point further out | The run fails: `EQ_ERR_CALC_FAILED`, `QQPS` zeroed, reason from `eq_last_error` |
+| Degenerate `PSIP` grid (`SPL1DF` error 9) | Same failure, with its own reason |
+
+The follow-ups also made a g-eqdsk load of a missing file fail instead of
+returning `EQ_OK` with the previous equilibrium, and added
+`eq_last_error`, so every failed `eq_run` can say why.
 
 ## Symptom
 
@@ -63,14 +68,16 @@ arrays.
 
 | Site | Role |
 | --- | --- |
-| `eq/eqcom1_mod.f90:63` | `REAL(8) :: QQPS(NPSM)` declaration |
-| `eq/eq-eqdsk.f90:62`   | `read (neqdsk,2020) (QQPS(i),i=1,NPSMAX)`: the **g-eqdsk text** reader `EQDSKR`, the only code that reads a q column |
-| `eq/eqfile.f90:110-112` | `EQ_READ` sends exactly `MODELG=5`/`25` to `EQDSKR`, then calls `EQCALQ` |
+| `eq/eqcom1_mod.f90` | `QQPS(NPSM)`; also `QQPS_FROM_FILE` and `EQ_ERRMSG`, added by the second follow-up |
+| `eq/eq-eqdsk.f90:62`   | `read (neqdsk,2020) (QQPS(i),i=1,NPSMAX)`: the **g-eqdsk text** reader `EQDSKR`, the only code that reads a q column; it now also sets `QQPS_FROM_FILE` |
+| `eq/eqfile.f90` (`EQ_READ`) | Sends exactly `MODELG=5`/`25` to `EQDSKR`, then calls `EQCALQ`; clears the flag before every load |
 | `eq/equnit.f90:91`     | `eq_load` calls `EQCALQ` again after every load |
-| `eq/eqcalq.f90` (`EQCALQ`) | The `QQPS` fill added by this fix |
+| `eq/eqcalc.f90` (`EQLOOP`) | Every re-solve (`EQCALC`, the menu's `C`) comes through here; clears the flag |
+| `eq/eqcalq.f90` (`EQCALQ`) | The `QQPS` fill |
 | `eq/eq_api_common.f:186` | `QQPS_OUT(I) = QQPS(I)`: the C ABI getter |
+| `eq/eq_api.f90` | `eq_last_error`; `eq_init`/`eq_finalize` reset the flag |
 
-`eq/eqfile.f90:149-153` (`EQRTSK`, the `MODELG=3` binary reader):
+`eq/eqfile.f90` (`EQRTSK`, the `MODELG=3` binary reader):
 
 ```fortran
 READ(21) (PSIPS(NPS),NPS=1,NPSMAX)
@@ -104,22 +111,41 @@ writes it, so the C-API getter returned zeros.
 ## Fix
 
 At the end of `EQCALQ`, after `EQSETS` has built `UQPS`
-(`eq/eqcalq.f90`):
+(`eq/eqcalq.f90`; error handling abridged):
 
 ```fortran
-      IF(MODELG.NE.5.AND.MODELG.NE.25) THEN
-         PSIPLO=MIN(PSIP(1),PSIP(NRMAX))
-         PSIPHI=MAX(PSIP(1),PSIP(NRMAX))
+      IF(.NOT.QQPS_FROM_FILE) THEN
+         PSIPLO=MIN(PSIP(1),PSIPA)
+         PSIPHI=MAX(PSIP(1),PSIPA)
+         PSIPTOL=0.05D0*(PSIPHI-PSIPLO)
+         IERRQ=0
          DO NPS=1,NPSMAX
-            PSIPQ=MIN(MAX(PSIPS(NPS),PSIPLO),PSIPHI)
-            CALL SPL1DF(PSIPQ,QQPS(NPS),PSIP,UQPS,NRMAX,IERRQ)
-            IF(IERRQ.NE.0) THEN
-               WRITE(6,*) 'XX EQCALQ: SPL1DF for QQPS: IERR=',IERRQ
-               QQPS(1:NPSMAX)=0.D0
-               IF(IERR.EQ.0) IERR=IERRQ
+            IF(PSIPS(NPS).LT.PSIPLO-PSIPTOL.OR. &
+               PSIPS(NPS).GT.PSIPHI+PSIPTOL) THEN
+               ! EQ_ERRMSG: 'EQCALQ: PSIPS(n)=... is more than 5% outside
+               !   the plasma psi range [...]: the psi-surface grid does
+               !   not match this equilibrium'
+               IERRQ=201
                EXIT
             ENDIF
          ENDDO
+         IF(IERRQ.EQ.0) THEN
+            PSIPLO=MAX(PSIPLO,MIN(PSIP(1),PSIP(NRMAX)))
+            PSIPHI=MIN(PSIPHI,MAX(PSIP(1),PSIP(NRMAX)))
+            DO NPS=1,NPSMAX
+               PSIPQ=MIN(MAX(PSIPS(NPS),PSIPLO),PSIPHI)
+               CALL SPL1DF(PSIPQ,QQPS(NPS),PSIP,UQPS,NRMAX,IERRQ)
+               IF(IERRQ.NE.0) THEN  ! error 9: degenerate PSIP grid
+                  ! EQ_ERRMSG set
+                  IERRQ=202
+                  EXIT
+               ENDIF
+            ENDDO
+         ENDIF
+         IF(IERRQ.NE.0) THEN
+            QQPS(1:NPSMAX)=0.D0
+            IF(IERR.EQ.0) IERR=IERRQ
+         ENDIF
       ENDIF
 ```
 
@@ -130,106 +156,130 @@ Design decisions:
    `eq_load → eqload → EQ_READ → EQRTSK`, then `eqcalq`, chain.
 2. **Reuse `UQPS` rather than cache a new `UQQPS` table:** `QQPS` and
    `profile[].QPS` then come from the same spline and stay consistent.
-   `QQPS[0] == QAXIS` exactly; `QQPS[-1]` differs from `QSURF` by 4e-6
-   for ITER01, because the file's `PSIPS[-1]` and the `PSIPA` that
-   `EQAXIS` recomputes differ by 4.7e-5 (out of 103).
-3. **g-eqdsk loads keep the file's q (`MODELG=5`/`25`):** see "Review
-   follow-up", finding 1.
-4. **Out-of-range points are clamped, not zero-filled:** see "Review
-   follow-up", finding 2.
-5. **A degenerate `PSIP` grid fails the run:** `SPL1DF` error 9
-   (`PSIP(1) == PSIP(NRMAX)`) returns no value. `EQCALQ` zeroes `QQPS`
-   and returns 9 unless an earlier step already set an error. A unit-6
-   message alone would not be enough, because API callers never see it:
-   the MCP servers isolate the library's stdout. In practice the grid is
-   never degenerate once `NRMAX >= 2`.
+   `QQPS[0] == QAXIS` exactly. For ITER01, `QQPS[-1]` differs from
+   `QSURF` by 4e-6 because the file's `PSIPS[-1]` is 4.7e-5 (out of 103)
+   inside the `PSIPA` that `EQAXIS` recomputes.
+3. **Keep a g-eqdsk q column, tracked by a flag, not by `MODELG`.**
+   `EQDSKR` sets `QQPS_FROM_FILE` after reading the column. Anything
+   that replaces the equilibrium clears it: `EQ_READ` before every load
+   and `EQLOOP` on every re-solve. `eq_init` and `eq_finalize` also
+   reset it. So "the file's column still describes this equilibrium" is
+   exactly "the flag is set". See "Review follow-ups" for why a
+   `MODELG` test was not enough.
+4. **Tolerance, then clamp to the plasma range.** Measured mismatches
+   between a file's `PSIPS` and the recomputed `PSIPA` are at most 1%.
+   A point less than 5% of the plasma span outside `[PSIP(1), PSIPA]`
+   is clamped to the nearest end. At `PSIPA` that gives `QSURF` (they
+   agree to 1e-15), with or without the vacuum extension of `PSIP`.
+   The clamp also stays inside the `PSIP` grid, so `SPL1DF` never
+   extrapolates. A point further out means the grid does not describe
+   this equilibrium, so the run fails. Clamping it would invent values.
+5. **Failures are reported, not logged.** An out-of-range grid (201) or
+   a degenerate `PSIP` grid (202, `SPL1DF` error 9) zeroes `QQPS`
+   rather than leaving a partial or stale column. It fails `EQCALQ`,
+   so `eq_run` returns `EQ_ERR_CALC_FAILED`, and it stores the reason
+   in `EQ_ERRMSG`. The new C function `eq_last_error` returns that
+   reason: API callers never see unit-6 output, because the MCP servers
+   isolate stdout. `eqlib`'s `Eq.run()` puts the reason in its
+   exception, and the eq MCP server passes it on in its `ToolError`.
 6. **No `STOP`:** per `CLAUDE.md` "Fortran library discipline", a
    library-reachable `STOP` aborts the host process (pytest, MCP
    server, ...).
 
-## Review follow-up
+## Review follow-ups
 
-The first version of the fix (97025c6e) ran the fill unconditionally and
-wrote `0.0` whenever `SPL1DF` returned any error. Two independent
-pre-push reviews found two problems:
+### First follow-up (ccfe533a)
 
-1. **It overwrote the g-eqdsk q column (HIGH).** A `MODELG=5`/`25` load
-   reads `QQPS` from the file, and `EQCALQ` runs right after that read
-   (`eqfile.f90:112`) and again in `eq_load` (`equnit.f90:91`). The
-   fill replaced the file's q with TASK's recomputed q: a column of 7.0
-   came back as 0.578…3.325, and a negative-q file came back positive.
-   task-web plots q(ψ) from `QQPS`, and its wiki says `MODELG=5` reads
-   `QQPS` straight from the file.
+The first version (97025c6e) ran the fill unconditionally and wrote
+`0.0` whenever `SPL1DF` returned any error. Two pre-push reviews found
+two problems:
 
-   Fix: skip the fill when `MODELG` is 5 or 25. `EQ_READ` sends exactly
-   those values to `EQDSKR`, the only code that reads a q column, and
-   both `EQCALQ` calls on that path see the same `MODELG`. So the test
-   matches "QQPS came from the file" without new state. `EQCALQ`
-   already keys g-eqdsk handling on `MODELG`: the `MODELG=5` branches of
-   `EQSETP`, `DPPFUNC` and `DTTFUNC` use the file's derivative columns.
-   A "QQPS supplied by the file" flag was the alternative. It would
-   differ only when an equilibrium is re-solved while `MODELG` is still
-   5/25. No library caller does that: `eq_run` mode 0 is documented for
-   `MODELG=2`, and the transport codes call `eq_calc` only in their
-   coupled-EQ modes (`MODELG=9` in tr/trx/trm, geometry model 8/9 in
-   trn), not after a g-eqdsk load. Only the interactive menu can, by
-   typing `R` or `C` after `K`, and there `DPPFUNC`/`DTTFUNC` still read
-   the file's columns. A flag would therefore add state to set, clear,
-   and reset across `eq_finalize`/`eq_init` without making that
-   combination consistent.
-   Callers checked: `EQ_READ` and `eq_load` (`MODELG=5`/`25` untouched;
-   `3`/`9`/`8`/`15` filled); `eq_run` mode 0 and `eq_calc` (`EQCALC`
-   with `MODELG=2`/`9`: filled); the menu's `L`/`K` loads and `R`/`C`
-   re-solves in `eqmenu.f90` (by `MODELG`, as above); and the other
-   modules that call `eqcalq` after their own load (wm, fp, wr, ob),
-   none of which read `QQPS`.
+1. **It overwrote the g-eqdsk q column.** `EQCALQ` runs right after
+   `EQDSKR` (`eqfile.f90`) and again in `eq_load`. A column of 7.0 came
+   back as 0.578…3.325, and a negative-q file came back positive.
+   ccfe533a skipped the fill when `MODELG` was 5 or 25.
+2. **It reintroduced a silent zero.** `SPL1DF` returns error 1 or 2
+   (point more than half an average cell outside the grid) and still a
+   value, but the loop stored `0.0` while the run reported success.
+   The trigger was a g-eqdsk whose axis psi was 0.1% deeper than the
+   one `EQAXIS` finds, loaded with `NSUMAX=0` and `NRMAX=1000`, or
+   saved and reloaded as `MODELG=3`. ccfe533a clamped every point into
+   the `PSIP` range.
 
-2. **It reintroduced a silent zero (MED).** `SPL1DF` returns error 1
-   or 2 when the point lies more than half an average cell outside the
-   grid, and it still returns a value (a cubic extrapolation from the
-   end cell). The loop discarded that value and wrote `0.0`, while the
-   run reported success. Reproduction: build a g-eqdsk whose axis psi is
-   0.1% deeper than the one `EQAXIS` finds. Its `PSIPS` grid then ends
-   0.1% beyond `PSIPA`. Load it with `NSUMAX=0`, so `PSIP` ends at the
-   LCFS, and `NRMAX=1000`, so 0.1% is more than half an average cell.
-   The result was `QQPS[-1] = 0.0`. Once finding 1 is fixed, that
-   g-eqdsk load no longer runs the fill, but saving the state and
-   reloading it as `MODELG=3` still reaches it, since `EQRTSK` keeps the
-   saved `PSIPS`.
+### Second follow-up
 
-   Fix: clamp each `PSIPS` point into the `PSIP` range before
-   `SPL1DF`. `FNPSIP` (`eq/eqsplf.f90`) already clamps its argument to
-   the `PSIT` range the same way, and `TTFUNC`/`DTTFUNC` clamp to the
-   end of `PSIPS`. With the clamp, `SPL1DF` cannot report 1/2, so its
-   only possible error is 9 (decision 5). Clamping was chosen over
-   keeping the extrapolated value because the extrapolation is
-   unbounded for a large mismatch: a cubic from one small end cell
-   carried over many cells. A point beyond the last flux surface also
-   has no q of its own, so q on that surface is the defensible value.
-   A point inside the range reaches `SPL1DF` with the same argument as
-   in the first fix, so its value does not change. The ITER01 load and
-   the analytic `mode=0` run, with or without `NSUMAX=0` and
-   `NRMAX=1000`, have no point outside the range.
+Two more pre-push reviews agreed that both ccfe533a fixes were too
+blunt:
 
-The first version's comment also said callers "see the warning" and can
-fall back to `profile[].QPS`. API callers never see unit-6 output,
-because the MCP servers isolate stdout. The comment now says so.
+1. **The clamp was unbounded and hid wrong grids.** With the grid
+   stretched ×2, `SPL1DF` reported nothing and 14 of 33 `QQPS` entries
+   were silently the q at the vacuum edge. With the grid sign-flipped,
+   32 of 33 were the axis q. The upper bound was also `PSIP(NRMAX)`, which with the
+   default vacuum extension is the vacuum edge. So a point just past
+   the LCFS got the vacuum model's q: a 0.1% offset gave 3.3337 instead
+   of `QSURF` 3.3249 (3.3929 at 1%).
+   Fix: decision 4. The tolerance is 5% of the plasma span, the clamp
+   is to `[PSIP(1), PSIPA]`, and anything further out fails the run.
+2. **`MODELG` 5/25 is not "`QQPS` came from the current file".**
+   `eq_run(mode=0)` does not check `MODELG`, so through `eqlib` or the
+   MCP server:
+   - a fresh `MODELG=5` solve returned success with `QQPS` all zeros;
+   - after a g-eqdsk load, a re-solve kept the old file's 7.0 column
+     while `QSURF` moved to 3.204. The menu's `K` then `R` did the same.
+
+   ccfe533a argued that no library caller re-solves with `MODELG=5`.
+   That was wrong: mode 0 is reachable with any `MODELG`.
+   Fix: decision 3, the flag.
+
+The second follow-up also fixed two errors in the same class:
+
+3. **A missing g-eqdsk file loaded "successfully".** `EQ_READ` called
+   `EQCALQ` after `EQDSKR` failed, and `EQCALQ` reset the error. After
+   an ITER01 load, the call returned `EQ_OK` with the previous
+   equilibrium. In a fresh session `EQCALQ` ran on an empty state and
+   the process died, which the new MCP test showed on ccfe533a's
+   library.
+   Fix: `EQ_READ` skips `EQCALQ` when `EQDSKR` fails. It also sets
+   `IERR=0` before dispatching (it was undefined for `MODELG=15`), and
+   an unknown `MODELG` now fails deterministically with a reason.
+   `EQ_READ` names the file in the reason:
+   `EQ_READ: MODELG=5 load failed: KNAMEQ='…' not found`.
+4. **Tests:** see "Verification".
+
+After the second follow-up, the reviewers' reproductions give:
+
+- 0.1% and 1% offsets: `QQPS[-1]` = 3.3249 = `QSURF`.
+- ×2 grid: fails with `EQCALQ: PSIPS(18)= 1.0990E+02 is more than 5%
+  outside the plasma psi range [ 0.0000E+00, 1.0344E+02]: …`.
+- Sign-flipped grid: fails at `PSIPS(3)=-6.4649E+00`.
+- Fresh `MODELG=5` solve: `QQPS` = 0.5307…1.8826.
+- Re-solve after a g-eqdsk load: `QQPS` = 0.6169…3.2041.
+- Missing file: `EqlibCalculationFailedError` with the reason above.
 
 ## Verification
 
+The tests are
 [`python/eqlib/tests/test_qqps_psi_surface.py`](../../python/eqlib/tests/test_qqps_psi_surface.py)
-has seven tests. The g-eqdsk files are written into `tmp_path` from the
-committed `eqdata.ITER01` fixture, so no new fixture is committed.
+(19 tests),
+[`python/eqlib/tests/test_run_errors.py`](../../python/eqlib/tests/test_run_errors.py)
+(2), and one integration test in
+`python/mcp-servers/eq_mcp/tests/test_server.py`. The g-eqdsk files are
+written into `tmp_path` from the committed `eqdata.ITER01` fixture, so
+no new fixture is committed.
 
 | Test | Asserts |
 | --- | --- |
-| `test_qqps_not_all_zero` | `any(q != 0)` after an EQRTSK load: the original bug. |
-| `test_qqps_endpoints_match_scalars` | `QQPS[0] ≈ QAXIS`, `QQPS[-1] ≈ QSURF` to `1e-4`. The scalars come from the same `UQPS`, so this checks alignment only. |
-| `test_qqps_interior_matches_independent_spline` | Each interior `QQPS` point equals a natural cubic spline of the exported `(PSIP, QPS)` profile, built independently in Python, to `1e-10` relative (observed 7e-16). |
-| `test_qqps_monotone_for_iter_baseline` | Monotone for ITER01; would need relaxing for a non-monotone-q fixture. |
-| `test_geqdsk_q_column_survives_the_load[q_constant_7]` | A `MODELG=5` file with q = 7.0 returns exactly that column. |
-| `test_geqdsk_q_column_survives_the_load[q_negative]` | Same for a negative q column. |
-| `test_psips_point_beyond_psip_range_is_clamped` | Saved-and-reloaded offset grid (see finding 2): the last `PSIPS` point is more than half a cell beyond `PSIP`, no `QQPS` entry is `0.0`, and `QQPS[-1]` is q on the last flux surface. |
+| `TestQqpsAfterEqrtskLoad` (4) | After an EQRTSK load: `QQPS` not all zero; `QQPS[0] ≈ QAXIS` and `QQPS[-1] ≈ QSURF` (alignment only, since those come from the same spline); interior points equal an independent natural spline of the exported `(PSIP, QPS)` profile to `1e-10` (observed 7e-16); monotone for ITER01. |
+| `test_geqdsk_q_column_survives_the_load` (4) | `MODELG=5` and `25`, q = 7.0 and a negative column: returned unchanged. |
+| `test_modelg5_solve_without_a_file_fills_qqps` | Fresh `MODELG=5` `eq_run(mode=0)` gives the resampled q, not zeros. |
+| `test_solve_after_a_geqdsk_load_replaces_the_file_column` | g-eqdsk load (7.0), then `eq_run(mode=0)`: `QQPS` recomputed on the new grid. |
+| `test_a_new_session_after_a_geqdsk_load_fills_qqps` | After a g-eqdsk load, finalize, and init, the next load fills `QQPS`. The flag reset in `eq_init`/`eq_finalize` is not observable separately: every API path to `EQCALQ` also passes `EQ_READ` or `EQLOOP`. |
+| `test_other_load_and_solve_paths_fill_qqps` (2) | The `EQCALC` solve (`MODELG=2`) and a `MODELG=9` EQRTSK load get the fill. |
+| `test_psips_point_just_past_the_lcfs_gets_qsurf` (3) | Offsets of 0.1% and 4.9% with the vacuum extension, and 0.1% with `NSUMAX=0, NRMAX=1000` (the `SPL1DF` out-of-range case): `QQPS[-1] = QSURF` to `1e-10`, and every point equals the clamped spline. |
+| `test_psips_grid_far_outside_the_plasma_fails_the_run` (3) | 5.1% offset, ×2 grid, sign-flipped grid. `eq_run` raises `EqlibCalculationFailedError` carrying the `eq_last_error` reason. `QQPS` is then all zero, the next load works, and the reason is cleared. |
+| `test_missing_geqdsk_fails_and_keeps_the_previous_equilibrium` | Raises with the file name and "not found"; the state is unchanged. |
+| `test_file_load_with_an_analytic_modelg_fails_with_the_reason` | `eq_run(mode=1)` with `MODELG=2` fails and names `MODELG=2`. |
+| MCP `test_run_failure_carries_the_reason` | The server's `ToolError` for a missing g-eqdsk contains the reason. |
 
 TDD trace:
 
@@ -238,13 +288,14 @@ TDD trace:
 | First fix, pre-fix baseline | `47 passed, 1 skipped` |
 | First fix, RED | `2 failed` (all zeros / `QQPS[0]=0 != QAXIS=0.578`); `1 passed` vacuously (all-zero is monotone) |
 | First fix, GREEN | `50 passed, 1 skipped` |
-| Follow-up, suite on 97025c6e's library | `66 passed, 1 skipped` (eqlib); `46 passed` (eq MCP server) |
-| Follow-up, new tests on 97025c6e's library | `3 failed` (both `MODELG=5` cases came back as TASK's q 0.578…3.325; the reloaded offset grid had `QQPS[-1] = 0.0`), `4 passed` |
-| Follow-up, fixed library | `70 passed, 1 skipped` (eqlib); `46 passed` (eq MCP server) |
+| First follow-up, new tests on 97025c6e's library | `3 failed`, `4 passed` |
+| First follow-up, fixed library | eqlib `70 passed, 1 skipped`; eq MCP `46 passed` |
+| Second follow-up, final tests on ccfe533a's library | `9 failed`, `12 passed` (the passes are regression guards); the MCP test's process died (missing-file load in a fresh session) |
+| Second follow-up, fixed library | eqlib `84 passed, 1 skipped`; eq MCP `47 passed` |
 
 In the follow-up rows the skip is `test_sweep`, which needs
 `test_run/test_output/eq_iter01/` data. The 1e-10 equivalence baselines
-`test_eq_iter01` and `test_eq_tst2` pass after both commits.
+`test_eq_iter01` and `test_eq_tst2` pass after every commit.
 
 Run command (the CI flags):
 
@@ -273,10 +324,9 @@ the next "silent zero" cannot sneak past CI.)
    though `profile[].QPS` looked sensible (`0.578` → `3.33`).
 2. A grep showed only five references to `QQPS` in `eq/`; the
    `MODELG=3` binary reader was not among them.
-3. Confirmed by inspecting `EQRTSK`'s `READ` sequence
-   (`eq/eqfile.f90:149-153`).
-4. The two pre-push reviews of 97025c6e found the g-eqdsk overwrite and
-   the zero fill (see "Review follow-up").
+3. Confirmed by inspecting `EQRTSK`'s `READ` sequence (`eq/eqfile.f90`).
+4. Two rounds of pre-push review (each an in-house reviewer plus Codex)
+   found the problems in "Review follow-ups", each with a reproduction.
 
 ## Follow-ups not done here
 
@@ -290,3 +340,6 @@ the next "silent zero" cannot sneak past CI.)
   `EQ_BPSD_PUT` round trips).
 * Document the `MODELG=3` vs `MODELG=5` semantic divergence
   (binary vs g-eqdsk text) in `docs/eq-library/`.
+* The loaders still abort the host process on a malformed file: most of
+  `EQDSKR`'s and `EQRTSK`'s `READ`s have no `ERR=`/`IOSTAT=` (issue
+  #142 class).

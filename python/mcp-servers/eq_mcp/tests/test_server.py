@@ -650,6 +650,24 @@ class TestIntegration(unittest.TestCase):
 
         srv.handle_finalize()
 
+    def test_run_failure_carries_the_reason(self) -> None:
+        """A failed run's error names the cause (eq_last_error), not just rc=3.
+
+        A g-eqdsk load of a missing file used to return EQ_OK and keep
+        the previous equilibrium.
+        """
+        os.chdir(EQDATA_FIXTURE_DIR)
+        srv.handle_init()
+        srv.handle_set_param("MODELG", 5.0)
+        srv.handle_set_param_str("KNAMEQ", "no_such_geqdsk")
+        # ToolError, or RuntimeError when the mcp SDK is absent.
+        with self.assertRaises(Exception) as ctx:
+            srv.handle_run(1)
+        message = str(ctx.exception)
+        self.assertIn("calculation failed", message)
+        self.assertIn("no_such_geqdsk", message)
+        self.assertIn("not found", message)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

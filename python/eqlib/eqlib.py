@@ -39,6 +39,7 @@ _MAX_C_STRING_BYTES = 63              # name buffer is CHARACTER(LEN=64);
 _MAX_C_STRING_VALUE_BYTES = 80        # value buffer is CHARACTER(LEN=80);
                                        # eq_api_set_param_str reads up to
                                        # LEN(fvalue) chars so full 80 is OK
+_LAST_ERROR_BYTES = 512               # > EQ_ERRMSG (CHARACTER(LEN=256)) + NUL
 
 
 def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
@@ -288,11 +289,35 @@ class Eq:
                   equilibrium without any external EQDSK file.
 
                 Other values return ``EQ_ERR_NOT_IMPL``.
+
+        On failure the exception message ends with the library's reason
+        (:meth:`last_error`), e.g. which file could not be loaded.
         """
         if self._closed:
             raise EqlibError("run on closed Eq")
         rc = self._lib.eq_run(int(mode))
-        raise_for_rc(f"eq_run({mode})", rc)
+        if rc != 0:
+            try:
+                detail = self.last_error()
+            except EqlibError:  # e.g. NOT_INIT: keep eq_run's own error
+                detail = ""
+            raise_for_rc(f"eq_run({mode})", rc, detail=detail)
+
+    def last_error(self) -> str:
+        """Why the most recent :meth:`run` failed; ``""`` after a success.
+
+        Wraps ``eq_last_error``. Returns ``""`` when the loaded library
+        predates it.
+        """
+        if self._closed:
+            raise EqlibError("last_error on closed Eq")
+        try:
+            fn = self._lib.eq_last_error
+        except AttributeError:
+            return ""
+        buf = ctypes.create_string_buffer(_LAST_ERROR_BYTES)
+        raise_for_rc("eq_last_error", fn(buf, len(buf)))
+        return buf.value.decode("ascii", errors="replace").strip()
 
     def save(self, path: str) -> None:
         """Save the current equilibrium state to a TASK-binary file.

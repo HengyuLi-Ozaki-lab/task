@@ -65,15 +65,20 @@ _CODE_MAP = {
 }
 
 
-def raise_for_rc(func: str, rc: int) -> None:
+def raise_for_rc(func: str, rc: int, detail: str = "") -> None:
     """Raise the matching subclass when ``rc != 0``.
 
     Unknown codes fall back to the generic :class:`EqlibError`.
+    ``detail`` (e.g. the library's ``eq_last_error`` text) is appended
+    to the message when given.
     """
     if rc == 0:
         return
     cls = _CODE_MAP.get(int(rc), EqlibError)
-    raise cls(f"{func}: rc={rc}")
+    message = f"{func}: rc={rc}"
+    if detail:
+        message += f": {detail}"
+    raise cls(message)
 
 
 # Alias matching the trlib / tilib naming.

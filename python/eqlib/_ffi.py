@@ -250,6 +250,13 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     except AttributeError:  # pragma: no cover - only on pre-Task-1.1 builds
         pass
 
+    # eq_last_error(char* buf, int buflen) -> int: why the last eq_run failed.
+    try:
+        lib.eq_last_error.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        lib.eq_last_error.restype = ctypes.c_int
+    except AttributeError:  # pragma: no cover - only on builds before it
+        pass
+
     # eq_common_get_psi_rz_(int* nr, int* nz, double* psi_out)
     try:
         lib.eq_common_get_psi_rz_.argtypes = [

@@ -327,6 +327,10 @@
       INTEGER, INTENT(OUT) :: IERR
 
       IERR=0
+!     Re-solving replaces the equilibrium (EQCALC and the menu's C
+!     command both come through here), so QQPS is no longer a g-eqdsk
+!     file's q column: let EQCALQ recompute it.
+      QQPS_FROM_FILE=.FALSE.
 !
 !     ----- Adaptive under-relaxation of the GS Picard iteration -----
 !     A full Picard step (PSI <- solution) oscillates for stiff (high-q,

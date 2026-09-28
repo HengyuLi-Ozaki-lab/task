@@ -104,18 +104,45 @@
       USE eqcom2_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
+      INTEGER :: IOS
+      LOGICAL :: LEX
 
+!     A load replaces the equilibrium: QQPS is no longer an earlier
+!     g-eqdsk file's q column (EQDSKR sets the flag again for a new one).
+      QQPS_FROM_FILE=.FALSE.
+      EQ_ERRMSG=' '
+      IERR=0
       IF(MODELG.EQ.3.OR.MODELG.EQ.9) THEN
          CALL EQRTSK(IERR)
       ELSEIF(MODELG.EQ.5.OR.MODELG.EQ.25) THEN
          CALL EQDSKR(IERR)
-         CALL EQCALQ(IERR)
+!        Keep EQDSKR's error: EQCALQ would reset IERR and report a
+!        failed load (e.g. a missing file) as success.
+         IF(IERR.EQ.0) CALL EQCALQ(IERR)
       ELSEIF(MODELG.EQ.8) THEN
          CALL EQJAEAR(IERR)
       ELSEIF(MODELG.EQ.15) THEN
          CALL EQDSK
       ELSE
          WRITE(6,*) 'XX EQLOAD: UNKNOWN MODELG: MODELG=',MODELG
+         WRITE(EQ_ERRMSG,'(A,I0,A)',IOSTAT=IOS) 'EQ_READ: MODELG=', &
+              MODELG,' is not a file format (3, 5, 8, 9, 15 or 25)'
+         IERR=1
+      ENDIF
+!     Say which file failed, for eq_last_error, unless the failing
+!     step already gave a reason.
+      IF(IERR.NE.0.AND.LEN_TRIM(EQ_ERRMSG).EQ.0) THEN
+         INQUIRE(FILE=KNAMEQ,EXIST=LEX,IOSTAT=IOS)
+         IF(IOS.NE.0) LEX=.FALSE.
+         IF(LEX) THEN
+            WRITE(EQ_ERRMSG,'(A,I0,3A,I0,A)',IOSTAT=IOS) &
+                 'EQ_READ: MODELG=',MODELG,' load of KNAMEQ=''', &
+                 TRIM(KNAMEQ),''' failed (IERR=',IERR,')'
+         ELSE
+            WRITE(EQ_ERRMSG,'(A,I0,3A)',IOSTAT=IOS) &
+                 'EQ_READ: MODELG=',MODELG,' load failed: KNAMEQ=''', &
+                 TRIM(KNAMEQ),''' not found'
+         ENDIF
       ENDIF
 
       RETURN

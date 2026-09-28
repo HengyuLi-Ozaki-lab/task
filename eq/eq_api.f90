@@ -2,7 +2,8 @@
 !
 ! Phase L-2/L-3: C ABI entry points for libeqapi.
 !
-! Six BIND(C) functions are exposed:
+! BIND(C) entry points (eq_validate and eq_save are described at their
+! definitions below):
 !
 !   eq_init           -> marks the library as initialized (idempotent)
 !                        and returns EQ_OK. Does NOT touch the legacy
@@ -24,6 +25,8 @@
 !   eq_finalize       -> clears the initialized flag. No COMMON cleanup
 !                        yet (the legacy binaries rely on implicit
 !                        static storage).
+!   eq_last_error     -> copies the reason the most recent eq_run failed
+!                        (eqcom1_mod::EQ_ERRMSG) into a C buffer.
 !
 ! Name-collision resolution: equnit.f already defines MODULE equnit
 ! with PUBLIC eq_init. The C-visible symbol also has to be named
@@ -55,11 +58,13 @@ MODULE eq_api
   ! Pull MODELG + KNAMEQ directly from plcomm so eq_api_run can forward
   ! them to equnit_eq_load without going through a COMMON-block bridge.
   USE plcomm, ONLY: MODELG, KNAMEQ
+  ! QQPS provenance flag and the failure reason eq_last_error returns.
+  USE eqcom1_mod, ONLY: QQPS_FROM_FILE, EQ_ERRMSG
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: eq_api_init, eq_api_run, eq_api_get_state, &
             eq_api_set_param, eq_api_set_param_str, eq_api_finalize, &
-            eq_api_validate, eq_api_save
+            eq_api_validate, eq_api_save, eq_api_last_error
 
   ! Error codes. Must match eq_api.h.
   INTEGER(C_INT), PARAMETER :: EQ_OK              = 0
@@ -88,6 +93,9 @@ CONTAINS
     ! still override MODELG / KNAMEQ / etc. afterwards via
     ! eq_set_param / eq_set_param_str.
     CALL equnit_eq_init
+    ! A new session starts without a g-eqdsk q column or a failure.
+    QQPS_FROM_FILE = .FALSE.
+    EQ_ERRMSG = ' '
     g_initialized = .TRUE.
     ierr = EQ_OK
   END FUNCTION eq_api_init
@@ -112,7 +120,7 @@ CONTAINS
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
     INTEGER(C_INT), VALUE, INTENT(IN) :: mode
     INTEGER(C_INT) :: ierr
-    INTEGER :: calc_ierr, load_ierr
+    INTEGER :: calc_ierr, load_ierr, ios
     CHARACTER(LEN=80) :: knameq_local
     ! Contract: NOT_INIT takes precedence over INVALID (mirrors tr_api_run).
     ! So callers that hit an uninitialised library always see the same
@@ -121,7 +129,11 @@ CONTAINS
        ierr = EQ_ERR_NOT_INIT
        RETURN
     END IF
+    ! eq_last_error reports on this run only.
+    EQ_ERRMSG = ' '
     IF (mode < 0) THEN
+       WRITE(EQ_ERRMSG, '(A,I0)', IOSTAT=ios) &
+            'eq_run: mode must be 0 or 1, got ', mode
        ierr = EQ_ERR_INVALID
        RETURN
     END IF
@@ -138,11 +150,13 @@ CONTAINS
        ! `R` then `F` workflow.
        CALL EQCALC(calc_ierr)
        IF (calc_ierr /= 0) THEN
+          CALL note_failure('EQCALC', calc_ierr)
           ierr = EQ_ERR_CALC_FAILED
           RETURN
        END IF
        CALL EQCALQ(calc_ierr)
        IF (calc_ierr /= 0) THEN
+          CALL note_failure('EQCALQ', calc_ierr)
           ierr = EQ_ERR_CALC_FAILED
           RETURN
        END IF
@@ -154,14 +168,30 @@ CONTAINS
        knameq_local = KNAMEQ
        CALL equnit_eq_load(MODELG, knameq_local, load_ierr)
        IF (load_ierr /= 0) THEN
+          CALL note_failure('equnit::eq_load', load_ierr)
           ierr = EQ_ERR_CALC_FAILED
           RETURN
        END IF
        ierr = EQ_OK
     CASE DEFAULT
+       WRITE(EQ_ERRMSG, '(A,I0,A)', IOSTAT=ios) &
+            'eq_run: mode ', mode, ' is not implemented (0 or 1)'
        ierr = EQ_ERR_NOT_IMPL
     END SELECT
   END FUNCTION eq_api_run
+
+  !-------------------------------------------------------------------
+  ! note_failure : give a failed eq_run a reason if the failing step
+  ! did not set one (EQ_READ / EQCALQ set specific ones).
+  !-------------------------------------------------------------------
+  SUBROUTINE note_failure(step, code)
+    CHARACTER(LEN=*), INTENT(IN) :: step
+    INTEGER, INTENT(IN) :: code
+    INTEGER :: ios
+    IF (LEN_TRIM(EQ_ERRMSG) > 0) RETURN
+    WRITE(EQ_ERRMSG, '(2A,I0,A)', IOSTAT=ios) &
+         TRIM(step), ' failed (ierr=', code, ')'
+  END SUBROUTINE note_failure
 
   !-------------------------------------------------------------------
   ! eq_set_param : delegate to the L-3 parameter registry.
@@ -371,9 +401,40 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION eq_api_finalize() RESULT(ierr) BIND(C, NAME="eq_finalize")
     INTEGER(C_INT) :: ierr
+    QQPS_FROM_FILE = .FALSE.
+    EQ_ERRMSG = ' '
     g_initialized = .FALSE.
     ierr = EQ_OK
   END FUNCTION eq_api_finalize
+
+  !-------------------------------------------------------------------
+  ! eq_last_error : the reason the most recent eq_run failed, e.g. the
+  ! file that could not be loaded or why the psi-surface grid was
+  ! rejected. Copies at most buflen-1 characters of EQ_ERRMSG into buf
+  ! and NUL-terminates it. Empty after a successful eq_run (eq_run
+  ! clears it on entry) and after eq_init / eq_finalize.
+  !-------------------------------------------------------------------
+  FUNCTION eq_api_last_error(buf, buflen) RESULT(ierr) &
+           BIND(C, NAME="eq_last_error")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE, INTENT(IN) :: buflen
+    INTEGER(C_INT) :: ierr
+    INTEGER :: i, n
+    IF (.NOT. g_initialized) THEN
+       ierr = EQ_ERR_NOT_INIT
+       RETURN
+    END IF
+    IF (buflen < 1) THEN
+       ierr = EQ_ERR_INVALID
+       RETURN
+    END IF
+    n = MIN(LEN_TRIM(EQ_ERRMSG), buflen - 1)
+    DO i = 1, n
+       buf(i) = EQ_ERRMSG(i:i)
+    END DO
+    buf(n + 1) = C_NULL_CHAR
+    ierr = EQ_OK
+  END FUNCTION eq_api_last_error
 
   !-------------------------------------------------------------------
   ! Issue #143 pilot: pre-run cross-parameter validation.
