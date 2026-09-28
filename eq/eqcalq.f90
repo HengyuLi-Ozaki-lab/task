@@ -28,6 +28,8 @@
       USE eqcom3_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
+      INTEGER :: NPS, IERRQ
+      REAL(rkind) :: PSIPLO, PSIPHI, PSIPQ
 
       IERR=0
 !
@@ -72,29 +74,37 @@
       CALL EQSETS_RHO(IERR)
       CALL EQSETS(IERR)
 !
-!     ----- Project per-NR QPS onto the PSIPS (psi-surface) grid
-!           to populate QQPS, mirroring how PPPS / TTPS live on
-!           PSIPS. EQRTSK (MODELG=3 binary) does not store QQPS in
-!           the file (eq/eqfile.f90 EQRTSK skips it), so without
-!           this loop QQPS stays at the zero-initialised COMMON
-!           value and the C-API getter returns all zeros for the
-!           psi-surface q profile. UQPS was just built above by
-!           SPL1D(PSIP,QPS,...) so SPL1DF gives the same q profile
-!           as profile[].QPS, just resampled onto PSIPS.
-!           Failures are logged but non-fatal (per CLAUDE.md:
-!           library-reachable STOP would abort the host process);
-!           callers that need QQPS see the warning and fall back
-!           to profile[].QPS.
+!     ----- QQPS: q on the psi-surface grid PSIPS -----
+!     A g-eqdsk load reads QQPS from the file's q column: EQ_READ
+!     sends exactly MODELG=5/25 to EQDSKR and then calls EQCALQ, and
+!     eq_load calls it again.  Leave that column alone (the MODELG=5
+!     branches of EQSETP/DPPFUNC/DTTFUNC likewise use the file's
+!     derivative columns).  No other path sets QQPS -- EQRTSK's
+!     binary format (MODELG=3/9) does not store it and EQCALC does
+!     not compute it -- so resample the per-NR q profile onto PSIPS
+!     with UQPS, the spline of QPS on PSIP built in EQSETS above.
+!     A PSIPS point outside the PSIP range (e.g. the edge of a grid
+!     saved after a g-eqdsk load whose axis psi differs from the one
+!     EQAXIS finds) is clamped to the nearest end, as FNPSIP clamps
+!     to the PSIT range, so SPL1DF cannot report 1/2 (out of range).
+!     Its one remaining error, 9 (degenerate PSIP grid, no value),
+!     fails the run: a unit-6 message would not reach API callers,
+!     whose stdout the MCP servers isolate.
 !
-      IERR_SAVE = IERR
-      DO NPS=1,NPSMAX
-         CALL SPL1DF(PSIPS(NPS),QQPS(NPS),PSIP,UQPS,NRMAX,IERR)
-         IF(IERR.NE.0) THEN
-            WRITE(6,*) 'XX SPL1DF for QQPS at NPS=',NPS,' IERR=',IERR
-            QQPS(NPS) = 0.D0
-         END IF
-      END DO
-      IERR = IERR_SAVE
+      IF(MODELG.NE.5.AND.MODELG.NE.25) THEN
+         PSIPLO=MIN(PSIP(1),PSIP(NRMAX))
+         PSIPHI=MAX(PSIP(1),PSIP(NRMAX))
+         DO NPS=1,NPSMAX
+            PSIPQ=MIN(MAX(PSIPS(NPS),PSIPLO),PSIPHI)
+            CALL SPL1DF(PSIPQ,QQPS(NPS),PSIP,UQPS,NRMAX,IERRQ)
+            IF(IERRQ.NE.0) THEN
+               WRITE(6,*) 'XX EQCALQ: SPL1DF for QQPS: IERR=',IERRQ
+               QQPS(1:NPSMAX)=0.D0
+               IF(IERR.EQ.0) IERR=IERRQ
+               EXIT
+            ENDIF
+         ENDDO
+      ENDIF
 !
 !     ----- Phase L-0 regression dump (env-guarded, no-op unless
 !           EQ_REGRESS_DUMP=1). Hook here so every successful R/RUN
