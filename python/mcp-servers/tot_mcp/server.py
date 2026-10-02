@@ -56,6 +56,61 @@ _PYTHON_ROOT = _HERE.parents[2]  # .../python
 if str(_PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(_PYTHON_ROOT))
 
+import os as _os
+import sys as _sys
+
+# ---------- fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC) ----------
+# libtotapi.so runs the eq / tr / fp / ti / wrx Fortran code inside this
+# process, and every WRITE(6,...) of it targets OS fd 1 -- the JSON-RPC
+# pipe to the MCP client. A Fortran diagnostic line on that pipe makes the
+# client log "Failed to parse JSONRPC message" and can drop the session.
+#
+# tot_mcp used to get the isolation as a side effect of importing tr_mcp /
+# fp_mcp (their parameter registries are read below). Since #227 item 1
+# importing a server no longer touches fd 1: each server installs the
+# isolation from its own main(), once per process (the flag lives on
+# ``sys``), so tot_mcp must do the same.
+#
+# NOTE: On POSIX we do NOT redirect fd 0 (stdin) to /dev/null because the
+# Fortran library uses stdin internally; redirecting it increases crash
+# rates (see the eq_mcp / tr_mcp / fp_mcp note). The Windows branch below
+# is the one exception.
+_FD_ISOLATION_INSTALLED = False
+_mcp_pipe_fd = None
+
+
+def _install_fd_isolation() -> None:
+    """Redirect fd 1 to stderr and rebuild sys.stdout on the saved pipe fd.
+
+    Called from main() immediately before the stdio server starts; never at
+    import time (#227 item 1). Idempotent, and once per PROCESS: the flag
+    lives on ``sys`` because a second dup(1) -- another server module of the
+    same process -- would save the already-redirected stderr as the
+    "JSON-RPC pipe", and every response would then go to stderr.
+    """
+    global _FD_ISOLATION_INSTALLED, _mcp_pipe_fd
+    if _FD_ISOLATION_INSTALLED or getattr(_sys, "_task_mcp_stdout_isolated", False):
+        _FD_ISOLATION_INSTALLED = True
+        return
+    _mcp_pipe_fd = _os.dup(1)
+    _os.dup2(2, 1)
+    _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
+    if _sys.platform == "win32":
+        # Windows serialises every operation on a synchronous pipe: while
+        # the MCP reader thread waits in ReadFile on stdin, the gfortran
+        # runtime's start-up fstat()/isatty() of fd 0 -- run when the DLL
+        # loads, inside the first tool call -- blocks forever. The MCP
+        # reader keeps the pipe on a fresh fd; fd 0 becomes NUL. (The
+        # POSIX note above about stdin does not apply: this is Windows only.)
+        _mcp_in_fd = _os.dup(0)
+        _null_fd = _os.open(_os.devnull, _os.O_RDONLY)
+        _os.dup2(_null_fd, 0)
+        _os.close(_null_fd)
+        _sys.stdin = _os.fdopen(_mcp_in_fd, "r", encoding="utf-8")
+    _sys._task_mcp_stdout_isolated = True
+    _FD_ISOLATION_INSTALLED = True
+# ----------------------------------------------------------------------
+
 # ---------------------------------------------------------------------
 # MCP SDK import.
 #
@@ -967,6 +1022,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             "       pip install 'mcp>=0.9,<2'\n"
         )
         return 2
+
+    # Not at import time: --help, --print-tools and the MCP-missing path return above.
+    _install_fd_isolation()
 
     server = build_server()
     # FastMCP >=0.9 exposes .run() for stdio transport by default.
