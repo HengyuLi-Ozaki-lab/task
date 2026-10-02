@@ -58,7 +58,7 @@ class TestTilibFanoutParity(TiDataCwdMixin, unittest.TestCase):
         sufficient and faster to diff.
         """
         from tilib import TiLib
-        from tilib.tests.fixtures import ti_iter01_params as base
+        from tilib.tests.fixtures import ti_min_params as base
         with TiLib() as ti:
             base.apply(ti)
             ti.set_param("NTMAX", float(FANOUT_NTMAX))

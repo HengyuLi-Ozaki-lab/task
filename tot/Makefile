@@ -90,14 +90,19 @@ TOT_L3_DEPS_OBJ = \
     ../wrx/obj/wrx_param_registry.o \
     ../eq/eq_param_registry.o
 
-# Phase L-6: per-module API .o files. tot_api.f90 now USEs tr_api /
-# ti_api / fp_api / wrx_api so the orchestrator lifecycle can fan out
-# to each per-module *_api_init / *_api_run / *_api_finalize. Each
-# per-module SRCS_API objects are built by the owning Makefile via
-# the same delegated sub-makes used for the param_registry .o above.
-# Ordering matters: state before param_registry before api (tr_api
-# USEs tr_state; similarly for ti/fp/wrx).
+# Phase L-6: per-module API .o files. tot_api.f90 USEs eq_api /
+# tr_api / ti_api / fp_api / wrx_api so the orchestrator lifecycle can
+# fan out to each per-module *_api_init / *_api_run / *_api_finalize.
+# eq_api was added in #209 (tot_init now cascades eq_api_init to flip
+# eq_api's dual flag for direct-ctypes callers). Each per-module
+# SRCS_API objects are built by the owning Makefile via the same
+# delegated sub-makes used for the param_registry .o above. Ordering
+# matters: state before param_registry before api (tr_api USEs
+# tr_state; similarly for eq/ti/fp/wrx).
 TOT_L6_API_OBJ = \
+    ../eq/eq_state.o \
+    ../eq/eq_api_common.o \
+    ../eq/eq_api.o \
     ../tr/obj/tr_state.o \
     ../tr/obj/tr_api.o \
     ../ti/ti_state.o \
@@ -264,6 +269,17 @@ $(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TO
 	(cd ../eq; make eq_param_registry.o)
 
 # L-6: per-module api/state .o files.
+../eq/eq_state.o:
+	(cd ../eq; make eq_state.o)
+# eq_api.o references eq_common_get_grid_counts_ / eq_common_get_scalars_
+# / etc. from eq_api_common.f. That helper is NOT part of libeq.a (eq's
+# Makefile keeps it in OBJ_API only), so the static `make tot_api_check`
+# link needs the .o explicitly. The PIC libtotapi*.so paths get it via
+# ../eq/libeqapi.so where eq_api_common.o is already co-linked.
+../eq/eq_api_common.o:
+	(cd ../eq; make eq_api_common.o)
+../eq/eq_api.o:
+	(cd ../eq; make eq_api.o)
 ../tr/obj/tr_state.o:
 	(cd ../tr; make obj/tr_state.o)
 ../tr/obj/tr_api.o:
@@ -333,13 +349,16 @@ tot_param_registry.o : tot_param_registry.f90 \
                        ../ti/ti_param_registry.o \
                        ../wrx/obj/wrx_param_registry.o \
                        ../eq/eq_param_registry.o
-# tot_api.o USEs tr_api / ti_api / fp_api / wrx_api (in addition to
-# tot_state + tot_param_registry). The corresponding .mod files are
-# emitted by each module's *_api.o build, NOT by lib*.a. Same reasoning
-# as tot_param_registry.o above: depend on the per-module *_state.o /
-# *_api.o explicitly so make compiles them first.
+# tot_api.o USEs eq_api / tr_api / ti_api / fp_api / wrx_api (in
+# addition to tot_state + tot_param_registry). The corresponding .mod
+# files are emitted by each module's *_api.o build, NOT by lib*.a.
+# Same reasoning as tot_param_registry.o above: depend on the
+# per-module *_state.o / *_api.o explicitly so make compiles them
+# first. eq added in #209 (tot_init now cascades eq_api_init).
 tot_api.o   : tot_api.f90 tot_state.f90 tot_state.o tot_param_registry.o \
-              ../tr/libtr2.a ../ti/libti.a ../fp/libfp.a ../wrx/libwr.a \
+              ../eq/libeq.a ../tr/libtr2.a ../ti/libti.a ../fp/libfp.a \
+              ../wrx/libwr.a \
+              ../eq/eq_state.o ../eq/eq_api.o \
               ../tr/obj/tr_state.o ../tr/obj/tr_api.o \
               ../ti/ti_state.o ../ti/ti_api.o \
               ../fp/obj/fp_state.o ../fp/obj/fp_api.o \
@@ -398,11 +417,17 @@ $(OBJDIR_PIC)/%.o: %.f90
 # stub provides GUCLIP / PAGES no-ops in case any code path inside the
 # linked .so list reaches one and the per-module stubs are not picked
 # up by ld first.
+#
+# tot_is_mono.o: introspection helper (L-7b-ii Phase 2b). This .o
+# provides the `tot_is_mono` C ABI symbol with the DEFAULT-build value
+# (returns 0). The mono target swaps in a parallel .o from
+# tot_is_mono_mono.f90 that returns 1 (see OBJS_PIC_MONO below).
 OBJS_PIC = $(OBJDIR_PIC)/totregress.o \
            $(OBJDIR_PIC)/tot_state.o \
            $(OBJDIR_PIC)/tot_param_registry.o \
            $(OBJDIR_PIC)/tot_api.o \
-           $(OBJDIR_PIC)/tot_graphics_stubs.o
+           $(OBJDIR_PIC)/tot_graphics_stubs.o \
+           $(OBJDIR_PIC)/tot_is_mono.o
 
 # Inter-module PIC dependency order. Mirrors the non-PIC deps above.
 $(OBJDIR_PIC)/tot_state.o          : tot_state.f90
@@ -418,6 +443,8 @@ $(OBJDIR_PIC)/tot_api.o            : tot_api.f90 \
                                      ../fp/libfpapi.so ../wrx/libwrxapi.so
 $(OBJDIR_PIC)/totregress.o         : totregress.f90
 $(OBJDIR_PIC)/tot_graphics_stubs.o : tot_graphics_stubs.f90
+$(OBJDIR_PIC)/tot_is_mono.o        : tot_is_mono.f90
+$(OBJDIR_PIC)/tot_is_mono_mono.o   : tot_is_mono_mono.f90
 
 # --- bpsd in-tree PIC rebuild (mirrors eq/Makefile L-4) ---
 # tot's own PIC objects do not directly USE bpsd (only tot_state +
@@ -587,9 +614,14 @@ FP_PIC_OBJS_MONO_RAW  = $(wildcard ../fp/obj/pic/*.o ../fp/obj/pic/*/*.o)
 TI_PIC_OBJS_MONO_RAW  = $(wildcard ../ti/obj/pic/*.o ../ti/obj/pic/*/*.o)
 WRX_PIC_OBJS_MONO_RAW = $(wildcard ../wrx/obj/pic/*.o ../wrx/obj/pic/*/*.o)
 
+# Phase 2a (2026-05-18): all 5 per-module <mod>_graphics_stubs.o files
+# are now EXCLUDED. The unified tot_graphics_stubs_mono.f90 source
+# (built into tot/obj/pic/tot_graphics_stubs_mono.o) supplies the
+# full union of graphics-stub symbols across eq/tr/fp/ti/wrx, so
+# none of the per-module stubs participate in the mono link.
 EQ_PIC_OBJS_MONO  = $(filter-out ../eq/obj/pic/bpsd/% ../eq/obj/pic/eq_graphics_stubs.o,$(EQ_PIC_OBJS_MONO_RAW))
 TR_PIC_OBJS_MONO  = $(filter-out ../tr/obj/pic/bpsd/% ../tr/obj/pic/tr_graphics_stubs.o,$(TR_PIC_OBJS_MONO_RAW))
-FP_PIC_OBJS_MONO  = $(filter-out ../fp/obj/pic/bpsd/%,$(FP_PIC_OBJS_MONO_RAW))
+FP_PIC_OBJS_MONO  = $(filter-out ../fp/obj/pic/bpsd/% ../fp/obj/pic/fp_graphics_stubs.o,$(FP_PIC_OBJS_MONO_RAW))
 TI_PIC_OBJS_MONO  = $(filter-out ../ti/obj/pic/bpsd/% ../ti/obj/pic/ti_graphics_stubs.o,$(TI_PIC_OBJS_MONO_RAW))
 WRX_PIC_OBJS_MONO = $(filter-out ../wrx/obj/pic/bpsd/% ../wrx/obj/pic/wrx_graphics_stubs.o,$(WRX_PIC_OBJS_MONO_RAW))
 
@@ -619,12 +651,30 @@ else
   SO_SONAME_MONO = -Wl,-soname,libtotapi_mono.so
 endif
 
-# tot's own PIC objects MINUS tot_graphics_stubs.o. The mono build
-# uses fp_graphics_stubs.o instead, which is a strict superset of
-# tot's stub set for the symbols both provide (guclip_, gudate_,
-# guflsh_, gutime_, pagee_, pages_) plus grd1d_mod/grd2d_mod/draw2d_/
-# eqgout_/move2d_ that some module code paths reference.
-OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o,$(OBJS_PIC))
+# tot's own PIC objects for the mono build. Two substitutions vs the
+# default OBJS_PIC:
+#
+# (1) tot_graphics_stubs.o -> tot_graphics_stubs_mono.o
+#     The default per-module stubs object is replaced with a unified
+#     union file (~60 symbols across eq/tr/fp/ti/wrx) that covers all
+#     module call sites in a single image. ABI choices for symbols
+#     where per-module stubs diverge (GUTIME picks REAL, EQGOUT picks
+#     1-arg) are documented in tot_graphics_stubs_mono.f90.
+#
+# (2) tot_is_mono.o -> tot_is_mono_mono.o
+#     L-7b-ii Phase 2b introspection helper. The default file returns
+#     0 from the `tot_is_mono` C ABI; the mono variant returns 1.
+#     Python orchestrators use this to gate the conditional
+#     ("eq","tr") BPSD coupling rule registration on mono runtime
+#     selection. See tot_api.h for the ABI doc and the Phase 2b spec
+#     §3-§5 for the two-file rationale.
+OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o \
+                              $(OBJDIR_PIC)/tot_is_mono.o, \
+                              $(OBJS_PIC)) \
+                 $(OBJDIR_PIC)/tot_graphics_stubs_mono.o \
+                 $(OBJDIR_PIC)/tot_is_mono_mono.o
+
+$(OBJDIR_PIC)/tot_graphics_stubs_mono.o : tot_graphics_stubs_mono.f90
 
 # libtotapi_mono.so depends on the per-module .so files (LIBS_PIC_SO)
 # as real-file prerequisites — the same prereq pattern as
@@ -637,7 +687,7 @@ OBJS_PIC_MONO := $(filter-out $(OBJDIR_PIC)/tot_graphics_stubs.o,$(OBJS_PIC))
 #      libtotapi_mono.so only re-links if a per-module .so is newer.
 # Using a .PHONY prereq target here would force unconditional re-link
 # on every invocation (Bugbot LOW finding on PR #202, 2026-05-14).
-libtotapi_mono.so: $(OBJS_PIC) $(LIBS_PIC_SO)
+libtotapi_mono.so: $(OBJS_PIC_MONO) $(LIBS_PIC_SO)
 	@if [ -z "$(strip $(EQ_PIC_OBJS_MONO))" ] || [ -z "$(strip $(TR_PIC_OBJS_MONO))" ] || \
 	    [ -z "$(strip $(FP_PIC_OBJS_MONO))" ] || [ -z "$(strip $(TI_PIC_OBJS_MONO))" ] || \
 	    [ -z "$(strip $(WRX_PIC_OBJS_MONO))" ] || [ -z "$(strip $(OBJBPSD_PIC_MONO))" ]; then \
@@ -657,20 +707,31 @@ libtotapi_mono.so: $(OBJS_PIC) $(LIBS_PIC_SO)
 libtotapi_mono_inspect: libtotapi_mono.so
 	@echo "=== file ==="
 	@file libtotapi_mono.so
-	@echo "=== link deps (should NOT contain any lib*api.so dependency) ==="
-	@( ldd libtotapi_mono.so 2>/dev/null || otool -L libtotapi_mono.so ) | grep -vE '^libtotapi_mono\.so:' | grep -iE 'libtotapi_mono|api\.so|bpsd|lib' | head -20
-	@echo "=== bpsd MOD-private storage symbols (must be 1 set, not 5) ==="
-	@nm libtotapi_mono.so | grep -E '__bpsd_.*_MOD_.*x_init_flag' | sort -u
-	@echo "=== bpsd storage symbol count check (must be 8: device + equ1d + metric1d + plasmaf + shot + species + trmatrix + trsource) ==="
+	@echo "=== link deps ==="
+	@( ldd libtotapi_mono.so 2>/dev/null || otool -L libtotapi_mono.so )
+	@echo "=== HARD GATE 1: bpsd storage symbol count must be exactly 8 (device + equ1d + metric1d + plasmaf + shot + species + trmatrix + trsource) ==="
 	@count=$$(nm libtotapi_mono.so | grep -E '__bpsd_.*_MOD_.*x_init_flag' | sort -u | wc -l | tr -d ' '); \
 	if [ "$$count" != "8" ]; then \
-	  echo "  FAIL: expected 8 unique bpsd storage symbols, found $$count"; exit 1; \
+	  echo "  FAIL: expected 8 unique bpsd storage symbols, found $$count"; \
+	  nm libtotapi_mono.so | grep -E '__bpsd_.*_MOD_.*x_init_flag' | sort -u; \
+	  exit 1; \
 	else \
 	  echo "  OK: 8 unique bpsd storage symbols (one per bpsd module type)"; \
 	fi
-	@echo "=== exported tot_* symbols ==="
+	@echo "=== HARD GATE 2: no per-module lib*api.so runtime deps (the mono build must be self-contained) ==="
+	@deps=$$( ( ldd libtotapi_mono.so 2>/dev/null || otool -L libtotapi_mono.so ) \
+	          | grep -E 'lib(eq|tr|fp|ti|wr|wrx|tot)api\.so' \
+	          | grep -v 'libtotapi_mono\.so' || true ); \
+	if [ -n "$$deps" ]; then \
+	  echo "  FAIL: unexpected per-module lib*api.so deps:"; \
+	  echo "$$deps"; \
+	  exit 1; \
+	else \
+	  echo "  OK: no per-module lib*api.so runtime deps"; \
+	fi
+	@echo "=== exported tot_* symbols (informational) ==="
 	@nm libtotapi_mono.so | grep -E ' T _?tot_' | head -10
-	@echo "=== size ==="
+	@echo "=== size (informational) ==="
 	@ls -la libtotapi_mono.so
 
 # ---------------------------------------------------------------------

@@ -52,7 +52,7 @@ class TestTilibBoundaryValues(TiDataCwdMixin, unittest.TestCase):
 
     def _apply_and_run(self, ti, mutations: dict, ntmax: int):
         """Apply ti_min, overlay mutations, run, return state."""
-        from tilib.tests.fixtures import ti_iter01_params as base
+        from tilib.tests.fixtures import ti_min_params as base
         base.apply(ti)
         ti.set_param("NTMAX", float(ntmax))
         for name, value in mutations.items():

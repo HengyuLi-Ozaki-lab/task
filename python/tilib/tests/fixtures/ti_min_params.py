@@ -1,20 +1,11 @@
-"""Minimal ITER-like parameters mirroring ``test_run/inputs/ti_min.in``.
+"""ti_min minimal parameters mirroring ``test_run/inputs/ti_min.in``.
 
-The ``ti_min`` namelist is the L-0 baseline for the TI module; it is the
-tiniest ti run (NSMAX=1, NRMAX=10, NTMAX=2) and its baseline at
-``test_run/baselines/ti_min/metrics.json`` is the canonical equivalence
-target for Layer 1.
-
-Note: this file is named ``ti_iter01_params.py`` to match the task
-spec's reference to an "iter01" fixture, but it actually mirrors
-``ti_min.in``. An ITER-scale ti case is not yet part of the test
-corpus; when one is added this fixture will be upgraded. The
-``SOURCE_INPUT`` / ``BASELINE_NAME`` attributes below document the
-real source so callers don't need to guess.
+The tiniest ti run (NSMAX=1, NRMAX=10, NTMAX=2). Its baseline at
+``test_run/baselines/ti_min/metrics.json`` is the canonical Layer 1
+equivalence target for the minimum-setup TI path.
 
 Edit cautiously: changing values invalidates the Layer 1 equivalence
-test against ``test_run/baselines/ti_min/metrics.json`` (once that
-baseline exists).
+test against ``test_run/baselines/ti_min/metrics.json``.
 """
 from __future__ import annotations
 

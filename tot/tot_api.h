@@ -9,8 +9,20 @@ extern "C" {
  * TASK/TOT C ABI public header.
  *
  * TOT is the orchestrator: its api fans out to per-module APIs
- * (tr_init + ti_init + fp_init + wr_init, tr_run, tr_get_state + ...,
- * per-module *_set_param, *_finalize). Phase L-2 status: function
+ * (eq_init + tr_init + ti_init + fp_init + wr_init, tr_run,
+ * tr_get_state + ..., per-module *_set_param, *_finalize). The eq
+ * cascade was added in #209 — direct ctypes callers can drive
+ * eq_set_param / eq_run right after tot_init() without an extra
+ * eq_init() round trip.
+ *
+ * Phase 2c PR-A (#208) introduces a single-authoritative routing
+ * contract for the Python wrappers: setting the MONO_LIB_PATH env
+ * var makes every per-module wrapper (Eqlib / Trlib / ...) and the
+ * Tot orchestrator wrapper load libtotapi_mono.so instead of each
+ * loading its per-module lib<mod>api.so. This is plumbing only at
+ * the C ABI level — no new symbols added to this header.
+ *
+ * Phase L-2 status: function
  * symbols are present in libtotapi (built from tot_api.f90); each
  * entry point is a stub returning TOT_ERR_NOT_IMPLEMENTED (=4). Real
  * composition arrives in Phase L-3+.
@@ -103,6 +115,29 @@ int tot_set_param(const char* name, double value);
 int tot_set_param_str(const char* name, const char* value);
 int tot_get_state(tot_state_t* state);
 int tot_finalize(void);
+
+/*
+ * tot_is_mono : introspection — am I the monolithic libtotapi*.so?
+ *
+ * Returns 1 if this .so was linked from the L-7b-ii monolithic target
+ * (eq + tr + fp + ti + wrx + bpsd co-linked, single shared BPSD
+ * broker, suitable for BPSD-mediated cross-module coupling). Returns
+ * 0 if this is the default per-module image (libtotapi.so depending
+ * on individual lib<mod>api.so files, each with private bpsd storage).
+ *
+ * Both libtotapi.so and libtotapi_mono.so export this symbol; the
+ * return value is baked in at link time by the Makefile picking one
+ * of tot/tot_mono_flag.f90 (default, returns 0) vs
+ * tot/tot_mono_flag_mono.f90 (mono, returns 1). Python wrappers can
+ * detect a missing symbol via try/except AttributeError and treat it
+ * as 0 for backwards compatibility with older builds predating this
+ * function.
+ *
+ * Use case: Python orchestrators (TotPipeline) decide whether the
+ * eq -> tr BPSD coupling rule is safe to activate for the loaded
+ * image. See L-7b-ii Phase 2b spec §3-§5.
+ */
+int tot_is_mono(void);
 
 #ifdef __cplusplus
 }

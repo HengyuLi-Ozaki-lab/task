@@ -107,6 +107,10 @@ jobs:
         # GFLIBS is left empty because libXapi.so excludes graphics
         # (the actual `make X` binary builds need GFLIBS but those are
         # not built in CI).
+        #
+        # KEEP IN SYNC with the mono-build job's identically-named step
+        # below — both heredocs must be byte-identical (see drift-risk
+        # rationale in that step's comment).
         run: |
           cat > make.header <<'HEADER_EOF'
           ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
@@ -293,10 +297,21 @@ jobs:
           for case in tot_demo2014_short tot_ht6m_short; do
             mkdir -p "test_run/test_output/$case"
             # Stage namelist companions at the literal names totmain
-            # reads. `|| true` keeps demo2014 (which has neither
-            # companion) silent — same convention as run_tests.sh.
-            cp "test_run/inputs/${case}.eqparm" "test_run/test_output/$case/eqparm" 2>/dev/null || true
-            cp "test_run/inputs/${case}.trparm" "test_run/test_output/$case/trparm" 2>/dev/null || true
+            # reads. ht6m REQUIRES both -- .trparm is what sets
+            # modelg=3 / knameq='eqdata-HT6M'. Losing it silently would
+            # run from defaults, produce a plausible non-empty eqdata,
+            # pass `test -s` below, and surface later as library-looking
+            # drift in test_equivalence.py. demo2014 ships neither
+            # companion, so it stays best-effort -- same convention as
+            # run_tests.sh, but no longer applied where it can hide a
+            # real staging failure.
+            if [ "$case" = "tot_ht6m_short" ]; then
+              cp "test_run/inputs/${case}.eqparm" "test_run/test_output/$case/eqparm"
+              cp "test_run/inputs/${case}.trparm" "test_run/test_output/$case/trparm"
+            else
+              cp "test_run/inputs/${case}.eqparm" "test_run/test_output/$case/eqparm" 2>/dev/null || true
+              cp "test_run/inputs/${case}.trparm" "test_run/test_output/$case/trparm" 2>/dev/null || true
+            fi
             ( cd "test_run/test_output/$case" && \
                 ../../../tot/tot < "../../inputs/${case}.in" > output.log 2>&1 )
           done
@@ -309,6 +324,14 @@ jobs:
           test -s "test_run/test_output/tot_ht6m_short/eqdata-HT6M" \
             || { echo "ERROR: eqdata-HT6M not produced or empty"; tail -50 "test_run/test_output/tot_ht6m_short/output.log"; exit 1; }
           ls -l test_run/test_output/tot_demo2014_short/ test_run/test_output/tot_ht6m_short/
+          # Same two digests the mono job now prints, so the eqdata each
+          # job actually feeds test_equivalence.py can be compared
+          # straight from the logs rather than inferred.
+          echo "tier1 (generated here):"
+          sha256sum test_run/test_output/tot_ht6m_short/eqdata-HT6M
+          echo "tier2 (committed fixture):"
+          sha256sum python/totlib/tests/fixtures/eqdata-HT6M \
+            || echo "(tier2 fixture absent)"
 
       - name: Run pytest (FFI + layout + serialization coverage)
         env:
@@ -385,3 +408,407 @@ jobs:
           PYTHONPATH: python:python/mcp-servers
         run: |
           python -m pytest python/ --collect-only -q | tail -5 || true
+
+  mono-build:
+    # Linux build-only validation of the L-7b-ii monolithic mode
+    # (`make -C tot libtotapi_mono.so`). The mono Makefile target has
+    # only ever been built on macOS arm64 in PR #202; this job exercises
+    # the Linux ld branch (`-Wl,--start-group/--end-group` +
+    # `-Wl,--unresolved-symbols=ignore-all` + `-Wl,-soname`) before
+    # #201 (Phase 2 of L-7b-ii) starts depending on it.
+    #
+    # Scope: BUILD ONLY. We do NOT run the 1e-10 equivalence test or
+    # the BPSD smoke test against libtotapi_mono.so here — those are
+    # blocked on the unified graphics-stub source that #201 Phase 2a
+    # will introduce. This job validates: (1) link succeeds on Linux,
+    # (2) bpsd storage symbols dedupe to one set (the central PoC
+    # claim), (3) no per-module `lib*api.so` deps leak in.
+    name: mono build (Linux libtotapi_mono.so)
+    runs-on: ubuntu-latest
+    # Generous cap: full PIC chain + 5 per-module .so + mono link
+    # is roughly 5-8 minutes on the GitHub runner. The eqdata step
+    # adds the full NON-PIC chain on top (`make -C tot libs`, ~16
+    # archives) plus two short tot runs — measured at 51s from a
+    # pristine clone on an M-series Mac, so call it 2-4 min on the
+    # runner. 15 was already only ~2x the estimate; 20 keeps the
+    # same slack rather than trading a fast red for a timeout red.
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Fortran/C build deps
+        # Same toolchain as the pytest job (Ubuntu 24.04 default
+        # gfortran 13.2). No Python / pytest needed here.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran gcc make
+          gfortran --version | head -1
+
+      - name: Clone BPSD (patched fork k-yoshimi/bpsd@develop)
+        # Mirrors the pytest job's BPSD provisioning step. Out-of-tree
+        # location at $GITHUB_WORKSPACE/../bpsd matches what every
+        # module Makefile expects (BPSD_SRC=../../bpsd).
+        run: |
+          set -e
+          if ! git clone --depth 1 --branch develop \
+                 https://github.com/k-yoshimi/bpsd.git \
+                 "$GITHUB_WORKSPACE/../bpsd"; then
+            echo "ERROR: Could not clone k-yoshimi/bpsd@develop." >&2
+            exit 1
+          fi
+          ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
+
+      - name: Provision mtxp/make.mtxp from nompi template
+        run: |
+          cp mtxp/make.mtxp.nompi mtxp/make.mtxp
+          head -5 mtxp/make.mtxp
+
+      - name: Provision make.header for Linux gfortran (no graphics)
+        # KEEP IN SYNC with the pytest job's identically-named step
+        # (~line 110 of this file). Both heredocs must be byte-identical:
+        # if a flag drifts in one (e.g. OFLAGS, DFLAGS) and not the
+        # other, the mono CI job will silently validate a different
+        # compiler-flag shape than the per-module .so path that pytest
+        # exercises — i.e. CI would go green while the binaries we
+        # actually ship under each path diverge. The composite-action
+        # extraction that would enforce this structurally is tracked as
+        # follow-up; until then, mirror manually.
+        run: |
+          cat > make.header <<'HEADER_EOF'
+          ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
+          LAPACK = nolapack.f
+          LIBLA =
+          MODLA95 =
+          MDSPLUS = nomdsplus.f
+          MDSLIB =
+          MF77 = mpif77
+          MF90 = mpif90
+          MF95 = mpif90
+          MFC  = $(MF90)
+
+          ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
+          GFLIBS=
+          OFLAGS = -g -O3 -m64 -std=legacy
+          DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
+          FCFIXED = gfortran -ffixed-form
+          FCFREE = gfortran -ffree-form
+          MOD = mod
+          MODDIR = -Jmod
+          LD=ld
+          LDFLAGS=-r -o
+          FPP=
+          HEADER_EOF
+          head -10 make.header
+
+      - name: Build PIC support libraries (bpsd, lib, mtxp, pl, eq, dp, ob, adf11, adpost)
+        # Mirrors the pytest job's PIC-support step. The mono Makefile
+        # target links these as `LIBS_PIC_MONO`, so they must exist
+        # before the mono link runs.
+        run: |
+          set -e
+          make -C "$GITHUB_WORKSPACE/../bpsd" libbpsd.a
+          make -C lib libtask_pic.a libgrf_pic.a libmds_pic.a
+          make -C mtxp libmtxnompi_pic.o libmtxbnd_pic.o
+          make -C tr bpsd_pic
+          make -C pl libpl_noeq_pic
+          make -C eq libeq_pic.a
+          make -C pl libpl_pic.a
+          make -C dp libdp_pic.a
+          make -C ob libob_pic.a
+          make -C open-adas/adf11/adf11-lib lib-adf11_pic.a
+          make -C adpost lib-adpost_pic.a
+
+      - name: Build per-module .so files (tr fp ti wr wrx eq — 6 total)
+        # libtotapi_mono.so's prereq list is $(LIBS_PIC_SO), which
+        # names 5 .so files: eq/libeqapi.so + tr/libtrapi.so +
+        # fp/libfpapi.so + ti/libtiapi.so + wrx/libwrxapi.so. We
+        # additionally build wr/libwrapi.so (6th, NOT a mono prereq)
+        # for symmetry with the pytest job above, so a future
+        # composite-action refactor sees a single canonical module
+        # list. The wr build adds ~30s on a job that takes ~5-8 min;
+        # the symmetry value beats the time cost.
+        #
+        # We deliberately do NOT build tot/libtotapi.so here (the
+        # default per-module path) because this job validates only the
+        # mono target.
+        run: |
+          set -e
+          for mod in tr fp ti wr wrx eq; do
+            echo "::group::Building $mod/lib${mod}api.so"
+            make -C "$mod" bpsd_pic
+            make -C "$mod" "lib${mod}api.so"
+            echo "::endgroup::"
+          done
+
+      - name: Build libtotapi_mono.so (THE target under test)
+        # The L-7b-ii PoC core: links all per-module PIC objects + ONE
+        # canonical bpsd PIC set into a single image, instead of going
+        # through five separate per-module .so files (each carrying its
+        # own private bpsd storage). On macOS this builds cleanly; this
+        # step is the first time the Linux ld branch (`--start-group`,
+        # `--unresolved-symbols=ignore-all`, `-soname`) is exercised
+        # in CI.
+        run: |
+          make -C tot libtotapi_mono.so
+
+      - name: Inspect libtotapi_mono.so (8-bpsd + no-lib*api.so-deps hard-gated)
+        # libtotapi_mono_inspect runs TWO hard-gates plus several
+        # observational checks:
+        #
+        # HARD GATE 1: BPSD storage symbol count == 8 (one per bpsd module
+        #   type: device + equ1d + metric1d + plasmaf + shot + species +
+        #   trmatrix + trsource). If the per-module dedup ever fails
+        #   and we get 5×8=40 (or any other count), the build fails.
+        #
+        # HARD GATE 2: No `lib*api.so` runtime dep in the .so's NEEDED
+        #   list (Linux `ldd`) / load commands (macOS `otool -L`). The
+        #   whole point of the mono build is that it has no per-module
+        #   .so deps; if any leak in, fail loudly.
+        #
+        # Observational (printed, NOT enforced as exit code):
+        #   - exported tot_* symbol list.
+        #   - file size.
+        run: |
+          make -C tot libtotapi_mono_inspect
+
+      - name: Set up Python (for the mono equivalence step below)
+        # The mono-build job is otherwise Python-free; pytest is only
+        # needed for the equivalence step. Pinning to 3.11 (one of the
+        # versions the pytest job's matrix exercises) keeps the
+        # behavior aligned without doubling on both 3.11 + 3.13.
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest deps for the mono equivalence step
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-forked pytest-timeout pytest-mock
+
+      - name: Generate Layer 1 (1e-10 equivalence) eqdata baselines (demo2014 + ht6m)
+        # KEEP IN SYNC with the identically-named step in the `pytest`
+        # job, with ONE intended divergence: the `make -C tot libs` line
+        # below, which that job already has as a separate earlier step.
+        #
+        # Without this step the two jobs feed test_equivalence.py from
+        # DIFFERENT tiers of `_isolated_cwd_with_eqdata`
+        # (python/totlib/tests/test_equivalence.py:103-115):
+        #
+        #   tier 1  test_run/test_output/<case>/eqdata-*   copied always
+        #   tier 2  python/totlib/tests/fixtures/eqdata-*  copied only
+        #                                                  `if not exists`
+        #
+        # The pytest job runs this step, so it gets tier 1. This job did
+        # not, so it fell through to the committed tier-2 fixture — the
+        # one input that differed between the passing pytest run and the
+        # failing mono run. That made "mono diverges by 2.2e-06..3.7e-04
+        # on tot_ht6m_short" un-attributable: library or input?
+        #
+        # The committed fixture stays as the fallback for local runs
+        # (and is what test_mono_bpsd_smoke.py uses directly), so this
+        # does not make it dead weight.
+        run: |
+          set -eo pipefail
+          # `make -C tot libs` FIRST. This job builds only PIC artefacts
+          # (obj/pic + mod_pic), and tot/Makefile's `tot` target pulls in
+          # the NON-PIC chain: $(LIB_MTX) resolves to ../mtxp/libmtx*.o,
+          # whose first compile is `USE task_kinds` from lib/libtask.a,
+          # and $(LIBS) lists libgrf.a before libtask.a even though
+          # libgrf needs task_kinds.mod. Neither exists here. `libs`
+          # encodes the correct topological order in one recipe -- the
+          # same reason the pytest job runs it (see its comment above).
+          #
+          # Verified in a pristine clone with only make.header +
+          # make.mtxp provisioned: `make -C tot tot` alone dies with
+          # "Fatal Error: Cannot open module file 'task_kinds.mod'";
+          # `libs` then `tot` succeeds. Measured 50s + 1s on macOS.
+          make -C tot libs
+          make -C tot tot
+          for case in tot_demo2014_short tot_ht6m_short; do
+            mkdir -p "test_run/test_output/$case"
+            # ht6m REQUIRES both companions -- .trparm is what sets
+            # modelg=3 / knameq='eqdata-HT6M'. Losing it silently would
+            # run from defaults, produce a plausible non-empty eqdata,
+            # pass `test -s`, and surface later as library-looking drift:
+            # precisely the misattribution this step exists to kill. So
+            # ht6m copies hard and demo2014 (which ships neither) stays
+            # best-effort.
+            if [ "$case" = "tot_ht6m_short" ]; then
+              cp "test_run/inputs/${case}.eqparm" "test_run/test_output/$case/eqparm"
+              cp "test_run/inputs/${case}.trparm" "test_run/test_output/$case/trparm"
+            else
+              cp "test_run/inputs/${case}.eqparm" "test_run/test_output/$case/eqparm" 2>/dev/null || true
+              cp "test_run/inputs/${case}.trparm" "test_run/test_output/$case/trparm" 2>/dev/null || true
+            fi
+            ( cd "test_run/test_output/$case" && \
+                ../../../tot/tot < "../../inputs/${case}.in" > output.log 2>&1 )
+          done
+          test -s "test_run/test_output/tot_demo2014_short/eqdata.demo2014" \
+            || { echo "ERROR: eqdata.demo2014 not produced or empty"; tail -50 "test_run/test_output/tot_demo2014_short/output.log"; exit 1; }
+          test -s "test_run/test_output/tot_ht6m_short/eqdata-HT6M" \
+            || { echo "ERROR: eqdata-HT6M not produced or empty"; tail -50 "test_run/test_output/tot_ht6m_short/output.log"; exit 1; }
+          ls -l test_run/test_output/tot_demo2014_short/ test_run/test_output/tot_ht6m_short/
+          # Record both digests so the next divergence is attributable
+          # from the log alone. `|| echo` on tier 2 keeps the diagnostic
+          # a diagnostic: the fixture is slated for regeneration, and its
+          # absence must not fail THIS step and point at the wrong thing.
+          echo "tier1 (generated here):"
+          sha256sum test_run/test_output/tot_ht6m_short/eqdata-HT6M
+          echo "tier2 (committed fixture):"
+          sha256sum python/totlib/tests/fixtures/eqdata-HT6M \
+            || echo "(tier2 fixture absent)"
+
+      - name: 1e-10 equivalence test against libtotapi_mono.so
+        id: mono_equivalence
+        # Phase 2a deliverable (#201): with the unified
+        # tot_graphics_stubs_mono.f90 in place, libtotapi_mono.so is
+        # now dlopen-loadable via Python ctypes. Running the existing
+        # totlib equivalence fixtures against it verifies the mono
+        # image is a faithful drop-in replacement for the default
+        # libtotapi.so on the existing test surface — required for
+        # CLAUDE.md "equivalence tests at 1e-10 MUST pass."
+        #
+        # These fixtures don't exercise BPSD-mediated coupling, so
+        # this is a regression check that the mono build hasn't
+        # broken the existing path. The Layer-C BPSD smoke step below
+        # validates the broker-sharing claim specifically (Phase 2b).
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: python
+          TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
+        run: |
+          python -m pytest python/totlib/tests/test_equivalence.py -v \
+            --forked --timeout=120 --timeout-method=signal
+
+      - name: Build default libtotapi.so (needed for Layer-C C-3 test)
+        # `!cancelled()` on this and the three mono steps that follow, so
+        # a red equivalence step no longer suppresses them. They answer
+        # DIFFERENT questions — "is mono a drop-in on the existing
+        # surface" vs "does mono share one BPSD broker / route all six
+        # wrappers / couple through the pipeline" — and the latter are
+        # the more diagnostic exactly when the former goes red. That was
+        # the position #226's mono failure left us in: the job died at
+        # the equivalence step and produced zero evidence about any of
+        # the mono-specific claims.
+        #
+        # The condition is `!cancelled()` AND the equivalence step was
+        # not itself SKIPPED, not a bare `!cancelled()`. A bare one also
+        # means "run after a failed BUILD step" — and on that path
+        # `Set up Python` and the pip install (still success()-gated)
+        # have skipped, so these steps would reach `python -m pytest`
+        # with no interpreter and report three red steps blaming Python
+        # tooling for a Fortran build failure. `conclusion != 'skipped'`
+        # is true exactly when the equivalence step actually ran, so an
+        # earlier build failure stops the job where it always did, while
+        # an equivalence FAILURE still yields the mono-specific evidence.
+        #
+        # The three test steps additionally assert their .so inputs
+        # exist, so they fail loudly rather than degrading into a green
+        # "3 skipped" via their own skipUnless — CLAUDE.md is explicit
+        # that a skip is invisibility, not evidence.
+        #
+        # This does not weaken the equivalence gate: that step's failure
+        # still fails the job (CLAUDE.md "equivalence tests at 1e-10 MUST
+        # pass"). It only stops that failure from suppressing evidence.
+        #
+        # Phase 2b deliverable (#201): the Layer-C smoke test below
+        # includes TestDistinguishesPerModule which checks that the
+        # default per-module libtotapi.so reports tot_is_mono() == 0,
+        # confirming the runtime distinguishing mechanism actually
+        # discriminates between the two builds. We need both .so files
+        # present for that. Build it AFTER the mono inspect / mono
+        # equivalence steps so a regression in the mono path can't
+        # be masked by a default-path failure.
+        if: ${{ !cancelled() && steps.mono_equivalence.conclusion != 'skipped' }}
+        run: |
+          make -C tot libtotapi.so
+
+      - name: Layer-C BPSD broker smoke (mono image vs default)
+        # See the preceding step for why this is not gated on success.
+        if: ${{ !cancelled() && steps.mono_equivalence.conclusion != 'skipped' }}
+        # Phase 2b deliverable (#201): verifies the runtime distinction
+        # between the monolithic libtotapi_mono.so and the default
+        # libtotapi.so. Three cases:
+        #
+        #   C-1 (test_mono_flag): tot_is_mono() == 1 on the mono image.
+        #   C-2 (test_bpsd_round_trip): drive eq through eq_run(1)
+        #     (which calls eq_load -> eq_bpsd_put), then call
+        #     tr_check_bpsd_pull, expect ok=1. Demonstrates the
+        #     monolithic image's shared BPSD broker.
+        #   C-3 (test_distinguishes_per_module): default libtotapi.so
+        #     reports tot_is_mono() == 0.
+        #
+        # Process isolation: --forked is mandatory because the mono .so
+        # carries module-level state (bpsd broker slots, trcomm, eq
+        # common blocks) that bleeds across pytest cases in the same
+        # process. Without isolation a prior test's eq push could make
+        # the round-trip check pass for the wrong reason (Codex
+        # retrospective 2026-05-15 item 5).
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONPATH: python
+          MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
+          TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so
+        run: |
+          # `!cancelled()` means this also runs after a failed BUILD step.
+          # Without these two lines the missing .so would trip the tests'
+          # own skipUnless and the step would report "3 skipped" as a
+          # green tick -- CLAUDE.md: "a SKIPped test is not verification,
+          # it is invisibility". Assert the inputs instead.
+          test -f "$MONO_LIB_PATH" || { echo "ERROR: $MONO_LIB_PATH missing — the mono build failed earlier in this job"; exit 1; }
+          test -f "$TOTLIB_PATH"   || { echo "ERROR: $TOTLIB_PATH missing — the default libtotapi.so build failed"; exit 1; }
+          python -m pytest python/totlib/tests/test_mono_bpsd_smoke.py -v \
+            --forked --timeout=120 --timeout-method=signal
+
+      - name: Mono routing sanity (Phase 2c PR-A)
+        # Un-gated for the same reason as the two steps above: this is
+        # one of the mono-specific claims that a red equivalence step
+        # used to suppress entirely.
+        if: ${{ !cancelled() && steps.mono_equivalence.conclusion != 'skipped' }}
+        # #208 PR-A — verify that setting MONO_LIB_PATH routes all 6
+        # wrappers (eqlib/trlib/fplib/tilib/wrxlib/totlib) to the
+        # monolithic image instead of each loading its per-module .so.
+        # This is a SANITY test (plumbing only); the behavioral
+        # eq->tr BPSD round-trip lives in PR-B.
+        #
+        # Re-uses the default libtotapi.so artifact built earlier in
+        # this job (the "Build default libtotapi.so" step landed in
+        # PR #207) for test_non_mono_so_raises.
+        env:
+          MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
+          TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so
+          PYTHONPATH: python
+        run: |
+          test -f "$MONO_LIB_PATH" || { echo "ERROR: $MONO_LIB_PATH missing — the mono build failed earlier in this job"; exit 1; }
+          test -f "$TOTLIB_PATH"   || { echo "ERROR: $TOTLIB_PATH missing — the default libtotapi.so build failed"; exit 1; }
+          python -m pytest python/totlib/tests/test_mono_routing.py \
+                 --forked --timeout=120 --timeout-method=signal -v
+
+      - name: Mono pipeline coupling (Phase 2c PR-B)
+        # Un-gated for the same reason as the three steps above.
+        if: ${{ !cancelled() && steps.mono_equivalence.conclusion != 'skipped' }}
+        # #208 PR-B — drives eq -> tr through TotPipeline.run_pipeline
+        # on the mono image and asserts the ("eq","tr") verify rule
+        # fires (TestEqToTrPipelineCoupling). Also exercises the
+        # negative case via TestEqToTrRuleDormantOnDefault — that
+        # test skip-gates on the per-module .so files at the repo
+        # default paths (eq/libeqapi.so, tr/libtrapi.so,
+        # tot/libtotapi.so), which the per-module build steps
+        # earlier in this job have already produced.
+        #
+        # TOTLIB_PATH is set so the totlib wrapper picks the
+        # default libtotapi.so from the workspace consistently with
+        # other tests in this job. eqlib / trlib do NOT honor
+        # TOTLIB_PATH; they resolve via the repo default at
+        # workspace/eq/libeqapi.so etc.
+        env:
+          MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
+          TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so
+          PYTHONPATH: python
+        run: |
+          test -f "$MONO_LIB_PATH" || { echo "ERROR: $MONO_LIB_PATH missing — the mono build failed earlier in this job"; exit 1; }
+          test -f "$TOTLIB_PATH"   || { echo "ERROR: $TOTLIB_PATH missing — the default libtotapi.so build failed"; exit 1; }
+          python -m pytest python/totlib/tests/test_mono_pipeline_coupling.py \
+                 --forked --timeout=120 --timeout-method=signal -v
