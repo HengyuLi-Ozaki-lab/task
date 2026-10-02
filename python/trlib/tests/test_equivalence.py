@@ -149,6 +149,18 @@ def _trlib_importable() -> bool:
     return True
 
 
+IS_LINUX = sys.platform.startswith("linux")
+
+
+@unittest.skipUnless(
+    IS_LINUX,
+    "Equivalence tests are Linux-canonical. The 1e-10 baselines "
+    "live in test_run/baselines/<case>/metrics.json and were "
+    "generated on Linux gfortran 13.x (Ubuntu CI runner). macOS / "
+    "non-Linux dev runs the libtrapi.so via the Python wrapper; "
+    "correctness is verified by Linux CI on every push. See "
+    "docs/baseline-policy.md.",
+)
 @unittest.skipUnless(
     DEFAULT_SO.exists(),
     f"libtrapi.so not built at {DEFAULT_SO}; run `make -C tr libtrapi.so`",
@@ -217,6 +229,23 @@ class TestEquivalence(unittest.TestCase):
     )
     def test_tst2(self):
         from trlib.tests.fixtures import tr_tst2_params as f
+        self._check_case(f)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "#224: tr_m0904 baseline at test_run/baselines/tr_m0904/ "
+            "(a) lacks AJRFT (pre-AJRFT 13-scalar shape; PR #187 added "
+            "AJRFT to the TR dump path but this baseline was not "
+            "regenerated — same pattern as #190 for tr_tst2) AND (b) "
+            "exhibits the env-dependent drift documented in KNOWN_ISSUE.md. "
+            "309 mismatches on canonical CI gfortran 13.3.0. Spec §6.3 "
+            "explicitly anticipated this case. Remove this xfail when "
+            "the baseline is regenerated on canonical Linux."
+        ),
+    )
+    def test_m0904(self):
+        from trlib.tests.fixtures import tr_m0904_params as f
         self._check_case(f)
 
 

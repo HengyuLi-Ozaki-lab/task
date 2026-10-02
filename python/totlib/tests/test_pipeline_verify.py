@@ -83,6 +83,10 @@ def test_verify_true_records_rule_in_applied(patch_wrappers, monkeypatch):
         ],
     }
     monkeypatch.setattr("totlib.pipeline.COUPLING_RULES", rules)
+    # Suppress mono-only rules so this unit test is independent of
+    # MONO_LIB_PATH in the environment. The mono overlay is covered
+    # by test_mono_pipeline_coupling.py (Phase 2c PR-B).
+    monkeypatch.setattr("totlib.pipeline._MONO_ONLY_RULES", {})
     pipe = TotPipeline()
     result = pipe.run_pipeline([("eq", {}), ("tr", {})])
     tr_step = result.last("tr")
@@ -168,6 +172,15 @@ def test_mixed_transfer_then_verify_fires_in_order(
         ],
     }
     monkeypatch.setattr("totlib.pipeline.COUPLING_RULES", rules)
+    # Patch _MONO_ONLY_RULES to empty dict (Codex 2026-05-26 cumulative
+    # review LOW-2). Under MONO_LIB_PATH, the real ("eq","tr") mono rule
+    # would silently fire alongside our mock rules and break the exact-order
+    # assertion. Same isolation that test_verify_true_records_rule_in_applied
+    # uses in Task 1.
+    monkeypatch.setattr(
+        "totlib.pipeline._MONO_ONLY_RULES",
+        {},
+    )
     pipe = TotPipeline()
     pipe.run_pipeline([("eq", {}), ("tr", {})])
     assert fired == ["transfer", "verify"]

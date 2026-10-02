@@ -51,6 +51,68 @@ libeqapi.so 側の `bpsd_put_equ1D` は libtrapi.so 側の `bpsd_get_equ1D`
 `python/trlib/README.md` の "BPSD ブローカー pull 検証" 節 (両方とも
 日本語) を参照。
 
+### Correction note (2026-05-14)
+
+`nm` / `otool` による実シップ artifact の検証で、上記
+2026-05-04 のメモが置いた前提「レガシー `Tot` / `libtotapi.so`
+は eq + tr + bpsd を同一 .so に co-link している」は、現行ビルドに
+ついては **誤り** であることが判明した。実際の `libtotapi.so` は
+per-module の `libeqapi.so` / `libtrapi.so` / `libfpapi.so` /
+`libtiapi.so` / `libwrxapi.so` を別個の runtime shared library として
+依存しており (`otool -L tot/libtotapi.so` で確認)、bpsd storage
+シンボルを自身では一切持たない (`nm tot/libtotapi.so | grep
+'___bpsd_.*_MOD_.*x_init_flag'` は 0 行)。
+
+既存の tot 等価性テスト (tot_demo2014_short / tot_ht6m_short) が
+1e-10 で通る理由は、fixture が **BPSD 仲介の profile coupling
+パスを exercise していない** からである。等価性テストは
+orchestrator fan-out (init/run/get_state/finalize) は検証するが、
+cross-module broker round-trip は通っていない。つまり旧 §0
+の「co-link しているため影響を受けない」という記述は、現状では
+「coupling path が test されていないだけで、構造的には同じ
+isolation 問題を抱えている」が正しい。
+
+採用方針: 上記候補 (a)〜(d) のうち **(a) 共有 .so への再構成** を
+採用する。ただし元の表現「共有 .so」は曖昧で、実装は厳密には
+「**monolithic libtotapi_mono.so** — per-module PIC オブジェクト
+全部 + 単一の bpsd PIC セットを 1 つの image に co-link する
+ビルドターゲット」を指す。Codex 独立 review (2026-05-15) で
+4 候補は「正しい問い設定ではない — broker semantics は 1 つの
+broker-owning runtime image を要求する」と指摘され、5 番目の
+オプション (true monolithic image) が技術的にも保守性的にも
+最良と判定された。`TotPipeline` は scalar coupling 専用に scope
+を狭め、broker-mediated coupling は monolithic image の下でのみ
+動作させる。
+
+PoC ブランチ `chore/l7b-ii-monolithic-poc` (PR #202、merge
+`7d18264e`) が `tot/Makefile` 変更のみで `libtotapi_mono.so`
+が **link** することを実証した。BPSD storage シンボルは 1 セット
+にデデュープ済 (`nm` で 8 unique シンボル、5×8=40 ではない)。
+ただしこの artifact は **まだ dlopen-loadable ではない**:
+~30 個のグラフィクス stub シンボル (`_getkgt_`、`_getkrt_`、
+`_contX_`、`_r2w2b_`、`_text_` 等) が個別 `<mod>_graphics_stubs.o`
+ファイル固有で、mono ビルドが 1 つの stub ファイルだけ保持する
+構成 (最広域の fp の stubs) では未定義のまま残る。Phase 2a で
+これら全てを 1 つの新規 `tot/tot_graphics_stubs_mono.f90` に統合
+することで dlopen-loadable にする (= 本 issue (#201) Phase 2a の
+core deliverable)。
+
+Phase 2a の Linux 互換性は PR #205 (`mono-build` CI job) で既に
+カバー済み — Linux ld ブランチ (`--start-group/--end-group` +
+`--unresolved-symbols=ignore-all` + `-soname`) も macOS と同等に
+動作する。
+
+詳細な調査ログ:
+`docs/superpowers/specs/2026-05-14-l7b-ii-monolithic-poc-findings.md`
+
+`("eq","tr")` ルールの実 register と Layer C 統合テストは Phase 2b
+(別 PR、#201 内) で行う。Phase 2b では、stale BPSD state 問題
+(本節前段で言及) に対応するため process isolation (`--forked`)
+または明示的な broker reset を Layer C テストの前提条件とする。
+また、ルールの register は **mono runtime 選択時の条件付き**にし、
+default `libtotapi.so` path で誤って activate されないようにする
+(Codex retrospective 2026-05-15 item 5)。
+
 ---
 
 ## §1. Overview and data flow

@@ -39,6 +39,7 @@ HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
 PYTHON_ROOT = REPO / "python"
 TEST_OUTPUT_DIR = REPO / "test_run" / "test_output"
+FIXTURES_DIR = HERE.parent / "fixtures"
 
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
@@ -114,12 +115,26 @@ class TestSweep(unittest.TestCase):
         # cd into the L-0 test_output directory that holds the file.
         # If the L-0 baseline has not been generated yet, skip with an
         # actionable hint rather than failing with rc=3.
-        eqdata_dir = TEST_OUTPUT_DIR / "eq_iter01"
+        candidate = TEST_OUTPUT_DIR / "eq_iter01"
         knameq = eq_iter01_params.STRINGS.get("KNAMEQ", "eqdata.ITER01")
-        if not (eqdata_dir / knameq).exists():
+        if (candidate / knameq).exists():
+            eqdata_dir = candidate
+        elif (FIXTURES_DIR / knameq).exists():
+            # CI / fresh checkout fallback: use committed fixture eqdata.
+            # Defensive guard: EQ_REGRESS_DUMP=1 writes eq_regress.dat to cwd
+            # (eq/eqregress.f:35). If we'd be using FIXTURES_DIR as cwd, that
+            # would land inside the committed fixture directory — skip instead.
+            if os.environ.get("EQ_REGRESS_DUMP") == "1":
+                self.skipTest(
+                    "EQ_REGRESS_DUMP=1 would write into committed FIXTURES_DIR; "
+                    "unset it or generate test_run/test_output/eq_iter01/ first."
+                )
+            eqdata_dir = FIXTURES_DIR
+        else:
             self.skipTest(
-                f"eqdata '{knameq}' missing under {eqdata_dir}; "
-                "run `./test_run/run_tests.sh eq_iter01` first."
+                f"eqdata '{knameq}' missing under {candidate} or {FIXTURES_DIR}; "
+                "run `./test_run/run_tests.sh eq_iter01` first "
+                "(or rely on committed fixture)."
             )
 
         results = []

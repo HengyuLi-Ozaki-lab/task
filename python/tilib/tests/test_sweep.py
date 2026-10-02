@@ -64,14 +64,14 @@ class TestSweep(TiDataCwdMixin, unittest.TestCase):
 
     def test_3x3_grid_completes(self):
         from tilib import TiLib
-        from tilib.tests.fixtures import ti_iter01_params
+        from tilib.tests.fixtures import ti_min_params
 
         results = []
         for dt in self.DT_VALUES:
             for nrmax in self.NRMAX_VALUES:
                 with TiLib() as ti:
                     # Realistic base parameters from the ti_min fixture.
-                    ti_iter01_params.apply(ti)
+                    ti_min_params.apply(ti)
                     # Override the swept axes.
                     ti.set_param("DT", float(dt))
                     ti.set_param("NRMAX", float(nrmax))
