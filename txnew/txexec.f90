@@ -234,8 +234,20 @@ contains
              end if
 #endif
              call TXSOLV_BLOCKTRI(BL, BX, NQMAX, NRMAX, ierr_la)
-             if(ierr_la == -2) then
-                ! Fallback to band solver when BL has non-zero far blocks.
+             if(ierr_la == -2 .or. ierr_la > 0) then
+                ! Fallback to the band solver on the structural case (-2) and on
+                ! any LAPACK factorization failure (always positive, see below).
+                ! IER=-1 (BL/BX too small, txexec.f90:1092) is deliberately NOT
+                ! routed here: the fallback would call LAPACK_DGBSV with the very
+                ! dimensions just found unsatisfied. It keeps the loud error path.
+                ! -2 means BL has non-zero far blocks (the original trigger).
+                ! Other non-zero values are LAPACK factorization failures mapped
+                ! as IER = 200000/220000 + 1000*k + info -- always POSITIVE, so
+                ! the old `== -2` test skipped the fallback for every one of
+                ! them, including info=-1 from the lib/nolapack.f stubs used by
+                ! the repository-default LAPACK-free build. That fell straight
+                ! through to the error branch below with the solution vector
+                ! left unsolved (#228 findings 10/15).
 #if   _LAPACK == 2
                 m    = NQMAX*(NRMAX+1)
                 kl   = 2*NQMAX-1
@@ -1194,20 +1206,20 @@ contains
     SOLBLK = 0.d0
 
     do k = 1, nb - 1
-       call DGETRF(p, p, DLU(:,:,k), p, IPIV(:,k), info)
+       call LAPACK_DGETRF(p, p, DLU(:,:,k), p, IPIV(:,k), info)
        if(info /= 0) then
           IER = 200000 + 1000 * k + info
           return
        end if
        WBLK(:,:,k) = UBLK(:,:,k)
-       call DGETRS('N', p, p, DLU(:,:,k), p, IPIV(:,k), WBLK(:,:,k), p, info)
+       call LAPACK_DGETRS('N', p, p, DLU(:,:,k), p, IPIV(:,k), WBLK(:,:,k), p, info)
        if(info /= 0) then
           IER = 210000 + 1000 * k + info
           return
        end if
 
        SOLBLK(:,k) = RHSBLK(:,k)
-       call DGETRS('N', p, 1, DLU(:,:,k), p, IPIV(:,k), SOLBLK(:,k), p, info)
+       call LAPACK_DGETRS('N', p, 1, DLU(:,:,k), p, IPIV(:,k), SOLBLK(:,k), p, info)
        if(info /= 0) then
           IER = 220000 + 1000 * k + info
           return
@@ -1217,14 +1229,14 @@ contains
        DLU(:,:,k+1) = DLU(:,:,k+1) - matmul(LBLK(:,:,k), WBLK(:,:,k))
     end do
 
-    call DGETRF(p, p, DLU(:,:,nb), p, IPIV(:,nb), info)
+    call LAPACK_DGETRF(p, p, DLU(:,:,nb), p, IPIV(:,nb), info)
     if(info /= 0) then
        IER = 200000 + 1000 * nb + info
        return
     end if
 
     SOLBLK(:,nb) = RHSBLK(:,nb)
-    call DGETRS('N', p, 1, DLU(:,:,nb), p, IPIV(:,nb), SOLBLK(:,nb), p, info)
+    call LAPACK_DGETRS('N', p, 1, DLU(:,:,nb), p, IPIV(:,nb), SOLBLK(:,nb), p, info)
     if(info /= 0) then
        IER = 220000 + 1000 * nb + info
        return
@@ -1258,7 +1270,7 @@ contains
 
     do k = 1, nb - 1
        Y(:,k) = G(:,k)
-       call DGETRS('N', p, 1, DLU(:,:,k), p, IPIV(:,k), Y(:,k), p, info)
+       call LAPACK_DGETRS('N', p, 1, DLU(:,:,k), p, IPIV(:,k), Y(:,k), p, info)
        if(info /= 0) then
           IER = 230000 + 1000 * k + info
           deallocate(G, Y)
@@ -1268,7 +1280,7 @@ contains
     end do
 
     Y(:,nb) = G(:,nb)
-    call DGETRS('N', p, 1, DLU(:,:,nb), p, IPIV(:,nb), Y(:,nb), p, info)
+    call LAPACK_DGETRS('N', p, 1, DLU(:,:,nb), p, IPIV(:,nb), Y(:,nb), p, info)
     if(info /= 0) then
        IER = 230000 + 1000 * nb + info
        deallocate(G, Y)

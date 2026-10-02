@@ -39,7 +39,7 @@ CONTAINS
     ! count comma
     
     n_comma=0
-    DO n=n,LEN(line)
+    DO n=1,LEN(line)
        IF(line(n:n).EQ.',') n_comma=n_comma+1
     END DO
     WRITE(6,*) n_comma

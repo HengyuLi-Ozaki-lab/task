@@ -653,19 +653,39 @@ CONTAINS
   !   - Writes the current EQ state (PSIRZ, profiles, scalars) to the
   !     TASK-internal binary file at the path stored in module-level
   !     KNAMEQ. Caller MUST set KNAMEQ via eq_set_param_str before
-  !     calling this. EQ_OK is returned unconditionally because EQSAVE
-  !     itself does not propagate errors; FWOPEN failures inside
-  !     EQSAVE (blank KNAMEQ, missing directory, permission denied)
-  !     silently produce no file. The caller is expected to verify
-  !     the file's existence after the call.
+  !     calling this. EQSAVE itself does not propagate errors, so this
+  !     wrapper verifies the outcome: EQ_ERR_INVALID for a blank KNAMEQ,
+  !     EQ_ERR_CALC_FAILED when no non-empty file exists afterwards
+  !     (missing directory, permission denied, ...), EQ_OK otherwise.
   !=====================================================================
   FUNCTION eq_api_save() RESULT(ierr) BIND(C, NAME="eq_save")
     INTEGER(C_INT) :: ierr
+    LOGICAL :: file_exists
+    INTEGER :: file_size, ierr_save
     IF (.NOT. g_initialized) THEN
        ierr = EQ_ERR_NOT_INIT
        RETURN
     END IF
-    CALL EQSAVE
+    ! #227 item 3: EQSAVE is a bare external subroutine with no IERR
+    ! out-argument -- on an FWOPEN failure (blank KNAMEQ, missing
+    ! directory, permission denied) it simply RETURNs, leaving no file.
+    ! Reporting EQ_OK there claims a success that did not happen, so
+    ! verify the artefact rather than trusting the call.
+    IF (LEN_TRIM(KNAMEQ) == 0) THEN
+       ierr = EQ_ERR_INVALID
+       RETURN
+    END IF
+    CALL EQSAVE(ierr_save)
+    IF (ierr_save /= 0) THEN
+       ierr = EQ_ERR_CALC_FAILED
+       RETURN
+    END IF
+!   Belt and braces: the open succeeded, so also confirm an artefact exists.
+    INQUIRE(FILE=TRIM(KNAMEQ), EXIST=file_exists, SIZE=file_size)
+    IF ((.NOT. file_exists) .OR. (file_size <= 0)) THEN
+       ierr = EQ_ERR_CALC_FAILED
+       RETURN
+    END IF
     ierr = EQ_OK
   END FUNCTION eq_api_save
 
