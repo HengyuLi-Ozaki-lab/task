@@ -52,7 +52,8 @@ is a regression of the merges.
   none: the docstring at `python/eqlib/eqlib.py:332-334`, and the comments in `eq/eq_api.f90` ("EQSAVE itself does
   not propagate errors", line 656; "a bare external subroutine with no IERR out-argument", line 669).
 - `tr/f77/trfile.f:106` still has `CALL EQSAVE(4)`: a legacy file that no Makefile builds (`tr/Makefile` builds
-  `trfile.f90`). It would not compile against the new interface.
-- The MCP SDK bound `mcp>=0.9,<2` is written out in 35 files (56 places: the CI install line, the servers'
-  `pyproject.toml` files and install messages, READMEs, docs). The `<2` cap reached all of them in #226; a later change
-  of the bound is a 35-file edit.
+  `trfile.f90`). It would not work against the new interface: the call passes the literal `4` where `EQSAVE` now
+  assigns its `IERR_OUT`.
+- The MCP SDK bound `mcp>=0.9,<2` is written out in 35 files (56 places, counted at `d4b99c6d`: the CI install line,
+  the servers' `pyproject.toml` files and install messages, READMEs, docs). The `<2` cap reached all of them in #226;
+  a later change of the bound is a 35-file edit.

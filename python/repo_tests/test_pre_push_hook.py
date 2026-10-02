@@ -20,9 +20,21 @@ INSTALL = REPO / "scripts" / "install-hooks.sh"
 ZERO = "0" * 40
 ELSEWHERE = "/somewhere/remote.git"
 PRODUCT_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task.git", "https://github.com/HengyuLi-Ozaki-lab/task",
-                "git@github.com:HengyuLi-Ozaki-lab/task.git", "ssh://git@github.com/hengyuli-ozaki-lab/TASK/"]
+                "git@github.com:HengyuLi-Ozaki-lab/task.git", "ssh://git@github.com/hengyuli-ozaki-lab/TASK/",
+                "https://github.com/HengyuLi-Ozaki-lab/task.git/", "git://github.com/HengyuLi-Ozaki-lab/task.git",
+                "https://someone@github.com/HengyuLi-Ozaki-lab/task.git",
+                "ssh://git@github.com:22/HengyuLi-Ozaki-lab/task.git",
+                "ssh://git@ssh.github.com:443/HengyuLi-Ozaki-lab/task.git",
+                "git@github.com:/HengyuLi-Ozaki-lab/task.git", "github.com:HengyuLi-Ozaki-lab/task.git"]
 OTHER_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task-merge.git", "https://github.com/k-yoshimi/task.git",
-              "https://github.com/HengyuLi-Ozaki-lab/task-web-client.git", ELSEWHERE]
+              "https://github.com/HengyuLi-Ozaki-lab/task-web-client.git", ELSEWHERE,
+              "https://notgithub.com/HengyuLi-Ozaki-lab/task.git",
+              "https://github.com.example.invalid/HengyuLi-Ozaki-lab/task.git",
+              "https://github.com/another-org/HengyuLi-Ozaki-lab/task.git",
+              "git@github.com:HengyuLi-Ozaki-lab/tasks.git",
+              "file://github.com/HengyuLi-Ozaki-lab/task.git", "github.com/HengyuLi-Ozaki-lab/task",
+              "/srv/github.com/HengyuLi-Ozaki-lab/task.git",
+              "git@github.com:22/HengyuLi-Ozaki-lab/task.git"]          # scp syntax has no port: 22/... is the path
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32" or shutil.which("git") is None or shutil.which("bash") is None,
@@ -52,7 +64,8 @@ def clone(tmp_path):
     remote = tmp_path / "remote.git"
     _git(tmp_path, env, "init", "-q", "--bare", str(remote))
     work = tmp_path / "work"
-    _git(tmp_path, env, "init", "-q", "-b", "topic", str(work))
+    _git(tmp_path, env, "init", "-q", str(work))
+    _git(work, env, "symbolic-ref", "HEAD", "refs/heads/topic")          # `git init -b` needs git 2.28
     (work / ".githooks").mkdir()
     (work / "scripts").mkdir()
     shutil.copy2(HOOK, work / ".githooks" / "pre-push")
@@ -91,6 +104,7 @@ def test_a_push_is_refused_until_its_tip_has_a_marker_and_the_refusal_names_it(c
     proc = _hook(work, env, line)
     assert proc.returncode == 1
     assert f"REVIEW_OK_{sha}" in proc.stderr and "REFUSED" in proc.stderr
+    assert f'touch "{_marker(work, env, sha)}"' in proc.stderr          # quoted: a path with a space still pastes
     _marker(work, env, sha).touch()
     assert _hook(work, env, line).returncode == 0
 
@@ -111,6 +125,29 @@ def test_every_pushed_ref_needs_the_marker_of_its_own_tip(clone):
     proc = _hook(work, env, f"refs/heads/a {first} refs/heads/a {ZERO}\nrefs/heads/b {second} refs/heads/b {ZERO}\n")
     assert proc.returncode == 1 and f"REVIEW_OK_{second}" in proc.stderr
     assert f"REVIEW_OK_{first}" not in proc.stderr
+
+
+def test_an_annotated_tag_is_gated_by_the_marker_of_the_commit_it_points_to(clone):
+    """A tag of a reviewed commit adds no code; the marker is the commit's, whatever object the ref names."""
+    work, env = clone
+    commit = _head(work, env)
+    _git(work, env, "tag", "-a", "-m", "v1", "v1")
+    tag_object = _git(work, env, "rev-parse", "v1").stdout.strip()
+    assert tag_object != commit
+    line = f"refs/tags/v1 {tag_object} refs/tags/v1 {ZERO}\n"
+    refused = _hook(work, env, line)
+    assert refused.returncode == 1 and f"REVIEW_OK_{commit}" in refused.stderr
+    _marker(work, env, commit).touch()
+    assert _hook(work, env, line).returncode == 0
+
+
+def test_a_tag_that_is_not_on_a_commit_is_gated_by_its_own_object_quietly(clone):
+    work, env = clone
+    _git(work, env, "tag", "-a", "-m", "tree", "tree-tag", "HEAD^{tree}")
+    tag_object = _git(work, env, "rev-parse", "tree-tag").stdout.strip()
+    refused = _hook(work, env, f"refs/tags/tree-tag {tag_object} refs/tags/tree-tag {ZERO}\n")
+    assert refused.returncode == 1 and f"REVIEW_OK_{tag_object}" in refused.stderr
+    assert "expected commit type" not in refused.stderr and "error:" not in refused.stderr
 
 
 def test_a_deletion_and_an_empty_push_need_no_marker(clone):
@@ -207,6 +244,99 @@ def test_install_hooks_check_says_when_the_installed_hook_is_not_the_tracked_one
     stale = run("--check")
     assert stale.returncode == 1 and "run scripts/install-hooks.sh" in stale.stderr
     assert run().returncode == 0 and run("--check").returncode == 0
+
+
+def test_install_hooks_check_and_reinstall_deal_with_a_hook_the_tracked_folder_no_longer_has(clone):
+    work, env = clone
+    run = lambda *a: subprocess.run(["bash", "scripts/install-hooks.sh", *a], cwd=work, env=env,
+                                    capture_output=True, text=True, timeout=60)
+    assert run().returncode == 0
+    installed = Path(_git(work, env, "config", "--get", "core.hooksPath").stdout.strip())
+    (installed / "pre-commit").write_text("#!/bin/sh\nexit 1\n")        # a hook that .githooks/ no longer has
+    stale = run("--check")
+    assert stale.returncode == 1 and "pre-commit" in stale.stderr and "run scripts/install-hooks.sh" in stale.stderr
+    assert run().returncode == 0 and not (installed / "pre-commit").exists()
+    assert run("--check").returncode == 0
+
+
+def _active_hook(folder: Path, name: str) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_text("#!/bin/sh\nexit 0\n")
+    (folder / name).chmod(0o755)
+
+
+def _install(work: Path, env: dict) -> subprocess.CompletedProcess:
+    proc = subprocess.run(["bash", "scripts/install-hooks.sh"], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    return proc
+
+
+def test_install_hooks_check_says_when_the_installed_hook_is_not_executable(clone):
+    """git silently skips a hook that is not executable: --check must not call that current."""
+    work, env = clone
+    run = lambda *a: subprocess.run(["bash", "scripts/install-hooks.sh", *a], cwd=work, env=env,
+                                    capture_output=True, text=True, timeout=60)
+    assert run().returncode == 0
+    installed = Path(_git(work, env, "config", "--get", "core.hooksPath").stdout.strip()) / "pre-push"
+    installed.chmod(0o644)
+    broken = run("--check")
+    assert broken.returncode == 1 and "not executable" in broken.stderr and "run scripts/install-hooks.sh" in broken.stderr
+    assert run().returncode == 0 and os.access(installed, os.X_OK) and run("--check").returncode == 0
+
+
+def test_install_hooks_never_cleans_up_through_a_symlinked_folder(clone, tmp_path):
+    work, env = clone
+    elsewhere = tmp_path / "somebody-elses-hooks"
+    elsewhere.mkdir()
+    (elsewhere / "precious").write_text("keep\n")
+    (work / ".git" / "tracked-hooks").symlink_to(elsewhere)
+    proc = subprocess.run(["bash", "scripts/install-hooks.sh"], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 1 and "symlink" in proc.stderr
+    assert (elsewhere / "precious").read_text() == "keep\n" and not (elsewhere / "pre-push").exists()
+
+
+def test_install_hooks_says_which_hooks_of_git_hooks_stop_running(clone):
+    """core.hooksPath replaces the folder .git/hooks: say which active hooks that stops."""
+    work, env = clone
+    for name in ("pre-commit", "pre-rebase.sample", "pre-push"):    # a sample is inert; pre-push is replaced
+        _active_hook(work / ".git" / "hooks", name)
+    proc = _install(work, env)
+    assert "pre-commit" in proc.stderr and "no longer runs" in proc.stderr
+    assert "pre-rebase" not in proc.stderr and "pre-push" not in proc.stderr and "was " not in proc.stderr
+
+
+def test_install_hooks_reports_only_files_git_would_have_run(clone):
+    work, env = clone
+    for name in ("README.md", "helper.sh", "pre-commit"):
+        _active_hook(work / ".git" / "hooks", name)
+    proc = _install(work, env)
+    assert "pre-commit" in proc.stderr and "README" not in proc.stderr and "helper" not in proc.stderr
+
+
+@pytest.mark.parametrize("form", ["absolute", "relative to the worktree", "tilde"])
+def test_install_hooks_says_when_it_replaces_an_earlier_core_hooks_path(clone, tmp_path, form):
+    work, env = clone
+    earlier = work / "earlier-hooks"
+    _active_hook(earlier, "commit-msg")
+    _active_hook(work / ".git" / "hooks", "pre-commit")             # not running before, so not reported
+    written = {"absolute": str(earlier), "relative to the worktree": "earlier-hooks", "tilde": "~/work/earlier-hooks"}[form]
+    _git(work, env, "config", "core.hooksPath", written)
+    (work / "scripts" / "sub").mkdir()
+    proc = subprocess.run(["bash", str(work / "scripts" / "install-hooks.sh")], cwd=work / "scripts" / "sub", env=env,
+                          capture_output=True, text=True, timeout=60)           # from a subdirectory
+    assert proc.returncode == 0, proc.stderr
+    assert "commit-msg" in proc.stderr and f"core.hooksPath was {earlier}" in proc.stderr
+    assert "pre-commit" not in proc.stderr
+    assert "was " not in _install(work, env).stderr                  # only the first install replaced anything
+
+
+def test_install_hooks_says_when_it_removes_a_hook_the_tracked_folder_no_longer_has(clone):
+    work, env = clone
+    _install(work, env)
+    installed = Path(_git(work, env, "config", "--get", "core.hooksPath").stdout.strip())
+    _active_hook(installed, "post-merge")
+    proc = _install(work, env)
+    assert "removed" in proc.stderr and "post-merge" in proc.stderr and not (installed / "post-merge").exists()
 
 
 def test_the_hook_and_the_installer_are_committed_executable():

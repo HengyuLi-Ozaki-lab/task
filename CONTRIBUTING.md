@@ -10,7 +10,7 @@ git clone https://github.com/HengyuLi-Ozaki-lab/task.git task && cd task   # nam
 git remote add upstream https://github.com/k-yoshimi/task.git && git fetch upstream
 git switch kyoshimi-develop
 scripts/setup.sh              # Linux: bpsd beside the checkout, make.header, every lib*api.so
-scripts/install-hooks.sh      # AI sessions: the pre-push gate
+scripts/install-hooks.sh      # AI sessions: the pre-push gate (sets core.hooksPath: see AGENTS.md)
 ```
 
 On macOS, or to build exactly what TASK Web Client ships (-O0 with runtime checks, bpsd at its lock), use

@@ -9,22 +9,42 @@
 #    changes only through pull requests. GitHub refuses such a push itself (a
 #    ruleset on that repository, .github/rulesets/kyoshimi-develop.json); this
 #    says so earlier and names the way in. Another remote's branch of that name
-#    is an ordinary push.
+#    is an ordinary push. The repository is recognised by the push URL (https,
+#    ssh or git URL, or an scp-like [user@]github.com:..., with or without user,
+#    port, .git or a trailing /; host github.com or ssh.github.com), not by the
+#    remote's name. A local path, a file:// URL or an ssh host alias that hides
+#    github.com is not recognised (GitHub's ruleset refuses the alias's push all
+#    the same).
 # 2. Every pushed ref tip needs a review marker REVIEW_OK_<sha> under the shared
 #    git directory (`git rev-parse --git-common-dir`), written after the local
 #    pytest run and the two reviews CLAUDE.md asks for: the marker of the commit
-#    each pushed ref points at, whichever branch is checked out. A deletion
-#    pushes nothing and needs none.
+#    each pushed ref points at, whichever branch is checked out. An annotated
+#    tag is gated by the marker of the commit it points to (it adds no code). A
+#    deletion pushes nothing and needs none.
 #    SKIP_PREPUSH_REVIEW=1 skips rule 2 only and logs a line to
 #    REVIEW_OVERRIDES.log there (SKIP_PREPUSH_REVIEW_REASON says why).
 set -eu
 
 git_common_dir=$(cd "$(git rev-parse --git-common-dir)" && pwd)
 product=0
-case "$(printf '%s' "${2:-}" | tr 'A-Z' 'a-z')" in
-    *github.com[:/]hengyuli-ozaki-lab/task|*github.com[:/]hengyuli-ozaki-lab/task.git|*github.com[:/]hengyuli-ozaki-lab/task/)
-        product=1 ;;
+# <owner>/<repo> of a github.com push URL, lower-cased: scheme, user, host (github.com
+# or ssh.github.com), port, a trailing / and .git removed. Only an https, http, ssh or
+# git URL (host, optional :port, then /path) or an scp-like [user@]host:path (no port: a
+# number after the colon is the first path component) is taken apart; anything else (a
+# local path, file://, another scheme) is empty and matches nothing.
+url=$(printf '%s' "${2:-}" | tr 'A-Z' 'a-z')
+host=
+case "$url" in
+    https://*|http://*|ssh://*|git://*) url=${url#*://}; host='github\.com\(:[0-9][0-9]*\)\{0,1\}/' ;;
+    *://*|/*|./*|../*) url= ;;
+    *:*) host='github\.com:/*' ;;
+    *) url= ;;
 esac
+repo=$(printf '%s' "$url" | sed \
+    -e 's|^[^/@]*@||' \
+    -e "s|^\(ssh\.\)\{0,1\}$host/*||" \
+    -e 's|/*$||' -e 's|\.git$||')
+[ "$repo" != "hengyuli-ozaki-lab/task" ] || product=1
 status=0
 shas=""
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -51,7 +71,7 @@ if [ "${SKIP_PREPUSH_REVIEW:-0}" = 1 ]; then
 fi
 
 for sha in $shas; do
-    commit=$(git rev-parse --verify --quiet "$sha^{commit}") || commit=$sha
+    commit=$(git rev-parse --verify --quiet "$sha^{commit}" 2>/dev/null) || commit=$sha
     marker="$git_common_dir/REVIEW_OK_$commit"
     if [ ! -f "$marker" ]; then
         cat >&2 <<MSG
@@ -63,7 +83,7 @@ Per CLAUDE.md "Pre-push gate", before a push:
   2. Run the code review and the Codex review on the diff
      (a sync merge: the change packet AGENTS.md describes)
   3. Address HIGH / MED findings
-  4. touch $marker
+  4. touch "$marker"
 
 Escape hatch (rare, the author's):
   SKIP_PREPUSH_REVIEW=1 SKIP_PREPUSH_REVIEW_REASON='...' git push ...
