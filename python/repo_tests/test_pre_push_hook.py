@@ -25,7 +25,10 @@ PRODUCT_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task.git", "https://githu
                 "https://someone@github.com/HengyuLi-Ozaki-lab/task.git",
                 "ssh://git@github.com:22/HengyuLi-Ozaki-lab/task.git",
                 "ssh://git@ssh.github.com:443/HengyuLi-Ozaki-lab/task.git",
-                "git@github.com:/HengyuLi-Ozaki-lab/task.git", "github.com:HengyuLi-Ozaki-lab/task.git"]
+                "git@github.com:/HengyuLi-Ozaki-lab/task.git", "github.com:HengyuLi-Ozaki-lab/task.git",
+                "https://www.github.com/HengyuLi-Ozaki-lab/task.git", "git+ssh://git@github.com/HengyuLi-Ozaki-lab/task.git",
+                "ssh+git://git@github.com/HengyuLi-Ozaki-lab/task.git", "https://github.com/HengyuLi-Ozaki-lab//task",
+                "https://github.com//HengyuLi-Ozaki-lab/task.git", "git@www.github.com:HengyuLi-Ozaki-lab/task.git"]
 OTHER_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task-merge.git", "https://github.com/k-yoshimi/task.git",
               "https://github.com/HengyuLi-Ozaki-lab/task-web-client.git", ELSEWHERE,
               "https://notgithub.com/HengyuLi-Ozaki-lab/task.git",
@@ -34,7 +37,11 @@ OTHER_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task-merge.git", "https://g
               "git@github.com:HengyuLi-Ozaki-lab/tasks.git",
               "file://github.com/HengyuLi-Ozaki-lab/task.git", "github.com/HengyuLi-Ozaki-lab/task",
               "/srv/github.com/HengyuLi-Ozaki-lab/task.git",
-              "git@github.com:22/HengyuLi-Ozaki-lab/task.git"]          # scp syntax has no port: 22/... is the path
+              "git@github.com:22/HengyuLi-Ozaki-lab/task.git",          # scp syntax has no port: 22/... is the path
+              "https://www.github.com.example.invalid/HengyuLi-Ozaki-lab/task.git", "https://wwwgithub.com/HengyuLi-Ozaki-lab/task.git",
+              "https://www.notgithub.com/HengyuLi-Ozaki-lab/task.git", "https://x.www.github.com/HengyuLi-Ozaki-lab/task.git",
+              "https://example.invalid/www.github.com/HengyuLi-Ozaki-lab/task.git",
+              "https://github.com/another-org//HengyuLi-Ozaki-lab/task.git", "git+ssh://git@notgithub.com/HengyuLi-Ozaki-lab/task.git"]
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32" or shutil.which("git") is None or shutil.which("bash") is None,
@@ -127,6 +134,20 @@ def test_every_pushed_ref_needs_the_marker_of_its_own_tip(clone):
     assert f"REVIEW_OK_{first}" not in proc.stderr
 
 
+@pytest.mark.parametrize("unreviewed_at", [0, 1, 2])
+def test_the_unreviewed_ref_is_refused_wherever_it_stands_in_the_push(clone, unreviewed_at):
+    """A hook that looked at only the first, or only the last, pushed ref would pass this."""
+    work, env = clone
+    tips = [_head(work, env), _commit(work, env, "b.txt"), _commit(work, env, "c.txt")]
+    for i, tip in enumerate(tips):
+        if i != unreviewed_at:
+            _marker(work, env, tip).touch()
+    stdin = "".join(f"refs/heads/r{i} {tip} refs/heads/r{i} {ZERO}\n" for i, tip in enumerate(tips))
+    proc = _hook(work, env, stdin)
+    assert proc.returncode == 1 and f"REVIEW_OK_{tips[unreviewed_at]}" in proc.stderr
+    assert sum(f"REVIEW_OK_{tip}" in proc.stderr for tip in tips) == 1       # and only that one is named
+
+
 def test_an_annotated_tag_is_gated_by_the_marker_of_the_commit_it_points_to(clone):
     """A tag of a reviewed commit adds no code; the marker is the commit's, whatever object the ref names."""
     work, env = clone
@@ -154,6 +175,98 @@ def test_a_deletion_and_an_empty_push_need_no_marker(clone):
     work, env = clone
     assert _hook(work, env, f"(delete) {ZERO} refs/heads/gone {_head(work, env)}\n").returncode == 0
     assert _hook(work, env, "").returncode == 0
+
+
+SPACED_SOURCES = ["HEAD@{0 0 0}", "HEAD@{0 minutes ago}"]       # git writes the local ref as typed, spaces included
+
+
+def _real_push(work: Path, env: dict, source: str, remote_ref: str, **extra: str) -> subprocess.CompletedProcess:
+    """git push of `<source>:<remote_ref>` to the bare repository `origin`, the tracked hook in force."""
+    _git(work, env, "config", "core.hooksPath", str(work / ".githooks"))
+    return subprocess.run(["git", "push", "origin", f"{source}:{remote_ref}"], cwd=work, env={**env, **extra},
+                          capture_output=True, text=True, timeout=60)
+
+
+def _remote_branches(work: Path, env: dict) -> str:
+    return _git(work, env, "--git-dir", str(work.parent / "remote.git"), "branch", "--list").stdout.strip()
+
+
+@pytest.mark.parametrize("source", SPACED_SOURCES)
+def test_a_source_refspec_with_spaces_does_not_get_past_the_marker_rule(clone, source):
+    work, env = clone
+    sha = _head(work, env)
+    direct = _hook(work, env, f"{source} {sha} refs/heads/x {ZERO}\n")           # the stdin git writes
+    assert direct.returncode == 1 and f"REVIEW_OK_{sha}" in direct.stderr
+    refused = _real_push(work, env, source, "refs/heads/x")                      # and a real push
+    assert refused.returncode != 0 and f"REVIEW_OK_{sha}" in refused.stderr and _remote_branches(work, env) == ""
+    _marker(work, env, sha).touch()
+    assert _real_push(work, env, source, "refs/heads/x").returncode == 0 and "x" in _remote_branches(work, env)
+
+
+@pytest.mark.parametrize("source", SPACED_SOURCES)
+def test_a_source_refspec_with_spaces_does_not_get_past_the_fork_rule(clone, tmp_path, source):
+    """No real push can name the fork here (no network), so a real push to a local bare repository records the
+    exact stdin git writes for that refspec, and the hook is run on it with the fork's URL."""
+    work, env = clone
+    sha = _head(work, env)
+    _marker(work, env, sha).touch()
+    recorder = tmp_path / "recorder"
+    recorder.mkdir()
+    (recorder / "pre-push").write_text(f"#!/bin/sh\ncat > '{tmp_path / 'stdin.txt'}'\n")
+    (recorder / "pre-push").chmod(0o755)
+    _git(work, env, "config", "core.hooksPath", str(recorder))
+    pushed = subprocess.run(["git", "push", "origin", f"{source}:refs/heads/kyoshimi-develop"], cwd=work, env=env,
+                            capture_output=True, text=True, timeout=60)
+    assert pushed.returncode == 0, pushed.stderr
+    stdin = (tmp_path / "stdin.txt").read_text()
+    assert stdin.startswith(f"{source} {sha} refs/heads/kyoshimi-develop ")
+    for url in PRODUCT_URLS[:2]:
+        for extra in ({}, {"SKIP_PREPUSH_REVIEW": "1"}):
+            for line in (stdin, f"{source} {sha} refs/heads/kyoshimi-develop {ZERO}\n"):
+                proc = _hook(work, {**env, **extra}, line, url)
+                assert proc.returncode == 1 and "only through pull requests" in proc.stderr, (url, extra, line)
+
+
+def test_a_stdin_line_the_hook_cannot_read_is_refused_not_skipped(clone):
+    work, env = clone
+    sha = _head(work, env)
+    _marker(work, env, sha).touch()
+    for line in ("refs/heads/a", f"refs/heads/a {sha}", f"refs/heads/a {sha} refs/heads/a",
+                 f"refs/heads/a nothex refs/heads/a {ZERO}", f"refs/heads/a {sha[:39]} refs/heads/a {ZERO}",
+                 f"refs/heads/a {sha} refs/heads/a {ZERO[:39]}", f"refs/heads/a {sha.upper()} refs/heads/a {ZERO}",
+                 f"{sha} refs/heads/a {ZERO}"):
+        for extra in ({}, {"SKIP_PREPUSH_REVIEW": "1"}):
+            proc = _hook(work, {**env, **extra}, line + "\n")
+            assert proc.returncode == 1 and "cannot read" in proc.stderr, (line, extra)
+
+
+def test_a_blank_line_is_refused_not_skipped_and_empty_input_is_not_a_line(clone):
+    work, env = clone
+    sha = _head(work, env)
+    _marker(work, env, sha).touch()
+    good = f"refs/heads/a {sha} refs/heads/a {ZERO}\n"
+    assert _hook(work, env, good).returncode == 0
+    for stdin in ("\n", good + "\n", "\n" + good, good + "\n" + good, "   \n"):
+        proc = _hook(work, env, stdin)
+        assert proc.returncode == 1 and "cannot read" in proc.stderr, stdin
+    assert _hook(work, env, "").returncode == 0
+
+
+def test_a_last_line_without_a_newline_is_still_read(clone):
+    work, env = clone
+    sha = _head(work, env)
+    refused = _hook(work, env, f"refs/heads/a {sha} refs/heads/a {ZERO}")           # git always ends the line; do not rely on it
+    assert refused.returncode == 1 and f"REVIEW_OK_{sha}" in refused.stderr
+
+
+def test_sha256_object_names_are_read_too(clone):
+    work, env = clone
+    sha, zero = "a" * 64, "0" * 64
+    refused = _hook(work, env, f"refs/heads/a {sha} refs/heads/a {zero}\n")
+    assert refused.returncode == 1 and f"REVIEW_OK_{sha}" in refused.stderr
+    _marker(work, env, sha).touch()
+    assert _hook(work, env, f"refs/heads/a {sha} refs/heads/a {zero}\n").returncode == 0
+    assert _hook(work, env, f"(delete) {zero} refs/heads/gone {sha}\n").returncode == 0
 
 
 @pytest.mark.parametrize("url", PRODUCT_URLS)

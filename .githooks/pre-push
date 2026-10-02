@@ -11,10 +11,11 @@
 #    says so earlier and names the way in. Another remote's branch of that name
 #    is an ordinary push. The repository is recognised by the push URL (https,
 #    ssh or git URL, or an scp-like [user@]github.com:..., with or without user,
-#    port, .git or a trailing /; host github.com or ssh.github.com), not by the
-#    remote's name. A local path, a file:// URL or an ssh host alias that hides
-#    github.com is not recognised (GitHub's ruleset refuses the alias's push all
-#    the same).
+#    port, .git or a trailing /; host github.com, www.github.com or
+#    ssh.github.com), not by the remote's name. A local path, a file:// URL or an
+#    ssh host alias that hides github.com is not recognised. GitHub's ruleset is
+#    the authority for any unusual spelling of the URL: this match is an early
+#    message, not the gate.
 # 2. Every pushed ref tip needs a review marker REVIEW_OK_<sha> under the shared
 #    git directory (`git rev-parse --git-common-dir`), written after the local
 #    pytest run and the two reviews CLAUDE.md asks for: the marker of the commit
@@ -29,26 +30,41 @@ git_common_dir=$(cd "$(git rev-parse --git-common-dir)" && pwd)
 product=0
 # <owner>/<repo> of a github.com push URL, lower-cased: scheme, user, host (github.com
 # or ssh.github.com), port, a trailing / and .git removed. Only an https, http, ssh or
-# git URL (host, optional :port, then /path) or an scp-like [user@]host:path (no port: a
-# number after the colon is the first path component) is taken apart; anything else (a
-# local path, file://, another scheme) is empty and matches nothing.
+# git URL (also git+ssh and ssh+git; host, optional :port, then /path) or an scp-like
+# [user@]host:path (no port: a number after the colon is the first path component) is
+# taken apart; anything else (a local path, file://, another scheme) is empty and matches
+# nothing. www.github.com is github.com; repeated slashes in the path count as one.
 url=$(printf '%s' "${2:-}" | tr 'A-Z' 'a-z')
 host=
 case "$url" in
-    https://*|http://*|ssh://*|git://*) url=${url#*://}; host='github\.com\(:[0-9][0-9]*\)\{0,1\}/' ;;
+    https://*|http://*|ssh://*|git://*|git+ssh://*|ssh+git://*) url=${url#*://}; host='github\.com\(:[0-9][0-9]*\)\{0,1\}/' ;;
     *://*|/*|./*|../*) url= ;;
     *:*) host='github\.com:/*' ;;
     *) url= ;;
 esac
 repo=$(printf '%s' "$url" | sed \
     -e 's|^[^/@]*@||' \
-    -e "s|^\(ssh\.\)\{0,1\}$host/*||" \
-    -e 's|/*$||' -e 's|\.git$||')
+    -e "s|^\(ssh\.\)\{0,1\}$host/*||" -e "s|^www\.$host/*||" \
+    -e 's|//*|/|g' -e 's|/*$||' -e 's|\.git$||')
 [ "$repo" != "hengyuli-ozaki-lab/task" ] || product=1
+unreadable() {
+    echo "pre-push: REFUSED -- cannot read the line git passed (wanted: <local ref> <local sha> <remote ref> <remote sha>): $line" >&2
+    exit 1
+}
+is_object_name() {      # 40 (sha-1) or 64 (sha-256) lower-case hex digits
+    case "$1" in *[!0-9a-f]*|"") return 1 ;; esac
+    [ "${#1}" = 40 ] || [ "${#1}" = 64 ]
+}
 status=0
 shas=""
-while read -r local_ref local_sha remote_ref remote_sha; do
-    [ -n "$local_ref" ] || continue
+while IFS= read -r line || [ -n "$line" ]; do
+    # Git writes the local ref as the user typed it, spaces included (HEAD@{0 minutes ago}),
+    # so the line is split from the RIGHT: the three fields after it never contain a space.
+    case "$line" in *" "*" "*" "*) ;; *) unreadable ;; esac
+    remote_sha=${line##* }; rest=${line% *}
+    remote_ref=${rest##* }; rest=${rest% *}
+    local_sha=${rest##* }; local_ref=${rest% *}
+    [ -n "$local_ref" ] && [ -n "$remote_ref" ] && is_object_name "$local_sha" && is_object_name "$remote_sha" || unreadable
     if [ "$product" = 1 ] && [ "$remote_ref" = "refs/heads/kyoshimi-develop" ]; then
         echo "pre-push: REFUSED -- kyoshimi-develop changes only through pull requests (AGENTS.md):" >&2
         echo "  gh pr create -R HengyuLi-Ozaki-lab/task --base kyoshimi-develop --head <your branch>" >&2

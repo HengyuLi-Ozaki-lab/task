@@ -6,7 +6,7 @@ The rules are in `AGENTS.md` (branches, the two pull requests, checks, the upstr
 ## Set up
 
 ```bash
-git clone https://github.com/HengyuLi-Ozaki-lab/task.git task && cd task   # named `task`: the Makefiles read ../task/make.header
+git clone https://github.com/HengyuLi-Ozaki-lab/task.git task && cd task   # keep the name `task`: bpsd's Makefile reads ../task/make.header
 git remote add upstream https://github.com/k-yoshimi/task.git && git fetch upstream
 git switch kyoshimi-develop
 scripts/setup.sh              # Linux: bpsd beside the checkout, make.header, every lib*api.so
@@ -24,6 +24,8 @@ task-web's `scripts/build_fortran.sh <this checkout> <the bpsd beside it>`.
    --timeout=120 --timeout-method=signal` (`pip install pytest pytest-forked pytest-timeout pytest-mock
    pytest-subtests numpy 'mcp>=0.9,<2'`, in an environment of your own).
 3. A pull request into `kyoshimi-develop` of this repository (`gh pr create -R HengyuLi-Ozaki-lab/task --base
-   kyoshimi-develop`), and the same branch as a pull request into `k-yoshimi/task` `develop`.
+   kyoshimi-develop`). The same branch also goes to `k-yoshimi/task` `develop` as a pull request, but the author opens
+   that one or gives the go-ahead (`AGENTS.md`): do not open it yourself without that go-ahead. A branch that carries
+   product-only commits waits until what it depends on is upstream.
 4. The four CI checks green; the author reviews it and merges, with a merge commit (GitHub accepts nothing else).
 5. TASK Web Client picks the change up with a pull request of its own (`scripts/deps.py bump kyoshimi <sha>`).
