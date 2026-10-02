@@ -1,0 +1,76 @@
+#!/bin/sh
+# Pre-push gate of this repository (CLAUDE.md "Pre-push gate", AGENTS.md).
+# Installed by scripts/install-hooks.sh as a COPY under the shared git
+# directory, so that it runs in every worktree whatever branch is checked
+# out there (a topic branch from upstream develop has no .githooks/).
+# scripts/pre-push.sh is upstream's older form of rule 2 and is left as it is.
+#
+# 1. kyoshimi-develop of the product repository (github.com/HengyuLi-Ozaki-lab/task)
+#    changes only through pull requests. GitHub refuses such a push itself (a
+#    ruleset on that repository, .github/rulesets/kyoshimi-develop.json); this
+#    says so earlier and names the way in. Another remote's branch of that name
+#    is an ordinary push.
+# 2. Every pushed ref tip needs a review marker REVIEW_OK_<sha> under the shared
+#    git directory (`git rev-parse --git-common-dir`), written after the local
+#    pytest run and the two reviews CLAUDE.md asks for: the marker of the commit
+#    each pushed ref points at, whichever branch is checked out. A deletion
+#    pushes nothing and needs none.
+#    SKIP_PREPUSH_REVIEW=1 skips rule 2 only and logs a line to
+#    REVIEW_OVERRIDES.log there (SKIP_PREPUSH_REVIEW_REASON says why).
+set -eu
+
+git_common_dir=$(cd "$(git rev-parse --git-common-dir)" && pwd)
+product=0
+case "$(printf '%s' "${2:-}" | tr 'A-Z' 'a-z')" in
+    *github.com[:/]hengyuli-ozaki-lab/task|*github.com[:/]hengyuli-ozaki-lab/task.git|*github.com[:/]hengyuli-ozaki-lab/task/)
+        product=1 ;;
+esac
+status=0
+shas=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "$local_ref" ] || continue
+    if [ "$product" = 1 ] && [ "$remote_ref" = "refs/heads/kyoshimi-develop" ]; then
+        echo "pre-push: REFUSED -- kyoshimi-develop changes only through pull requests (AGENTS.md):" >&2
+        echo "  gh pr create -R HengyuLi-Ozaki-lab/task --base kyoshimi-develop --head <your branch>" >&2
+        status=1
+    fi
+    case "$local_sha" in
+        *[!0]*) shas="$shas $local_sha" ;;      # all zeros: a deletion
+    esac
+done
+[ "$status" = 0 ] || exit 1
+[ -n "$shas" ] || exit 0
+
+if [ "${SKIP_PREPUSH_REVIEW:-0}" = 1 ]; then
+    for sha in $shas; do
+        printf "%s  SHA=%s  reason=%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sha" \
+            "${SKIP_PREPUSH_REVIEW_REASON:-unspecified}" >> "$git_common_dir/REVIEW_OVERRIDES.log"
+    done
+    echo "pre-push: SKIP_PREPUSH_REVIEW=1 set -- skipping review gate (logged)" >&2
+    exit 0
+fi
+
+for sha in $shas; do
+    commit=$(git rev-parse --verify --quiet "$sha^{commit}") || commit=$sha
+    marker="$git_common_dir/REVIEW_OK_$commit"
+    if [ ! -f "$marker" ]; then
+        cat >&2 <<MSG
+============================================================
+pre-push: REFUSED -- no review marker for $(printf %.12s "$commit")
+
+Per CLAUDE.md "Pre-push gate", before a push:
+  1. Run local pytest with CI-equivalent flags
+  2. Run the code review and the Codex review on the diff
+     (a sync merge: the change packet AGENTS.md describes)
+  3. Address HIGH / MED findings
+  4. touch $marker
+
+Escape hatch (rare, the author's):
+  SKIP_PREPUSH_REVIEW=1 SKIP_PREPUSH_REVIEW_REASON='...' git push ...
+============================================================
+MSG
+        status=1
+    fi
+done
+[ "$status" = 0 ] && echo "pre-push: review marker present -- OK" >&2
+exit $status

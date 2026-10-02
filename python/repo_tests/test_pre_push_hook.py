@@ -1,0 +1,215 @@
+"""The tracked pre-push hook (.githooks/pre-push) and scripts/install-hooks.sh.
+
+Everything runs in throwaway repositories under tmp_path, with a bare
+repository on disk as the remote: no network, and neither this checkout's
+git configuration nor the user's is read or written.
+"""
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[2]
+HOOK = REPO / ".githooks" / "pre-push"
+INSTALL = REPO / "scripts" / "install-hooks.sh"
+ZERO = "0" * 40
+ELSEWHERE = "/somewhere/remote.git"
+PRODUCT_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task.git", "https://github.com/HengyuLi-Ozaki-lab/task",
+                "git@github.com:HengyuLi-Ozaki-lab/task.git", "ssh://git@github.com/hengyuli-ozaki-lab/TASK/"]
+OTHER_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task-merge.git", "https://github.com/k-yoshimi/task.git",
+              "https://github.com/HengyuLi-Ozaki-lab/task-web-client.git", ELSEWHERE]
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("git") is None or shutil.which("bash") is None,
+    reason="needs git and a POSIX shell")
+
+
+def _env(tmp_path: Path, **extra: str) -> dict:
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("GIT_") and k not in ("SKIP_PREPUSH_REVIEW", "SKIP_PREPUSH_REVIEW_REASON")}
+    env.update(HOME=str(tmp_path), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
+               GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.invalid")
+    env.update(extra)
+    return env
+
+
+def _git(cwd: Path, env: dict, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=cwd, env=env, check=check,
+                          capture_output=True, text=True, timeout=60)
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """A clone with one commit on `topic`, the tracked hook and installer in
+    its tree, and a bare repository as the remote `origin`."""
+    env = _env(tmp_path)
+    remote = tmp_path / "remote.git"
+    _git(tmp_path, env, "init", "-q", "--bare", str(remote))
+    work = tmp_path / "work"
+    _git(tmp_path, env, "init", "-q", "-b", "topic", str(work))
+    (work / ".githooks").mkdir()
+    (work / "scripts").mkdir()
+    shutil.copy2(HOOK, work / ".githooks" / "pre-push")
+    shutil.copy2(INSTALL, work / "scripts" / "install-hooks.sh")
+    _git(work, env, "add", "-A")
+    _git(work, env, "commit", "-q", "-m", "hooks")
+    _git(work, env, "remote", "add", "origin", str(remote))
+    return work, env
+
+
+def _hook(work: Path, env: dict, stdin: str, url: str = ELSEWHERE) -> subprocess.CompletedProcess:
+    return subprocess.run([str(work / ".githooks" / "pre-push"), "origin", url], cwd=work, env=env,
+                          input=stdin, capture_output=True, text=True, timeout=60)
+
+
+def _head(work: Path, env: dict) -> str:
+    return _git(work, env, "rev-parse", "HEAD").stdout.strip()
+
+
+def _marker(work: Path, env: dict, sha: str) -> Path:
+    common = _git(work, env, "rev-parse", "--git-common-dir").stdout.strip()
+    return (work / common).resolve() / f"REVIEW_OK_{sha}"
+
+
+def _commit(work: Path, env: dict, name: str) -> str:
+    (work / name).write_text("x\n")
+    _git(work, env, "add", name)
+    _git(work, env, "commit", "-q", "-m", name)
+    return _head(work, env)
+
+
+def test_a_push_is_refused_until_its_tip_has_a_marker_and_the_refusal_names_it(clone):
+    work, env = clone
+    sha = _head(work, env)
+    line = f"refs/heads/topic {sha} refs/heads/topic {ZERO}\n"
+    proc = _hook(work, env, line)
+    assert proc.returncode == 1
+    assert f"REVIEW_OK_{sha}" in proc.stderr and "REFUSED" in proc.stderr
+    _marker(work, env, sha).touch()
+    assert _hook(work, env, line).returncode == 0
+
+
+def test_the_marker_is_for_the_ref_pushed_not_for_head(clone):
+    work, env = clone
+    pushed = _head(work, env)
+    _marker(work, env, _commit(work, env, "later.txt")).touch()     # HEAD is reviewed, the pushed tip is not
+    proc = _hook(work, env, f"refs/heads/old {pushed} refs/heads/old {ZERO}\n")
+    assert proc.returncode == 1 and f"REVIEW_OK_{pushed}" in proc.stderr
+
+
+def test_every_pushed_ref_needs_the_marker_of_its_own_tip(clone):
+    work, env = clone
+    first = _head(work, env)
+    second = _commit(work, env, "b.txt")
+    _marker(work, env, first).touch()
+    proc = _hook(work, env, f"refs/heads/a {first} refs/heads/a {ZERO}\nrefs/heads/b {second} refs/heads/b {ZERO}\n")
+    assert proc.returncode == 1 and f"REVIEW_OK_{second}" in proc.stderr
+    assert f"REVIEW_OK_{first}" not in proc.stderr
+
+
+def test_a_deletion_and_an_empty_push_need_no_marker(clone):
+    work, env = clone
+    assert _hook(work, env, f"(delete) {ZERO} refs/heads/gone {_head(work, env)}\n").returncode == 0
+    assert _hook(work, env, "").returncode == 0
+
+
+@pytest.mark.parametrize("url", PRODUCT_URLS)
+@pytest.mark.parametrize("local_ref", ["refs/heads/kyoshimi-develop", "refs/heads/topic", "HEAD"])
+def test_a_push_to_the_product_line_is_refused_even_with_a_marker(clone, url, local_ref):
+    work, env = clone
+    sha = _head(work, env)
+    _marker(work, env, sha).touch()
+    proc = _hook(work, {**env, "SKIP_PREPUSH_REVIEW": "1"},
+                 f"{local_ref} {sha} refs/heads/kyoshimi-develop {ZERO}\n", url)
+    assert proc.returncode == 1 and "only through pull requests" in proc.stderr
+    assert "gh pr create -R HengyuLi-Ozaki-lab/task --base kyoshimi-develop" in proc.stderr
+
+
+@pytest.mark.parametrize("url", PRODUCT_URLS)
+def test_other_branches_of_the_product_repository_only_need_their_marker(clone, url):
+    work, env = clone
+    sha = _head(work, env)
+    line = f"refs/heads/topic {sha} refs/heads/topic {ZERO}\n"
+    assert _hook(work, env, line, url).returncode == 1
+    _marker(work, env, sha).touch()
+    assert _hook(work, env, line, url).returncode == 0
+
+
+@pytest.mark.parametrize("url", OTHER_URLS)
+def test_a_branch_named_kyoshimi_develop_on_another_remote_is_an_ordinary_push(clone, url):
+    """The research repository has other remotes with a kyoshimi-develop
+    (the merge sandbox): the product rule is about one repository."""
+    work, env = clone
+    sha = _head(work, env)
+    line = f"refs/heads/kyoshimi-develop {sha} refs/heads/kyoshimi-develop {ZERO}\n"
+    refused = _hook(work, env, line, url)
+    assert refused.returncode == 1 and "no review marker" in refused.stderr
+    assert "only through pull requests" not in refused.stderr
+    _marker(work, env, sha).touch()
+    assert _hook(work, env, line, url).returncode == 0
+
+
+def test_the_review_override_is_logged_with_the_pushed_tip_and_the_reason(clone):
+    work, env = clone
+    sha = _head(work, env)
+    proc = _hook(work, {**env, "SKIP_PREPUSH_REVIEW": "1", "SKIP_PREPUSH_REVIEW_REASON": "docs only"},
+                 f"refs/heads/topic {sha} refs/heads/topic {ZERO}\n")
+    assert proc.returncode == 0
+    log = (_marker(work, env, sha).parent / "REVIEW_OVERRIDES.log").read_text()
+    assert f"SHA={sha}" in log and "reason=docs only" in log
+
+
+def test_install_hooks_makes_git_refuse_in_a_worktree_whose_branch_has_no_githooks(clone, tmp_path):
+    """The reason the hooks are copied: a topic branch from upstream develop
+    has no .githooks/, and the gate must still run there."""
+    work, env = clone
+    proc = subprocess.run(["bash", "scripts/install-hooks.sh"], cwd=work, env=env,
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    common = _marker(work, env, "x").parent
+    assert _git(work, env, "config", "--get", "core.hooksPath").stdout.strip() == str(common / "tracked-hooks")
+    assert os.access(common / "tracked-hooks" / "pre-push", os.X_OK)
+
+    _git(work, env, "checkout", "-q", "--orphan", "upstream-like")
+    _git(work, env, "rm", "-rq", "--cached", ".")
+    (work / "f.txt").write_text("no hooks on this branch\n")
+    _git(work, env, "add", "f.txt")
+    _git(work, env, "commit", "-q", "-m", "a branch without .githooks")
+    _git(work, env, "checkout", "-q", "-f", "topic")
+    other = tmp_path / "other-worktree"
+    _git(work, env, "worktree", "add", "-q", str(other), "upstream-like")
+    assert not (other / ".githooks").exists()
+
+    refused = _git(other, env, "push", "origin", "upstream-like", check=False)
+    assert refused.returncode != 0 and "no review marker" in refused.stderr
+    _marker(other, env, _head(other, env)).touch()
+    assert _git(other, env, "push", "origin", "upstream-like", check=False).returncode == 0
+    # A branch that is not checked out needs the marker of ITS tip, from any worktree.
+    topic = _git(other, env, "push", "origin", "topic", check=False)
+    assert topic.returncode != 0 and _git(work, env, "rev-parse", "topic").stdout.strip()[:12] in topic.stderr
+
+
+def test_install_hooks_check_says_when_the_installed_hook_is_not_the_tracked_one(clone):
+    work, env = clone
+    run = lambda *a: subprocess.run(["bash", "scripts/install-hooks.sh", *a], cwd=work, env=env,
+                                    capture_output=True, text=True, timeout=60)
+    assert run("--check").returncode == 1                    # nothing installed yet
+    assert run().returncode == 0
+    assert run("--check").returncode == 0
+    with open(work / ".githooks" / "pre-push", "a") as fh:
+        fh.write("# a newer hook\n")
+    stale = run("--check")
+    assert stale.returncode == 1 and "run scripts/install-hooks.sh" in stale.stderr
+    assert run().returncode == 0 and run("--check").returncode == 0
+
+
+def test_the_hook_and_the_installer_are_committed_executable():
+    for path in (HOOK, INSTALL):
+        assert os.access(path, os.X_OK), path
+        assert b"\r\n" not in path.read_bytes(), path
