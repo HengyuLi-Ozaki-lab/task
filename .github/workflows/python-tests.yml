@@ -7,9 +7,9 @@ on:
     # targeting that branch (i.e. every recent feature PR) silently
     # bypass GitHub Actions — the appearance of a passing pipeline on
     # PRs #178-#183 came from Cursor Bugbot, not this workflow.
-    branches: [develop, master, chore/pre-push-hook-worktree-compat]
+    branches: [develop, master, chore/pre-push-hook-worktree-compat, kyoshimi-develop]
   push:
-    branches: [develop, master, chore/pre-push-hook-worktree-compat]
+    branches: [develop, master, chore/pre-push-hook-worktree-compat, kyoshimi-develop]
 
 # Cancel superseded runs on the same branch to save minutes
 concurrency:
