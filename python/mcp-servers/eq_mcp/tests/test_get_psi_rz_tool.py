@@ -39,8 +39,15 @@ for _extra in (str(_MCP_ROOT), str(_PYTHON_ROOT)):
 
 
 def _resolved_so() -> Path:
-    env = os.environ.get("EQLIB_PATH")
-    return Path(env) if env else _REPO_ROOT / "eq" / "libeqapi.so"
+    """Mirror eqlib's OWN resolution order, rather than re-deriving a narrower one.
+
+    ``eqlib._ffi._default_lib_path`` tries MONO_LIB_PATH (priority 0, above
+    EQLIB_PATH), then EQLIB_PATH, then eq/libeqapi.so, then lib/libeqapi.so.
+    Re-implementing only the middle two would skip this test in layouts where
+    the library is present and loadable -- a guard masking a real result.
+    """
+    from eqlib import _ffi  # local import: after the sys.path inserts above
+    return Path(_ffi._default_lib_path())
 
 
 # Client half: without it this module cannot be collected at all.
@@ -68,9 +75,22 @@ from eq_mcp import server as _srv  # noqa: E402
 )
 def test_get_psi_rz_via_mcp():
     async def run():
+        # The parent got eq_mcp on sys.path via the inserts above; the CHILD
+        # needs it on PYTHONPATH or it dies with ModuleNotFoundError and the
+        # client sees the same opaque "Connection closed" this file guards
+        # against. Without this the _srv.MCP_AVAILABLE guard would be checking
+        # the parent while the child fails for an unrelated reason.
         params = StdioServerParameters(
             command=sys.executable, args=["-m", "eq_mcp.server"],
-            env={**os.environ},
+            env={
+                **os.environ,
+                "PYTHONPATH": os.pathsep.join(
+                    p for p in (
+                        str(_MCP_ROOT), str(_PYTHON_ROOT),
+                        os.environ.get("PYTHONPATH", ""),
+                    ) if p
+                ),
+            },
         )
         async with stdio_client(params) as (r, w):
             async with ClientSession(r, w) as session:

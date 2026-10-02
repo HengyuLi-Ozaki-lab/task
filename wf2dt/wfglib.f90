@@ -126,9 +126,15 @@ CONTAINS
        IF(ierr1+ierr2+ierr3.NE.0) THEN
           WRITE(6,'(A,3I5)') &
                'XX rgb_a: SPL1D error: ierr1/2/3=',ierr1,ierr2,ierr3
+!         #228 finding 31: unwind fully so INIT stays 0 and a retry re-enters
+!         cleanly instead of re-ALLOCATEing already-allocated arrays (abort).
+          DEALLOCATE(f_a,rgb_a,dummy,urgb_ar,urgb_ag,urgb_ab)
+          rgb(1:3)=0.D0
           RETURN
        END IF
-       DEALLOCATE(rgb_a,dummy)
+!      #228 finding 12: rgb_a must SURVIVE — the clamp branches below read it.
+!      Mirrors rgbf_c, which already deallocates only the scratch array.
+       DEALLOCATE(dummy)
        INIT=1
     END IF
 
@@ -183,9 +189,15 @@ CONTAINS
        IF(ierr1+ierr2+ierr3.NE.0) THEN
           WRITE(6,'(A,3I5)') &
                'XX rgb_b: SPL1D error: ierr1/2/3=',ierr1,ierr2,ierr3
+!         #228 finding 31: unwind fully so INIT stays 0 and a retry re-enters
+!         cleanly instead of re-ALLOCATEing already-allocated arrays (abort).
+          DEALLOCATE(f_b,rgb_b,dummy,urgb_br,urgb_bg,urgb_bb)
+          rgb(1:3)=0.D0
           RETURN
        END IF
-       DEALLOCATE(rgb_b,dummy)
+!      #228 finding 12: rgb_b must SURVIVE — the clamp branches below read it.
+!      Mirrors rgbf_c, which already deallocates only the scratch array.
+       DEALLOCATE(dummy)
        INIT=1
     END IF
 
@@ -250,6 +262,9 @@ CONTAINS
        IF(ierr1+ierr2+ierr3.NE.0) THEN
           WRITE(6,'(A,3I5)') &
                'XX rgb_c: SPL1D error: ierr1/2/3=',ierr1,ierr2,ierr3
+!         #228 finding 31: unwind fully so INIT stays 0 (see rgbf_a).
+          DEALLOCATE(f_c,rgb_c,dummy,urgb_cr,urgb_cg,urgb_cb)
+          rgb(1:3)=0.D0
           RETURN
        END IF
        DEALLOCATE(dummy)
@@ -564,8 +579,8 @@ CONTAINS
     INTEGER,INTENT(OUT):: mode
     real(rkind):: ftemp
 
-    IF(ABS(fmax).LE.1.-12) fmax=0.D0
-    IF(ABS(fmin).LE.1.-12) fmin=0.D0
+    IF(ABS(fmax).LE.1.D-12) fmax=0.D0
+    IF(ABS(fmin).LE.1.D-12) fmin=0.D0
     
     IF(fmax*fmin.LT.0.D0) THEN
        ftemp=MAX(fmax,-fmin)

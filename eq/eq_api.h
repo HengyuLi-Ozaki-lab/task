@@ -19,7 +19,7 @@ extern "C" {
  *                 MODELG + KNAMEQ. eq_run(0) and other modes still
  *                 return EQ_ERR_NOT_IMPL pending L-4.
  *   - eq_save   : NEW in Task 1.1. Writes TASK-internal binary to KNAMEQ.
- *                 Returns EQ_OK unconditionally; caller must verify file.
+ *                 Fails (see eq_save below) when no file was written.
  *   - eq_last_error : why the most recent eq_run failed (see below).
  *
  * Memory note: every array in eq_state_t is fixed-size (max-capacity).
@@ -162,8 +162,9 @@ typedef struct {
  */
 int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
 
-/* Write current EQ state to KNAMEQ binary; returns EQ_OK unconditionally.
-   Caller MUST verify file existence afterward (see Task 1.2 Python wrapper). */
+/* Write current EQ state to KNAMEQ binary. EQ_ERR_INVALID: blank KNAMEQ;
+   EQ_ERR_CALC_FAILED: the file could not be opened or no non-empty file
+   was written; EQ_OK otherwise. */
 int eq_save(void);
 
 /*

@@ -27,7 +27,8 @@ Fortran WRITE(6,...) targets OS fd 1, which is also the JSON-RPC write
 pipe to the MCP client parent.  Any Fortran diagnostic line corrupts the
 pipe and causes "Connection closed" on the client side.
 
-Fix: at startup (BEFORE any mcp/logging import touches sys.stdout):
+Fix: installed by main() immediately before the stdio server starts
+(NOT at import time -- see #227 item 1):
   1. dup fd 1 (JSON-RPC write pipe) to a fresh fd; redirect fd 1 → stderr
      so Fortran WRITE(6,...) goes to the subprocess stderr (backend log).
   2. Rebuild sys.stdout around the saved fd so the MCP framework's stdio
@@ -41,55 +42,71 @@ NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the Fortran
 library uses stdin internally; redirecting it increases crash rates.
 
 The _redirect_fortran_stdout_to_stderr context manager below is kept as
-belt-and-suspenders but is effectively a no-op: dup2(2,1) when fd 1 is
-already fd 2 is harmless, and the flushes are harmless too.
+belt-and-suspenders. Once main() has installed the isolation, dup2(2,1)
+when fd 1 is already fd 2 is harmless. For an in-process importer that never
+calls main(), it is NOT a no-op -- it is the only thing keeping Fortran
+WRITE(6) off the caller's stdout, which is why it stays.
 """
 from __future__ import annotations
 
 import os as _os
 import sys as _sys
 
-# Skip the redirect dance for --print-tools / --help / similar one-shot
-# modes that print to the terminal.
-_ONESHOT_FLAGS = {"--print-tools", "--help", "-h", "--version"}
-_is_oneshot = any(a in _ONESHOT_FLAGS for a in _sys.argv[1:])
+# ---------- fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC) ----------
+# fd 1 originally points at the parent's JSON-RPC write pipe. Fortran
+# WRITE(6,...) also targets fd 1, corrupting the pipe. We dup the pipe
+# to a fresh fd and redirect fd 1 → stderr so Fortran writes go to the
+# subprocess stderr (visible in backend log; harmless to JSON-RPC).
+#
+# The MCP framework writes via sys.stdout, so we rebuild sys.stdout to
+# write to the saved (original-pipe) fd. Line buffering keeps JSON-RPC
+# records flushing per-message.
+#
+# NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the
+# Fortran library uses stdin internally; redirecting it increases crash
+# rates (~20% → ~50%).
+#
+# #227 item 1: this MUST NOT run at import time. Importing this module --
+# pytest collection, an embedding application, or a bare
+# `python -c "import tr_mcp.server"` -- previously mutated the *host*
+# process's fd 1 and replaced its sys.stdout. It is now installed
+# explicitly by main(), i.e. only when this module actually runs as the
+# stdio server.
+_FD_ISOLATION_INSTALLED = False
+_mcp_pipe_fd = None
 
-if not _is_oneshot:
-    # ---------- fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC) ----------
-    # fd 1 originally points at the parent's JSON-RPC write pipe. Fortran
-    # WRITE(6,...) also targets fd 1, corrupting the pipe. We dup the pipe
-    # to a fresh fd and redirect fd 1 → stderr so Fortran writes go to the
-    # subprocess stderr (visible in backend log; harmless to JSON-RPC).
-    #
-    # The MCP framework writes via sys.stdout, so we rebuild sys.stdout to
-    # write to the saved (original-pipe) fd. Line buffering keeps JSON-RPC
-    # records flushing per-message.
-    #
-    # NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the
-    # Fortran library uses stdin internally; redirecting it increases crash
-    # rates (~20% → ~50%).
-    #
-    # Once per process: tot_mcp imports several of these servers, and a
-    # second dup(1) would save the already-redirected stderr as the
-    # "JSON-RPC pipe" -- every response would then go to stderr.
-    if not getattr(_sys, "_task_mcp_stdout_isolated", False):
-        _mcp_pipe_fd = _os.dup(1)
-        _os.dup2(2, 1)
-        _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
-        if _sys.platform == "win32":
-            # Windows serialises every operation on a synchronous pipe: while
-            # the MCP reader thread waits in ReadFile on stdin, the gfortran
-            # runtime's start-up fstat()/isatty() of fd 0 -- run when the DLL
-            # loads, inside the first tool call -- blocks forever. The MCP
-            # reader keeps the pipe on a fresh fd; fd 0 becomes NUL. (The
-            # POSIX note above about stdin does not apply: this is Windows only.)
-            _mcp_in_fd = _os.dup(0)
-            _null_fd = _os.open(_os.devnull, _os.O_RDONLY)
-            _os.dup2(_null_fd, 0)
-            _os.close(_null_fd)
-            _sys.stdin = _os.fdopen(_mcp_in_fd, "r", encoding="utf-8")
-        _sys._task_mcp_stdout_isolated = True
-    # ----------------------------------------------------------------------
+
+def _install_fd_isolation() -> None:
+    """Redirect fd 1 to stderr and rebuild sys.stdout on the saved pipe fd.
+
+    Called from main() immediately before the stdio server starts; never at
+    import time (#227 item 1). Idempotent, and once per PROCESS: the flag
+    lives on ``sys`` because a second dup(1) -- another server module of the
+    same process -- would save the already-redirected stderr as the
+    "JSON-RPC pipe", and every response would then go to stderr.
+    """
+    global _FD_ISOLATION_INSTALLED, _mcp_pipe_fd
+    if _FD_ISOLATION_INSTALLED or getattr(_sys, "_task_mcp_stdout_isolated", False):
+        _FD_ISOLATION_INSTALLED = True
+        return
+    _mcp_pipe_fd = _os.dup(1)
+    _os.dup2(2, 1)
+    _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
+    if _sys.platform == "win32":
+        # Windows serialises every operation on a synchronous pipe: while
+        # the MCP reader thread waits in ReadFile on stdin, the gfortran
+        # runtime's start-up fstat()/isatty() of fd 0 -- run when the DLL
+        # loads, inside the first tool call -- blocks forever. The MCP
+        # reader keeps the pipe on a fresh fd; fd 0 becomes NUL. (The
+        # POSIX note above about stdin does not apply: this is Windows only.)
+        _mcp_in_fd = _os.dup(0)
+        _null_fd = _os.open(_os.devnull, _os.O_RDONLY)
+        _os.dup2(_null_fd, 0)
+        _os.close(_null_fd)
+        _sys.stdin = _os.fdopen(_mcp_in_fd, "r", encoding="utf-8")
+    _sys._task_mcp_stdout_isolated = True
+    _FD_ISOLATION_INSTALLED = True
+# ----------------------------------------------------------------------
 
 import contextlib
 import ctypes
@@ -507,17 +524,18 @@ except Exception:  # pragma: no cover — libgfortran not found; fall back to C 
 # libgfortran/libtrapi.so triggers SIGABRT ~10-40% of the time due to an
 # internal heap-corruption bug in the gfortran I/O library triggered by the
 # flush sequence.  Disable it when the permanent redirect is active.
-if not _is_oneshot:
-    _HAS_GFORTRAN_FLUSH = False
+# (Decided at call time via _FD_ISOLATION_INSTALLED -- see
+# _redirect_fortran_stdout_to_stderr below -- because the redirect is no
+# longer installed at import time.)
 
 
 @contextlib.contextmanager
 def _redirect_fortran_stdout_to_stderr():
     """Belt-and-suspenders: ensure fd 1 points at stderr around Fortran calls.
 
-    With the permanent fd-isolation applied at module load time (see the
-    module docstring), fd 1 already points at stderr for the lifetime of the
-    process.  This context manager is now effectively a no-op:
+    When main() has installed the fd-isolation, fd 1 already points at
+    stderr for the lifetime of the process and this context manager is
+    effectively a no-op:
     dup2(2, 1) when fd 1 is already fd 2 is harmless, and the flushes are
     harmless too.
 
@@ -537,7 +555,7 @@ def _redirect_fortran_stdout_to_stderr():
         os.dup2(sys.stderr.fileno(), 1)
         yield
         # 1. Flush Fortran's internal I/O buffer for unit 6.
-        if _HAS_GFORTRAN_FLUSH:
+        if _HAS_GFORTRAN_FLUSH and not _FD_ISOLATION_INSTALLED:
             _gfortran_flush(ctypes.byref(_FORTRAN_UNIT6))
         # 2. Flush C-level stdout FILE* (defense in depth).
         _libc.fflush(_c_stdout)
@@ -618,28 +636,28 @@ def handle_get_state() -> Dict[str, Any]:
 
 
 def handle_finalize() -> str:
-    """Skip tr_finalize (SIGABRT-prone in libtrapi.so) — process exits cleanly.
+    """Finalize the TR backend, mirroring ``eq_mcp.server.handle_finalize``.
 
-    tr_finalize() crashes with SIGABRT ~40% of the time on this build of
-    libtrapi.so due to a heap-corruption bug in the Fortran cleanup path.
-    Since the MCP server process exits immediately after finalize (see
-    main() → os._exit(0)), calling tr_finalize is unnecessary: the OS will
-    reclaim all memory and file descriptors on process exit.
+    #227 item 2: this used to mark the :class:`Trlib` handle closed *without*
+    calling ``tr_finalize``, as a workaround for a SIGABRT (~40% of calls) in
+    the Fortran cleanup path.  That left ``g_initialized`` set in
+    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (tr_api.f90:77 --
+    "already initialized, just return OK") a subsequent ``init`` became a
+    no-op that did **not** restore defaults.  It also disagreed with
+    ``handle_run_and_get_state``, which needs a real finalize for its
+    fresh-init contract and therefore kept calling the very path this one
+    avoided.
 
-    We mark the Trlib handle as closed without calling tr_finalize so that
-    __del__ doesn't retry the call at process-exit time.
+    The underlying crash was a double ``DEALLOCATE`` and is fixed on this tree:
+    ``DEALLOCATE_TRCOMM`` now returns early when nothing is allocated
+    (tr/trcomm.f90).  Measured on the merged tree, gfortran-15/macOS:
+    init+close 40/40 clean, init+run+close 40/40 clean, and an explicit double
+    ``tr_finalize`` 30/30 clean (the second call returns TR_OK via the
+    not-initialized guard).  So both lifecycle paths now use the honest one.
     """
     try:
-        if STATE.tr is not None and not STATE.tr.closed:
-            # Mark closed without calling tr_finalize to avoid SIGABRT.
-            # Accessing the private _closed attribute is intentional here;
-            # the MCP server is the only caller in this scenario.
-            STATE.tr._closed = True  # type: ignore[attr-defined]
-            try:
-                STATE.tr._release_live_instance()  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        STATE.tr = None
+        with _redirect_fortran_stdout_to_stderr():
+            STATE.close()
         return "tr library finalized"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -699,7 +717,7 @@ def build_server() -> Any:
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
-            "Install it with: pip install 'mcp>=0.9'"
+            "Install it with: pip install 'mcp>=0.9,<2'"
         )
 
     mcp = FastMCP(  # type: ignore[misc]
@@ -869,9 +887,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not MCP_AVAILABLE:
         sys.stderr.write(
             "error: Python MCP SDK (`mcp`) is not installed.\n"
-            "       pip install 'mcp>=0.9'\n"
+            "       pip install 'mcp>=0.9,<2'\n"
         )
         return 2
+
+    # Install the fd isolation now -- NOT at import time (#227 item 1).
+    # Everything above this point (--help, --print-tools, the MCP-missing
+    # error path) returns before we touch the host process's fds.
+    _install_fd_isolation()
 
     server = build_server()
     # FastMCP >=0.9 exposes .run() for stdio transport by default.

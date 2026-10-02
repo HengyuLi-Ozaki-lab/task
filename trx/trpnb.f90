@@ -475,6 +475,9 @@
             TAUS=0.D0
          ELSE
             P4 = 3.D0*SQRT(0.5D0*PI)*AME/ANE*(ABS(TE)*RKEV/AME)**1.5D0
+            VCD3 = 0.D0
+            VCT3 = 0.D0
+            VCA3 = 0.D0
             IF(NS_D.NE.0) VCD3 = P4*RN(NR,NS_D  )*PZ(NS_D  )**2/AMD
             IF(NS_T.NE.0) VCT3 = P4*RN(NR,NS_T  )*PZ(NS_T  )**2/AMT
             IF(NS_He4.NE.0) VCA3 = P4*RN(NR,NS_He4)*PZ(NS_He4)**2/AMA
