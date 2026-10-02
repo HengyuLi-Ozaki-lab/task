@@ -856,10 +856,9 @@ def build_server() -> Any:
 
         The path is set as KNAMEQ before calling eq_save. The file is
         consumable by tr_mcp via ``set_param_str("KNAMEQ", path)`` plus
-        ``MODELG=3``. Note: the underlying Fortran ``EQSAVE`` silently
-        swallows FWOPEN failures (blank KNAMEQ, missing directory,
-        permission denied) — callers should verify file existence after
-        the call.
+        ``MODELG=3``. Fails with the library's message when no file was
+        written (blank path, missing directory, permission denied), so
+        success means a non-empty file exists at ``path``.
         """
         return handle_save(path)
 
