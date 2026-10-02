@@ -116,6 +116,9 @@ class TestImportDoesNotMutateProcess(unittest.TestCase):
     def test_tr_mcp_server_import_is_clean(self):
         self._assert_clean("tr_mcp.server")
 
+    def test_fp_mcp_server_import_is_clean(self):
+        self._assert_clean("fp_mcp.server")
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
