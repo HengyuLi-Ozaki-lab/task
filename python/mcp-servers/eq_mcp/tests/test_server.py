@@ -565,35 +565,53 @@ class TestIntegration(unittest.TestCase):
             f"expected FILE_MISSING (code 4) in diagnostics: {diags}",
         )
 
-    def test_validate_m0_crash_preset_emits_nonempty_and_names_r_grid(self) -> None:
-        """M2-T7 decisive regression: the M0-verified crash case (RR=6.2,
-        RA=2.0, default RB=1.2, MODELG=2 default) must now produce a
-        non-empty validate() naming the R-grid (OUT_OF_RANGE_AFTER_DEP,
-        code 3) alongside the wall violation (INCONSISTENT_PAIR, code
-        2: RB=1.2 < RA=2.0 — the reattributed M0 crash class)."""
+    def test_validate_wall_inside_plasma_flags_only_the_wall_at_default_mdleqf(
+        self,
+    ) -> None:
+        """A large device (RR=6.2, RA=2.0) with the default RB=1.2 < RA,
+        MODELG=2 and MDLEQF at its default: validate() is non-empty and
+        names the wall violation (INCONSISTENT_PAIR, code 2). It does not
+        name the extent check (OUT_OF_RANGE_AFTER_DEP, code 3): a
+        default-MDLEQF solve does not read RGMIN..ZGMAX."""
         srv.handle_init()
         srv.handle_set_params({"MODELG": 2, "RR": 6.2, "RA": 2.0})
         diags = srv.handle_validate()
-        self.assertTrue(diags, "expected non-empty diagnostics for the M0 crash preset")
+        self.assertTrue(diags, "expected non-empty diagnostics (RB < RA)")
+        codes = {d["code"] for d in diags}
+        self.assertEqual(codes, {2}, f"expected only INCONSISTENT_PAIR (code 2): {diags}")
+        self.assertIn("solver can abort", " ".join(d["message"] for d in diags))
+
+    def test_validate_wall_inside_plasma_with_mdleqf_10_adds_the_extent_check(
+        self,
+    ) -> None:
+        """The same input with MDLEQF=10 (the solver reads the box) also
+        names the R-grid box (OUT_OF_RANGE_AFTER_DEP, code 3)."""
+        srv.handle_init()
+        srv.handle_set_params({"MODELG": 2, "MDLEQF": 10, "RR": 6.2, "RA": 2.0})
+        diags = srv.handle_validate()
         codes = {d["code"] for d in diags}
         self.assertIn(2, codes, f"expected INCONSISTENT_PAIR (code 2) in {diags}")
         self.assertIn(3, codes, f"expected OUT_OF_RANGE_AFTER_DEP (code 3) in {diags}")
         messages = " ".join(d["message"] for d in diags)
         self.assertIn("R-grid", messages)
+        self.assertIn("MDLEQF >= 10", messages)
 
     def test_validate_modelg3_iter_geometry_skips_grid_extent_check(self) -> None:
         """SCOPING REGRESSION: the R/Z-extent check (OUT_OF_RANGE_AFTER_
         DEP) is MODELG==2 only. The ITER01 fixture geometry used by
         test_init_set_run_get_state_cycle_iter01 below (RR=6.2, RA=2.0,
-        RB=2.1, MODELG=3) sits far outside the default R-grid under the
-        RA basis (RR+RA=8.2 >> RGMAX=4.5) yet is a legitimately-clean,
-        currently-tested TASK-native-load configuration (MODELG=3 ->
-        EQRTSK per eq/eqfile.f90's EQ_READ dispatch; the EQDSK reader
-        serves MODELG=5/25) — a MODELG-agnostic port of task-web's
-        guards.py check would regress that fixture."""
+        RB=2.1, MODELG=3) sits far outside the default R-grid box under
+        the RA basis (RR+RA=8.2 >> RGMAX=4.5) yet is a clean,
+        currently-tested TASK-native-load configuration at the default
+        MDLEQF (MODELG=3 -> EQRTSK per eq/eqfile.f90's EQ_READ dispatch;
+        the EQDSK reader serves MODELG=5/25). A file load sets the
+        geometry itself, so the pre-run RR/RA say nothing about the
+        loaded plasma: a check that ignored MODELG would regress that
+        fixture. MDLEQF=10 is set here so that the MODELG gate, not the
+        MDLEQF gate, keeps this case clean."""
         srv.handle_init()
         srv.handle_set_params({
-            "MODELG": 3, "RR": 6.2, "RA": 2.0, "RKAP": 1.7,
+            "MODELG": 3, "MDLEQF": 10, "RR": 6.2, "RA": 2.0, "RKAP": 1.7,
             "RDLT": 0.33, "RB": 2.1, "BB": 5.3, "RIP": 15.0,
         })
         srv.handle_set_param_str("KNAMEQ", "eqdata.ITER01")
