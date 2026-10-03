@@ -8,6 +8,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- **FP library: `fp_run` refuses `NRMAX` above `FP_MAX_NRMAX` (100).** Such a
+  run was made, and `fp_get_state` then returned rc=3: its results could be
+  read only from the log on unit 6 or from `fp_regress.dat`
+  (`FP_REGRESS_DUMP=1`). `fp_run` now returns `FP_ERR_INVALID` before any
+  work.
+
+### Fixed
+
+- **FP library: `fp_run` refuses the counts the solver cannot run with**,
+  before any work, with `FP_ERR_INVALID` and one `XX fp_run: ...` line per
+  violation on unit 6 (`fp_param_check` in `fp/fp_param_registry.f90`).
+  They were accepted when set and then ran past an array bound (an abort
+  when built with run-time checks), ended the host process, or never
+  returned: `NRMAX` below 1; `NPMAX` or `NTHMAX` below 2; `LMAXFP` below 0
+  or at the largest integer (the iteration's exit, `N_IMPL = 1 + LMAXFP`,
+  overflows and a step never ends); `NSAMAX` above `NSBMAX`; an evolved
+  species number outside 1 to `MIN(NSMAX, NSBMAX)`; a background species
+  number outside 1 to `NSMAX`.
+
 ## TR Phase L — library-ization (2026-04-18)
 
 Phase L turned TASK/TR from a CLI-only Fortran program into an

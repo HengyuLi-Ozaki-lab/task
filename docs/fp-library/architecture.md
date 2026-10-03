@@ -89,10 +89,37 @@ Return codes (`enum fp_error`):
 | code | meaning | Python exception |
 |---|---|---|
 | 0 | OK | — |
-| 1 | invalid name / value | `FplibInvalidParamError` |
+| 1 | invalid name / value; from `fp_run`, a count it cannot run with (below) | `FplibInvalidParamError` |
 | 2 | not initialised | `FplibNotInitError` |
 | 3 | calculation failed | `FplibCalcFailedError` |
 | 4 | not implemented (Phase L-2 stub) | `FplibNotImplementedError` |
+
+`fp_run` checks the counts together before any work (`fp_param_check`,
+`fp/fp_param_registry.f90`) and returns 1, with one `XX fp_run: ...` line per
+violation on unit 6, for a count the solver cannot run with:
+
+| count | accepted | without the check |
+|---|---|---|
+| `NRMAX` | 1 to `FP_MAX_NRMAX` (100) | below 1 the mesh set-up ran past an array bound; above 100 the run was made and `fp_get_state` could not return it |
+| `NPMAX`, `NTHMAX` | 2 or more | the solver ran past an array bound |
+| `LMAXFP` | 0 to `HUGE - 1` | below 0 no pass was made and `fp_loop` tested an error flag that no pass had set; at `HUGE` a step never ended |
+| `NSAMAX` | at most `NSBMAX` | an array bound of the collision arrays |
+| `NS_NSA(1..NSAMAX)` | 1 to `MIN(NSMAX, NSBMAX)` (0: the slot's own number) | an array bound |
+| `NS_NSB(1..NSBMAX)` | 1 to `NSMAX` (0: the slot's own number) | an array bound |
+
+An array bound passed is an abort when the library is built with run-time
+checks and undefined behaviour without them. The reason for a refusal is on
+unit 6 only: `fp_run` returns the one code. The handle stays usable: correct
+the count and call `fp_run` again. Until that run is made do not call
+`fp_get_state`, as after any `fp_set_param`: it reads the arrays of the last
+run with the counts now set, past their end when a count was raised (and
+returns rc=3 while `NRMAX` is above `FP_MAX_NRMAX`).
+
+Not checked: a mesh too large for memory, or whose `NRMAX * NPMAX * NTHMAX`
+passes a default integer (`NPMAX` and `NTHMAX` have no upper bound); `NPMAX`
+or `NTHMAX` of 2, which runs and is too coarse for a result; an evolved
+species that no background slot names (`fp_set_nsa_nsb` reports it and the
+run is made without that species' collisions with its own kind).
 
 `fp_state_t` carries 5 integer scalars (`nrmax`, `nsamax`, `npmax`,
 `nthmax`, `ntg2`), the simulation time `timefp` (double), and six 2-D

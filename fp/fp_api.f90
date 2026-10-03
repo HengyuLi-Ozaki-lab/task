@@ -195,6 +195,7 @@ CONTAINS
   ! BIND(C, NAME="fp_run") keeps the external symbol as `fp_run`.
   !-------------------------------------------------------------------
   FUNCTION fp_api_run(ntmax_in) RESULT(ierr) BIND(C, NAME="fp_run")
+    USE fp_param_registry, ONLY: fp_param_check
     INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax_in
     INTEGER(C_INT) :: ierr
     INTEGER :: ntmax_save, prep_ierr
@@ -204,6 +205,16 @@ CONTAINS
        RETURN
     END IF
     IF (ntmax_in < 0) THEN
+       ierr = FP_ERR_INVALID
+       RETURN
+    END IF
+
+    ! The counts a run cannot be made with are refused together, before
+    ! fp_prep: they run past an array bound there or in fp_loop, end the
+    ! process, never end a step, or (NRMAX beyond the state layout) make
+    ! a run that fp_api_get_state cannot return. fp_param_check says
+    ! which, on unit 6.
+    IF (fp_param_check(INT(FP_MAX_NRMAX)) /= 0) THEN
        ierr = FP_ERR_INVALID
        RETURN
     END IF
