@@ -448,14 +448,14 @@ CONTAINS
   !                   NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX/NRVMAX
   !                   vs the eqcom0_mod compile-time maxima).
   !   FILE_MISSING  : MODELG in {3,5,8} requires non-blank KNAMEQ.
-  !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA (the
-  !                   reattributed M0 crash class; MODELG-agnostic).
+  !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA, any
+  !                   MODELG (the solver can abort or give a wrong
+  !                   equilibrium).
   !   OUT_OF_RANGE_AFTER_DEP : plasma extents RR+/-RA, +/-RKAP*RA
-  !                   outside RGMIN/RGMAX x ZGMIN/ZGMAX. MODELG==2
-  !                   only — see the long comment at the check site
-  !                   for the loader dispatch that motivates the gate.
-  !                   Mirrors app/services/optimize/guards.py's
-  !                   eq_cross_checks in task-web (AutoTASK M2-T7).
+  !                   outside RGMIN/RGMAX x ZGMIN/ZGMAX. Checked for
+  !                   MODELG==2 and MDLEQF >= 10 only. MODELG 0/1 and the
+  !                   file loads also read the box when MDLEQF >= 10 and
+  !                   are not checked (see the long comment at the check).
   !
   ! Geometry-diagnostic caveat: the RB/RA/RR/RKAP checks reflect the
   ! PRE-RUN values. For file-load MODELG (3/5/8/9/25) the loader may
@@ -473,7 +473,7 @@ CONTAINS
                           NRM, NTHM, NSUM, NRVM
     USE eqcom1_mod, ONLY: NSGMAX, NTGMAX, NUGMAX, NRGMAX, NZGMAX, &
                           NPSMAX, NRMAX, NTHMAX, NSUMAX, NRVMAX, &
-                          RGMIN, RGMAX, ZGMIN, ZGMAX
+                          RGMIN, RGMAX, ZGMIN, ZGMAX, MDLEQF
     USE plcomm, ONLY: rkind, RR, RA, RB, RKAP
     TYPE(eq_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
@@ -482,7 +482,7 @@ CONTAINS
     INTEGER :: nlocal
     INTEGER :: ios
     REAL(rkind) :: z_extent
-    CHARACTER(LEN=EQ_DIAG_MSG_LEN) :: msgbuf
+    CHARACTER(LEN=EQ_DIAG_MSG_LEN - 1) :: msgbuf   ! the C field keeps 127 characters + NUL
 
     IF (.NOT. g_initialized) THEN
        ndiag = 0
@@ -520,63 +520,63 @@ CONTAINS
     !      RA). MODELG-agnostic: EQAXIS's default (MDLEQF<10) axis
     !      search box is RR +/- RB / +/-RKAP*RB (eq/eqsub.f90:55-59),
     !      used by EQCALQ/EQCALV regardless of MODELG, so RB<RA can
-    !      starve that box of the true axis either way. Reattributed
-    !      M0 live-crash class: the crash was the ITER preset (RR=6.2,
-    !      RA=2.0 — see docs/superpowers/plans/2026-05-17-3d-tokamak-
-    !      architecture-wiki.md's "iter" preset) run through MODELG=2
-    !      mode=0 with RB left at the small-tokamak default (1.2)
-    !      instead of an enclosing wall value. Mirrors task-web
-    !      app/services/optimize/guards.py::eq_cross_checks's RB<RA
-    !      branch (gates on its own operands, independent of RR).
+    !      starve that box of the true axis either way. Measured: a
+    !      large device (RR=6.2, RA=2.0) run through MODELG=2 mode=0
+    !      with RB left at the small-tokamak default (1.2) aborts the
+    !      process (EQMAGS cannot trace a surface and a later zminmax
+    !      call reads YA(:,0)); RB=0.8 with RA=1.0 runs but gives a
+    !      different equilibrium than an enclosing wall, because the
+    !      solve and its R-Z grid use the smaller RB (EQCALQ's RB=RA
+    !      clamp comes after EQCALC in a mode-0 run).
     IF (RB < RA) THEN
        ! IOSTAT guard (all three diagnostic WRITEs): RR/RA/RB/RKAP are
        ! externally settable, and an extreme value (e.g. RR=1e30,
        ! live-reproduced) makes the F0.3 rendering overflow the
-       ! CHARACTER(128) internal file -> gfortran "End of record"
+       ! CHARACTER(127) internal file -> gfortran "End of record"
        ! ABORTS the process without IOSTAT — a library-reachable abort
        ! inside the function whose whole purpose is returning
        ! diagnostics instead of crashing. On overflow substitute a
        ! static message (kept LEN-safe and still naming the check).
        WRITE(msgbuf, '(A,F0.3,A,F0.3,A)', IOSTAT=ios) &
             "wall radius RB=", RB, " < minor radius RA=", RA, &
-            " (M0 crash class)"
+            " (the solver can abort or give a wrong equilibrium)"
        IF (ios /= 0) msgbuf = &
-            "wall radius RB < minor radius RA (M0 crash class; values unprintable)"
+            "wall radius RB < minor radius RA (the solver can abort or give a wrong equilibrium; values unprintable)"
        CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
     END IF
 
     ! ---- OUT_OF_RANGE_AFTER_DEP: plasma extents (RA basis, NOT the
-    !      wall RB — task-web's app/services/optimize/guards.py was
-    !      corrected 2026-07-17 after live probing showed the RB basis
-    !      both false-rejected the p1c ground-truth optimum and didn't
-    !      match the real failure geometry) against the tabulation
-    !      grid RGMIN/RGMAX/ZGMIN/ZGMAX. SCOPED TO MODELG==2 ONLY:
-    !      this box only bounds the analytic-solve/tabulation path.
-    !      The file-load family never consults RGMIN/RGMAX — per the
-    !      EQ_READ dispatch (eq/eqfile.f90:108-119): MODELG=3/9 ->
-    !      EQRTSK (eqfile.f90; TASK-native file carrying its own RG/ZG
-    !      grids AND RA/RKAP/RDLT/RB), MODELG=5/25 -> EQDSKR
-    !      (eq-eqdsk.f90; grid rebuilt from the file's rdim/zdim),
-    !      MODELG=8 -> EQJAEAR, MODELG=15 -> equread::eqdsk. MODELG=0/1
-    !      share EQCALC's analytic path (eqcalc.f90 has no MODELG
-    !      branching) but are excluded conservatively pending live
-    !      probing. Proof the gate is required: the eq_mcp ITER01
-    !      regression fixture (RR=6.2, RA=2.0, MODELG=3;
-    !      python/mcp-servers/eq_mcp/tests/test_server.py::
-    !      test_init_set_run_get_state_cycle_iter01) sits far outside
-    !      this box (RR+RA=8.2 >> RGMAX=4.5) yet is a legitimately-
-    !      clean, currently-tested configuration — validate() must
-    !      keep returning [] for it. A MODELG-agnostic port of
-    !      guards.py's check would regress that fixture; guards.py
-    !      itself has never hit this gap because every task-web-
-    !      registered EQ problem so far is MODELG=2.
-    IF (MODELG == 2) THEN
+    !      wall RB: the plasma must fit the box whatever the wall)
+    !      against the box RGMIN/RGMAX/ZGMIN/ZGMAX. SCOPED TO MODELG==2
+    !      AND MDLEQF >= 10, the cases where the solver reads the box:
+    !      EQAXIS (eq/eqsub.f90:55-65; from EQSETP and EQCALV) takes the
+    !      window the magnetic axis must lie in, and the bound of the
+    !      outer-edge search, from RGMIN..ZGMAX only for MDLEQF >= 10
+    !      (otherwise from RR +/- RB, +/- RKAP*RB). After the solve
+    !      EQCALQP overwrites the four with the traced plasma extent for
+    !      any MDLEQF (eqcalq.f90:603-613; EQCALQV again for MDLEQF < 10,
+    !      977-988), so for MDLEQF < 10 they are outputs and the plasma
+    !      may lie outside them. Even for MDLEQF >= 10 the box is not
+    !      the grid psi is tabulated on (EQTORZ: RR +/- RB). A file load
+    !      (EQ_READ dispatch, eq/eqfile.f90:122-138: MODELG=3/9 ->
+    !      EQRTSK, a TASK-native file carrying its own RG/ZG grids AND
+    !      RA/RKAP/RDLT/RB; MODELG=5/25 -> EQDSKR, grid rebuilt from the
+    !      file's rdim/zdim; MODELG=8 -> EQJAEAR; MODELG=15 -> equread::
+    !      eqdsk) sets the geometry itself (see the caveat above), so
+    !      the pre-run values say nothing about the loaded plasma. Not
+    !      checked, hence a false negative for MDLEQF >= 10, where they
+    !      read the box too (EQAXIS): every file load, and MODELG=0/1,
+    !      which share EQCALC's analytic path (run(0) fails, ierr=103).
+    !      The eq_mcp ITER01 fixture (RR=6.2, RA=2.0, MODELG=3,
+    !      test_server.py::test_init_set_run_get_state_cycle_iter01) is far
+    !      outside the default box yet clean: validate() must return [].
+    IF (MODELG == 2 .AND. MDLEQF >= 10) THEN
        IF (RR - RA < RGMIN .OR. RR + RA > RGMAX) THEN
           WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A,F0.3,A)', IOSTAT=ios) &
                "plasma R-extent [", RR - RA, ", ", RR + RA, &
-               "] outside the solver R-grid [", RGMIN, ", ", RGMAX, "]"
+               "] outside R-grid RGMIN..RGMAX [", RGMIN, ", ", RGMAX, "] (solver box for MDLEQF >= 10)"
           IF (ios /= 0) msgbuf = &
-               "plasma R-extent outside the solver R-grid (values unprintable)"
+               "plasma R-extent outside R-grid RGMIN..RGMAX (solver box for MDLEQF >= 10; values unprintable)"
           CALL push_diag("RR", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
        END IF
 
@@ -584,9 +584,9 @@ CONTAINS
        IF (-z_extent < ZGMIN .OR. z_extent > ZGMAX) THEN
           WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A)', IOSTAT=ios) &
                "plasma Z-extent +/-", z_extent, &
-               " outside the solver Z-grid [", ZGMIN, ", ", ZGMAX, "]"
+               " outside Z-grid ZGMIN..ZGMAX [", ZGMIN, ", ", ZGMAX, "] (solver box for MDLEQF >= 10)"
           IF (ios /= 0) msgbuf = &
-               "plasma Z-extent outside the solver Z-grid (values unprintable)"
+               "plasma Z-extent outside Z-grid ZGMIN..ZGMAX (solver box for MDLEQF >= 10; values unprintable)"
           CALL push_diag("RKAP", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
        END IF
     END IF
