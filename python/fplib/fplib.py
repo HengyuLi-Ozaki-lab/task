@@ -216,6 +216,13 @@ class Fplib:
         """Advance the FP simulation ``ntmax`` time-steps.
 
         ``ntmax=0`` is a valid no-op used by the smoke test.
+
+        Raises :class:`FplibInvalidParamError` before any work for a count
+        the solver cannot run with (``NRMAX`` outside 1 to ``FP_MAX_NRMAX``,
+        ``NPMAX`` or ``NTHMAX`` below 2, ``LMAXFP`` below 0 or at the
+        largest integer, a species count or map outside its bounds); the
+        library writes which one on its standard output (``XX fp_run:
+        ...``). See ``docs/fp-library/architecture.md``.
         """
         if self._closed:
             raise FplibError("run on closed Fplib")
