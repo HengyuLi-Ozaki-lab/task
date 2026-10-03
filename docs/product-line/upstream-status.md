@@ -11,10 +11,11 @@ and 26 added while aligning it (the CI trigger `f29f94a2` and two cherry-picks, 
 line lacked and the merge that brought them, the sync merge `cb4ea7fe`, the three commits of group P, the three
 pull-request merges).
 
-Since then: pull request #4 (`chore/product-line-rules`, `5e1c4048`: the hook, the rules and this folder) and the
-library fixes of group H below (`fix/eq-validate-and-tr-registry-tests`).
+Since then: pull request #4 (`chore/product-line-rules`, `5e1c4048`: the hook, the rules and this folder), the
+library fixes of group H below (pull request #5, `fix/eq-validate-and-tr-registry-tests`, merge `8945abe0`) and the FP
+fix of group I (pull request #6, `fix/fp-run-refuses-bad-counts`, merge `2203c95f`).
 
-## The product line's own commits (groups B–G: 74 before the sync, classified 2026-10-02; groups R and P came after it)
+## The product line's own commits (groups B–G: 74 before the sync, classified 2026-10-02; groups R, P, H and I are not among the 74)
 
 | Group | Commits | Upstream | Next |
 |---|---|---|---|
@@ -30,10 +31,13 @@ library fixes of group H below (`fix/eq-validate-and-tr-registry-tests`).
 | G5. EQ: QQPS on the psi-surface grid for loaded equilibria (3) | `97025c6e`, `ccfe533a`, `5db35994` | **product-only**: `5db35994` conflicts in `eq/eqcalc.f90` without group B | after #226 |
 | R. The answers to upstream's review of #226 (14; not among the 74) | `98ba1e20`…`682d9afe` | in PR #226; merged here by `fix/pr226-followups` (merge `95eec84c`, with #226's own merge of upstream, `fb809910`) | same |
 | P. After the merge of #226: three product-only commits | `b72ca2bb` (`fp_mcp` installs its fd isolation from `main()`), `11669549` (`tot_mcp` does too; the isolation tests call the installers), `667f8742` (`eq_save`'s contract in `eq/eq_api.h` and the MCP `save` tool description) | **product-only**: none is upstream. `eq_mcp` and `tr_mcp` take #226's `main()`-time isolation with group G4's once-per-process flag and Windows stdin move (hand-resolved in `95eec84c`) | `b72ca2bb` with #232; `667f8742` after #226; `11669549`: see "To mention on #226" below |
-| H. Library fixes found while preparing G1 and G2 (3) | `4a30b262` (EQ `validate()` checks the box only when the solver reads it: `MODELG = 2` and `MDLEQF >= 10`), `1b3a0cd0` (TR registry tests that can fail under `--forked`; README; neutral comments), and the commit that rewrites this file | `4a30b262` and `1b3a0cd0` go upstream inside the re-cut branches of G2 and G1: each edits tests that its group adds, so it does not apply to `upstream/develop` alone. The commit that rewrites this file is **product-only** | cut `pr/eq-validate-grid-containment` (G2, then `4a30b262`) and `pr/tr-registry-heating-and-diffusivity` (G1, then `1b3a0cd0`) from `upstream/develop` after this pull request merges |
+| H. Library fixes found while preparing G1 and G2 (3) | `4a30b262` (EQ `validate()` checks the box only when the solver reads it: `MODELG = 2` and `MDLEQF >= 10`), `1b3a0cd0` (TR registry tests that can fail under `--forked`; README; neutral comments), and `7944bc04` (this file rewritten) | `4a30b262` and `1b3a0cd0` go upstream inside the re-cut branches of G2 and G1: each edits tests that its group adds, so it does not apply to `upstream/develop` alone. `7944bc04` is **product-only** | cut `pr/eq-validate-grid-containment` (G2, then `4a30b262`) and `pr/tr-registry-heating-and-diffusivity` (G1, then `1b3a0cd0`) from `upstream/develop` (pull request #5, which brought this row, is merged: `8945abe0`) |
+| I. FP: `fp_run` refuses the counts it cannot run with (1) | `3eb8f8c4` (`fp_param_check` in `fp/fp_param_registry.f90`, called by `fp_api_run` before `fp_prep`: `NRMAX` outside 1 to `FP_MAX_NRMAX` (100, the surfaces of the state layout), `NPMAX` or `NTHMAX` below 2, `LMAXFP` below 0 or at the largest integer, `NSAMAX` above `NSBMAX`, an entry in use of `NS_NSA` outside 1 to `MIN(NSMAX, NSBMAX)` or of `NS_NSB` outside 1 to `NSMAX`, a 0 there standing for the slot's own number; the run returns `FP_ERR_INVALID` and unit 6 gets one `XX fp_run:` line per violation) | not proposed yet. The branch `fix/fp-run-refuses-bad-counts` is `upstream/develop` (`4a5d977d`) and this one commit, so it applies there as it is; merged here by pull request #6 (merge `2203c95f`, 2026-10-03, no hand resolution). **A change of behaviour** (its CHANGELOG entry is under Changed): a run with `NRMAX` above 100 used to be made, with a state `fp_get_state` could not return (rc=3), and is now refused before any work. The other violations ran past an array bound (an abort when built with run-time checks; without them, as in the default `-O3` build, undefined), ended the process or never ended a step. Linux CI has run on the merge with the product line only: the upstream pull request's run will be the first of the branch alone (on macOS the branch alone, with `libeqapi`, `libtrapi` and `libfpapi` built: 649 passed, 143 skipped). The commit that adds this row is **product-only** | the author opens the upstream pull request from that branch, or gives the go-ahead |
 
 Of the 74, sixty-three are proposed upstream (57 in #226, 3 in #231–#233, 3 in #240), 5 wait for the re-cut that group
-H feeds (G1, G2) and 6 wait on other pull requests (G4, G5). Product-only by nature, added for the product line: the CI trigger for
+H feeds (G1, G2) and 6 wait on other pull requests (G4, G5). The groups outside the 74, each with its row
+above: R (in #226), P (three commits), H (two library commits and `7944bc04`) and I (one commit, not proposed yet).
+Product-only by nature, added for the product line: the CI trigger for
 `kyoshimi-develop`, `.githooks/`, `scripts/install-hooks.sh`, `python/repo_tests/`, `AGENTS.md`, `CONTRIBUTING.md`,
 this folder, `.github/rulesets/`.
 Cherry-picked from PR #226's branch before it was merged whole: `c528b58d` (mcp below 2; here `f136d6c9`) and
@@ -79,10 +83,10 @@ is a regression of the merges.
   finds 47 calls (`git grep -l`: 24 files) at `d4b99c6d` and at `5e1c4048`, and 45 calls in 24 files on
   `upstream/develop` (`4a5d977d`); at `5e1c4048` the word `subTest` occurs 57 times in 25 files, the 25th
   (`python/wrlib/tests/test_property_boundary.py`) only in comments. The two TR registry tests that showed it are
-  replaced in this pull request (`1b3a0cd0`), which leaves 45 calls in 24 files. Each of the rest can hide a failure
+  replaced in pull request #5 (`1b3a0cd0`), which leaves 45 calls in 24 files. Each of the rest can hide a failure
   from CI. Reported upstream as k-yoshimi/task#241 (open, 2026-10-03). Open: one test per case,
   `pytest.mark.parametrize`, or CI without `--forked` — a larger change than one test file.
-- **Fixed by this pull request (`4a30b262`):** `validate()` refused default-`MDLEQF` (and `MDLEQF` 1, 2, 3) runs of
+- **Fixed by pull request #5 (`4a30b262`):** `validate()` refused default-`MDLEQF` (and `MDLEQF` 1, 2, 3) runs of
   devices larger than the default box [1.5, 4.5] x [-2, 2], which run (ITER-sized `RR=6.2`, `RA=2.0`: two diagnostics
   and a successful `run(0)`). The box check now needs `MODELG = 2` and `MDLEQF >= 10`.
 - **EQ `validate()`, open (medium).** After a run, `validate()` reads the box that `EQCALQP` overwrote with the traced
