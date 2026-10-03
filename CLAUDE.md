@@ -3,6 +3,10 @@
 Operational discipline for this repository. Auto-loaded at session start.
 **User instructions and CLAUDE.md override default behaviour.**
 
+**This branch is the product line (`kyoshimi-develop`) of `HengyuLi-Ozaki-lab/task`.** Branches, the two
+pull requests every change gets, the upstream sync and what the gate reviews on a sync merge are in
+`AGENTS.md`: read it before you branch.
+
 ## Pre-push gate (NON-NEGOTIABLE)
 
 Before every `git push` (no exceptions, including pushes that fix Bugbot
@@ -26,7 +30,10 @@ comments or trivial 1-line CI tweaks):
    resolves to the shared `<main>/.git` from both the main checkout
    and any linked worktrees, so the same command works everywhere.
 
-The hook exists at `.git/hooks/pre-push` (see `scripts/pre-push.sh`). If
+The hook is `.githooks/pre-push`; `scripts/install-hooks.sh` installs it for
+the clone and all its worktrees (once, and again when `.githooks/` changes;
+`--check` says whether the installed copy is current). It asks for the marker
+of every pushed ref tip, so a branch that is not checked out needs its own. If
 you rewrite history with `git commit --amend` or `git rebase`, the SHA
 changes — re-review and re-marker.
 
