@@ -28,7 +28,8 @@ PRODUCT_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task.git", "https://githu
                 "git@github.com:/HengyuLi-Ozaki-lab/task.git", "github.com:HengyuLi-Ozaki-lab/task.git",
                 "https://www.github.com/HengyuLi-Ozaki-lab/task.git", "git+ssh://git@github.com/HengyuLi-Ozaki-lab/task.git",
                 "ssh+git://git@github.com/HengyuLi-Ozaki-lab/task.git", "https://github.com/HengyuLi-Ozaki-lab//task",
-                "https://github.com//HengyuLi-Ozaki-lab/task.git", "git@www.github.com:HengyuLi-Ozaki-lab/task.git"]
+                "https://github.com//HengyuLi-Ozaki-lab/task.git", "git@www.github.com:HengyuLi-Ozaki-lab/task.git",
+                "https://user:pw@github.com/HengyuLi-Ozaki-lab/task"]
 OTHER_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task-merge.git", "https://github.com/k-yoshimi/task.git",
               "https://github.com/HengyuLi-Ozaki-lab/task-web-client.git", ELSEWHERE,
               "https://notgithub.com/HengyuLi-Ozaki-lab/task.git",
@@ -41,6 +42,11 @@ OTHER_URLS = ["https://github.com/HengyuLi-Ozaki-lab/task-merge.git", "https://g
               "https://www.github.com.example.invalid/HengyuLi-Ozaki-lab/task.git", "https://wwwgithub.com/HengyuLi-Ozaki-lab/task.git",
               "https://www.notgithub.com/HengyuLi-Ozaki-lab/task.git", "https://x.www.github.com/HengyuLi-Ozaki-lab/task.git",
               "https://example.invalid/www.github.com/HengyuLi-Ozaki-lab/task.git",
+              # the host is not github.com, whatever the rest of the URL spells (a host is never taken from the path)
+              "https://github.com/www.github.com/HengyuLi-Ozaki-lab/task", "git@github.com:www.github.com:HengyuLi-Ozaki-lab/task",
+              "https://ssh.github.com/www.github.com:443/HengyuLi-Ozaki-lab/task",
+              "https://HengyuLi-Ozaki-lab/task", "ssh://git@HengyuLi-Ozaki-lab/task.git", "https://HengyuLi-Ozaki-lab//task/",
+              "https://github.com@evil.example/HengyuLi-Ozaki-lab/task.git", "https://evil.example/github.com/HengyuLi-Ozaki-lab/task",
               "https://github.com/another-org//HengyuLi-Ozaki-lab/task.git", "git+ssh://git@notgithub.com/HengyuLi-Ozaki-lab/task.git"]
 
 pytestmark = pytest.mark.skipif(

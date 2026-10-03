@@ -28,12 +28,15 @@ set -eu
 
 git_common_dir=$(cd "$(git rev-parse --git-common-dir)" && pwd)
 product=0
-# <owner>/<repo> of a github.com push URL, lower-cased: scheme, user, host (github.com
-# or ssh.github.com), port, a trailing / and .git removed. Only an https, http, ssh or
-# git URL (also git+ssh and ssh+git; host, optional :port, then /path) or an scp-like
-# [user@]host:path (no port: a number after the colon is the first path component) is
-# taken apart; anything else (a local path, file://, another scheme) is empty and matches
-# nothing. www.github.com is github.com; repeated slashes in the path count as one.
+# The push URL, lower-cased, with scheme, user and a recognised host (github.com,
+# www.github.com or ssh.github.com, with an optional :port) replaced by the sentinel GH/
+# (upper case, so no lower-cased URL can contain it), then a trailing / and .git removed
+# and repeated slashes collapsed. It is the fork only if the result is GH/<owner>/<repo>
+# of the fork: a URL whose host was not recognised never equals that, whatever else it
+# spells. Only an https, http, ssh or git URL (also git+ssh and ssh+git; host, optional
+# :port, then /path) or an scp-like [user@]host:path (no port: a number after the colon
+# is the first path component) is taken apart; anything else (a local path, file://,
+# another scheme) is empty and matches nothing.
 url=$(printf '%s' "${2:-}" | tr 'A-Z' 'a-z')
 host=
 case "$url" in
@@ -44,9 +47,9 @@ case "$url" in
 esac
 repo=$(printf '%s' "$url" | sed \
     -e 's|^[^/@]*@||' \
-    -e "s|^\(ssh\.\)\{0,1\}$host/*||" -e "s|^www\.$host/*||" \
+    -e "s|^\(ssh\.\)\{0,1\}$host/*|GH/|" -e "s|^www\.$host/*|GH/|" \
     -e 's|//*|/|g' -e 's|/*$||' -e 's|\.git$||')
-[ "$repo" != "hengyuli-ozaki-lab/task" ] || product=1
+[ "$repo" != "GH/hengyuli-ozaki-lab/task" ] || product=1
 unreadable() {
     echo "pre-push: REFUSED -- cannot read the line git passed (wanted: <local ref> <local sha> <remote ref> <remote sha>): $line" >&2
     exit 1
