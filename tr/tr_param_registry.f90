@@ -130,10 +130,10 @@ CONTAINS
     CASE ("CHP");    CHP   = value
     CASE ("CK0");    CK0   = value
     CASE ("CK1");    CK1   = value
-    ! AutoTASK M3: chi_s = CDH*chi_turb + CNH*chi_NCLASS sum weights
+    ! chi_s = CDH*chi_turb + CNH*chi_NCLASS sum weights
     ! (trcoef_neoclassical.f90:190-191, ENTRY TRCFDW_AKDW). Variables
     ! already existed in trcomm_param/trinit with 1.0 (neutral) defaults;
-    ! only the registry CASE entries were missing (p0a_plato M2-T0 finding).
+    ! only the registry CASE entries were missing.
     CASE ("CDH");    CDH   = value
     CASE ("CNH");    CNH   = value
     ! --- module switches -------------------------------------------

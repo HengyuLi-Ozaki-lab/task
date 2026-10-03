@@ -423,28 +423,30 @@ class TestIntegration(unittest.TestCase):
             )
 
 
-class TestHeatingPowerRegistry(unittest.TestCase):
-    """PECTOT/PICTOT (total EC/IC input power, MW) must be registered (AutoTASK M0)."""
-
-    def test_pectot_pictot_present(self):
-        for name in ("PECTOT", "PICTOT"):
-            with self.subTest(name=name):
-                entry = srv.PARAMETER_REGISTRY.get(name)
-                self.assertIsNotNone(entry, f"{name} missing from PARAMETER_REGISTRY")
-                self.assertEqual(entry["type"], "float")
+# The names the server must describe: PECTOT/PICTOT (total EC/IC input
+# power, MW) and CDH/CNH (the weights of chi_s = CDH*chi_turb +
+# CNH*chi_NCLASS). The Fortran registry accepting them is tested in
+# python/trlib/tests/test_registry_heating_and_diffusivity.py.
+HEATING_AND_DIFFUSIVITY_NAMES = ("PECTOT", "PICTOT", "CDH", "CNH")
 
 
-class TestNeoclassicalTurbulentWeightRegistry(unittest.TestCase):
-    """CDH/CNH (chi_s = CDH*chi_turb + CNH*chi_NCLASS sum weights) must be
-    registered (AutoTASK M3, p0a_plato M2-T0 finding: these existed in
-    trcomm/trinit with 1.0 defaults but had no registry CASE entry)."""
+class TestHeatingAndDiffusivityRegistry(unittest.TestCase):
+    """PECTOT, PICTOT, CDH and CNH are in the parameter table the server
+    describes. One assertion over the whole set, no ``subTest``: pytest's
+    ``--forked`` mode reports a failing ``subTest`` as passed."""
 
-    def test_cdh_cnh_present(self):
-        for name in ("CDH", "CNH"):
-            with self.subTest(name=name):
-                entry = srv.PARAMETER_REGISTRY.get(name)
-                self.assertIsNotNone(entry, f"{name} missing from PARAMETER_REGISTRY")
-                self.assertEqual(entry["type"], "float")
+    def test_all_four_names_are_described_as_float(self) -> None:
+        described = srv.handle_describe_parameters()["parameters"]
+        missing = sorted(set(HEATING_AND_DIFFUSIVITY_NAMES) - set(described))
+        self.assertFalse(
+            missing, f"missing from describe_parameters: {missing}")
+        wrong_type = {
+            name: described[name]["type"]
+            for name in HEATING_AND_DIFFUSIVITY_NAMES
+            if described[name]["type"] != "float"
+        }
+        self.assertFalse(
+            wrong_type, f"described with a type other than float: {wrong_type}")
 
 
 if __name__ == "__main__":  # pragma: no cover

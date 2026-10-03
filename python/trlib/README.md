@@ -127,7 +127,9 @@ is required — the wrapper forwards names verbatim.
 | Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR` | int-typed coerced |
 | Transport switches | `MDLKAI`, `MDLETA`, `MDLAD`, `MDLAVK`, `CHP`, `CK0`, `CK1` | |
 | Transport arrays | `CDW[i]` | |
+| Transport weights | `CDH`, `CNH` | the weights of `chi_s = CDH*chi_turb + CNH*chi_NCLASS`; default 1 (neutral) |
 | Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF` | |
+| Heating / current drive | `PNBTOT`, `PNBR0`, `PNBRW`, `PNBENG`, `PNBRTG`; `PICTOT`, `PICR0`, `PICRW`, `PICNPR`, `PICCD`; `PECTOT`, `PECR0`, `PECRW`, `PECNPR`, `PECCD`; `PLHTOT`, `PLHR0`, `PLHRW`, `PLHNPR`, `PLHCD` | NBI, ICRF, ECRF and LH; the `*TOT` names are total input power in MW (default 0) |
 
 Unknown names return ierr=1 (raised as `TrlibParamError`).
 
