@@ -54,6 +54,14 @@ CONTAINS
     ierr = 0
     CALL parse_array_subscript(name, b, idx)
 
+    ! A value no parameter takes is refused before the name is looked
+    ! at: one that is not finite, and for an integer parameter one
+    ! beyond the default integer (value_refused, below).
+    IF (value_refused(b, value)) THEN
+       ierr = 1
+       RETURN
+    END IF
+
     SELECT CASE (TRIM(b))
     ! --- geometry / device scalars (from plcomm_parm via fpcomm_parm) ---
     CASE ("RR");    RR    = value
@@ -159,6 +167,47 @@ CONTAINS
   END FUNCTION fp_param_set
 
   !-------------------------------------------------------------------
+  ! value_refused : .TRUE. for a value that the setter does not take.
+  !
+  !   - Not finite (NaN, +Infinity, -Infinity): for every name.
+  !   - For an integer parameter, a value outside -HUGE(0) .. HUGE(0).
+  !     NINT() of a value beyond the default integer is
+  !     processor-dependent (measured with gfortran on arm64: the
+  !     nearest end of the integer range, and 0 for NaN), and what it
+  !     leaves is then a mesh count or a model switch. The bound is the
+  !     range every compiler converts alike: -HUGE(0) - 1 and the
+  !     fractions just above HUGE(0) are refused with the rest.
+  !
+  ! This is asked when the value is set, not with the checks that are
+  ! made together before a run (issue #143): once converted, the value
+  ! that was given is gone, and no later check can tell a count that
+  ! was asked for from what the conversion left.
+  !
+  ! The names are the integer parameters of fp_param_set above: a new
+  ! integer CASE there goes into this list too
+  ! (python/fplib/tests/test_param_values.py holds the list to the
+  ! integer CASEs of the setter, read from this file, and to the names
+  ! the MCP server declares as integers).
+  !-------------------------------------------------------------------
+  FUNCTION value_refused(b, value) RESULT(refused)
+    USE, INTRINSIC :: ieee_arithmetic, ONLY: ieee_is_finite
+    CHARACTER(LEN=*), INTENT(IN) :: b
+    REAL(rkind),      INTENT(IN) :: value
+    LOGICAL :: refused
+
+    refused = .NOT. ieee_is_finite(value)
+    IF (refused) RETURN
+    SELECT CASE (TRIM(b))
+    CASE ("NRMAX", "NPMAX", "NTHMAX", "NTMAX", "NAVMAX", &
+          "NSMAX", "NSAMAX", "NSBMAX", "NS_NSA", "NS_NSB", "LMAXFP", &
+          "MODELG", "MODELE", "MODELR", "MODELS", "MODELD", &
+          "MODEL_NBI", "MODEL_WAVE", "MODEL_DISRUPT", "MODEL_BS", &
+          "MODEL_LOSS", "MODEL_SYNCH", "MODEL_FOW", "MODELC", "MODELW")
+       refused = ABS(value) > REAL(HUGE(0), rkind)
+    END SELECT
+  END FUNCTION value_refused
+
+  !-------------------------------------------------------------------
   ! fp_param_check : the counts a run cannot be made with, checked
   ! together before the run (issue #143) instead of being met deep in
   ! the solver as an array index out of bounds (an abort when the
@@ -257,6 +306,13 @@ CONTAINS
     INTEGER :: ierr
 
     ierr = 0
+    ! A value longer than the variable is refused, not cut
+    ! (KNAMEQ is CHARACTER(LEN=80)): the first 80 characters of a
+    ! longer path are another file's name.
+    IF (LEN_TRIM(value) > LEN(KNAMEQ)) THEN
+       ierr = 1
+       RETURN
+    END IF
     SELECT CASE (TRIM(ADJUSTL(name)))
     CASE ("KNAMEQ"); KNAMEQ = TRIM(value)
     CASE DEFAULT
@@ -270,29 +326,48 @@ CONTAINS
   !   "RR"      -> base="RR",  idx=0       (scalar form)
   !   "PN[1]"   -> base="PN",  idx=1       (1-origin subscript)
   !   "MODELC[2]" -> base="MODELC", idx=2
-  !   malformed -> base=<full>, idx=-1     (caller returns ierr=1)
+  !   malformed -> base=" ", idx=-1        (no CASE matches a blank
+  !                                         name: the caller returns
+  !                                         ierr=1, for a scalar too)
+  !
+  ! Malformed: one bracket without the other, an empty subscript, text
+  ! after the closing bracket, a subscript that is not an unsigned
+  ! whole number of at most nine digits, with or without blanks around
+  ! it ("[zz]", "[ ]", "[1,2]",
+  ! "[2 3]", "[/]": the list-directed READ that was here took several
+  ! of these, and a failed READ left base = NAME, which set a scalar,
+  ! whose CASE never looks at idx), and a name that does not fit into
+  ! BASE (cut short, "RR" followed by blanks and anything else was the
+  ! name "RR").
   !-------------------------------------------------------------------
   SUBROUTINE parse_array_subscript(full_name, base, idx)
     CHARACTER(LEN=*), INTENT(IN)  :: full_name
     CHARACTER(LEN=*), INTENT(OUT) :: base
     INTEGER,          INTENT(OUT) :: idx
-    INTEGER :: lb, rb, ios
+    INTEGER :: lb, rb, n, i, k
+    CHARACTER(LEN=LEN(full_name)) :: sub
     base = ' '
-    idx  = 0
+    idx  = -1                         ! malformed, until shown otherwise
     lb = INDEX(full_name, '[')
     rb = INDEX(full_name, ']', BACK=.TRUE.)
     IF (lb == 0 .AND. rb == 0) THEN
+       IF (LEN_TRIM(ADJUSTL(full_name)) > LEN(base)) RETURN
        base = TRIM(ADJUSTL(full_name))
+       idx  = 0
        RETURN
     END IF
-    IF (lb == 0 .OR. rb == 0 .OR. rb <= lb + 1) THEN
-       base = TRIM(ADJUSTL(full_name))   ! malformed; caller returns ierr=1
-       idx  = -1
-       RETURN
-    END IF
+    IF (lb == 0 .OR. rb == 0 .OR. rb <= lb + 1) RETURN
+    IF (rb /= LEN_TRIM(full_name) .OR. lb - 1 > LEN(base)) RETURN
+    sub = ADJUSTL(full_name(lb+1:rb-1))
+    n = LEN_TRIM(sub)
+    IF (n == 0 .OR. n > 9) RETURN     ! nine digits fit a default integer
+    IF (VERIFY(sub(1:n), '0123456789') /= 0) RETURN
+    k = 0
+    DO i = 1, n
+       k = 10 * k + (IACHAR(sub(i:i)) - IACHAR('0'))
+    END DO
+    idx  = k
     base = full_name(1:lb-1)
-    READ(full_name(lb+1:rb-1), *, IOSTAT=ios) idx
-    IF (ios /= 0) idx = -1
   END SUBROUTINE parse_array_subscript
 
   ! Public alias for unit testing only.

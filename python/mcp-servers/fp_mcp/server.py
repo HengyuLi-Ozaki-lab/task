@@ -105,6 +105,7 @@ def _install_fd_isolation() -> None:
     _FD_ISOLATION_INSTALLED = True
 # ----------------------------------------------------------------------
 
+import math
 import os
 import sys
 from pathlib import Path
@@ -345,6 +346,39 @@ STATE = _ServerState()
 # =====================================================================
 # Helpers — parameter application.
 # =====================================================================
+def _short(text: str, limit: int) -> str:
+    """``text`` for an error message: its start, when it is longer than ``limit``."""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _number(key: str, value: Any) -> float:
+    """``value`` as the float the library is given for ``key``.
+
+    Raises :class:`FplibError` for what ``float()`` does not take (a string
+    that is no number, ``None``), for an integer too large for a float
+    (``float()`` raises ``OverflowError``), and for a number that is not
+    finite: ``float()`` also takes ``"nan"``, ``"inf"`` and ``"1e309"``,
+    and no parameter has such a value.
+    """
+    key = _short(key, 80)
+    if isinstance(value, int) and abs(value) >= 10**30:
+        shown = "an integer of more than 30 digits"   # Python does not print one of 4300
+    else:
+        shown = _short(repr(value), 60)
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        reason = _short(str(exc), 80)                 # float() repeats the string it refuses
+        raise FplibError(
+            f"invalid numeric value for '{key}': {shown} ({reason})"
+        ) from exc
+    if not math.isfinite(coerced):
+        raise FplibError(
+            f"invalid numeric value for '{key}': {shown} (not finite)"
+        )
+    return coerced
+
+
 def _apply_bulk_params(fp: Fplib, params: Dict[str, SupportedValue]) -> List[str]:
     """Apply a bulk ``params`` dict, returning the list of applied keys.
 
@@ -386,13 +420,7 @@ def _apply_bulk_params(fp: Fplib, params: Dict[str, SupportedValue]) -> List[str
                         f"unsupported value type for '{key}': "
                         f"bool (use 0/1)"
                     )
-                try:
-                    coerced = float(v)
-                except (TypeError, ValueError) as exc:
-                    raise FplibError(
-                        f"invalid numeric value for '{key}': {v!r} ({exc})"
-                    ) from exc
-                fp.set_param(key, coerced)
+                fp.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, dict):
             for idx, v in value.items():
@@ -414,13 +442,7 @@ def _apply_bulk_params(fp: Fplib, params: Dict[str, SupportedValue]) -> List[str
                         f"invalid index for '{name}': {idx!r} ({exc})"
                     ) from exc
                 key = f"{name}[{int_idx}]"
-                try:
-                    coerced = float(v)
-                except (TypeError, ValueError) as exc:
-                    raise FplibError(
-                        f"invalid numeric value for '{key}': {v!r} ({exc})"
-                    ) from exc
-                fp.set_param(key, coerced)
+                fp.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, str):
             # String-valued (e.g. KNAMEQ). Requires a libfpapi.so that
@@ -429,13 +451,7 @@ def _apply_bulk_params(fp: Fplib, params: Dict[str, SupportedValue]) -> List[str
             fp.set_param_str(name, value)
             applied.append(name)
         elif isinstance(value, (int, float)):
-            try:
-                coerced = float(value)
-            except (TypeError, ValueError) as exc:
-                raise FplibError(
-                    f"invalid numeric value for '{name}': {value!r} ({exc})"
-                ) from exc
-            fp.set_param(name, coerced)
+            fp.set_param(name, _number(name, value))
             applied.append(name)
         else:
             raise FplibError(
@@ -491,7 +507,7 @@ def handle_init() -> str:
 def handle_set_param(name: str, value: float) -> str:
     try:
         fp = STATE.ensure_open()
-        fp.set_param(name, float(value))
+        fp.set_param(name, _number(name, value))
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_fplib_error(exc) from exc
@@ -686,6 +702,9 @@ def build_server() -> Any:
         * a list/tuple (1-origin array, all elements applied)
         * a dict ``{index: value}`` (1-origin sparse array)
         * a string (for KNAMEQ and similar string-valued parameters)
+
+        Every number must be finite: NaN and the infinities are refused,
+        also as a string in a list or a dict (``"nan"``, ``"1e309"``).
 
         **Non-transactional**: keys are applied in iteration order and
         a failure on key ``N`` leaves keys ``0..N-1`` already written

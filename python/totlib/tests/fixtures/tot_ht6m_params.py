@@ -46,7 +46,7 @@ SCALARS = {
     # `"eq:PP0": 6.4e-6` here would not change downstream Python
     # state and is intentionally omitted to keep the fixture minimal.
     #
-    # PP0 IS in eq_param_registry.f90:118 today, so adding it would
+    # PP0 IS in eq_param_registry.f90:126 today, so adding it would
     # compile cleanly — but the Python pipeline cannot use it (no
     # path in tot_api_run reaches EQCALC). When/if a future L-7
     # patch wires eq_api_run into the orchestrator's run loop the
@@ -93,7 +93,7 @@ STRINGS = {
 #
 # Empty today: every namelist key in tot_ht6m_short.{eqparm,trparm}
 # now has a per-module registry entry. (eq:PP0 was the historical
-# entry here; it landed in eq_param_registry.f90:118 and the SCALARS
+# entry here; it landed in eq_param_registry.f90:126 and the SCALARS
 # block above documents why we still leave it unset.)
 UNREGISTERED_KEYS: tuple = ()
 

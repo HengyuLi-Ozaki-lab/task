@@ -138,6 +138,17 @@ only the `[0:nsamax][0:nrmax]` slice.
   subscripts are counted) mapping `"NAME"` or `"NAME[idx]"` strings
   to FPCOMM / PLCOMM module variables. Extending the registry is the
   **only** code change needed to expose new parameters.
+  `fp_set_param` refuses, with code 1 and before it assigns anything:
+  a malformed subscript, for a scalar too (`NTHMAX[zz]`, `PN[1]x`,
+  `PN[1,2]`); a value that is not finite, for every name; and for an
+  integer parameter a value outside `-HUGE(0)` to `HUGE(0)`: beyond the
+  default integer `NINT()` is the compiler's choice (`value_refused`
+  lists the integer names: a new integer `CASE` goes there too). The C
+  entry points refuse a name longer than their 64 characters, and
+  `fp_set_param_str` a value longer than the 80 of `KNAMEQ` (trailing
+  blanks are not counted); both used to be cut. A subscript that is a
+  whole number is still taken for a scalar (`NRMAX[3]` sets `NRMAX`),
+  and a fraction is rounded (`NINT`; TR and EQ truncate).
 - Kernel code (`fp_prep`, `fp_loop`, `fpcalc`, `fpcoef`, ...) is
   unchanged and shared with the `fp` binary.
 - `fp_graphics_stubs.f90` provides weak shims for graphics entry

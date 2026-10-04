@@ -60,7 +60,7 @@ TR は interpretive run の駆動入力として ufile を取り込めます.
 は namelist 専用です.** legacy `&trn` namelist 入力
 (`tr/trparm.f90:108-112`) には登場しますが,
 `tr/tr_param_registry.f90` には登録されておらず (registry
-側の "future additions" コメントは `:184-186`),
+側の "future additions" コメントは `:241-243`),
 `tr.set_param_str` 経由では設定できません. ufile dir を
 変えたいユーザは:
 

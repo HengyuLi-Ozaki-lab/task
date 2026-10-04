@@ -65,7 +65,7 @@ are namelist-only.** They appear in the legacy `&trn`
 namelist input at `tr/trparm.f90:108-112`, but they are
 NOT exposed in `tr/tr_param_registry.f90` (the registry
 has a "future additions" comment at
-`tr/tr_param_registry.f90:184-186`). Setting them via
+`tr/tr_param_registry.f90:241-243`). Setting them via
 `tr.set_param_str` will fail. Users who need to point TR
 at a non-default ufile directory must either:
 

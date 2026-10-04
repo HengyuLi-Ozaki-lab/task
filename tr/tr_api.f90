@@ -141,6 +141,14 @@ CONTAINS
        fname(i:i) = name(i)
        n = i
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
     ! Changing NRMAX / NSMAX after allocation would invalidate the
     ! currently-allocated arrays. Rather than silently re-allocating we
@@ -159,10 +167,10 @@ CONTAINS
   !-------------------------------------------------------------------
   ! tr_set_param_str : string-valued parameter setter (KNAMEQ, ...).
   !
-  ! Accepts two NUL-terminated C strings; both must fit in the
-  ! fixed-length Fortran buffers (64 bytes for the name, 128 bytes for
-  ! the value, matching the longest entry in the trcomm_ctrl
-  ! CHARACTER(LEN=80) declarations with some slack).
+  ! Accepts two NUL-terminated C strings. Neither is cut: a name that
+  ! does not fit the 64-character buffer is refused, and so is a value
+  ! that does not fit the 128-character one or, in the registry, the
+  ! 80 characters of KNAMEQ (trailing blanks are not counted).
   !-------------------------------------------------------------------
   FUNCTION tr_api_set_param_str(name, value) RESULT(ierr) BIND(C, NAME="tr_set_param_str")
     CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
@@ -183,11 +191,26 @@ CONTAINS
        IF (name(i) == C_NULL_CHAR) EXIT
        fname(i:i) = name(i)
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
     fvalue = ' '
     DO i = 1, LEN(fvalue)
        IF (value(i) == C_NULL_CHAR) EXIT
        fvalue(i:i) = value(i)
     END DO
+    ! As for the name: a value longer than the buffer is refused, not cut.
+    IF (i > LEN(fvalue)) THEN
+       IF (c_str_overflows(value, LEN(fvalue) + 1)) THEN
+          ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
     IF (tr_param_set_str(TRIM(fname), TRIM(fvalue)) /= 0) THEN
        ierr = TR_ERR_INVALID
@@ -511,5 +534,31 @@ CONTAINS
       ok = 0
     END IF
   END SUBROUTINE tr_check_bpsd_pull
+
+  !-------------------------------------------------------------------
+  ! c_str_overflows : .TRUE. when the C string S holds, from position
+  ! FIRST on (the first one the caller's buffer has no room for), a
+  ! character other than a blank. Trailing blanks are no part of a
+  ! name or a value, so a blank-padded string that is longer than the
+  ! buffer only by blanks loses nothing when it is copied. Call it
+  ! only when no NUL was met before FIRST. A string with no NUL within
+  ! C_STR_SCAN characters from FIRST is refused as well.
+  !-------------------------------------------------------------------
+  PURE FUNCTION c_str_overflows(s, first) RESULT(over)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: s
+    INTEGER,                              INTENT(IN) :: first
+    LOGICAL :: over
+    INTEGER, PARAMETER :: C_STR_SCAN = 4096
+    INTEGER :: j
+
+    over = .TRUE.
+    DO j = first, first + C_STR_SCAN - 1
+       IF (s(j) == C_NULL_CHAR) THEN
+          over = .FALSE.
+          RETURN
+       END IF
+       IF (s(j) /= ' ') RETURN
+    END DO
+  END FUNCTION c_str_overflows
 
 END MODULE tr_api

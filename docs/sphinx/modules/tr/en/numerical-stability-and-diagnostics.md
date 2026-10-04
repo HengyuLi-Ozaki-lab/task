@@ -93,7 +93,7 @@ cell) rather than a sign of an underlying numerical problem.
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) diagnosis
 
-`tr_api_run` (`tr/tr_api.f90:227-245`) returns
+`tr_api_run` (`tr/tr_api.f90:250-268`) returns
 `TR_ERR_CALC_FAILED` for **any** non-zero result code from the
 underlying `tr_prep` / `tr_loop` routines. The wrapper
 deliberately collapses the full set of downstream failure
@@ -168,7 +168,7 @@ implementation** of `tr_api_validate` only emits two of them:
 (`INCONSISTENT_PAIR`, `OUT_OF_RANGE_AFTER_DEP`,
 `MISSING_REQUIRED`) are reserved for future categories — the
 slots exist in the enum so the API surface is stable, but the
-checks have not been wired up yet (`tr/tr_api.f90:365-378`
+checks have not been wired up yet (`tr/tr_api.f90:388-401`
 documents this).
 
 The two currently-emitted categories:
@@ -178,10 +178,10 @@ The two currently-emitted categories:
   check, for example, compares against the run-time species
   bound `NSM = 4` (not the compile-time C ABI bound
   `TR_MAX_NSMAX = 8`), so `NSMAX = 5` reaches `validate()`
-  and is reported here (`tr/tr_api.f90:402-403`). Note: values
+  and is reported here (`tr/tr_api.f90:425-426`). Note: values
   beyond the registry's own range — e.g. `NSMAX > 8` — are
   rejected by `set_param` *before* validate runs
-  (`tr/tr_param_registry.f90:95-97`), so you will not see
+  (`tr/tr_param_registry.f90:103-105`), so you will not see
   them in the diagnostic list. Validate's job is to catch the
   values the registry accepted but the run-time still cannot
   use.
@@ -199,7 +199,7 @@ implementation):
   `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` check
   is currently emitted as `OUT_OF_RANGE` rather than as a
   pair-level diagnostic
-  (`tr/tr_api.f90:419-425`).
+  (`tr/tr_api.f90:442-448`).
 
 - **`OUT_OF_RANGE_AFTER_DEP`** — reserved for future use,
   intended for parameters that pass their declared range but
