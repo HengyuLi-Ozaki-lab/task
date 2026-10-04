@@ -127,7 +127,7 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
 
 **公開 parameter registry に露出されている選択肢** (実行時に
 `tr.set_param` から設定可能,
-`tr/tr_param_registry.f90:43-49,124-128`):
+`tr/tr_param_registry.f90:43-49,132-136`):
 
 - **`MDLKAI` — 乱流熱輸送.** 乱流 (anomalous) 熱輸送モデル
   を選択. 選択肢は CDBM, IFS-PPPL, GLF23, mixed Bohm /

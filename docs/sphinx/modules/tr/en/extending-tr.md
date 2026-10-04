@@ -16,7 +16,7 @@ field. Each is a recipe, not a derivation.
 ## Walkthrough A — Add a new scalar parameter
 
 The TR parameter registry uses a hand-written `SELECT CASE`
-dispatch in `tr/tr_param_registry.f90:76+`. Adding a
+dispatch in `tr/tr_param_registry.f90:84+`. Adding a
 parameter `FOO` is one new `CASE` line in that dispatch
 plus a default in `tr/trinit.f90`.
 
@@ -29,19 +29,22 @@ plus a default in `tr/trinit.f90`.
 2. **Add the registry case.** Add a line like
    `CASE ("FOO"); FOO = value` in the
    `SELECT CASE (TRIM(b))` block that starts at
-   `tr/tr_param_registry.f90:76`. Place it near similar
+   `tr/tr_param_registry.f90:84`. Place it near similar
    parameters to preserve the per-section grouping
-   convention.
+   convention. An integer parameter (`FOO = INT(value)`)
+   also goes into the name list of `value_refused` in the
+   same file, which refuses a value beyond the default
+   integer before it is converted.
 3. **Set a default.** Add `FOO = ...` to `tr/trinit.f90`
    alongside other initialisation.
 4. **Rebuild.** `make -C tr libtrapi.so`.
 5. **Use from Python.** `tr.set_param("FOO", x)` works
    immediately. No C ABI change is needed because
    `tr_set_param` is string-keyed (verified at
-   `tr/tr_api.f90:124-128,136-148`).
+   `tr/tr_api.f90:124-128,136-156`).
 
 For array-valued parameters, the bounds-checked idiom at
-`tr/tr_param_registry.f90:101-106` is the template. The
+`tr/tr_param_registry.f90:109-114` is the template. The
 existing `PA[i]` / `PN[i]` / `PNS[i]` / `PT[i]` cases
 show the pattern: each `CASE` checks `idx` against
 `SIZE(...)` and either assigns or sets `ierr = 1`.
@@ -118,13 +121,13 @@ consumers may need to be rebuilt or version-checked.
    `double` (or correct C type), again at the struct end.
 4. **Populate the field inside `tr_api_get_state`.** Three
    blocks exist in `tr/tr_api.f90`:
-   - **Zero-init** at `:263-283` (the new field should be
+   - **Zero-init** at `:286-306` (the new field should be
      added there too if it has no sensible compute-time-
      zero baseline).
-   - **Scalar copy** at `:299-315` — the AJRFT precedent
+   - **Scalar copy** at `:322-338` — the AJRFT precedent
      lives here. For a new scalar, follow that pattern.
    - **Per-radius / per-species profile loops** at
-     `:321-330` — for a new array field, follow the
+     `:344-353` — for a new array field, follow the
      `RN` / `RT` / `AJ` / `QP` loop pattern.
 5. **Bump `TR_STATE_ABI_VERSION`** at `tr/tr_api.h:38`.
    The current value is `2`; bump to the next integer

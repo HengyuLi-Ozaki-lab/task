@@ -107,7 +107,11 @@ int eq_run(int mode);
 int eq_set_param(const char* name, double value);
 /* Set a string-valued parameter. Supported names:
  *   KNAMEQ, KNAMEQ2, KNAMWR, KNAMWM, KNAMFP, KNAMFO, KNAMPF
- * All are CHARACTER(LEN=80) on the Fortran side. */
+ * All are CHARACTER(LEN=80) on the Fortran side.
+ * eq_set_param and eq_set_param_str return EQ_ERR_INVALID for a name of
+ * more than 64 characters, and eq_set_param_str for a value of more than
+ * 80: neither is cut. Trailing blanks are not counted, as long as the
+ * string ends within 4096 characters of the buffer's end. */
 int eq_set_param_str(const char* name, const char* value);
 int eq_get_state(eq_state_t* state);
 int eq_finalize(void);

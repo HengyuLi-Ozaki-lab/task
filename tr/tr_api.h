@@ -90,6 +90,11 @@ typedef struct tr_diag_entry {
 
 int tr_init(void);
 int tr_run(int ntmax);
+/* tr_set_param and tr_set_param_str return TR_ERR_INVALID for a name of
+ * more than 64 characters, and tr_set_param_str for a value of more than
+ * 80 (KNAMEQ is CHARACTER(LEN=80)): neither is cut. Trailing blanks are
+ * not counted, as long as the string ends within 4096 characters of the
+ * buffer's end. */
 int tr_set_param(const char* name, double value);
 int tr_set_param_str(const char* name, const char* value);
 int tr_get_state(tr_state_t* state);

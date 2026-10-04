@@ -107,6 +107,12 @@ class EqDiagEntryPy:
     message: str
 
 
+#: The largest count a C ``int`` holds. ctypes converts a Python integer to a
+#: ``c_int`` argument with no range check (it keeps the low 32 bits), so
+#: ``run`` checks the range itself.
+_C_INT_MAX = 2**31 - 1
+
+
 class Eq:
     """In-process handle to libeqapi.so. One instance per process.
 
@@ -293,9 +299,19 @@ class Eq:
 
         On failure the exception message ends with the library's reason
         (:meth:`last_error`), e.g. which file could not be loaded.
+
+        Raises :class:`EqlibInvalidParamError`, before the library is
+        called, for a mode that is not a C ``int``'s: ``eq_run`` takes
+        one, and a larger number would arrive modulo 2**32 (``2**32``
+        ran mode 0).
         """
         if self._closed:
             raise EqlibError("run on closed Eq")
+        if not -_C_INT_MAX - 1 <= int(mode) <= _C_INT_MAX:
+            raise EqlibInvalidParamError(
+                "eq_run: the mode must fit a C int "
+                f"({-_C_INT_MAX - 1} to {_C_INT_MAX})"
+            )
         rc = self._lib.eq_run(int(mode))
         if rc != 0:
             try:
@@ -465,7 +481,7 @@ class Eq:
 
         n = int(ndiag.value)
         # Fortran push_diag increments nlocal past diag_cap but skips the
-        # write (eq_api.f90:393-395), so ndiag_out can exceed cap. Clamp
+        # write (eq_api.f90:651-652), so ndiag_out can exceed cap. Clamp
         # and warn so the caller knows results are truncated instead of
         # IndexError-ing off the end of the ctypes buffer.
         if n > cap:

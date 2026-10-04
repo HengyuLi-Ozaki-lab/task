@@ -133,7 +133,7 @@ against `tr/trinit.f90` and `tr/tr_param_registry.f90`:
 
 **Selectors exposed in the public parameter registry** (settable
 at runtime from `tr.set_param`,
-`tr/tr_param_registry.f90:43-49,124-128`):
+`tr/tr_param_registry.f90:43-49,132-136`):
 
 - **`MDLKAI` — turbulent heat transport.** Selects the
   turbulent (anomalous) heat-transport model. Options include

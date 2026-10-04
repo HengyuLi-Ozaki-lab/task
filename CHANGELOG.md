@@ -15,9 +15,46 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   read only from the log on unit 6 or from `fp_regress.dat`
   (`FP_REGRESS_DUMP=1`). `fp_run` now returns `FP_ERR_INVALID` before any
   work.
+- **EQ, TR, FP libraries: `set_param` and `set_param_str` refuse a
+  malformed subscript and a string they cannot hold whole.** A scalar's
+  `CASE` never looked at the index, so `NTHMAX[zz]` set `NTHMAX`;
+  list-directed `READ` took `[1,2]`, `[2 3]` and `[/]`; text after the
+  closing bracket was ignored (`PN[1]x` set `PN[1]`). A name was cut to the
+  buffer that took it (64 characters at the C entry points, 32 in TR's and
+  EQ's registries), so `RR` followed by blanks and anything else was `RR`.
+  A string value was cut to the 80 characters of its parameter: TR's and
+  FP's `set_param_str` took a path of 100 characters and kept the first 80.
+  Each is now code 1 (invalid parameter) and nothing is assigned; a string
+  that is longer only by trailing blanks loses nothing and is still taken
+  (it must end within 4096 characters of the buffer's end).
+  Not changed: a subscript that is a whole number is still taken for a
+  scalar (`PROFN1[1]` sets TR's `PROFN1`, which `test_property_fanout.py`
+  relies on).
 
 ### Fixed
 
+- **EQ, TR, FP libraries: `set_param` refuses a value outside what it
+  takes**, with code 1 and before it assigns: one that is not finite (NaN,
+  the infinities), for every name; and for an integer parameter a value
+  outside `-HUGE(0)` to `HUGE(0)`, the range every compiler converts alike
+  (so `-HUGE(0) - 1` and `2147483647.25` are refused with the rest). Beyond
+  the default integer `NINT()` / `INT()` is the compiler's choice (with
+  gfortran on arm64 the nearest end of the integer range, and 0 for NaN).
+  Such a value was assigned and then was a mesh count or a model switch:
+  FP's `NTHMAX = 2**32 + 30` ended the process on every attempt,
+  `MODELD = 2**32` ran as a non-zero `MODELD`.
+- **`Fplib.run`, `Trlib.run`, `Eq.run`: a step count that is negative or
+  does not fit a C `int` (EQ: a mode that does not fit one) is refused
+  before the library is called.** ctypes hands an integer to a `c_int`
+  argument modulo 2**32: `Fplib.run(2**32 + 3)` ran three steps,
+  `Trlib.run(10 - 2**32)` ten, and `Eq.run(2**32)` mode 0.
+- **`eq_mcp`, `tr_mcp`, `fp_mcp`: `set_params` and `set_param` refuse a
+  number that is not finite and an integer too large for a float**, with
+  the server's own "invalid numeric value" error and before the library is
+  called. `float()` takes the strings `"nan"`, `"inf"` and `"1e309"`, so in
+  a list or a dict they reached the registry as NaN or an infinity; and
+  `float(10**400)` raised an `OverflowError` the bulk path did not catch.
+  A string that is a finite number is still taken in a list or a dict.
 - **FP library: `fp_run` refuses the counts the solver cannot run with**,
   before any work, with `FP_ERR_INVALID` and one `XX fp_run: ...` line per
   violation on unit 6 (`fp_param_check` in `fp/fp_param_registry.f90`).

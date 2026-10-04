@@ -32,9 +32,9 @@ from .state import FpState
 
 
 _MAX_C_STRING_BYTES = 63              # name buffer is CHARACTER(LEN=64)
-_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128);
-                                       # fp_api_set_param_str DO loop reads
-                                       # up to LEN(fvalue) chars so full 128 OK
+_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128).
+                                       # KNAMEQ holds 80: the library refuses
+                                       # a longer value (rc 1), it is not cut
 
 
 def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
@@ -64,6 +64,12 @@ def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
             f"maximum is {max_bytes}"
         )
     return encoded
+
+
+#: The largest count a C ``int`` holds. ctypes converts a Python integer to a
+#: ``c_int`` argument with no range check (it keeps the low 32 bits), so
+#: ``run`` checks the range itself.
+_C_INT_MAX = 2**31 - 1
 
 
 class Fplib:
@@ -223,10 +229,20 @@ class Fplib:
         largest integer, a species count or map outside its bounds); the
         library writes which one on its standard output (``XX fp_run:
         ...``). See ``docs/fp-library/architecture.md``.
+
+        Raises it too, before the library is called, for a count outside
+        0 to 2**31 - 1: ``fp_run`` takes a C ``int``, and a larger count
+        would arrive modulo 2**32 (``2**32 + 3`` ran three steps).
         """
         if self._closed:
             raise FplibError("run on closed Fplib")
-        rc = self._lib.fp_run(int(ntmax))
+        count = int(ntmax)
+        if not 0 <= count <= _C_INT_MAX:
+            raise FplibInvalidParamError(
+                f"fp_run: the step count must be 0 to {_C_INT_MAX} "
+                "(fp_run takes a C int)"
+            )
+        rc = self._lib.fp_run(count)
         raise_for_rc(f"fp_run({ntmax})", rc)
 
     def get_state(self) -> FpState:

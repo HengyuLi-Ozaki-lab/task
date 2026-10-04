@@ -83,7 +83,7 @@ ms 以下の `DT` が必要になるのはまれですが, ソース駆動の
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) の診断
 
-`tr_api_run` (`tr/tr_api.f90:227-245`) は内部の `tr_prep` /
+`tr_api_run` (`tr/tr_api.f90:250-268`) は内部の `tr_prep` /
 `tr_loop` のいずれからの **非ゼロ戻り値** もすべて
 `TR_ERR_CALC_FAILED` に集約します. ラッパは故意に下流の
 失敗クラス全部を 1 つの ABI コードに潰しているため, `ierr=3`
@@ -151,7 +151,7 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
 残り 3 つ (`INCONSISTENT_PAIR`, `OUT_OF_RANGE_AFTER_DEP`,
 `MISSING_REQUIRED`) は **将来カテゴリ用に予約済み** で, API 表面
 を安定させるために enum スロットだけが切られていますが, チェック
-本体はまだ配線されていません (`tr/tr_api.f90:365-378` に
+本体はまだ配線されていません (`tr/tr_api.f90:388-401` に
 コメントあり).
 
 現状 emit される 2 カテゴリ:
@@ -160,10 +160,10 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
   外れたパラメータ値. 例えば validate の `NSMAX` チェックは
   実行時の種数上限 `NSM = 4` (C ABI のコンパイル時上限
   `TR_MAX_NSMAX = 8` ではない) と比較するので, `NSMAX = 5` は
-  validate に到達しここで報告されます (`tr/tr_api.f90:402-403`).
+  validate に到達しここで報告されます (`tr/tr_api.f90:425-426`).
   注意: registry の宣言範囲を超える値 (例: `NSMAX > 8`) は
   validate が走る **前** に `set_param` で拒否されます
-  (`tr/tr_param_registry.f90:95-97`) ので, この診断リストには
+  (`tr/tr_param_registry.f90:103-105`) ので, この診断リストには
   現れません. validate の役割は registry が受理したが実行時には
   使えない値を catch することです.
 
@@ -177,7 +177,7 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
   通るが組み合わせで無効な構成になるパラメータ対を意図.
   なお `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` の
   チェックは現在ペアレベル診断ではなく `OUT_OF_RANGE` として
-  emit されています (`tr/tr_api.f90:419-425`).
+  emit されています (`tr/tr_api.f90:442-448`).
 
 - **`OUT_OF_RANGE_AFTER_DEP`** — 将来用に予約. 宣言範囲は通る
   が実行時に決まる境界 (例: 平衡 load 後の `NRMAX` が平衡格子で

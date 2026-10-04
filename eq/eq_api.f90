@@ -215,6 +215,14 @@ CONTAINS
        IF (name(i) == C_NULL_CHAR) EXIT
        fname(i:i) = name(i)
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
     CALL eq_param_set(TRIM(fname), value, reg_ierr)
     IF (reg_ierr == 0) THEN
@@ -248,11 +256,26 @@ CONTAINS
        IF (name(i) == C_NULL_CHAR) EXIT
        fname(i:i) = name(i)
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
+    END IF
     fvalue = ' '
     DO i = 1, LEN(fvalue)
        IF (value(i) == C_NULL_CHAR) EXIT
        fvalue(i:i) = value(i)
     END DO
+    ! As for the name: a value longer than the buffer is refused, not cut.
+    IF (i > LEN(fvalue)) THEN
+       IF (c_str_overflows(value, LEN(fvalue) + 1)) THEN
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
     reg_ierr = eq_param_set_str(TRIM(fname), TRIM(fvalue))
     IF (reg_ierr == 0) THEN
@@ -688,5 +711,31 @@ CONTAINS
     END IF
     ierr = EQ_OK
   END FUNCTION eq_api_save
+
+  !-------------------------------------------------------------------
+  ! c_str_overflows : .TRUE. when the C string S holds, from position
+  ! FIRST on (the first one the caller's buffer has no room for), a
+  ! character other than a blank. Trailing blanks are no part of a
+  ! name or a value, so a blank-padded string that is longer than the
+  ! buffer only by blanks loses nothing when it is copied. Call it
+  ! only when no NUL was met before FIRST. A string with no NUL within
+  ! C_STR_SCAN characters from FIRST is refused as well.
+  !-------------------------------------------------------------------
+  PURE FUNCTION c_str_overflows(s, first) RESULT(over)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: s
+    INTEGER,                              INTENT(IN) :: first
+    LOGICAL :: over
+    INTEGER, PARAMETER :: C_STR_SCAN = 4096
+    INTEGER :: j
+
+    over = .TRUE.
+    DO j = first, first + C_STR_SCAN - 1
+       IF (s(j) == C_NULL_CHAR) THEN
+          over = .FALSE.
+          RETURN
+       END IF
+       IF (s(j) /= ' ') RETURN
+    END DO
+  END FUNCTION c_str_overflows
 
 END MODULE eq_api

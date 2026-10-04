@@ -121,6 +121,7 @@ def _install_fd_isolation() -> None:
 
 import contextlib
 import ctypes
+import math
 import os
 import platform
 import sys
@@ -402,6 +403,39 @@ STATE = _ServerState()
 # =====================================================================
 # Helpers — parameter application.
 # =====================================================================
+def _short(text: str, limit: int) -> str:
+    """``text`` for an error message: its start, when it is longer than ``limit``."""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _number(key: str, value: Any) -> float:
+    """``value`` as the float the library is given for ``key``.
+
+    Raises :class:`EqlibError` for what ``float()`` does not take (a string
+    that is no number, ``None``), for an integer too large for a float
+    (``float()`` raises ``OverflowError``), and for a number that is not
+    finite: ``float()`` also takes ``"nan"``, ``"inf"`` and ``"1e309"``,
+    and no parameter has such a value.
+    """
+    key = _short(key, 80)
+    if isinstance(value, int) and abs(value) >= 10**30:
+        shown = "an integer of more than 30 digits"   # Python does not print one of 4300
+    else:
+        shown = _short(repr(value), 60)
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        reason = _short(str(exc), 80)                 # float() repeats the string it refuses
+        raise EqlibError(
+            f"invalid numeric value for '{key}': {shown} ({reason})"
+        ) from exc
+    if not math.isfinite(coerced):
+        raise EqlibError(
+            f"invalid numeric value for '{key}': {shown} (not finite)"
+        )
+    return coerced
+
+
 def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
     """Apply a bulk ``params`` dict, returning the list of applied keys.
 
@@ -435,12 +469,12 @@ def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
                 )
             for i, v in enumerate(value, start=1):
                 key = f"{name}[{i}]"
-                eq.set_param(key, float(v))
+                eq.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, dict):
             for idx, v in value.items():
                 key = f"{name}[{int(idx)}]"
-                eq.set_param(key, float(v))
+                eq.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, bool):
             # bool is a subclass of int; reject as ambiguous.
@@ -453,7 +487,7 @@ def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
             eq.set_param_str(name, value)
             applied.append(name)
         elif isinstance(value, (int, float)):
-            eq.set_param(name, float(value))
+            eq.set_param(name, _number(name, value))
             applied.append(name)
         else:
             raise EqlibError(
@@ -627,7 +661,7 @@ def handle_set_param(name: str, value: float) -> str:
     try:
         eq = STATE.ensure_open()
         with _redirect_fortran_stdout_to_stderr():
-            eq.set_param(name, float(value))
+            eq.set_param(name, _number(name, value))
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_eqlib_error(exc) from exc
@@ -872,6 +906,9 @@ def build_server() -> Any:
         * a dict ``{index: value}`` (sparse array; use this for the
           0-origin ``PSIB`` because lists implicitly start at 1)
         * a string (for KNAMEQ and similar string-valued parameters)
+
+        Every number must be finite: NaN and the infinities are refused,
+        also as a string in a list or a dict (``"nan"``, ``"1e309"``).
         """
         return handle_set_params(params)
 
