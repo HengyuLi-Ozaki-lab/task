@@ -16,7 +16,7 @@
 !   - transport switches     (MDLKAI, MDLETA, MDLAD, MDLAVK, CDW[i], CHP,
 !                             CK0, CK1, CDH, CNH)
 !   - module switches        (MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL,
-!                             MDLJBS, MDLST, MDLNF, MDLUF)
+!                             MDLJBS, MDLST, MDLNF, MODEL_PNF, MDLUF)
 !
 ! L-6 additions (tr_iter01 / tr_tst2 UNREGISTERED_KEYS):
 !   - geometry selector      (MODELG)

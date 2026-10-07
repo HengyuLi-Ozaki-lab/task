@@ -170,7 +170,7 @@ git commit -m "docs(tr): record P1 trx->tr port decisions (MDLNF policy, FTAUE/F
 
 ## Task 2: Build the 1e-10 bpsi-`trx` reference oracle
 
-> **DONE (as-built, 2026-07-10).** Commit `e8837d92`. Artefacts:
+> **DONE (as-built, 2026-07-10).** Commit `3d512baa` (`e8837d92` on the branch it was written on). Artefacts:
 > `test_run/baselines/tr_fus_dt/{metrics.json,SOURCE.md}`, `test_run/inputs/tr_fus_dt.in`
 > (force-added — root `.gitignore` has `*.in`), `test_run/test_definitions.conf`.
 > Capture branch `ref/trx-regress-capture` @ bpsi `fa9dd493`, in the isolated worktree
@@ -298,7 +298,7 @@ git commit -m "test(tr): add DT-fusion 1e-10 reference baseline captured from bp
 
 ## Task 3: Extract collision functions into `trcoll` + `trlib` modules
 
-> **DONE (as-built, 2026-07-10).** Commits `2baa7948` (pure move) + `b795c9e6` (guard).
+> **DONE (as-built, 2026-07-10).** Commits `bae37014` (pure move) + `d32b1847` (guard); `2baa7948` and `b795c9e6` on the branch they were written on.
 > Deviations forced by the code, all verified:
 > - `COULOG`/`FTAUE`/`FTAUI` were **bare external** functions with **12 + 8 + 11 live call sites
 >   across 9 files** (plus 4 for `HY`), not just `trcalc.f90`. Every caller bound them via a local `REAL(rkind)` declaration, so
@@ -716,6 +716,25 @@ git commit -m "feat(tr): port species-resolved NBI/RF current arrays from trx"
 ---
 
 ## Task 9: Expose `model_pnf`/`nnfmax` through the C-ABI / registry / MCP
+
+> **READ FIRST (2026-10-07, when Tasks 1 to 7 were re-cut onto the product line): the steps below were written
+> before the port and four of them are wrong as written.**
+> - Step 1 is done (`model_pnf` is in `NAMELIST /TR/` since Task 7). `nnfmax` must **not** become a namelist key or
+>   a registry name: it is derived from `model_pnf` by `set_usigmav_nf` (`tr/trcomm_ctrl.f90`), and a caller that
+>   set it would put the reaction tables and the arrays out of step.
+> - Step 2: the registry name is `MODEL_PNF`, uppercase only, and it is listed in `value_refused` (one name per
+>   parameter: the product line's registry rules, `python/trlib/tests/test_param_values.py`). Do not add a lowercase
+>   `CASE`.
+> - Step 5: `tr_mcp`'s `describe_parameters` does not derive from the Fortran registry. `PARAMETER_REGISTRY` in
+>   `python/mcp-servers/tr_mcp/server.py` is written by hand: declaring `MODEL_PNF` there is the change, and
+>   task-web then needs a wiki page for it (its registry parity already asks for one once the Fortran name exists).
+>   What is left of this task is that declaration, and the reaction count and the per-reaction rates in
+>   `tr_get_state`.
+> - Steps 3, 4 and 6 name the research checkout. Work in a clone of your own, on a branch from
+>   `kyoshimi-develop`, and bring it in by pull request (`AGENTS.md`).
+> - Before the switch is declared to clients, settle what `docs/product-line/upstream-status.md` lists as open for
+>   it: no alpha heating of the thermal species, the D-T rate between the table's low knots, the unchecked species
+>   slots, and `tr_validate` not knowing the two refusals.
 
 **Files:** Modify `task-kyoshimi/tr/trparm.f90`, `tr_param_registry.f90`; verify `python/trlib`, `tr_mcp`.
 

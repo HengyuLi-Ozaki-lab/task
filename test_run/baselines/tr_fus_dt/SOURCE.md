@@ -60,7 +60,7 @@
 # tr_fus_dt — DT-fusion (model_pnf=1) reference capture, 1 keV
 
 > The title of this file used to end "1e-10 reference oracle". It is not
-> one: the port landed in `553b86a4` and this deck does not match at 1e-10
+> one: the port landed in `7428b000` and this deck does not match at 1e-10
 > (308 of 514 value fields exceed it), for reasons outside fusion that
 > `tr_fus_dt_hot/SOURCE.md`'s "Known open gap" sets out. It is retained as
 > the weak companion to that deck -- fusion signal rel `WPT` 6.2e-9 against
@@ -349,7 +349,7 @@ and comparing against `baselines/<case>/metrics.json`; it never reads
 conf is consumed only by the bash `run_tests.sh` (unusable locally on macOS bash
 3.2) and the manual `workflow_dispatch` `regen-baselines.yml` (default fixtures
 `eq_iter01 eq_tst2 tot_demo2014_short tot_ht6m_short eq_jt60 tr_iter01
-tr_tst2`, `|| true`). So registering cannot make CI red. Note: `model_pnf` landed in `553b86a4`, so
+tr_tst2`, `|| true`). So registering cannot make CI red. Note: `model_pnf` landed in `7428b000`, so
 this case now runs end-to-end and `run_tests.sh tr_fus_dt` would report
 REGRESSION. `run_tests.sh` itself cannot run here (macOS bash 3.2, as above),
 so the drift was measured by driving `tr/tr2` on `inputs/tr_fus_dt.in` with

@@ -353,6 +353,10 @@ OBJ_CORE_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
 # Enforce the dependency order so -j builds don't race (mirrors the bpsd block
 # above). The PIC path has no per-file rules, so without these `make -j
 # libtrapi.so` can compile a consumer before trlib.mod / trcoll.mod exist.
+# These rules order the modules named in them and nothing else: a -j build
+# of the PIC tree from clean still fails, with and without them, on
+# trcom0.mod (measured: `make -C tr -j8 libtrapi.so` on a5634697).  CI and
+# task-web's build are sequential.
 $(OBJDIR_PIC)/trlib.o               : $(OBJDIR_PIC)/trcomm.o
 # The PIC block had no rule tying trcomm.o to its submodule SOURCES, while the
 # non-PIC block has had one since forever ($(OBJDIR)/trcomm.o, below).  Without
@@ -393,7 +397,7 @@ $(OBJDIR_PIC)/trpnf_multi.o         : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/libnf
 # ALLOCATE_TRCOMM, tr_prep_pnf (trpnf_multi) after it.
 $(OBJDIR_PIC)/trprep.o              : $(OBJDIR_PIC)/libnf.o $(OBJDIR_PIC)/trpnf_multi.o
 # libnf USEs trcomm (model_pnf, nnfmax), plcomm and libspl1d.  This orders it
-# for the -j race that bit trlib/trcoll in a640d818; the stale-mod hazard is
+# for the -j race that bit trlib/trcoll in bbb30d13; the stale-mod hazard is
 # handled by the rule above, not by this one.
 $(OBJDIR_PIC)/libnf.o               : $(OBJDIR_PIC)/trcomm.o
 $(OBJDIR_PIC)/trcoll.o              : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/trlib.o

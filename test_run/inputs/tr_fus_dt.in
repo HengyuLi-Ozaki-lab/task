@@ -16,7 +16,7 @@ c
 !
 ! This is the WEAK companion to tr_fus_dt_hot, which is the primary Task 7
 ! oracle.  Its fusion signal is rel WPT 6.2e-9 -- 62x the 1e-10 tolerance,
-! against the hot deck's 1.1e7x.  model_pnf landed in 553b86a4, so the case
+! against the hot deck's 1.1e7x.  model_pnf landed in 7428b000, so the case
 ! runs end-to-end; it is registered in test_definitions.conf (which no
 ! pytest/CI job reads) and is expected to report REGRESSION there, because it
 ! does not match at 1e-10 for reasons outside fusion.

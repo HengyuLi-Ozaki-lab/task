@@ -19,6 +19,15 @@ The contract is: **same Fortran source + same compiler + same libm =
 bit-stable output**. It does NOT promise byte-equivalent output across
 different compilers or libm vendors.
 
+Two directories under `test_run/baselines/` are **not** among the 20 and
+are outside this contract: `tr_fus_dt` and `tr_fus_dt_hot`. They hold
+captures of another code (`trx`, with the corrections their `SOURCE.md`
+lists), taken on macOS, as the reference of
+`python/trlib/tests/test_model_pnf_dispatch.py`, which compares the change
+`MODEL_PNF = 1` makes and not the state at 1e-10. No equivalence test reads
+them, `regen-baselines.yml` does not regenerate them, and `run_tests.sh`
+reports REGRESSION for them by design (`test_run/test_definitions.conf`).
+
 ## What the contract does NOT assert
 
 - **Cross-platform bit-equivalence**. macOS Homebrew GCC 15.2.0 +
