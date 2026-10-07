@@ -57,6 +57,7 @@ absorbed.  T=3 keV and 1000 keV are pinned separately rather than tolerated.
 from __future__ import annotations
 
 import ctypes
+import math
 from pathlib import Path
 
 import pytest
@@ -272,6 +273,7 @@ def nf():
             # defect produced. The bare ratio pins the units too.
             return NF.sigmav_dt(t_kev) / NF.sigmam(t_kev)
 
+    NF.lib = lib          # for the tests that read module state beside the calls
     return NF
 
 
@@ -423,6 +425,31 @@ def test_reactivity_is_never_negative(nf, id_nf):
         f"{negative[-1][0]:.2f} keV; most negative "
         f"{min(v for _, v in negative):.3e} m^3/s"
     )
+
+
+@pytest.mark.parametrize("id_nf", ALL_REACTIONS)
+def test_reactivity_is_evaluated_and_finite(nf, id_nf):
+    """Every reaction, over the whole table: a finite number, and no error counted.
+
+    The sign test above cannot see a NaN or an infinity (`v < 0` is False for
+    both), nor an evaluation that failed: sigmav_nf returns 0 when SPL1DF
+    reports an error, and counts it in nf_error_count.  No xfail here -- the
+    eight reactions whose sign is wrong are still evaluated and finite.
+    """
+    errors = ctypes.c_int.in_dll(nf.lib, "__libnf_MOD_nf_error_count")
+    before = errors.value
+    grid = [1.0 + 0.05 * k for k in range(19981)]      # 1 ... 1000 keV
+    values = [nf.sigmav(id_nf, t) for t in grid]
+    not_finite = [(t, v) for t, v in zip(grid, values) if not math.isfinite(v)]
+    assert not not_finite, (
+        f"sigmav_nf(id_nf={id_nf}) is not finite at {len(not_finite)} "
+        f"temperatures, first {not_finite[0]}"
+    )
+    assert errors.value == before, (
+        f"sigmav_nf(id_nf={id_nf}) counted {errors.value - before} evaluation "
+        f"errors on 1-1000 keV (each returns 0, which the sign test accepts)"
+    )
+    assert any(v != 0.0 for v in values), f"sigmav_nf(id_nf={id_nf}) is 0 everywhere"
 
 
 def test_below_table_floor_returns_zero(nf):

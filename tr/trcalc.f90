@@ -28,6 +28,38 @@
       REAL(rkind),SAVE:: pellet_time_start_save=-1.D0
       REAL(rkind):: t_pellet
 
+!     The fusion switches of the moment against the prepare, before
+!     anything is computed.  The ported path is armed at prepare
+!     (nf_multi_ready, for the model_pnf of that prepare), and two callers
+!     change a switch on a prepared case: tot's dispatch sets TR parameters
+!     without clearing tr_api's prepared flag (tot/tot_param_registry.f90,
+!     dispatch_tr), and trmenu's C handler goes on with the case as
+!     prepared.  With the flag alone, measured through tot: model_pnf set
+!     after a first run was ignored; MDLNF set after a model_pnf run ran
+!     both paths into SNF/PNF/TAUF, the state tr_prep refuses; and
+!     model_pnf set back to 0 went on publishing.
+!     So a nonzero model_pnf is refused here when MDLNF is nonzero too, or
+!     when the case was not prepared for it (its tables and nnfmax are
+!     another model's, or none).  model_pnf = 0 is not refused: it is off
+!     (the gate at the dispatch below).  IERR = 10 is tr_prep's code for
+!     the same refusal.
+!     Here and not at the dispatch: by then the MDLNF block has run, and
+!     TRNFDT writes RNF and RTF, which neither MDLNF = 0 nor tr_pnf clears.
+!     A caller that put the switch back and ran again would have gone on
+!     with the alpha density of the refused step.  Nothing has been touched
+!     yet at this point, NRMAX included.
+!     Not throttled: the caller abandons the step on it.
+      IF(model_pnf.NE.0) THEN
+         IF(MDLNF.NE.0 .OR. .NOT.nf_multi_ready .OR. &
+            model_pnf.NE.nf_model_prepared) THEN
+            WRITE(6,*) 'XX TRCALC: model_pnf=',model_pnf,' MDLNF=',MDLNF, &
+                 ' on a case prepared for model_pnf=',nf_model_prepared, &
+                 ' -- prepare the run again'
+            IERR = 10
+            RETURN
+         END IF
+      END IF
+
       IF(RHOA.NE.1.D0) NRMAX=NROMAX
       IERR=0
 
@@ -162,33 +194,9 @@
 !     published and the path stays diagnostic-only.
 !     The guard is nf_multi_ready, not model_pnf>0 alone: libnf returns a
 !     plausible sigmav_nf from uninitialised tables instead of aborting,
-!     so the flag tr_prep_pnf sets has to be part of the gate.
-!
-!     And the switches of the moment have to be part of it too.  The path
-!     is armed at prepare, for the model_pnf of that prepare, and two
-!     callers change a switch on a prepared case: tot's dispatch sets TR
-!     parameters without clearing tr_api's prepared flag
-!     (tot/tot_param_registry.f90, dispatch_tr), and trmenu's C handler
-!     goes on with the case as prepared.  With the flag alone, measured
-!     through tot: model_pnf set after a first run was ignored; MDLNF set
-!     after a model_pnf run ran both paths into SNF/PNF/TAUF, the state
-!     tr_prep refuses; and model_pnf set back to 0 went on publishing.
-!     So: model_pnf = 0 is off, whatever was prepared.  A model_pnf the
-!     case was not prepared for is refused here (its tables and nnfmax are
-!     another model's), and so is MDLNF beside it.  IERR = 10 is tr_prep's
-!     code for the same refusal; this WRITE is not throttled because the
-!     caller abandons the step on it.
-      IF(model_pnf.NE.0) THEN
-         IF(MDLNF.NE.0 .OR. .NOT.nf_multi_ready .OR. &
-            model_pnf.NE.nf_model_prepared) THEN
-            WRITE(6,*) 'XX TRCALC: model_pnf=',model_pnf,' MDLNF=',MDLNF, &
-                 ' on a case prepared for model_pnf=',nf_model_prepared, &
-                 ' -- prepare the run again'
-            IERR = 10
-            IF(RHOA.NE.1.D0) NRMAX=NRAMAX   ! see the TR_NCLASS return above
-            RETURN
-         END IF
-      END IF
+!     so the flag tr_prep_pnf sets has to be part of the gate.  model_pnf
+!     is the other part: 0 is off whatever the case was prepared for (the
+!     refusals at the head of this routine say why it can differ).
       IF(nf_multi_ready .AND. model_pnf.NE.0) THEN
 !        Into nf_ierr first, not straight into IERR: whether a tr_pnf
 !        failure should abandon the step depends on whether this path is

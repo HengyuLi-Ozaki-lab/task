@@ -1297,19 +1297,52 @@ def test_a_model_pnf_the_case_was_not_prepared_for_is_refused(monkeypatch, prepa
         _poke(lib, SYM_MODEL_PNF, 0)
 
 
+def _alpha_arrays(lib):
+    """RNF and RTF, (NRMAX, 2) each: what the legacy TRNFDT writes and nothing clears."""
+    nrmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value
+    out = {}
+    for name, sym in (("RNF", "__trcomm_profile_MOD_rnf"), ("RTF", "__trcomm_profile_MOD_rtf")):
+        addr = ctypes.c_void_p.in_dll(lib, sym)
+        assert addr.value, f"{sym} is not allocated"
+        out[name] = list((ctypes.c_double * (2 * nrmax)).from_address(addr.value))
+    return out
+
+
 def test_mdlnf_set_on_a_prepared_model_pnf_case_is_refused(monkeypatch):
-    """The pair tr_prep refuses, reached after the prepare instead of before it."""
+    """The pair tr_prep refuses, reached after the prepare instead of before it.
+
+    And refused before anything is computed.  The refusal first stood at the
+    dispatch, after the MDLNF block: TRNFDT had by then written RNF and RTF,
+    which neither MDLNF = 0 nor tr_pnf clears, so a caller that put MDLNF
+    back and ran again went on with the alpha density of the refused step.
+    Hence the second half: the retry is the run that was never interrupted.
+    """
     lib = _lib()
     monkeypatch.chdir(FIXTURES_DIR)
     try:
         with Trlib() as tr:
             _prepared_hot_run(tr, lib, 1)
+            tr.run(1)
+            control = (tr.get_state().to_dict(), _alpha_arrays(lib))
+
+        with Trlib() as tr:
+            _prepared_hot_run(tr, lib, 1)
+            before = _alpha_arrays(lib)
             _poke(lib, SYM_MDLNF, 1)
             with pytest.raises(TrlibError):
                 tr.run(1)
+            assert _alpha_arrays(lib) == before, (
+                "the refused step wrote RNF or RTF: the refusal came after "
+                "the MDLNF block of TRCALC"
+            )
+            _poke(lib, SYM_MDLNF, 0)
+            tr.run(1)
+            retried = (tr.get_state().to_dict(), _alpha_arrays(lib))
     finally:
         _poke(lib, SYM_MODEL_PNF, 0)
         _poke(lib, SYM_MDLNF, 0)
+    assert retried[1] == control[1], "RNF/RTF after the retry are not the uninterrupted run's"
+    assert retried[0] == control[0], "the state after the retry is not the uninterrupted run's"
 
 
 def test_a_refused_prepare_leaves_the_path_disarmed(monkeypatch):
