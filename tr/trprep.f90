@@ -48,6 +48,14 @@ CONTAINS
 !     successive tr_run calls on one library handle.
       CALL nf_reset_log
 
+!     Disarmed before anything can refuse.  tr_prep_pnf sets the flag again
+!     as its last action; the two refusals below and set_usigmav_nf's
+!     return before it is reached, and without this a prepare that failed
+!     left the flag of the prepare before it (seen: ready with nnfmax = 6
+!     after model_pnf = 9 was refused).
+      nf_multi_ready = .FALSE.
+      nf_model_prepared = 0
+
 !     One refusal: MDLNF together with model_pnf.  Both write SNF/PNF/TAUF
 !     and tr_pnf runs after the MDLNF block, so the legacy result would be
 !     silently discarded rather than combined -- and combining them would

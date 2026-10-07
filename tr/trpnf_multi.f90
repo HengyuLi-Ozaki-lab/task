@@ -88,6 +88,7 @@ CONTAINS
   SUBROUTINE tr_prep_pnf(ierr)
 
     USE trcomm_ctrl, ONLY: nnfmax
+    USE trcomm_param, ONLY: model_pnf
     USE trcomm_nf
     ! ONLY, not a bare USE: libnf does a module-level USE bpsd_constants, so
     ! a bare USE here puts bpsd's constants in scope alongside
@@ -110,6 +111,7 @@ CONTAINS
 
     ierr = 0
     nf_multi_ready = .FALSE.
+    nf_model_prepared = 0
 
     ! libnf owns id_nf_nnf and allocates it from nnfmax; if that has not
     ! happened there is nothing to resolve and the caller must not dispatch.
@@ -145,6 +147,7 @@ CONTAINS
     END DO
 
     nf_multi_ready = .TRUE.
+    nf_model_prepared = model_pnf
 
     RETURN
   END SUBROUTINE tr_prep_pnf

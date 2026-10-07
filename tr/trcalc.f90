@@ -16,7 +16,7 @@
            T, TAUF, TTRHOG, RDPVRHOG, SPSC, &
            pellet_time_start,pellet_time_interval, &
            number_of_pellet_repeat,icount_of_pellet
-      USE TRCOMM, ONLY : nf_multi_ready, nnfmax
+      USE TRCOMM, ONLY : nf_multi_ready, nf_model_prepared, nnfmax, model_pnf
       USE trpnf_multi, ONLY : tr_pnf
       USE libnf, ONLY : nf_summary_logged
       USE tr_cytran_mod
@@ -160,10 +160,36 @@
 !     wrote above and TAUF at the 1.0 the CASE(0) branch sets, all three for
 !     tr_pnf to overwrite.  At nnfmax>1 nothing is
 !     published and the path stays diagnostic-only.
-!     The guard is nf_multi_ready, not model_pnf>0: libnf returns a
+!     The guard is nf_multi_ready, not model_pnf>0 alone: libnf returns a
 !     plausible sigmav_nf from uninitialised tables instead of aborting,
-!     so the gate has to be the flag tr_prep_pnf sets, not the input.
-      IF(nf_multi_ready) THEN
+!     so the flag tr_prep_pnf sets has to be part of the gate.
+!
+!     And the switches of the moment have to be part of it too.  The path
+!     is armed at prepare, for the model_pnf of that prepare, and two
+!     callers change a switch on a prepared case: tot's dispatch sets TR
+!     parameters without clearing tr_api's prepared flag
+!     (tot/tot_param_registry.f90, dispatch_tr), and trmenu's C handler
+!     goes on with the case as prepared.  With the flag alone, measured
+!     through tot: model_pnf set after a first run was ignored; MDLNF set
+!     after a model_pnf run ran both paths into SNF/PNF/TAUF, the state
+!     tr_prep refuses; and model_pnf set back to 0 went on publishing.
+!     So: model_pnf = 0 is off, whatever was prepared.  A model_pnf the
+!     case was not prepared for is refused here (its tables and nnfmax are
+!     another model's), and so is MDLNF beside it.  IERR = 10 is tr_prep's
+!     code for the same refusal; this WRITE is not throttled because the
+!     caller abandons the step on it.
+      IF(model_pnf.NE.0) THEN
+         IF(MDLNF.NE.0 .OR. .NOT.nf_multi_ready .OR. &
+            model_pnf.NE.nf_model_prepared) THEN
+            WRITE(6,*) 'XX TRCALC: model_pnf=',model_pnf,' MDLNF=',MDLNF, &
+                 ' on a case prepared for model_pnf=',nf_model_prepared, &
+                 ' -- prepare the run again'
+            IERR = 10
+            IF(RHOA.NE.1.D0) NRMAX=NRAMAX   ! see the TR_NCLASS return above
+            RETURN
+         END IF
+      END IF
+      IF(nf_multi_ready .AND. model_pnf.NE.0) THEN
 !        Into nf_ierr first, not straight into IERR: whether a tr_pnf
 !        failure should abandon the step depends on whether this path is
 !        publishing, which is decided below.  Writing IERR here would

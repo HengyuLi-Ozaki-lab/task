@@ -61,6 +61,7 @@ SYM_MDLEQN = "__trcomm_ctrl_MOD_mdleqn"
 SYM_NF_ERR = "__libnf_MOD_nf_last_error"
 SYM_NF_COUNT = "__libnf_MOD_nf_error_count"
 SYM_MODEL_PNF = "__trcomm_param_MOD_model_pnf"
+SYM_MDLNF = "__trcomm_param_MOD_mdlnf"
 
 # From tr/libnf.f90::set_usigmav_nf. 12 and 14 are aliases of 2 and 4 that
 # select the same reaction set, so they must agree with their base value.
@@ -1233,6 +1234,100 @@ def test_mdlnf_and_model_pnf_together_are_refused(monkeypatch):
             HOT.apply(tr)          # ships MDLNF=1
             tr.set_param("MODEL_PNF", 1)
             tr.run(1)
+
+
+# --- a switch changed on a prepared case -----------------------------------
+#
+# Trlib prepares again after every set_param, so through it the switches
+# TRCALC sees are always the ones tr_prep saw.  Two callers are not like that:
+# tot's dispatch (tot/tot_param_registry.f90, dispatch_tr) sets a TR
+# parameter without clearing tr_api's prepared flag, and trmenu's C handler
+# goes on with the case as prepared.  The tests below put the library in that
+# state the only way this wrapper can: they write the module variable itself
+# between two run() calls, which is what tr_param_set does for tot.  Measured
+# through libtotapi.so before the gate in TRCALC read the switches: a
+# model_pnf set after a first run was ignored, MDLNF set after a model_pnf run
+# ran both paths, and model_pnf set back to 0 went on publishing.
+
+def _poke(lib, symbol, value):
+    ctypes.c_int.in_dll(lib, symbol).value = value
+
+
+def _prepared_hot_run(tr, lib, model_pnf):
+    """One step of the 10 keV D-T case at ``model_pnf``; returns its profiles."""
+    _hot_dt(tr)
+    tr.set_param("MODEL_PNF", model_pnf)
+    tr.set_param("NTMAX", 1)
+    tr.run(1)
+    return _profiles(lib, ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value)
+
+
+def test_model_pnf_set_to_zero_on_a_prepared_case_is_off(monkeypatch):
+    """model_pnf = 0 publishes nothing, whatever the case was prepared for."""
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+    try:
+        with Trlib() as tr:
+            on = _prepared_hot_run(tr, lib, 1)
+            assert any(v != 0.0 for v in on["PNF"]), "the premise: it was publishing"
+            _poke(lib, SYM_MODEL_PNF, 0)
+            tr.run(1)
+            off = _profiles(lib, ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value)
+    finally:
+        _poke(lib, SYM_MODEL_PNF, 0)
+    assert all(v == 0.0 for v in off["PNF"]), (
+        "model_pnf is 0 and PNF is still published: the gate in TRCALC went "
+        "by the flag of the prepare alone"
+    )
+    assert all(v == 0.0 for v in off["SNF"])
+
+
+@pytest.mark.parametrize("prepared, then", [(0, 1), (1, 4), (4, 1)])
+def test_a_model_pnf_the_case_was_not_prepared_for_is_refused(monkeypatch, prepared, then):
+    """Not ignored (0 -> 1), and not run on another model's tables (1 <-> 4)."""
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+    try:
+        with Trlib() as tr:
+            _prepared_hot_run(tr, lib, prepared)
+            _poke(lib, SYM_MODEL_PNF, then)
+            with pytest.raises(TrlibError):
+                tr.run(1)
+    finally:
+        _poke(lib, SYM_MODEL_PNF, 0)
+
+
+def test_mdlnf_set_on_a_prepared_model_pnf_case_is_refused(monkeypatch):
+    """The pair tr_prep refuses, reached after the prepare instead of before it."""
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+    try:
+        with Trlib() as tr:
+            _prepared_hot_run(tr, lib, 1)
+            _poke(lib, SYM_MDLNF, 1)
+            with pytest.raises(TrlibError):
+                tr.run(1)
+    finally:
+        _poke(lib, SYM_MODEL_PNF, 0)
+        _poke(lib, SYM_MDLNF, 0)
+
+
+def test_a_refused_prepare_leaves_the_path_disarmed(monkeypatch):
+    """After a run armed at model_pnf = 4, a refused model_pnf = 9 is not 'ready'."""
+    lib = _lib()
+    monkeypatch.chdir(FIXTURES_DIR)
+    try:
+        with Trlib() as tr:
+            _prepared_hot_run(tr, lib, 4)
+            assert bool(ctypes.c_int.in_dll(lib, SYM_READY).value), "the premise: armed"
+            tr.set_param("MODEL_PNF", UNDEFINED_MODEL_PNF)
+            with pytest.raises(TrlibError):
+                tr.run(1)
+            assert not bool(ctypes.c_int.in_dll(lib, SYM_READY).value), (
+                "nf_multi_ready survived a prepare that was refused"
+            )
+    finally:
+        _poke(lib, SYM_MODEL_PNF, 0)
 
 
 def test_a_publishing_failure_aborts_the_step(monkeypatch):

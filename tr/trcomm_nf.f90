@@ -57,6 +57,13 @@ MODULE trcomm_nf
   ! action; trcalc requires it before dispatching to tr_pnf.
   LOGICAL :: nf_multi_ready = .FALSE.
 
+  ! The model_pnf that nf_multi_ready was set for, 0 while it is .FALSE..
+  ! trcalc compares it with the model_pnf of the moment: tot's dispatch and
+  ! trmenu's C handler can change the switch on a prepared case (see the
+  ! gate in TRCALC), and the reaction tables and nnfmax are those of the
+  ! prepare, not of the new value.
+  INTEGER :: nf_model_prepared = 0
+
 CONTAINS
 
   ! Idempotent and self-resizing.
@@ -142,6 +149,7 @@ CONTAINS
 
     ! Not ready until tr_prep_pnf has resolved the reaction tables.
     nf_multi_ready = .FALSE.
+    nf_model_prepared = 0
 
     RETURN
   END SUBROUTINE allocate_trcomm_nf
@@ -159,6 +167,7 @@ CONTAINS
   ! mid-way on an allocation failure, and this is also the resize path.
   SUBROUTINE deallocate_err_trcomm_nf
     nf_multi_ready = .FALSE.
+    nf_model_prepared = 0
     IF(ALLOCATED(ns1_nnf      )) DEALLOCATE(ns1_nnf      )
     IF(ALLOCATED(ns2_nnf      )) DEALLOCATE(ns2_nnf      )
     IF(ALLOCATED(nsp_nnf      )) DEALLOCATE(nsp_nnf      )
