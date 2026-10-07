@@ -63,6 +63,11 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
    satisfied for the structural tasks.
 3. **[Task 1 Step 4] FTAUE/FTAUI reconcile: use `AMM`.** kyoshimi `trcomm_const.f90:19` has `AMM`
    (=1.672621637D-27) but NOT `AMP`; adopt bpsi's guarded form with `AMM`.
+   **CORRECTION (2026-10-08, after Tasks 1 to 7 were merged): the guard is narrower than bpsi's.** bpsi returns
+   `1.D8` for `ABS(ANIL) <= 1.D-8` ahead of every branch. Adopted as it was, it also replaced finite results (a
+   species at a trace density; `FTAUE`'s impurity branch, which divides by `ANEL`): `tr_iter01` with helium at
+   `1.D-9` moved by up to 2.3e-9 against the library before the port. The author decided for a test on exactly
+   zero, in the branch that divides by `ANIL` (`tr/trcoll.f90`, `python/trlib/tests/test_collision_times.py`).
    **CORRECTION (Task 3 as-built): `AMM` and bpsd's `AMP` are NO LONGER the same number.**
    `../bpsd/bpsd_constants.f90:39` (the sibling repo; `tr/Makefile` compiles it via `BPSD_SRC=../../bpsd`, and
    `pl/plcomm.f90:36` re-exports it) now carries the CODATA-2018 `AMP = 1.67262192369E-27`, a relative
@@ -144,7 +149,7 @@ bpsi `trcoll` differs from kyoshimi `trcalc` inline:
 | `FTAUE` | `PZ(2)`, **no** `ABS(ANIL)` guard, `USE ...AME...` | `PZ(NS_D)`, `IF(ABS(ANIL).LE.1.D-8) FTAUE=1.D8`, `coulomb_log(1,2,..)` |
 | `FTAUI` | `AMM` | `AMP`, `IF(ABS(ANIL).LE.1.D-8) FTAUI=1.D8` |
 
-Decision: **adopt bpsi's guard, but keep kyoshimi's `AMM` and `PZ(2)`** (see RECORDED DECISIONS #3 — as-built). `NS_D` does not exist in kyoshimi `tr` and `PZ(2)` is its numerically identical form; `AMP` is **NOT** equal to `AMM` any more (bpsd moved to CODATA-2018). The guard is the only behavioural delta, and it is inert for `ANIL>1e-8`. **Confirm which constant exists in kyoshimi `TRCOMM`**:
+Decision: **adopt bpsi's guard, but keep kyoshimi's `AMM` and `PZ(2)`** (see RECORDED DECISIONS #3 — as-built, and its 2026-10-08 correction: the guard is now a test on exactly zero). `NS_D` does not exist in kyoshimi `tr` and `PZ(2)` is its numerically identical form; `AMP` is **NOT** equal to `AMM` any more (bpsd moved to CODATA-2018). The guard is the only behavioural delta, and it is inert for `ANIL>1e-8`. **Confirm which constant exists in kyoshimi `TRCOMM`**:
 ```bash
 grep -rnE '\bAMP\b|\bAMM\b' /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trcom0.f90 /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trcomm_*.f90
 ```
@@ -336,7 +341,7 @@ Get the exact bodies:
 ```bash
 git -C /Users/lihengyu/Research_Project/MS10/TASK/task show bpsi/develop:trx/trcoll.f90
 ```
-Move the kyoshimi bodies between `CONTAINS` and `END MODULE`, keeping their `USE TRCOMM, ONLY: ...` lines. `AMM` and `PZ(2)` are **mandatory** (not conditional): kyoshimi `tr` has no `NS_D`, and bpsd's `AMP` is no longer equal to `AMM`. Only the `ABS(ANIL)` guard is taken from bpsi.
+Move the kyoshimi bodies between `CONTAINS` and `END MODULE`, keeping their `USE TRCOMM, ONLY: ...` lines. `AMM` and `PZ(2)` are **mandatory** (not conditional): kyoshimi `tr` has no `NS_D`, and bpsd's `AMP` is no longer equal to `AMM`. Only the guard is taken from bpsi, and since the 2026-10-08 correction of RECORDED DECISIONS #3 it is a test on exactly zero in the branch that divides by `ANIL`, not bpsi's `ABS(ANIL)` one.
 
 - [x] **Step 2: Create `tr/trlib.f90` as MODULE `trlib`** (`COULOG`, `HY`)
 ```bash
@@ -383,7 +388,7 @@ Expected: clean build of both `tr2` and `libtrapi.so`.
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run
 ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2
 ```
-Expected: all three `CLOSED` + `OK: metrics match within tol=1e-10`. (The collision math is unchanged for `ANIL>1e-8`, so the bootstrap-current path `TRAJBS` must reproduce the baseline exactly. If a case drifts, the guard/`NS_D`/`AMP` reconcile changed a number — investigate before continuing.)
+Expected: all three `CLOSED` + `OK: metrics match within tol=1e-10`. (The collision math is unchanged for `ANIL>1e-8` — since the 2026-10-08 correction of RECORDED DECISIONS #3, for every nonzero `ANIL` — so the bootstrap-current path `TRAJBS` must reproduce the baseline exactly. If a case drifts, the guard/`NS_D`/`AMP` reconcile changed a number — investigate before continuing.)
 
 - [x] **Step 8: Commit**
 ```bash

@@ -353,7 +353,7 @@ It does not replace `MDLNF` yet:
   that they are D, T and He⁴.
 - Below 5 keV its D-T rate is far from `MDLNF`'s between the points of its table (1, 2 and 5 keV): 12 times it at
   1.2 keV, a tenth of it at 2.5 keV. At the table's points from 1 to 500 keV, and from 5 to 100 keV, the two agree
-  within 6 % and 2 % (at the last point, 1000 keV, the table is 1.46 times `MDLNF`'s rate).
+  within 6 % and 2.2 % (at the last point, 1000 keV, the table is 1.46 times `MDLNF`'s rate).
 - With more than one reaction nothing reaches the solve, because TR has one fusion fast-ion slot; and the D-He³
   and T-He³ rates (in 3, 4 and 14) are negative at a few keV.
 

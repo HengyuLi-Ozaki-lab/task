@@ -3,11 +3,15 @@
 ! FTAUE / FTAUI used to be bare external functions in trcalc.f90.  They are
 ! collected here as module procedures (P1 Task 3), mirroring bpsi's
 ! trx/trcoll.f90 layout.  The bodies were moved verbatim in the extraction
-! commit; the ABS(ANIL) guard below was added afterwards as a separate,
-! deliberate change (RECORDED DECISIONS #3).
+! commit; the guard on a zero ion density was added afterwards as a
+! separate, deliberate change (RECORDED DECISIONS #3, and its note).
 !
-! Two deliberate divergences from bpsi's trx/trcoll.f90, per RECORDED
+! Three deliberate divergences from bpsi's trx/trcoll.f90, per RECORDED
 ! DECISIONS #3 in docs/superpowers/plans/2026-06-15-trx-tr-consolidation.md:
+!
+!   * The guard is narrower.  trx returns 1.D8 for ABS(ANIL) <= 1.D-8 at
+!     the head of both functions.  Here it is ANIL == 0.D0, and only where
+!     the function divides by ANIL: see the comment in FTAUE.
 !
 !   * FTAUI keeps kyoshimi's AMM (trcomm_const.f90) rather than bpsd's AMP.
 !     They are NOT the same number any more: bpsd updated AMP to the CODATA
@@ -48,20 +52,33 @@ CONTAINS
       REAL(rkind) :: ANEL, ANIL, TEL, ZL, FTAUE
       REAL(rkind) :: COEF
 
-!     Vanishing ion density: the collision time diverges. Return a large
-!     finite value instead of dividing by ~0 (which yields Inf, or NaN once
-!     multiplied by a zero pressure downstream).
-!     NOTE: this guard precedes the impurity branch below, whose denominator
-!     uses ANEL (not ANIL) and would stay finite for ANIL~0. Guarding on ANIL
-!     for both branches is deliberate -- it reproduces bpsi trx/trcoll.f90
-!     exactly, which is what the Task-7 1e-10 comparison is written against.
-      IF(ABS(ANIL).LE.1.D-8) THEN
-         FTAUE=1.D8
-         RETURN
-      ENDIF
+!     No ions of this species at all (ANIL exactly 0.D0): the collision time
+!     is infinite.  Return a large finite value instead of dividing by zero,
+!     which gives Inf (NaN when the temperature or the electron density is
+!     zero too), or NaN once that is multiplied by a zero pressure
+!     downstream.  Every caller gives FTAUE the density of species 2, so here
+!     that means a run with no species 2; it is FTAUI that sees the absent
+!     species of a run with fewer ions (TRAJBS asks it for species 3 and 4
+!     at NSMAX = 2).
+!
+!     Narrower than trx on purpose.  trx tests ABS(ANIL) <= 1.D-8 before
+!     either branch, and the port first did the same.  That also replaced
+!     results that had been finite:
+!       - a species present at a trace density (measured: tr_iter01 with
+!         helium at 1.D-9, 20 steps, 182 of its 567 state values moved, by
+!         up to 2.3e-9);
+!       - the impurity branch below, whose denominator is ANEL and never
+!         depended on ANIL.
+!     So the test is for exactly zero, and it sits in the branch that
+!     divides by ANIL.  Every result that was finite before the port is the
+!     same number now.
 
       COEF = 6.D0*PI*SQRT(2.D0*PI)*EPS0**2*SQRT(AME)/(AEE**4*1.D20)
       IF(ZL-PZ(2).LE.1.D-7) THEN
+         IF(ANIL.EQ.0.D0) THEN
+            FTAUE=1.D8
+            RETURN
+         ENDIF
          FTAUE = COEF*(TEL*RKEV)**1.5D0/(ANIL*ZL**2*COULOG(1,2,ANEL,TEL))
       ELSE
 !     If the plasma contains impurities, we need to consider the
@@ -89,8 +106,9 @@ CONTAINS
       REAL(rkind):: ANEL, ANIL, PAL, TIL, ZL, FTAUI
       REAL(rkind):: COEF
 
-!     Vanishing ion density -- see FTAUE above.
-      IF(ABS(ANIL).LE.1.D-8) THEN
+!     No ions of this species at all -- see FTAUE above.  Exactly zero,
+!     not ABS(ANIL) <= 1.D-8 as in trx: a trace density has a finite time.
+      IF(ANIL.EQ.0.D0) THEN
          FTAUI=1.D8
          RETURN
       ENDIF

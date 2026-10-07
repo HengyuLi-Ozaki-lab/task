@@ -16,9 +16,13 @@ both set back to 0 went on publishing the fusion power.
 ``python/trlib/tests/test_model_pnf_dispatch.py`` holds the same rules by
 writing the module variables between two ``Trlib.run`` calls, because
 ``Trlib`` itself prepares again after every ``set_param``.  This file goes
-through ``libtotapi.so``, where the state arises by itself.  The tests hold
-whichever way the refusal comes about: by ``TRCALC`` today, or by ``tr_prep``
-if the dispatch one day clears the prepared flag.
+through ``libtotapi.so``, where the state arises by itself.
+
+If the dispatch one day clears the prepared flag, TR prepares again and two
+of these expectations change with it: a ``MODEL_PNF`` of 4 after a run at 1,
+and a ``MODEL_PNF`` of 1 after a first run, become valid runs.  The other
+three hold either way (``MDLNF`` beside it and the undefined 9 are refused by
+``tr_prep`` too; 0 is off).
 """
 
 from __future__ import annotations
@@ -58,7 +62,8 @@ def _max_pnf():
     ``libtrapi.so`` beside ``libtotapi.so`` in the per-module build, and the
     one mono image when ``MONO_LIB_PATH`` is set (both loaders look at that
     variable first).  If they were ever not the same, PNF would not be
-    allocated in this one and the assertion below says so.
+    allocated in this one and the assertion below says so -- in a process
+    that has not initialised TR through trlib before, as under --forked.
     """
     from trlib._ffi import load_library
 
