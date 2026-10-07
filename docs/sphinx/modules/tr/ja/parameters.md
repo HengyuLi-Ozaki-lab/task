@@ -273,6 +273,7 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | `MDLJBS` | int switch | 5 | ブートストラップ電流モデル |
 | `MDLST`  | int switch | 0 | のこぎり波 (sawtooth) モデル |
 | `MDLNF`  | int switch | 0 | 核融合反応モデル |
+| `MODEL_PNF` | int switch | 0 | `trx` から移植した多反応核融合モデル (下記) |
 | `MDLUF`  | int switch | 0 | UFILE (実験データ) 読込モデル |
 
 `MDLNB`:
@@ -314,6 +315,22 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | 4 | DT + NB ビーム成分 (粒子源あり) |
 | 5 | DHe³ (粒子源なし) |
 | 6 | DHe³ (粒子源あり) |
+
+`MODEL_PNF`:
+
+| 値 | 反応 | 反応数 | 輸送計算への反映 |
+|---|---|---|---|
+| 0 (既定) | なし: `MDLNF` のみで決まる | 0 | — |
+| 1 | DT | 1 | 核融合の粒子源・加熱パワー・減速時間を `MDLNF` のものに代えて使用 |
+| 2, 12 | DT, DD | 4 | 評価のみ (未使用) |
+| 3 | DT, DD, DHe³ | 6 | 評価のみ (未使用) |
+| 4, 14 | DT, DD, DHe³, TT, THe³ | 13 | 評価のみ (未使用) |
+
+`trx` のモデル (`tr/libnf.f90`, `tr/trpnf_multi.f90`)。`tr_set_param` では `MODEL_PNF`、`&TR` namelist では
+`model_pnf` という名前で指定する。MCP サーバはまだ宣言していない。`MODEL_PNF` と `MDLNF` の両方を指定した計算は
+拒否される (反応が 1 つのとき両者が同じ粒子源を書き込むため)。反応が 2 つ以上のときは輸送計算に何も渡らない
+(TR の核融合高速イオンの枠は 1 つ)。それ以外の値は計算の準備時に拒否される。10 keV の D-T ケース
+(`MODEL_PNF = 1`) で `trx` と 2 % 以内で一致することを確認した。実測との比較は行っていない。
 
 `MDLST`: 0 (OFF, 既定) / 1 (ON).
 

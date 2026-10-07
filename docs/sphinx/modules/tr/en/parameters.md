@@ -284,6 +284,7 @@ the bootstrap-current Sauter model (`MDLJBS=5`) are active.
 | `MDLJBS` | int switch | 5 | bootstrap-current model |
 | `MDLST`  | int switch | 0 | sawtooth model |
 | `MDLNF`  | int switch | 0 | fusion-reaction model |
+| `MODEL_PNF` | int switch | 0 | multi-reaction fusion model ported from `trx` (see below) |
 | `MDLUF`  | int switch | 0 | UFILE (experimental data) reader model |
 
 `MDLNB`:
@@ -325,6 +326,23 @@ the bootstrap-current Sauter model (`MDLJBS=5`) are active.
 | 4 | DT + NB beam component (with particle source) |
 | 5 | DHe³ (no particle source) |
 | 6 | DHe³ (with particle source) |
+
+`MODEL_PNF`:
+
+| Value | Reactions | Count | In the solve |
+|---|---|---|---|
+| 0 (default) | none: `MDLNF` alone decides | 0 | — |
+| 1 | DT | 1 | the fusion source, power and slowing-down time, in place of `MDLNF`'s |
+| 2, 12 | DT, DD | 4 | evaluated, not used |
+| 3 | DT, DD, DHe³ | 6 | evaluated, not used |
+| 4, 14 | DT, DD, DHe³, TT, THe³ | 13 | evaluated, not used |
+
+The model of `trx` (`tr/libnf.f90`, `tr/trpnf_multi.f90`). `tr_set_param` takes the name `MODEL_PNF`, the `&TR`
+namelist `model_pnf`; the MCP server does not declare it yet. A run that sets both `MODEL_PNF` and `MDLNF` is
+refused: with one reaction the two would write the same source. With more than one reaction nothing reaches the
+solve, because TR has one fusion fast-ion slot. Any other value is refused when the run is prepared. The model
+agrees with `trx` within 2 % on a 10 keV D-T case (`MODEL_PNF = 1`); it has not been compared with a
+measurement.
 
 `MDLST`: 0 (OFF, default) / 1 (ON).
 

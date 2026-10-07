@@ -8,6 +8,34 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **TR library: the multi-reaction fusion model of `trx`, selected by
+  `MODEL_PNF` and off by default.** `tr/libnf.f90` (the reaction tables
+  and reactivities) and `tr/trpnf_multi.f90` (`tr_pnf`) are ported from
+  `trx`. `MODEL_PNF` chooses the reaction set: 1 is D-T alone, 2 and 12
+  four reactions, 3 six, 4 and 14 thirteen; 0, the default, leaves the
+  legacy `MDLNF` path as it was, and no existing run changes. `tr_set_param`
+  takes the name `MODEL_PNF` (uppercase only), and the `&TR` namelist takes
+  `model_pnf`; `tr_mcp` does not declare it yet, and the reaction count and
+  the per-reaction rates are not in `tr_get_state`.
+  With one reaction (`MODEL_PNF = 1`) the model's `SNF`, `PNF` and `TAUF`
+  drive the solve in place of `MDLNF`'s; `tr_prep` refuses a run that sets
+  both switches, which would count the same alphas twice. With more than
+  one reaction the rates are evaluated and nothing reaches the solve: TR
+  has one fusion fast-ion slot (`NFM = 2`).
+  What was checked is agreement with `trx`, not with a measurement: on a
+  10 keV D-T case the change that `MODEL_PNF = 1` makes to nine global
+  quantities and to the temperature profiles is the change it makes in
+  `trx` to within 1.2 % (globals) and 2 % (profiles)
+  (`python/trlib/tests/test_model_pnf_dispatch.py`, whose header says what
+  that comparison cannot see: `SNF`, an error the two codes share, and the
+  outermost radial point). The reference is `trx` with five corrections,
+  listed in `test_run/baselines/tr_fus_dt_hot/SOURCE.md` and reported
+  upstream (k-yoshimi/task#235, #236, #238); the four that are on the
+  fusion path are not in the port either. The D-T reactivity is held to
+  the legacy `SIGMAM` by `python/trlib/tests/test_libnf.py`.
+
 ### Changed
 
 - **FP library: `fp_run` refuses `NRMAX` above `FP_MAX_NRMAX` (100).** Such a
@@ -30,6 +58,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   Not changed: a subscript that is a whole number is still taken for a
   scalar (`PROFN1[1]` sets TR's `PROFN1`, which `test_property_fanout.py`
   relies on).
+- **TR: `FTAUE` and `FTAUI` return `1.D8` when the ion density is at or
+  below `1.D-8` (in 10^20 m^-3)**, as `trx` does, where they divided by it
+  and returned an infinity. No baseline case comes near that density; the
+  guard fires for the unused species of a two-species run, whose result
+  nothing reads. The two functions now live in the module `trcoll`, and
+  `COULOG` and `HY` in `trlib` (moved, not changed).
 
 ### Fixed
 
