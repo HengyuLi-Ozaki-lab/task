@@ -76,7 +76,7 @@ in symbolic form. For derivations consult a transport textbook.
 TR has seven transport-equation switches (the `MDLEQ*` set),
 each toggling one balance equation independently. **None of
 these flags are exposed in `tr/tr_param_registry.f90`**: they
-are compile-time defaults set in `tr/trinit.f90:687-695`
+are compile-time defaults set in `tr/trinit.f90:724-732`
 (also settable via the legacy Fortran namelist input). The
 defaults are:
 
@@ -88,7 +88,7 @@ defaults are:
 | `MDLEQU` | Rotation | 0 (OFF) | |
 | `MDLEQZ` | Impurity | 0 (OFF) | |
 | `MDLEQ0` | Neutral | 0 (OFF) | |
-| `MDLEQE` | Electron-density handling — 0 / 1 / 2 mode (not boolean) | 0 (OFF) | each mode maps to a distinct electron / ion density-equation handling (`tr/trprep.f90:407-415`, `tr/trexec.f90:180-201`); only meaningful when `MDLEQN = 1` (`tr/trprep.f90:202-203`). For per-mode behaviour consult those source locations. |
+| `MDLEQE` | Electron-density handling — 0 / 1 / 2 mode (not boolean) | 0 (OFF) | each mode maps to a distinct electron / ion density-equation handling (`tr/trprep.f90:497-505`, `tr/trexec.f90:180-201`); only meaningful when `MDLEQN = 1` (`tr/trprep.f90:292-293`). For per-mode behaviour consult those source locations. |
 
 **The default ON set is `{MDLEQB, MDLEQT}`** — out of the box,
 TR evolves current and temperature only; particles, rotation,
@@ -133,7 +133,7 @@ against `tr/trinit.f90` and `tr/tr_param_registry.f90`:
 
 **Selectors exposed in the public parameter registry** (settable
 at runtime from `tr.set_param`,
-`tr/tr_param_registry.f90:43-49,132-136`):
+`tr/tr_param_registry.f90:43-49,133-137`):
 
 - **`MDLKAI` — turbulent heat transport.** Selects the
   turbulent (anomalous) heat-transport model. Options include
@@ -144,12 +144,12 @@ at runtime from `tr.set_param`,
 - **`MDLAD` — particle diffusion (model family).** Selects the
   particle-diffusion model. Multiple variants are available,
   including the Hinton-Hazeltine analytical form
-  (`tr/trinit.f90:290-295`, `tr/trcoef_adhoc.f90:35-45`); it is
+  (`tr/trinit.f90:291-296`, `tr/trcoef_adhoc.f90:36-46`); it is
   a *model-family* selector, not a single ad-hoc switch.
 - **`MDLAVK` — thermal pinch.** Selects the heat-pinch (inward
   heat-flux convective) model. **Not** a neoclassical selector
   — `MDLAVK` stands for the "anomalous V_K" / thermal-pinch
-  model family (confirmed by `tr/trinit.f90:296-308` and
+  model family (confirmed by `tr/trinit.f90:297-309` and
   the existing `parameters.md` entries on this page family).
 
 **Selectors present in the Fortran source but NOT in the public
@@ -157,11 +157,11 @@ registry** (cannot be set from `tr.set_param`; retain compile-
 time defaults from `tr/trinit.f90`):
 
 - **`MDLKNC` — neoclassical heat / resistivity treatment.**
-  Default at `tr/trinit.f90:324` (`MDLKNC = 1`); the
+  Default at `tr/trinit.f90:325` (`MDLKNC = 1`); the
   documentation header for this selector sits a few lines
-  above at `tr/trinit.f90:306`.
+  above at `tr/trinit.f90:307`.
 - **`MDNCLS` — NCLASS module toggle** (the standard NCLASS
-  neoclassical library). Default at `tr/trinit.f90:717`
+  neoclassical library). Default at `tr/trinit.f90:754`
   (`MDNCLS = 0`).
 
 These two are the actual neoclassical knobs in TR but they are
@@ -181,21 +181,21 @@ the non-registered selectors {doc}`design` is the entry point.
 **Time scale.** TR is a transport-time-scale code. The natural
 time step is milliseconds, total run time of order seconds
 (consistent with the defaults `DT = 0.01 s` and `NTMAX = 100` at
-`tr/trinit.f90:374,376`, total `1.0 s`). Faster phenomena are
+`tr/trinit.f90:375,376`, total `1.0 s`). Faster phenomena are
 not resolved.
 
 **What TR resolves with simplified models** — these are reduced,
 phenomenological models, not first-principles MHD:
 
 - **Sawtooth oscillation.** `MDLST` selector
-  (`tr/trinit.f90:392-402`). The mixing is implemented in
-  `TRSAWT` (header at `tr/trcalc.f90:1072`, called from
+  (`tr/trinit.f90:393-403`). The mixing is implemented in
+  `TRSAWT` (header at `tr/trcalc.f90:1172`, called from
   `tr/trloop.f90:59-65`), with the temperature / density / `q`
-  redistribution step at `tr/trcalc.f90:1127-1150`. This is a
+  redistribution step at `tr/trcalc.f90:1227-1250`. This is a
   phenomenological reconnection / mixing model, not a kink-mode
   solve.
 - **ELM reduction.** `MDLELM` selector
-  (`tr/trinit.f90:720-729`). A reduced ELM-frequency /
+  (`tr/trinit.f90:757-766`). A reduced ELM-frequency /
   ELM-energy-loss model rather than a first-principles
   pedestal-stability calculation.
 

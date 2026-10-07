@@ -70,7 +70,7 @@ TR は flux-surface 平均化された格子上で 1 次元の半径方向輸送
 TR は 7 個の輸送方程式スイッチ (`MDLEQ*` 群) を持ち,
 各々が 1 つの収支方程式を独立に ON/OFF します.
 **これらのフラグはいずれも `tr/tr_param_registry.f90` に
-登録されていません**: `tr/trinit.f90:687-695` で与えられる
+登録されていません**: `tr/trinit.f90:724-732` で与えられる
 コンパイル時デフォルト (および legacy Fortran namelist
 入力) が値を決めます. デフォルトは:
 
@@ -82,7 +82,7 @@ TR は 7 個の輸送方程式スイッチ (`MDLEQ*` 群) を持ち,
 | `MDLEQU` | 回転 | 0 (OFF) | |
 | `MDLEQZ` | 不純物 | 0 (OFF) | |
 | `MDLEQ0` | 中性粒子 | 0 (OFF) | |
-| `MDLEQE` | 電子密度の扱い — 0 / 1 / 2 モード (boolean ではない) | 0 (OFF) | 各モードが異なる電子 / イオン密度方程式の扱いに対応 (`tr/trprep.f90:407-415`, `tr/trexec.f90:180-201`); `MDLEQN = 1` のときのみ意味を持つ (`tr/trprep.f90:202-203`). モードごとの挙動はソースを参照. |
+| `MDLEQE` | 電子密度の扱い — 0 / 1 / 2 モード (boolean ではない) | 0 (OFF) | 各モードが異なる電子 / イオン密度方程式の扱いに対応 (`tr/trprep.f90:497-505`, `tr/trexec.f90:180-201`); `MDLEQN = 1` のときのみ意味を持つ (`tr/trprep.f90:292-293`). モードごとの挙動はソースを参照. |
 
 **箱から出してそのままの状態 (デフォルト ON 集合) は
 `{MDLEQB, MDLEQT}`** — TR は電流と温度だけを発展させ,
@@ -127,7 +127,7 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
 
 **公開 parameter registry に露出されている選択肢** (実行時に
 `tr.set_param` から設定可能,
-`tr/tr_param_registry.f90:43-49,132-136`):
+`tr/tr_param_registry.f90:43-49,133-137`):
 
 - **`MDLKAI` — 乱流熱輸送.** 乱流 (anomalous) 熱輸送モデル
   を選択. 選択肢は CDBM, IFS-PPPL, GLF23, mixed Bohm /
@@ -136,25 +136,25 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
   抵抗率モデルを選択.
 - **`MDLAD` — 粒子拡散 (モデルファミリ).** 粒子拡散モデル
   を選択. Hinton-Hazeltine 解析形を含む複数の variant を
-  持つ (`tr/trinit.f90:290-295`,
-  `tr/trcoef_adhoc.f90:35-45`); 単一の ad-hoc スイッチでは
+  持つ (`tr/trinit.f90:291-296`,
+  `tr/trcoef_adhoc.f90:36-46`); 単一の ad-hoc スイッチでは
   なく **モデルファミリ** の選択です.
 - **`MDLAVK` — thermal pinch.** 熱 pinch (内向き熱流の
   対流成分) モデルを選択. 文献では "anomalous V_K" / thermal
   pinch と呼ばれるモデルファミリ. **neoclassical の selector
-  ではありません** (`tr/trinit.f90:296-308` と既存の
+  ではありません** (`tr/trinit.f90:297-309` と既存の
   `parameters.md` 該当エントリで確認).
 
 **Fortran ソースのみ (`tr/trinit.f90` のコンパイル時デフォルト
 で固定)**:
 
 - **`MDLKNC` — neoclassical 熱伝導 / 抵抗率の処理.**
-  デフォルトは `tr/trinit.f90:324` (`MDLKNC = 1`).
-  この selector の文書 header は数行上の `tr/trinit.f90:306`
+  デフォルトは `tr/trinit.f90:325` (`MDLKNC = 1`).
+  この selector の文書 header は数行上の `tr/trinit.f90:307`
   にあります.
 - **`MDNCLS` — NCLASS スタイルの neoclassical モジュールを
   ON/OFF** (標準的な NCLASS 新古典ライブラリ). デフォルトは
-  `tr/trinit.f90:717` (`MDNCLS = 0`).
+  `tr/trinit.f90:754` (`MDNCLS = 0`).
 
 これら 2 つが TR で実際の neoclassical の knob ですが,
 `tr.set_param` からは触れません. 変えたい上級ユーザは
@@ -172,7 +172,7 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
 
 **時間スケール.** TR は輸送時間スケールのコードです. 自然
 な時間ステップは ms オーダー, 総走行時間は秒オーダー
-(`tr/trinit.f90:374,376` のデフォルト `DT = 0.01 s`,
+(`tr/trinit.f90:375,376` のデフォルト `DT = 0.01 s`,
 `NTMAX = 100`, total `1.0 s` と整合的). より高速の現象は
 解像できません.
 
@@ -180,14 +180,14 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
 モデルで, 第一原理 MHD ではありません:
 
 - **Sawtooth 振動.** `MDLST` selector
-  (`tr/trinit.f90:392-402`). 混合は `TRSAWT` で実装
-  (header が `tr/trcalc.f90:1072`,
+  (`tr/trinit.f90:393-403`). 混合は `TRSAWT` で実装
+  (header が `tr/trcalc.f90:1172`,
   `tr/trloop.f90:59-65` から呼ばれる) され,
   温度 / 密度 / `q` の再分配ステップは
-  `tr/trcalc.f90:1127-1150` にあります. 現象論的な
+  `tr/trcalc.f90:1227-1250` にあります. 現象論的な
   reconnection / mixing モデルで, kink モードを解いている
   わけではありません.
-- **ELM 縮約.** `MDLELM` selector (`tr/trinit.f90:720-729`).
+- **ELM 縮約.** `MDLELM` selector (`tr/trinit.f90:757-766`).
   ELM 周波数 / ELM エネルギー損失の縮約モデルで, 第一原理
   ペデスタル安定性計算ではありません.
 

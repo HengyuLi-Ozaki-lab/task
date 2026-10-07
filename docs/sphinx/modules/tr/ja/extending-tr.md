@@ -15,7 +15,7 @@ walkthrough を扱います — スカラーパラメータ追加,
 
 ## Walkthrough A — 新規スカラーパラメータの追加
 
-TR のパラメータレジストリは `tr/tr_param_registry.f90:84+`
+TR のパラメータレジストリは `tr/tr_param_registry.f90:85+`
 の `SELECT CASE` 手書き dispatch を使っています. 新規
 パラメータ `FOO` の追加は dispatch の 1 個の新規 `CASE`
 行 + `tr/trinit.f90` のデフォルトで完了します.
@@ -26,7 +26,7 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:84+`
    にない場合), 該当する `tr/trcomm*.f90` モジュールに
    類似パラメータと並べて宣言する. 既存ならスキップ.
 2. **registry の case を追加する.**
-   `tr/tr_param_registry.f90:84` から始まる
+   `tr/tr_param_registry.f90:85` から始まる
    `SELECT CASE (TRIM(b))` ブロックに
    `CASE ("FOO"); FOO = value` のような行を追加.
    per-section のグループ化規約を保つため, 類似パラメータ
@@ -39,10 +39,10 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:84+`
 4. **リビルド.** `make -C tr libtrapi.so`.
 5. **Python から使う.** `tr.set_param("FOO", x)` で即座に
    動きます. `tr_set_param` は文字列キーで動作するため
-   (`tr/tr_api.f90:124-128,136-156` で確認), C ABI 変更は
+   (`tr/tr_api.f90:125-129,137-157` で確認), C ABI 変更は
    不要です.
 
-配列値パラメータについては, `tr/tr_param_registry.f90:109-114`
+配列値パラメータについては, `tr/tr_param_registry.f90:110-115`
 の bounds-check 付きイディオムをテンプレートに使います.
 既存の `PA[i]` / `PN[i]` / `PNS[i]` / `PT[i]` ケースが
 パターンを示しています: 各 `CASE` で `idx` を `SIZE(...)`
@@ -52,13 +52,13 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:84+`
 
 ## Walkthrough B — `MDLKAI` 配下に新規 transport model を追加
 
-乱流熱輸送係数は `tr/trcoef_turbulence.f90:400` の
+乱流熱輸送係数は `tr/trcoef_turbulence.f90:401` の
 `SELECT CASE(MDLKAI)` で dispatch されます. (line 64 の
 別の `select case` はグラフラベル割り当て用で, 係数計算
 自体ではありません.) 各 `MDLKAI` 値が異なるモデルを呼び
 ます.
 
-numbering 規約 (`tr/trcoef_turbulence.f90:392-398` の
+numbering 規約 (`tr/trcoef_turbulence.f90:393-399` の
 ソース側コメントより):
 
 - `MDLKAI < 10` — 定数係数の toy model.
@@ -116,12 +116,12 @@ numbering 規約 (`tr/trcoef_turbulence.f90:392-398` の
    `double` (適切な C 型) を, やはり struct の末尾に追加.
 4. **`tr_api_get_state` 内で field を埋める.**
    `tr/tr_api.f90` には 3 ブロックある:
-   - **zero-init** が `:286-306` (新 field に compute-time
+   - **zero-init** が `:287-307` (新 field に compute-time
      ゼロベースラインがなければここにも追加).
-   - **scalar copy** が `:322-338` — AJRFT 先例はここ.
+   - **scalar copy** が `:323-339` — AJRFT 先例はここ.
      新スカラーはこのパターンに従う.
    - **per-radius / per-species profile loops** が
-     `:344-353` — 新配列 field は `RN` / `RT` / `AJ` /
+     `:345-354` — 新配列 field は `RN` / `RT` / `AJ` /
      `QP` の loop パターンに従う.
 5. **`TR_STATE_ABI_VERSION` を bump する.**
    `tr/tr_api.h:38` で. 現値は `2`; 次の整数 (現在の

@@ -70,7 +70,7 @@ END FUNCTION
 - **特別なガード (`NSMAX`)**: `NSMAX=1` は `tr_prof_impurity` の零除算 →
   Fortran 側 `STOP` を誘発しホストプロセスを abort させるため,
   レジストリで早期に `[2, 8]` の範囲外を拒否しています
-  (`tr_param_registry.f90:94-102` のコメント参照).
+  (`tr_param_registry.f90:95-103` のコメント参照).
 
 登録済みパラメータの全リストは {doc}`parameters` にあります.
 

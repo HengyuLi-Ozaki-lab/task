@@ -56,16 +56,16 @@ etc. TR can ingest these to drive interpretive runs.
 
 Reading is controlled by `MDLUF` (default `0` — OFF; set
 to non-zero to enable). The default is verified at
-`tr/trinit.f90:641-648`. `MDLUF` is exposed in
+`tr/trinit.f90:678-685`. `MDLUF` is exposed in
 `tr/tr_param_registry.f90` and can be set from
 `tr.set_param("MDLUF", ...)` at runtime.
 
 **The directory parameters `KUFDIR` / `KUFDEV` / `KUFDCG`
 are namelist-only.** They appear in the legacy `&trn`
-namelist input at `tr/trparm.f90:108-112`, but they are
+namelist input at `tr/trparm.f90:110-114`, but they are
 NOT exposed in `tr/tr_param_registry.f90` (the registry
 has a "future additions" comment at
-`tr/tr_param_registry.f90:241-243`). Setting them via
+`tr/tr_param_registry.f90:254-256`). Setting them via
 `tr.set_param_str` will fail. Users who need to point TR
 at a non-default ufile directory must either:
 
