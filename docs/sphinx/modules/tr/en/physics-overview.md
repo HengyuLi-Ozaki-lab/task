@@ -181,7 +181,7 @@ the non-registered selectors {doc}`design` is the entry point.
 **Time scale.** TR is a transport-time-scale code. The natural
 time step is milliseconds, total run time of order seconds
 (consistent with the defaults `DT = 0.01 s` and `NTMAX = 100` at
-`tr/trinit.f90:375,376`, total `1.0 s`). Faster phenomena are
+`tr/trinit.f90:375,377`, total `1.0 s`). Faster phenomena are
 not resolved.
 
 **What TR resolves with simplified models** — these are reduced,

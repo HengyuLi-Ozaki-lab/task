@@ -340,7 +340,9 @@ the bootstrap-current Sauter model (`MDLJBS=5`) are active.
 The model of `trx` (`tr/libnf.f90`, `tr/trpnf_multi.f90`). `tr_set_param` takes the name `MODEL_PNF`, the `&TR`
 namelist `model_pnf`; the MCP server does not declare it yet. A run that sets both `MODEL_PNF` and `MDLNF` is
 refused: with one reaction the two would write the same source. Any other value is refused when the run is
-prepared, and so is a value changed after it (through `tot`, which does not prepare again).
+prepared. Changed on a prepared case (through `tot`, which does not prepare again), a nonzero value other
+than the prepared one is refused, `MDLNF` set beside a nonzero `MODEL_PNF` is refused, and 0 turns the model off
+at once.
 
 It does not replace `MDLNF` yet:
 
@@ -350,7 +352,8 @@ It does not replace `MDLNF` yet:
 - It reads the reactants from species 2 and 3 and gives the alpha to species 4, as `MDLNF` does, and does not check
   that they are D, T and He⁴.
 - Below 5 keV its D-T rate is far from `MDLNF`'s between the points of its table (1, 2 and 5 keV): 12 times it at
-  1.2 keV, a tenth of it at 2.5 keV. At the points, and from 5 to 100 keV, the two agree within 6 % and 2 %.
+  1.2 keV, a tenth of it at 2.5 keV. At the table's points from 1 to 500 keV, and from 5 to 100 keV, the two agree
+  within 6 % and 2 % (at the last point, 1000 keV, the table is 1.46 times `MDLNF`'s rate).
 - With more than one reaction nothing reaches the solve, because TR has one fusion fast-ion slot; and the D-He³
   and T-He³ rates (in 3, 4 and 14) are negative at a few keV.
 

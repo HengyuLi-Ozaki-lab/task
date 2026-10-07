@@ -32,9 +32,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   1.2 keV, a tenth of it at 2.5 keV (the table has knots at 1, 2 and
   5 keV; HengyuLi-Ozaki-lab/task-web-client#58). A run that sets both
   switches is refused, since it would count the same alphas twice: by
-  `tr_prep`, and by `TRCALC` when a switch is changed on a prepared case
-  (through `tot`, which does not prepare again), where a `MODEL_PNF` the
-  case was not prepared for is refused as well.
+  `tr_prep`, and by `TRCALC`, before it computes anything, when a switch is
+  changed on a prepared case (through `tot`, which does not prepare again).
+  There a nonzero `MODEL_PNF` the case was not prepared for is refused as
+  well, and `MODEL_PNF = 0` turns the model off at once.
   With more than one reaction the rates are evaluated and nothing reaches
   the solve: TR has one fusion fast-ion slot (`NFM = 2`). The D-He3 and
   T-He3 rates of the sets 3, 4 and 14 are negative at a few keV
@@ -50,9 +51,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `test_run/baselines/tr_fus_dt_hot/SOURCE.md` and reported upstream
   (k-yoshimi/task#235, #236, #238); the four that are on the fusion path
   are not in the port either. `python/trlib/tests/test_libnf.py` holds the
-  D-T reactivity to the legacy `SIGMAM` at the table's points (6 %) and
-  from 5 to 100 keV (2 %), and holds that no reaction's rate is negative
-  (strict `xfail` for D-He3 and T-He3).
+  D-T reactivity to the legacy `SIGMAM` at the table's points from 1 to
+  500 keV (6 %; at 1000 keV the table is 1.46 times `SIGMAM`) and from 5 to
+  100 keV (2 %), and holds that every reaction's rate is finite and that
+  none is negative (strict `xfail` for D-He3 and T-He3).
 
 ### Changed
 
