@@ -16,11 +16,101 @@ CONTAINS
     USE trbpsd
     USE trmetric
     USE tr_dump_state_mod, ONLY : tr_dump_state_if_requested
+    USE libnf, ONLY : set_usigmav_nf, nf_reset_log
+    USE trpnf_multi, ONLY : tr_prep_pnf
     IMPLICIT NONE
     INTEGER,INTENT(OUT):: ierr
+    INTEGER:: nf_ierr
+
+!     *** initialize fusion reaction (P1 Task 6) ***
+!
+!     Ordering is forced: set_usigmav_nf derives nnfmax from model_pnf and
+!     allocates libnf's id_nf_nnf, and ALLOCATE_TRCOMM then sizes every
+!     trcomm_nf array by that nnfmax -- so this must precede the allocate,
+!     while tr_prep_pnf (which fills those arrays) must follow it.
+!
+!     set_usigmav_nf now reports through ierr instead of the bare STOPs it
+!     carried upstream -- every one of those was reachable through
+!     libtrapi.so and would abort the host process, pytest or the MCP
+!     server, rather than returning (CLAUDE.md, Fortran library discipline;
+!     issue #142).  Its codes: 1 spline setup, 2 undefined model_pnf,
+!     3 a reaction's ion species is absent from the composition.
+!
+!     Re-arm the one-line-per-site logging for this run.  tr_init is not the
+!     right place on its own: the tr2 binary calls it once at process start,
+!     and trmenu's R handler goes straight to tr_prep + tr_loop -- so a
+!     second interactive run would report nothing at all (verified in the
+!     source: the R handler calls tr_prep every time and never tr_init).
+!
+!     Two paths still share one prepare's worth of messages, deliberately,
+!     being continuations rather than new runs: trmenu's C/CONT handler,
+!     which advances more steps on the already-prepared case, and
+!     successive tr_run calls on one library handle.
+      CALL nf_reset_log
+
+!     Disarmed before anything can refuse.  tr_prep_pnf sets the flag again
+!     as its last action; the two refusals below and set_usigmav_nf's
+!     return before it is reached, and without this a prepare that failed
+!     left the flag of the prepare before it (seen: ready with nnfmax = 6
+!     after model_pnf = 9 was refused).
+      nf_multi_ready = .FALSE.
+      nf_model_prepared = 0
+
+!     One refusal: MDLNF together with model_pnf.  Both write SNF/PNF/TAUF
+!     and tr_pnf runs after the MDLNF block, so the legacy result would be
+!     silently discarded rather than combined -- and combining them would
+!     double-count the same D-T alphas, once from SIGMAM and once from libnf.
+!
+!     model_pnf >= 2 is NOT refused.  It evaluates every trcomm_nf array but
+!     publishes none of them, because tr has one fusion fast-ion slot
+!     (NFM=2, slot 2); it is diagnostic-only rather than invalid.
+      IF(model_pnf.NE.0 .AND. MDLNF.NE.0) THEN
+         WRITE(6,*) 'XX tr_prep: model_pnf and MDLNF are both nonzero', &
+              ' (model_pnf=',model_pnf,' MDLNF=',MDLNF,')'
+         ierr = 10
+         RETURN
+      END IF
+
+      CALL set_usigmav_nf(nf_ierr)
+      IF(nf_ierr.NE.0) THEN
+         WRITE(6,*) 'XX tr_prep: set_usigmav_nf failed, ierr=',nf_ierr, &
+                    ' model_pnf=',model_pnf
+         ierr = nf_ierr
+         RETURN
+      END IF
 
       CALL ALLOCATE_TRCOMM(IERR)
       IF(IERR.NE.0) RETURN
+
+!     ALLOCATE_TRCOMM returns early when nrmax/nsmax/nszmax/nsnmax are all
+!     unchanged, and nnfmax is not one of those -- changing only model_pnf
+!     between runs would otherwise leave these arrays at the previous
+!     nnfmax.  The call is idempotent, so the common path costs a size
+!     comparison.
+      CALL allocate_trcomm_nf(IERR)
+      IF(IERR.NE.0) THEN
+!        Unlike ALLOCATE_TRCOMM, which unwinds via GOTO 900 ->
+!        DEALLOCATE_ERR_TRCOMM, this call site owns its own cleanup.
+!        Leaving a partial allocation behind would hand the next attempt a
+!        state allocate_trcomm_nf's size check cannot describe.
+         CALL deallocate_err_trcomm_nf
+         RETURN
+      END IF
+
+!     Resolves the per-reaction caches and sets nf_multi_ready, which is
+!     what trcalc gates the tr_pnf dispatch on.  At model_pnf=0 nnfmax stays
+!     0 and tr_prep_pnf declines with ierr=1/2, leaving the flag .FALSE. --
+!     that is the default path, not a failure, so it must not propagate.
+!     At model_pnf>0 a refusal means the reaction tables and the trcomm_nf
+!     arrays disagree, which would silently disable the path the caller
+!     asked for; that one does propagate.
+      CALL tr_prep_pnf(nf_ierr)
+      IF(model_pnf.NE.0 .AND. nf_ierr.NE.0) THEN
+         WRITE(6,*) 'XX tr_prep: tr_prep_pnf failed, ierr=',nf_ierr, &
+                    ' model_pnf=',model_pnf
+         ierr = nf_ierr
+         RETURN
+      END IF
 
       IF(MDLUF.NE.0.AND.MDLXP.NE.0) CALL IPDB_OPEN(KUFDEV, KUFDCG)
       IF(MDLUF.NE.0) CALL UFILE_INTERFACE(KDIRX,KUFDIR,KUFDEV,KUFDCG,0)

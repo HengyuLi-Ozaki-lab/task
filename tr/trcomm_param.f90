@@ -56,4 +56,18 @@ MODULE trcomm_param
        MDLNB, MDLEC, MDLLH, MDLIC, MDLCD, MDLPEL, MDLJBS, MDLST, MDLNF, &
        IZERO, MDLELM, MDLPSC, NPSCMAX, MDLIMP, NRNBMAX
 
+! --- P1: additive multi-reaction fusion path (ported from trx, tr/libnf.f90).
+!     model_pnf = 0        legacy MDLNF / SIGMAM D-T path only.  DEFAULT.
+!     model_pnf = 1,2,3,4,12,14
+!                          additionally evaluates the ported reaction set;
+!                          dispatched from trprep (init) and trcalc (step).
+!
+!     This initialiser only covers the first init in a process: a declaration
+!     initialiser is static, so it runs once at image load and tr_api_init
+!     does NOT re-execute it.  Option A's guarantee -- the path is off unless
+!     asked for -- therefore rests on trinit's explicit reset (next to MDLNF's,
+!     tr/trinit.f90), not on this line.  Without that reset, a second
+!     in-process session silently inherits the first one's model_pnf.
+  INTEGER:: model_pnf = 0
+
 END MODULE trcomm_param

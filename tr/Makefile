@@ -27,11 +27,13 @@ MODINCLUDE= -I./$(MOD) -I../pl/$(MOD) -I../eq/$(MOD) \
 SRCM=trcom0.f90 trcom1.f90 \
      trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
      trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90 \
+     trcomm_nf.f90 \
      trcomm.f90 trbpsd.f90
 
 # Core computation sources (no graphics, no interactive menu).
 # This subset will be linked into libtrapi.so in Phase L-4.
-SRCS_CORE=trcdbm.f90 trmodels.f90 \
+SRCS_CORE=trlib.f90 trcoll.f90 libnf.f90 trpnf_multi.f90 \
+     trcdbm.f90 trmodels.f90 \
      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
      trcoef_resistivity.f90 trcoef_adhoc.f90 \
      trinit.f90 trparm.f90 trview.f90 \
@@ -347,6 +349,68 @@ OBJMMM_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCMMM95:.f=.o) $(SRCMMM7:.f90=.o))
 OBJMBGB_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCMBGB:.f=.o))
 OBJITG_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCITG:.f=.o) $(SRCITGF:.F=.o))
 OBJ_CORE_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
+
+# Enforce the dependency order so -j builds don't race (mirrors the bpsd block
+# above). The PIC path has no per-file rules, so without these `make -j
+# libtrapi.so` can compile a consumer before trlib.mod / trcoll.mod exist.
+# These rules order the modules named in them and nothing else: a -j build
+# of the PIC tree from clean still fails on a module no rule orders
+# (measured, `make -C tr -j8 libtrapi.so`, one run each: trcom0.mod on
+# a5634697, which has none of these rules, and trcomm_const.mod with
+# them).  CI and task-web's build are sequential.
+$(OBJDIR_PIC)/trlib.o               : $(OBJDIR_PIC)/trcomm.o
+# The PIC block had no rule tying trcomm.o to its submodule SOURCES, while the
+# non-PIC block has had one since forever ($(OBJDIR)/trcomm.o, below).  Without
+# it, editing trcomm_param.f90 rebuilds trcomm_param.o but NOT trcomm.o, so
+# trcomm.mod stays stale and any consumer fails with "Symbol 'model_pnf' at (1)
+# has no IMPLICIT type" -- which reads like a missing declaration and is
+# actually a stale module file.  That is exactly how it bit during this port,
+# and an earlier version of this comment wrongly credited the libnf rule below
+# with preventing it.
+$(OBJDIR_PIC)/trcomm.o              : trcomm.f90 trcom0.f90 trcom1.f90 \
+                                      trcomm_const.f90 trcomm_param.f90 \
+                                      trcomm_ctrl.f90 trcomm_globals.f90 \
+                                      trcomm_profile.f90 trcomm_mtx.f90 \
+                                      trcomm_nf.f90
+# trcomm_nf USEs trcomm_ctrl (nnfmax) -- the only submodule that depends on
+# another, so it needs an ordering edge the sibling submodules do not.
+$(OBJDIR_PIC)/trcomm_nf.o           : $(OBJDIR_PIC)/trcomm_ctrl.o
+# ...and trcomm.o must be ordered AFTER it.  Listing trcomm_nf.f90 among
+# trcomm.o's prerequisites (above) forces a REBUILD when the source changes
+# but does not order the two compiles, so under -j make can compile trcomm.o
+# while trcomm_nf.mod is still being written.  The six older submodules share
+# this gap; the edge is added here for the one this port introduces.
+$(OBJDIR_PIC)/trcomm.o              : $(OBJDIR_PIC)/trcomm_nf.o
+# libnf consumers: trinit resets nf_last_error/nf_error_count and calls
+# nf_reset_log; trprep calls nf_reset_log; trcalc reads nf_summary_logged;
+# tr_api_finalize calls nf_finalize.
+$(OBJDIR_PIC)/trinit.o              : $(OBJDIR_PIC)/libnf.o
+# trmain.f90 is not in SRCS_CORE, so it has no PIC object -- the non-PIC
+# twin below is the one that matters for it.
+$(OBJDIR_PIC)/tr_api.o              : $(OBJDIR_PIC)/libnf.o
+$(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/libnf.o
+$(OBJDIR_PIC)/trprep.o              : $(OBJDIR_PIC)/libnf.o
+# trpnf_multi USEs trcomm (via trcomm_nf/trcomm_ctrl/trcomm_profile), libnf,
+# and trlib (COULOG/HY, for the slowing-down block).
+$(OBJDIR_PIC)/trpnf_multi.o         : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/libnf.o \
+                                      $(OBJDIR_PIC)/trlib.o
+# trprep drives the fusion init: set_usigmav_nf (libnf) before
+# ALLOCATE_TRCOMM, tr_prep_pnf (trpnf_multi) after it.
+$(OBJDIR_PIC)/trprep.o              : $(OBJDIR_PIC)/libnf.o $(OBJDIR_PIC)/trpnf_multi.o
+# libnf USEs trcomm (model_pnf, nnfmax), plcomm and libspl1d.  This orders it
+# for the -j race that bit trlib/trcoll in bbb30d13; the stale-mod hazard is
+# handled by the rule above, not by this one.
+$(OBJDIR_PIC)/libnf.o               : $(OBJDIR_PIC)/trcomm.o
+$(OBJDIR_PIC)/trcoll.o              : $(OBJDIR_PIC)/trcomm.o $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/trcoll.o $(OBJDIR_PIC)/trpnf_multi.o
+$(OBJDIR_PIC)/trcoef_turbulence.o   : $(OBJDIR_PIC)/trcoll.o
+$(OBJDIR_PIC)/trcoef_neoclassical.o : $(OBJDIR_PIC)/trcoll.o
+$(OBJDIR_PIC)/trcoef_resistivity.o  : $(OBJDIR_PIC)/trcoll.o $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trcoef_adhoc.o        : $(OBJDIR_PIC)/trcoll.o
+$(OBJDIR_PIC)/trexec.o              : $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trpnb.o               : $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trpnf.o               : $(OBJDIR_PIC)/trlib.o
+$(OBJDIR_PIC)/trpel.o               : $(OBJDIR_PIC)/trlib.o
 OBJ_API_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_API:.f90=.o))
 
 # Graphics stubs that satisfy TRGLOB / GUCLIP & friends without dragging
@@ -497,12 +561,22 @@ $(OBJDIR)/trcomm_ctrl.o    : trcomm_ctrl.f90 trcom0.f90
 $(OBJDIR)/trcomm_mtx.o     : trcomm_mtx.f90 trcom0.f90
 $(OBJDIR)/trcomm_profile.o : trcomm_profile.f90 trcom0.f90
 $(OBJDIR)/trcomm_globals.o : trcomm_globals.f90 trcom0.f90
+$(OBJDIR)/trcomm_nf.o      : trcomm_nf.f90 trcom0.f90 trcomm_ctrl.f90 \
+                     $(OBJDIR)/trcomm_ctrl.o
+$(OBJDIR)/trcomm.o : $(OBJDIR)/trcomm_nf.o
 $(OBJDIR)/trcomm.o : trcomm.f90 trcom0.f90 trcom1.f90 \
                      trcomm_const.f90 trcomm_param.f90 trcomm_ctrl.f90 \
-                     trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90
+                     trcomm_mtx.f90 trcomm_profile.f90 trcomm_globals.f90 \
+                     trcomm_nf.f90
 $(OBJDIR)/trmain.o : trmain.f90 trcomm.f90 $(OBJDIR)/trrslt_print.o
 $(OBJDIR)/trmenu.o : trmenu.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trrslt_files.o $(OBJDIR)/trrslt_print.o
-$(OBJDIR)/trinit.o : trinit.f90 trcomm.f90 trcom1.f90
+$(OBJDIR)/trinit.o : trinit.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/libnf.o
+# tr_api_finalize and trmain call nf_finalize to release libnf's per-session
+# table; trcalc reads its nf_summary_logged latch; trprep calls nf_reset_log.
+$(OBJDIR)/trmain.o : $(OBJDIR)/libnf.o
+$(OBJDIR)/tr_api.o : $(OBJDIR)/libnf.o
+$(OBJDIR)/trcalc.o : $(OBJDIR)/libnf.o
+$(OBJDIR)/trprep.o : $(OBJDIR)/libnf.o
 $(OBJDIR)/trparm.o : trparm.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/tr_dump_state.o : tr_dump_state.f90 \
                      trcom0.f90 trcomm_param.f90 trcomm_ctrl.f90 \
@@ -510,7 +584,8 @@ $(OBJDIR)/tr_dump_state.o : tr_dump_state.f90 \
                      $(OBJDIR)/trcomm_param.o $(OBJDIR)/trcomm_ctrl.o \
                      $(OBJDIR)/trcomm_profile.o $(OBJDIR)/trcom0.o
 $(OBJDIR)/trprep.o : trprep.f90 trcomm.f90 trcom1.f90 \
-                     $(OBJDIR)/tr_dump_state.o
+                     $(OBJDIR)/tr_dump_state.o \
+                     $(OBJDIR)/libnf.o $(OBJDIR)/trpnf_multi.o
 $(OBJDIR)/trprof.o : trprof.f90 trcomm.f90 trcom1.f90 trcoef_resistivity.f90
 $(OBJDIR)/trmetric.o : trmetric.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trfile.o : trfile.f90 trcomm.f90 trcom1.f90
@@ -521,23 +596,30 @@ $(OBJDIR)/tr_ufile_task.o : tr_ufile_task.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/tr_ufile_topics.o : tr_ufile_topics.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trufsub.o : trufsub.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trloop.o : trloop.f90 trcomm.f90 trcom1.f90
-$(OBJDIR)/trexec.o : trexec.f90 trcomm.f90 trcom1.f90 trcoef_neoclassical.f90 $(OBJDIR)/trrslt_files.o
+$(OBJDIR)/trexec.o : trexec.f90 trcomm.f90 trcom1.f90 trcoef_neoclassical.f90 $(OBJDIR)/trrslt_files.o $(OBJDIR)/trlib.o
 $(OBJDIR)/trpl.o : trpl.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trrslt_globals.o : trrslt_globals.f90 trcomm.f90 $(OBJDIR)/trexec.o
 $(OBJDIR)/trrslt_files.o   : trrslt_files.f90 trcomm.f90
 $(OBJDIR)/trrslt_print.o   : trrslt_print.f90 trcomm.f90 $(OBJDIR)/trrslt_files.o
-$(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90
-$(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90
-$(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90
-$(OBJDIR)/trcoef_resistivity.o  : trcoef_resistivity.f90 trcomm.f90
-$(OBJDIR)/trcoef_adhoc.o        : trcoef_adhoc.f90 trcomm.f90
+$(OBJDIR)/trlib.o  : trlib.f90  $(OBJDIR)/trcomm.o
+$(OBJDIR)/trcoll.o : trcoll.f90 $(OBJDIR)/trcomm.o $(OBJDIR)/trlib.o
+$(OBJDIR)/libnf.o  : libnf.f90  $(OBJDIR)/trcomm.o
+$(OBJDIR)/trpnf_multi.o : trpnf_multi.f90 trcomm.f90 \
+                     $(OBJDIR)/trcomm.o $(OBJDIR)/libnf.o \
+                     $(OBJDIR)/trlib.o
+$(OBJDIR)/trcalc.o : trcalc.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trcoll.o \
+                     $(OBJDIR)/trpnf_multi.o
+$(OBJDIR)/trcoef_turbulence.o   : trcoef_turbulence.f90 trcomm.f90 trcdbm.f90 trmodels.f90 $(OBJDIR)/trcoll.o
+$(OBJDIR)/trcoef_neoclassical.o : trcoef_neoclassical.f90 trcomm.f90 $(OBJDIR)/trcoll.o
+$(OBJDIR)/trcoef_resistivity.o  : trcoef_resistivity.f90 trcomm.f90 $(OBJDIR)/trcoll.o $(OBJDIR)/trlib.o
+$(OBJDIR)/trcoef_adhoc.o        : trcoef_adhoc.f90 trcomm.f90 $(OBJDIR)/trcoll.o
 $(OBJDIR)/trcoef.o : trcoef.f90 trcomm.f90 trglf.inc \
                      trcoef_turbulence.f90 trcoef_neoclassical.f90 \
                      trcoef_resistivity.f90 trcoef_adhoc.f90
-$(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90
+$(OBJDIR)/trpnb.o  : trpnb.f90  trcomm.f90 $(OBJDIR)/trlib.o
 $(OBJDIR)/trprf.o  : trprf.f90  trcomm.f90
-$(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90
-$(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90
+$(OBJDIR)/trpnf.o  : trpnf.f90  trcomm.f90 $(OBJDIR)/trlib.o
+$(OBJDIR)/trpel.o  : trpel.f90  trcomm.f90 $(OBJDIR)/trlib.o
 $(OBJDIR)/trpsc.o  : trpsc.f90  trcomm.f90
 
 # Phase L-2 / L-3 C ABI sources. tr_state is independent of TRCOMM;

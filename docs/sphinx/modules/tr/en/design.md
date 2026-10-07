@@ -77,7 +77,7 @@ END FUNCTION
   in `tr_prof_impurity`, which would induce a Fortran-side `STOP` and
   abort the host process. The registry rejects values outside
   `[2, 8]` early
-  (see comments at `tr_param_registry.f90:94-102`).
+  (see comments at `tr_param_registry.f90:95-103`).
 
 The full list of registered parameters is in {doc}`parameters`.
 

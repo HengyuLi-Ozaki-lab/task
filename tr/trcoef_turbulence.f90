@@ -27,6 +27,7 @@
       USE libitp
       USE libgrf
       USE libplog, ONLY: plog
+      USE trcoll, ONLY : FTAUE, FTAUI
       IMPLICIT NONE
       INTEGER:: &
            NS, NR08, NR, I
@@ -35,7 +36,7 @@
            AMI, AMT, ANA, ANDX, ANE, ANT, ANYUE, ARG, CHIB, CHIGB, CLN, CLPE, &
            CLS, CLT, CRTCL, CS, DEDW, DELTA2, DIDW, DKAI, DND, DNE, &
            DPE, DPERHO, DPP, DQ, DRL, DTD, DTE, DTERHO, DTI, DVE, EPS, ETAC, &
-           ETAI, EZOHL, F, FBHM, FDREV, FEXB, FS, FTAUE, FTAUI, HETA, OMEGAD, &
+           ETAI, EZOHL, F, FBHM, FDREV, FEXB, FS, HETA, OMEGAD, &
            OMEGAS, OMEGASS, OMEGATT, PNI, PPK, PTI, QL, RBEEDG, RG1, &
            RGL, RGLC, RHOI, RHOS, RKPP2, RLAMBDA, RLAMDA, RNM, RNP, RNST2, &
            RNTM, RNTP, RNUZ, ROUS, RPEM, RPEP, RPM, RPP, RREFF, RRSTAR, &

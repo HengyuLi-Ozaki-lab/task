@@ -20,11 +20,11 @@ TR uses an implicit time-stepping scheme. The advancement
 coefficient is `FADV` (do not confuse with `THETA`, which is
 reserved elsewhere): `FADV = 0.5` is Crank-Nicolson and
 `FADV = 1.0` is fully implicit. The value is hard-coded inside
-the time-step routine itself — `tr/trexec.f90:498` assigns
+the time-step routine itself — `tr/trexec.f90:499` assigns
 `FADV = 1.D0` unconditionally — so TR runs fully implicit out
 of the box and there is no public knob to switch to
 Crank-Nicolson without editing the source. The scheme-selector
-comments at `tr/trexec.f90:494-498` document the meaning of
+comments at `tr/trexec.f90:495-499` document the meaning of
 each value.
 
 Concrete consequence: a strict CFL condition does NOT apply.
@@ -42,8 +42,8 @@ stability bound.
   (see below) work harder, and at some point the scheme can no
   longer reduce the residual within `LMAXTR` iterations.
 
-The defaults are `DT = 0.01 s` (`tr/trinit.f90:374`) and
-`NTMAX = 100` (`tr/trinit.f90:376`), which together advance the
+The defaults are `DT = 0.01 s` (`tr/trinit.f90:375`) and
+`NTMAX = 100` (`tr/trinit.f90:377`), which together advance the
 simulation by 1.0 s. These suit equilibrium-scale runs;
 sub-millisecond `DT` is rarely required for transport-time-scale
 studies but is sometimes necessary for source-driven transients
@@ -93,7 +93,7 @@ cell) rather than a sign of an underlying numerical problem.
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) diagnosis
 
-`tr_api_run` (`tr/tr_api.f90:250-268`) returns
+`tr_api_run` (`tr/tr_api.f90:251-269`) returns
 `TR_ERR_CALC_FAILED` for **any** non-zero result code from the
 underlying `tr_prep` / `tr_loop` routines. The wrapper
 deliberately collapses the full set of downstream failure
@@ -168,7 +168,7 @@ implementation** of `tr_api_validate` only emits two of them:
 (`INCONSISTENT_PAIR`, `OUT_OF_RANGE_AFTER_DEP`,
 `MISSING_REQUIRED`) are reserved for future categories — the
 slots exist in the enum so the API surface is stable, but the
-checks have not been wired up yet (`tr/tr_api.f90:388-401`
+checks have not been wired up yet (`tr/tr_api.f90:394-407`
 documents this).
 
 The two currently-emitted categories:
@@ -178,10 +178,10 @@ The two currently-emitted categories:
   check, for example, compares against the run-time species
   bound `NSM = 4` (not the compile-time C ABI bound
   `TR_MAX_NSMAX = 8`), so `NSMAX = 5` reaches `validate()`
-  and is reported here (`tr/tr_api.f90:425-426`). Note: values
+  and is reported here (`tr/tr_api.f90:431-432`). Note: values
   beyond the registry's own range — e.g. `NSMAX > 8` — are
   rejected by `set_param` *before* validate runs
-  (`tr/tr_param_registry.f90:103-105`), so you will not see
+  (`tr/tr_param_registry.f90:104-106`), so you will not see
   them in the diagnostic list. Validate's job is to catch the
   values the registry accepted but the run-time still cannot
   use.
@@ -199,7 +199,7 @@ implementation):
   `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` check
   is currently emitted as `OUT_OF_RANGE` rather than as a
   pair-level diagnostic
-  (`tr/tr_api.f90:442-448`).
+  (`tr/tr_api.f90:448-454`).
 
 - **`OUT_OF_RANGE_AFTER_DEP`** — reserved for future use,
   intended for parameters that pass their declared range but

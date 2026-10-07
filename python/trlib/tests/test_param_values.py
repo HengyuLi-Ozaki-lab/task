@@ -185,7 +185,7 @@ def test_the_integer_list_is_the_integer_cases_of_the_setter():
     """
     converted, listed = _integer_names_in_the_source()
     # The count is of today's integer parameters: a new one changes it here too.
-    assert len(converted) == 21, sorted(converted)
+    assert len(converted) == 22, sorted(converted)
     assert listed == converted, (sorted(listed - converted), sorted(converted - listed))
 
 

@@ -284,6 +284,7 @@ the bootstrap-current Sauter model (`MDLJBS=5`) are active.
 | `MDLJBS` | int switch | 5 | bootstrap-current model |
 | `MDLST`  | int switch | 0 | sawtooth model |
 | `MDLNF`  | int switch | 0 | fusion-reaction model |
+| `MODEL_PNF` | int switch | 0 | multi-reaction fusion model ported from `trx` (see below) |
 | `MDLUF`  | int switch | 0 | UFILE (experimental data) reader model |
 
 `MDLNB`:
@@ -325,6 +326,40 @@ the bootstrap-current Sauter model (`MDLJBS=5`) are active.
 | 4 | DT + NB beam component (with particle source) |
 | 5 | DHe³ (no particle source) |
 | 6 | DHe³ (with particle source) |
+
+`MODEL_PNF`:
+
+| Value | Reactions | Count | In the solve |
+|---|---|---|---|
+| 0 (default) | none: `MDLNF` alone decides | 0 | — |
+| 1 | DT | 1 | the fusion particle source, the fusion power and the slowing-down time (`SNF`, `PNF`, `TAUF`), in place of `MDLNF`'s |
+| 2, 12 | DT, DD | 4 | evaluated, not used |
+| 3 | DT, DD, DHe³ | 6 | evaluated, not used |
+| 4, 14 | DT, DD, DHe³, TT, THe³ | 13 | evaluated, not used |
+
+The model of `trx` (`tr/libnf.f90`, `tr/trpnf_multi.f90`). `tr_set_param` takes the name `MODEL_PNF`, the `&TR`
+namelist `model_pnf`; the MCP server does not declare it yet. A run that sets both `MODEL_PNF` and `MDLNF` is
+refused: with one reaction the two would write the same source. Any other value is refused when the run is
+prepared. Changed on a prepared case (through `tot`, which does not prepare again), a nonzero value other
+than the prepared one is refused, `MDLNF` set beside a nonzero `MODEL_PNF` is refused, and 0 turns the model off
+at once.
+
+It does not replace `MDLNF` yet:
+
+- `MODEL_PNF = 1` passes `SNF`, `PNF` and `TAUF` to the solve and nothing else. `PFIN`, `PFCL` and the fusion slot of
+  `RNF` and `RTF` stay zero, as in `trx`: the alpha power fills the fast-ion energy and is not passed to the thermal species, so a D-T
+  run is not heated by its alphas as it is with `MDLNF = 1`.
+- It reads the reactants from species 2 and 3 and gives the alpha to species 4, as `MDLNF` does, and does not check
+  that they are D, T and He⁴.
+- Below 5 keV its D-T rate is far from `MDLNF`'s between the points of its table (1, 2 and 5 keV): 12 times it at
+  1.2 keV, a tenth of it at 2.5 keV. At the table's points from 1 to 500 keV, and from 5 to 100 keV, the two agree
+  within 6 % and 2 % (at the last point, 1000 keV, the table is 1.46 times `MDLNF`'s rate).
+- With more than one reaction nothing reaches the solve, because TR has one fusion fast-ion slot; and the D-He³
+  and T-He³ rates (in 3, 4 and 14) are negative at a few keV.
+
+What was checked: on a 10 keV D-T case the change `MODEL_PNF = 1` makes agrees within 2 % with the change it makes
+in `trx`, once five defects of `trx` are corrected (`test_run/baselines/tr_fus_dt_hot/SOURCE.md`). It has not been
+compared with a measurement.
 
 `MDLST`: 0 (OFF, default) / 1 (ON).
 

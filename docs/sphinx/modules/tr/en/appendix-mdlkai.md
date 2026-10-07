@@ -4,7 +4,7 @@
 heat-transport model. Each value picks a different physics model.
 The default is `MDLKAI=31` (CDBM F(s,α,κq)).
 
-The values are defined in the comments at `tr/trinit.f90:211-276`,
+The values are defined in the comments at `tr/trinit.f90:212-277`,
 and this page is a complete transcription. We organise the families
 by section, and at the end we provide the full mapping table for all
 41 values.

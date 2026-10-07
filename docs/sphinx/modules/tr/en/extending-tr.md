@@ -16,7 +16,7 @@ field. Each is a recipe, not a derivation.
 ## Walkthrough A — Add a new scalar parameter
 
 The TR parameter registry uses a hand-written `SELECT CASE`
-dispatch in `tr/tr_param_registry.f90:84+`. Adding a
+dispatch in `tr/tr_param_registry.f90:85+`. Adding a
 parameter `FOO` is one new `CASE` line in that dispatch
 plus a default in `tr/trinit.f90`.
 
@@ -29,7 +29,7 @@ plus a default in `tr/trinit.f90`.
 2. **Add the registry case.** Add a line like
    `CASE ("FOO"); FOO = value` in the
    `SELECT CASE (TRIM(b))` block that starts at
-   `tr/tr_param_registry.f90:84`. Place it near similar
+   `tr/tr_param_registry.f90:85`. Place it near similar
    parameters to preserve the per-section grouping
    convention. An integer parameter (`FOO = INT(value)`)
    also goes into the name list of `value_refused` in the
@@ -41,10 +41,10 @@ plus a default in `tr/trinit.f90`.
 5. **Use from Python.** `tr.set_param("FOO", x)` works
    immediately. No C ABI change is needed because
    `tr_set_param` is string-keyed (verified at
-   `tr/tr_api.f90:124-128,136-156`).
+   `tr/tr_api.f90:125-129,137-157`).
 
 For array-valued parameters, the bounds-checked idiom at
-`tr/tr_param_registry.f90:109-114` is the template. The
+`tr/tr_param_registry.f90:110-115` is the template. The
 existing `PA[i]` / `PN[i]` / `PNS[i]` / `PT[i]` cases
 show the pattern: each `CASE` checks `idx` against
 `SIZE(...)` and either assigns or sets `ierr = 1`.
@@ -55,13 +55,13 @@ show the pattern: each `CASE` checks `idx` against
 
 Turbulent heat-transport coefficients are dispatched via
 `SELECT CASE(MDLKAI)` at
-`tr/trcoef_turbulence.f90:400`. (The earlier `select case`
-at line 64 handles graph-label assignment, NOT the actual
+`tr/trcoef_turbulence.f90:401`. (The earlier `select case`
+at line 65 handles graph-label assignment, NOT the actual
 coefficient computation.) Each `MDLKAI` value invokes a
 different model.
 
 The numbering convention (per the source-side comments at
-`tr/trcoef_turbulence.f90:392-398`):
+`tr/trcoef_turbulence.f90:393-399`):
 
 - `MDLKAI < 10` — constant-coefficient toy models.
 - `10 ≤ MDLKAI < 20` — drift-wave (+ITG / +ETG) models.
@@ -77,7 +77,7 @@ The numbering convention (per the source-side comments at
    choosing the next free integer if you are adding
    alongside existing models.
 2. **Add a `CASE (N)` block** in
-   `tr/trcoef_turbulence.f90` after line 400. The block
+   `tr/trcoef_turbulence.f90` after line 401. The block
    should fill the appropriate transport-coefficient
    arrays — `AKDW` (heat anomalous), `ADDW` (particle
    anomalous), `AVK` (heat pinch / convective).
@@ -121,13 +121,13 @@ consumers may need to be rebuilt or version-checked.
    `double` (or correct C type), again at the struct end.
 4. **Populate the field inside `tr_api_get_state`.** Three
    blocks exist in `tr/tr_api.f90`:
-   - **Zero-init** at `:286-306` (the new field should be
+   - **Zero-init** at `:287-307` (the new field should be
      added there too if it has no sensible compute-time-
      zero baseline).
-   - **Scalar copy** at `:322-338` — the AJRFT precedent
+   - **Scalar copy** at `:323-339` — the AJRFT precedent
      lives here. For a new scalar, follow that pattern.
    - **Per-radius / per-species profile loops** at
-     `:344-353` — for a new array field, follow the
+     `:345-354` — for a new array field, follow the
      `RN` / `RT` / `AJ` / `QP` loop pattern.
 5. **Bump `TR_STATE_ABI_VERSION`** at `tr/tr_api.h:38`.
    The current value is `2`; bump to the next integer

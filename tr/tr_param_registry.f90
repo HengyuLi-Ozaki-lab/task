@@ -16,7 +16,7 @@
 !   - transport switches     (MDLKAI, MDLETA, MDLAD, MDLAVK, CDW[i], CHP,
 !                             CK0, CK1, CDH, CNH)
 !   - module switches        (MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL,
-!                             MDLJBS, MDLST, MDLNF, MDLUF)
+!                             MDLJBS, MDLST, MDLNF, MODEL_PNF, MDLUF)
 !
 ! L-6 additions (tr_iter01 / tr_tst2 UNREGISTERED_KEYS):
 !   - geometry selector      (MODELG)
@@ -47,6 +47,7 @@ MODULE tr_param_registry
        DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, &
        MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, CDH, CNH, &
        MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF, &
+       model_pnf, &
        MODELG, MDLIMP, NGTSTP, NGRSTP, &
        PROFN1, PROFN2, PNC, &
        PNBTOT, PNBR0, PNBRW, PNBENG, PNBRTG, &
@@ -153,6 +154,18 @@ CONTAINS
     CASE ("MDLJBS"); MDLJBS = INT(value)
     CASE ("MDLST");  MDLST  = INT(value)
     CASE ("MDLNF");  MDLNF  = INT(value)
+    ! Selects the multi-reaction fusion path ported from trx (P1 Task 6).
+    ! 0 (default) = legacy MDLNF only; 1/2/3/4/12/14 additionally evaluate
+    ! the ported reaction set.  Not range-checked here: the value is
+    ! validated where it is consumed, by set_usigmav_nf, which returns
+    ! ierr_nf=2 for anything else and which tr_prep propagates.
+    ! One name, uppercase like every other entry (the CASE compare is
+    ! literal): a second, lowercase spelling would be a second parameter
+    ! name to every reader of this file, and a parameter reference that
+    ! keeps one file per name cannot hold two that differ only in case
+    ! on macOS or Windows.  The variable keeps the lowercase name it has
+    ! in trx; Fortran does not tell the two apart.
+    CASE ("MODEL_PNF"); model_pnf = INT(value)
     CASE ("MDLUF");  MDLUF  = INT(value)
     ! --- heating / current-drive scalars ---------------------------
     !     NBI
@@ -223,7 +236,7 @@ CONTAINS
     CASE ("MODELG", "NSMAX", "MDLIMP", "NTMAX", "NTSTEP", "LMAXTR", &
           "NGTSTP", "NGRSTP", "MDLKAI", "MDLETA", "MDLAD", "MDLAVK", &
           "MDLNB", "MDLEC", "MDLLH", "MDLIC", "MDLPEL", "MDLJBS", &
-          "MDLST", "MDLNF", "MDLUF")
+          "MDLST", "MDLNF", "MODEL_PNF", "MDLUF")
        refused = ABS(value) > REAL(HUGE(0), rkind)
     END SELECT
   END FUNCTION value_refused

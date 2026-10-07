@@ -52,15 +52,15 @@ EQDSK format 自体の canonical な仕様は `eq` chapter および
 TR は interpretive run の駆動入力として ufile を取り込めます.
 
 読み込みは `MDLUF` で制御 (default `0` = OFF; 非ゼロで
-有効化). default の確認は `tr/trinit.f90:641-648`.
+有効化). default の確認は `tr/trinit.f90:678-685`.
 `MDLUF` は `tr/tr_param_registry.f90` に登録されており,
 `tr.set_param("MDLUF", ...)` で実行時に設定できます.
 
 **ディレクトリパラメータ `KUFDIR` / `KUFDEV` / `KUFDCG`
 は namelist 専用です.** legacy `&trn` namelist 入力
-(`tr/trparm.f90:108-112`) には登場しますが,
+(`tr/trparm.f90:110-114`) には登場しますが,
 `tr/tr_param_registry.f90` には登録されておらず (registry
-側の "future additions" コメントは `:241-243`),
+側の "future additions" コメントは `:254-256`),
 `tr.set_param_str` 経由では設定できません. ufile dir を
 変えたいユーザは:
 

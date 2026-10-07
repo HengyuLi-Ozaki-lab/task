@@ -8,6 +8,54 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **TR library: the multi-reaction fusion model of `trx`, selected by
+  `MODEL_PNF` and off by default.** `tr/libnf.f90` (the reaction tables
+  and reactivities) and `tr/trpnf_multi.f90` (`tr_pnf`) are ported from
+  `trx`. `MODEL_PNF` chooses the reaction set: 1 is D-T alone, 2 and 12
+  four reactions, 3 six, 4 and 14 thirteen; with 0, the default, fusion is
+  the legacy `MDLNF` path as it was. `tr_set_param` takes the name
+  `MODEL_PNF` (uppercase only), and the `&TR` namelist takes `model_pnf`;
+  `tr_mcp` does not declare it yet, and the reaction count and the
+  per-reaction rates are not in `tr_get_state`.
+  **It does not replace `MDLNF` yet.** With one reaction (`MODEL_PNF = 1`)
+  the model's `SNF`, `PNF` and `TAUF` reach the solve in place of
+  `MDLNF`'s, and nothing else does: `PFIN`, `PFCL` and the fusion slot of
+  `RNF` and `RTF` stay zero, as in `trx`, so the alpha power fills the fast-ion energy and is
+  not passed to the thermal species. On `tr_iter01` at 10 keV after 20
+  steps the electron temperature on axis is 10.717 keV, against 10.727 with
+  fusion off and 11.237 with `MDLNF = 1`. The reactants are read from
+  species 2 and 3 and the alpha goes to species 4, as with `MDLNF`, and
+  nothing checks that those are D, T and He4. Between the table's knots
+  below 5 keV the D-T rate is far from the legacy `SIGMAM`: 12 times it at
+  1.2 keV, a tenth of it at 2.5 keV (the table has knots at 1, 2 and
+  5 keV; HengyuLi-Ozaki-lab/task-web-client#58). A run that sets both
+  switches is refused, since it would count the same alphas twice: by
+  `tr_prep`, and by `TRCALC`, before it computes anything, when a switch is
+  changed on a prepared case (through `tot`, which does not prepare again).
+  There a nonzero `MODEL_PNF` the case was not prepared for is refused as
+  well, and `MODEL_PNF = 0` turns the model off at once.
+  With more than one reaction the rates are evaluated and nothing reaches
+  the solve: TR has one fusion fast-ion slot (`NFM = 2`). The D-He3 and
+  T-He3 rates of the sets 3, 4 and 14 are negative at a few keV
+  (HengyuLi-Ozaki-lab/task-web-client#58).
+  What was checked is agreement with `trx`, not with a measurement: on a
+  10 keV D-T case the change that `MODEL_PNF = 1` makes to nine global
+  quantities and to the temperature profiles is the change it makes in
+  `trx` to within 1.2 % (globals) and 2 % (profiles). The comment block
+  before `FUSION_DIFFERENTIAL_TOL_SCALAR` in
+  `python/trlib/tests/test_model_pnf_dispatch.py` says what that comparison
+  cannot see: `SNF`, an error the two codes share, and the outermost radial
+  point. The reference is `trx` with five corrections, listed in
+  `test_run/baselines/tr_fus_dt_hot/SOURCE.md` and reported upstream
+  (k-yoshimi/task#235, #236, #238); the four that are on the fusion path
+  are not in the port either. `python/trlib/tests/test_libnf.py` holds the
+  D-T reactivity to the legacy `SIGMAM` at the table's points from 1 to
+  500 keV (6 %; at 1000 keV the table is 1.46 times `SIGMAM`) and from 5 to
+  100 keV (2 %), and holds that every reaction's rate is finite and that
+  none is negative (strict `xfail` for D-He3 and T-He3).
+
 ### Changed
 
 - **FP library: `fp_run` refuses `NRMAX` above `FP_MAX_NRMAX` (100).** Such a
@@ -30,6 +78,19 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   Not changed: a subscript that is a whole number is still taken for a
   scalar (`PROFN1[1]` sets TR's `PROFN1`, which `test_property_fanout.py`
   relies on).
+- **TR: `FTAUE` and `FTAUI` return `1.D8` when the ion density they are
+  given is within `1.D-8` of zero (`ABS(n) <= 1.D-8`, in 10^20 m^-3)**, as
+  `trx` does. At a density of exactly zero that replaces an infinity (the
+  absent species of a two-species run, whose result nothing reads), and
+  the results are bit-identical. For a species that is there at a trace
+  density it replaces a finite time, and the run changes: `tr_iter01` with
+  helium at `1.D-9`, 20 steps, differs in 182 of 567 state values, by
+  2.3e-9 at most (at `1.D-7` and at 0 it is bit-identical). `FTAUE` with
+  impurities (`Zeff` above the charge of species 2) divides by the electron
+  density and not by the ion density it is given, and is replaced all the
+  same. No baseline case has a live density that small. The two functions
+  now live in the module `trcoll`, and `COULOG` and `HY` in `trlib` (moved,
+  not changed).
 
 ### Fixed
 

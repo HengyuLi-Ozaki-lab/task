@@ -16,13 +16,49 @@
            T, TAUF, TTRHOG, RDPVRHOG, SPSC, &
            pellet_time_start,pellet_time_interval, &
            number_of_pellet_repeat,icount_of_pellet
+      USE TRCOMM, ONLY : nf_multi_ready, nf_model_prepared, nnfmax, model_pnf
+      USE trpnf_multi, ONLY : tr_pnf
+      USE libnf, ONLY : nf_summary_logged
       USE tr_cytran_mod
       USE libitp
       IMPLICIT NONE
       INTEGER,INTENT(OUT)    :: IERR
       INTEGER                :: NR,NS
+      INTEGER                :: nf_ierr
       REAL(rkind),SAVE:: pellet_time_start_save=-1.D0
       REAL(rkind):: t_pellet
+
+!     The fusion switches of the moment against the prepare, before
+!     anything is computed.  The ported path is armed at prepare
+!     (nf_multi_ready, for the model_pnf of that prepare), and two callers
+!     change a switch on a prepared case: tot's dispatch sets TR parameters
+!     without clearing tr_api's prepared flag (tot/tot_param_registry.f90,
+!     dispatch_tr), and trmenu's C handler goes on with the case as
+!     prepared.  With the flag alone, measured through tot: model_pnf set
+!     after a first run was ignored; MDLNF set after a model_pnf run ran
+!     both paths into SNF/PNF/TAUF, the state tr_prep refuses; and
+!     model_pnf set back to 0 went on publishing.
+!     So a nonzero model_pnf is refused here when MDLNF is nonzero too, or
+!     when the case was not prepared for it (its tables and nnfmax are
+!     another model's, or none).  model_pnf = 0 is not refused: it is off
+!     (the gate at the dispatch below).  IERR = 10 is tr_prep's code for
+!     the same refusal.
+!     Here and not at the dispatch: by then the MDLNF block has run, and
+!     TRNFDT writes RNF and RTF, which neither MDLNF = 0 nor tr_pnf clears.
+!     A caller that put the switch back and ran again would have gone on
+!     with the alpha density of the refused step.  Nothing has been touched
+!     yet at this point, NRMAX included.
+!     Not throttled: the caller abandons the step on it.
+      IF(model_pnf.NE.0) THEN
+         IF(MDLNF.NE.0 .OR. .NOT.nf_multi_ready .OR. &
+            model_pnf.NE.nf_model_prepared) THEN
+            WRITE(6,*) 'XX TRCALC: model_pnf=',model_pnf,' MDLNF=',MDLNF, &
+                 ' on a case prepared for model_pnf=',nf_model_prepared, &
+                 ': not with MDLNF, and not a model_pnf it was not prepared for'
+            IERR = 10
+            RETURN
+         END IF
+      END IF
 
       IF(RHOA.NE.1.D0) NRMAX=NROMAX
       IERR=0
@@ -102,7 +138,17 @@
 
       IF(MDNCLS.NE.0) THEN
          CALL TR_NCLASS(IERR)
-         IF(IERR.NE.0) RETURN
+!        Entry widened NRMAX to NROMAX; the normal exit below narrows it back
+!        to NRAMAX.  An early RETURN has to do the same, or the caller keeps
+!        a session whose NRMAX is the wider value.
+!        Reachable only from standalone tr2: RHOA has no CASE in
+!        tr_param_registry and trinit sets it to 1.D0, so through the C ABI
+!        it is always 1 and these lines are defensive there.  trparm's
+!        NAMELIST /TR/ does accept it, and trmenu re-runs on a live session.
+         IF(IERR.NE.0) THEN
+            IF(RHOA.NE.1.D0) NRMAX=NRAMAX
+            RETURN
+         END IF
       ENDIF
 
       CALL TRCOEF
@@ -137,7 +183,68 @@
       CASE(5:6)
          CALL TRNFDHE3
       END SELECT
-      
+
+!     --- multi-reaction fusion source, ported from trx (P1 Task 6) ---
+!     At model_pnf=0 this is inert and the legacy result is bit-exact.  At
+!     model_pnf/=0 with nnfmax==1 tr_pnf REPLACES what the MDLNF block would
+!     have written into SNF/PNF/TAUF -- which is why tr_prep refuses the two
+!     switches together, and why MDLNF=0 leaves SNF/PNF at the zeros TRCALC
+!     wrote above and TAUF at the 1.0 the CASE(0) branch sets, all three for
+!     tr_pnf to overwrite.  At nnfmax>1 nothing is
+!     published and the path stays diagnostic-only.
+!     The guard is nf_multi_ready, not model_pnf>0 alone: libnf returns a
+!     plausible sigmav_nf from uninitialised tables instead of aborting,
+!     so the flag tr_prep_pnf sets has to be part of the gate.  model_pnf
+!     is the other part: 0 is off whatever the case was prepared for (the
+!     refusals at the head of this routine say why it can differ).
+      IF(nf_multi_ready .AND. model_pnf.NE.0) THEN
+!        Into nf_ierr first, not straight into IERR: whether a tr_pnf
+!        failure should abandon the step depends on whether this path is
+!        publishing, which is decided below.  Writing IERR here would
+!        also clobber a status the legacy path owns.  It is still consumed --
+!        libnf's nf_error_count is the durable record, this is the
+!        per-CALL detail -- tr_pnf runs ~L+2 times per step, so these
+!        are not step counts -- and leaving the value unread is how the next
+!        error someone adds here would vanish.
+         CALL tr_pnf(nf_ierr)
+!        Throttled, though more coarsely than libnf: libnf latches per
+!        reporting site, this is one latch for every code.  tr_pnf runs
+!        several times per step, at a rate set by how many convergence
+!        iterations the solve takes -- not by whether sigmav_nf is failing.
+!        Measured with every (reaction,radius) erroring: 4.4/step at
+!        PT=1e5, but only 2.4/step at PT=1e6, where RT has gone NaN and
+!        every convergence comparison is false so the loop exits on its
+!        first iteration.  ~10/step on a converging run.  So an
+!        unconditional WRITE emits one line per CALL -- several hundred
+!        over the fixture's NTMAX=100.
+!
+!        nf_summary_logged is re-armed by nf_reset_log, which tr_prep calls
+!        -- so once per PREPARE, not per process: trmenu's R handler
+!        re-preps on every interactive run, and on the library side
+!        set_param invalidates g_prepared so a reconfigured run re-arms too.
+!        Successive tr_run calls on one prepared handle are a continuation and
+!        share the one message.
+         IF(nf_ierr.NE.0 .AND. .NOT.nf_summary_logged) THEN
+            nf_summary_logged = .TRUE.
+            WRITE(6,*) 'XX TRCALC: tr_pnf ierr=',nf_ierr, &
+                 ' -- fusion diagnostics for this call are void;', &
+                 ' libnf nf_error_count is the running total'
+         END IF
+!        Propagated since Task 7, but only when the path is publishing.
+!        At nnfmax==1 SNF/PNF/TAUF drive the solve, so a sigmav_nf failure
+!        would otherwise let the step continue with fusion silently zeroed.
+!        At nnfmax>1 nothing published, so the failure is a dead diagnostic
+!        and aborting would break the additive contract.  After the WRITE
+!        above, not before: returning first suppresses the one per-call
+!        diagnostic.  IERR is TRCALC's status; trexec and trloop check it.
+         IF(nf_ierr.NE.0 .AND. nnfmax.EQ.1) THEN
+            IERR = nf_ierr
+            IF(RHOA.NE.1.D0) NRMAX=NRAMAX   ! see the TR_NCLASS return above
+            RETURN
+         END IF
+      END IF
+
+
       CALL TRAJOH
 
       DO NR=1,NRMAX
@@ -814,10 +921,11 @@
       USE TRCOMM, ONLY : AJBS, AME, AMM, BB, BP, DR, EPSRHO, NRMAX, NSMAX, PA, PBSCD, PNSS, PTS, PZ, QP, RHOG, RHOM, &
      &                   RJCB, RKEV, RN, RR, RT, ZEFF, rkind
       USE libitp
+      USE trcoll, ONLY : FTAUE, FTAUI
       IMPLICIT NONE
       INTEGER:: NR
       REAL(rkind)   :: A, AMA, AMD, AMT, ANA, ANDX, ANE, ANT, BPL, DPA, DPD, DPE, DPT, DRL, DTA, DTD, DTE, DTT, EPS, EPSS, FACT, &
-     &             FTAUE, FTAUI, H, PAL, PDL, PEL, PTL, RK13E, RK23E, RK3A, RK3D, RK3T, RNUA, RNUD, RNUE, RNUT, TAL, TAUA,   &
+     &             H, PAL, PDL, PEL, PTL, RK13E, RK23E, RK3A, RK3D, RK3T, RNUA, RNUD, RNUE, RNUT, TAL, TAUA,   &
      &             TAUD, TAUE, TAUT, TDL, TEL, TTL, VTA, VTD, VTE, VTT, ZEFFL
       REAL(rkind),DIMENSION(NRMAX):: AJBSL
 
@@ -1304,88 +1412,3 @@
 
       RETURN
       END SUBROUTINE RMBRG
-
-!     ***********************************************************
-
-!           COULOMB LOGARITHM
-
-!     ***********************************************************
-
-      FUNCTION COULOG(NS1,NS2,ANEL,TL)
-
-!     ANEL : electron density [10^20 /m^3]
-!     TL   : electron or ion temperature [keV]
-!            in case of ion-ion collision, TL becomes ion temp.
-
-      USE TRCOMM,ONLY: rkind
-      IMPLICIT NONE
-      INTEGER:: NS1,NS2
-      REAL(rkind)   :: ANEL,TL,COULOG
-
-      IF(NS1.EQ.1.AND.NS2.EQ.1) THEN
-         COULOG=14.9D0-0.5D0*LOG(ANEL)+LOG(TL)
-      ELSE
-         IF(NS1.EQ.1.OR.NS2.EQ.1) THEN
-            COULOG=15.2D0-0.5D0*LOG(ANEL)+LOG(TL)
-         ELSE
-            COULOG=17.3D0-0.5D0*LOG(ANEL)+1.5D0*LOG(TL)
-         ENDIF
-      ENDIF
-
-      RETURN
-      END FUNCTION COULOG
-
-!     ***********************************************************
-
-!           COLLISION TIME
-
-!     ***********************************************************
-
-!     between electrons and ions
-
-      FUNCTION FTAUE(ANEL,ANIL,TEL,ZL)
-
-!     ANEL : electron density [10^20 /m^3]
-!     ANIL : ion density [10^20 /m^3]
-!     TEL  : electron temperature [kev]
-!     ZL   : ion charge number
-
-      USE TRCOMM, ONLY : AEE, AME, EPS0, PI, PZ, RKEV, rkind
-      IMPLICIT NONE
-      REAL(rkind) :: ANEL, ANIL, TEL, ZL, FTAUE
-      REAL(rkind) :: COEF, COULOG
-
-      COEF = 6.D0*PI*SQRT(2.D0*PI)*EPS0**2*SQRT(AME)/(AEE**4*1.D20)
-      IF(ZL-PZ(2).LE.1.D-7) THEN
-         FTAUE = COEF*(TEL*RKEV)**1.5D0/(ANIL*ZL**2*COULOG(1,2,ANEL,TEL))
-      ELSE
-!     If the plasma contains impurities, we need to consider the
-!     effective charge number instead of ion charge number.
-!     From the definition of Zeff=sum(n_iZ_i^2)/n_e,
-!     n_iZ_i^2 is replaced by n_eZ_eff at the denominator of tau_e.
-         FTAUE = COEF*(TEL*RKEV)**1.5D0/(ANEL*ZL*COULOG(1,2,ANEL,TEL))
-      ENDIF
-
-      RETURN
-      END FUNCTION FTAUE
-
-!     between ions and ions
-
-      FUNCTION FTAUI(ANEL,ANIL,TIL,ZL,PAL)
-
-!     ANEL : electron density [10^20 /m^3]
-!     ANIL : ion density [10^20 /m^3]
-!     TIL  : ion temperature [kev]
-!     ZL   : ion charge number
-!     PAL  : ion atomic number
-
-      USE TRCOMM, ONLY : AEE, AMM, EPS0, PI, RKEV, rkind
-      IMPLICIT NONE
-      REAL(rkind):: ANEL, ANIL, PAL, TIL, ZL, FTAUI
-      REAL(rkind):: COEF, COULOG
-
-      COEF = 12.D0*PI*SQRT(PI)*EPS0**2*SQRT(PAL*AMM)/(AEE**4*1.D20)
-      FTAUI = COEF*(TIL*RKEV)**1.5D0/(ANIL*ZL**4*COULOG(2,2,ANEL,TIL))
-
-      RETURN
-      END FUNCTION FTAUI

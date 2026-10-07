@@ -27,6 +27,7 @@ MODULE TRCOMM
   USE trcomm_mtx
   USE trcomm_profile
   USE trcomm_globals
+  USE trcomm_nf
   IMPLICIT NONE
   PUBLIC
 
@@ -76,6 +77,11 @@ CONTAINS
       IF(ierr /= 0) GOTO 900
     CALL allocate_trcomm_globals(ierr)
       IF(ierr /= 0) GOTO 900
+    ! Mostly sized by nnfmax (0 unless model_pnf > 0), but not entirely:
+    ! the two _NSNR roll-ups are (NSTM,NRMAX) unconditionally, so this
+    ! does take heap even at the default.  See allocate_trcomm_nf.
+    CALL allocate_trcomm_nf(ierr)
+      IF(ierr /= 0) GOTO 900
 
     CALL ALLOCATE_TRCOM1(ierr)
       IF(ierr /= 0) GOTO 900
@@ -106,6 +112,7 @@ CONTAINS
     IF(.NOT.ALLOCATED(PNSS)) RETURN
 
     ! Deallocate in reverse dependency order
+    CALL deallocate_trcomm_nf
     CALL deallocate_trcomm_globals
     CALL deallocate_trcomm_profile
     CALL deallocate_trcomm_mtx
@@ -120,6 +127,7 @@ CONTAINS
   SUBROUTINE DEALLOCATE_ERR_TRCOMM
     use trcom1, ONLY : DEALLOCATE_ERR_TRCOM1
 
+    CALL deallocate_err_trcomm_nf
     CALL deallocate_err_trcomm_globals
     CALL deallocate_err_trcomm_profile
     CALL deallocate_err_trcomm_mtx
