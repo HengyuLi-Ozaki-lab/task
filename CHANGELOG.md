@@ -81,16 +81,19 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   relies on).
 - **TR: `FTAUE` and `FTAUI` return `1.D8` where they divided by an ion
   density of exactly zero**, which gave a number that is not finite (an
-  infinity at a positive temperature and electron density). That is the
-  absent species of a run with fewer ion species than the code has slots,
-  whose result is not read (`tr_tst2`, held by its 1e-10 baseline). What
-  the two functions returned as a finite number they still return, and no
-  run was found to change: `tr_iter01` with helium at `1.D-9`, `1.D-12`,
-  `1.D-8` and `1.D-7` is bit-identical, after 20 steps, to the library
-  before the port, in its 567 state values and in the transport
-  coefficients of all four species, every one of them finite. (With a
-  solved species at exactly zero that case is not a number, before the
-  port as after it, and says nothing about the guard.) `trx` guards more widely
+  infinity at a positive temperature and electron density). That happens
+  with the bootstrap models `MDLJBS` = 1, 2 and 3 on a run with fewer than
+  four species, which ask for the absent ones; with the default
+  `MDLJBS = 5` it does not, and none of the three baseline cases reaches
+  the guard. What the two functions returned as a finite number they still
+  return, and no run was found to change against the library before the
+  port, 20 steps each: `tr_tst2` (two species) with `MDLJBS` = 1, 2 and 3,
+  where the guard is reached, in its 367 state values; `tr_iter01` with
+  helium at `1.D-9`, `1.D-12`, `1.D-8` and `1.D-7` in its 567 state values
+  and in the transport coefficients of all four species. All of these are
+  finite. (With a solved species at exactly zero `tr_iter01` is not a
+  number, before the port as after it, and says nothing about the guard.)
+  `trx` guards more widely
   (`ABS(n) <= 1.D-8`, ahead of every branch), which also replaces the finite
   time of a species at a trace density and the result of `FTAUE`'s impurity
   branch, which divides by the electron density; the port first took that
