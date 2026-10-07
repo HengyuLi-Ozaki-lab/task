@@ -57,13 +57,9 @@ absorbed.  T=3 keV and 1000 keV are pinned separately rather than tolerated.
 from __future__ import annotations
 
 import ctypes
-import os
 from pathlib import Path
 
 import pytest
-
-_HERE = Path(__file__).resolve()
-REPO = _HERE.parents[3]
 
 # Mangled names for gfortran: module procedures are __<module>_MOD_<name>,
 # bare externals get a trailing underscore. SIGMAM is not in a module
@@ -90,6 +86,13 @@ TABLE_POINTS = (1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0)
 FUSION_BAND = (5.0, 7.0, 10.0, 15.0, 20.0, 30.0, 50.0, 70.0, 100.0)
 
 TOL_TABLE = 0.06  # measured worst |ratio-1| over TABLE_POINTS: 0.0579 at 500 keV
+
+# Every reaction of tr/libnf.f90 (id_nf_DT = 1 ... id_nf_THe36 = 13), and the
+# ones whose fitted <sigma v> goes below zero between the first knots:
+# D-He3 (5, 6) on 2.05-4.70 keV, T-He3 (8-13) on 1.05-8.55 keV, measured on
+# 1-1000 keV in steps of 0.05 keV.  HengyuLi-Ozaki-lab/task-web-client#58.
+ALL_REACTIONS = tuple(range(1, 14))
+NEGATIVE_BETWEEN_KNOTS = frozenset({5, 6, 8, 9, 10, 11, 12, 13})
 TOL_BAND = 0.02   # measured worst over FUSION_BAND: 0.0177 at 30 keV
 
 
@@ -111,12 +114,12 @@ def _parses_as_float(stdout: str) -> bool:
 
 
 def _lib_path() -> Path:
-    """Resolve libtrapi.so the same way trlib does, so this test and the
-    wrapper never disagree about which artifact is under test."""
-    env = os.environ.get("TRLIB_PATH")
-    if env:
-        return Path(env)
-    return REPO / "tr" / "libtrapi.so"
+    """The file trlib itself would load: its own resolver, so TRLIB_PATH,
+    MONO_LIB_PATH, the installed location and the platform's file name are
+    all the wrapper's, and this test cannot be on another artifact."""
+    from trlib._ffi import _default_lib_path
+
+    return Path(_default_lib_path())
 
 
 @pytest.fixture(scope="module")
@@ -135,15 +138,18 @@ def nf():
         pytest.skip(f"{path} not built; run `make -C tr libtrapi.so`")
     lib = ctypes.CDLL(str(path))
 
-    # Gate the skip on libnf itself being absent, not on model_pnf. If the
-    # library HAS libnf but model_pnf has moved -- Task 6 may well relocate it
-    # between trcomm_param and trcomm_ctrl -- skipping all 22 tests with
-    # "predates the libnf port" would be actively misleading. Then it is an
-    # error, and the message says where to look.
+    # Neither symbol is a reason to skip.  The only skip is the one above, a
+    # library that was not built; a library that is there and lacks either
+    # symbol is an error, and each message says where to look.
     try:
         lib[SYM_SIGMAV]
     except (AttributeError, ValueError):  # pragma: no cover
-        pytest.skip(f"{path} predates the libnf port ({SYM_SIGMAV} absent)")
+        # libnf is part of every libtrapi.so this tree builds: a missing
+        # symbol is a renamed or hidden one, and skipping would hide it.
+        raise AssertionError(
+            f"{path} has no {SYM_SIGMAV}: libnf's sigmav_nf was renamed, "
+            f"made PRIVATE, or left out of the library"
+        ) from None
     try:
         model_pnf = ctypes.c_int.in_dll(lib, SYM_MODEL_PNF)
     except ValueError:
@@ -241,6 +247,13 @@ def nf():
         comparable with SIGMAM.
         """
             i = ctypes.c_int(ID_NF_DT)
+            t = ctypes.c_double(float(t_kev))
+            return sigmav(ctypes.byref(i), ctypes.byref(t))
+
+        @staticmethod
+        def sigmav(id_nf: int, t_kev: float) -> float:
+            """libnf's <sigma v> of reaction ``id_nf`` (tr/libnf.f90), in m^3/s."""
+            i = ctypes.c_int(int(id_nf))
             t = ctypes.c_double(float(t_kev))
             return sigmav(ctypes.byref(i), ctypes.byref(t))
 
@@ -377,6 +390,38 @@ T=3 keV reads 40% of SIGMAM (sparse 2->5 keV interval, the interpolant);
         f"ratio at 1000 keV is {r1000:.4f}, measured 1.4573 when the port "
         "landed. This is a TABLE point, so a move here implicates SIGMAM or "
         "the table itself, not the interpolation."
+    )
+
+
+@pytest.mark.parametrize("id_nf", [
+    pytest.param(i, marks=pytest.mark.xfail(
+        strict=True,
+        reason="HengyuLi-Ozaki-lab/task-web-client#58: the cubic spline of "
+               "<sigma v> over log10(T) undershoots below zero between the "
+               "first knots for D-He3 and T-He3"))
+    if i in NEGATIVE_BETWEEN_KNOTS else i
+    for i in ALL_REACTIONS])
+def test_reactivity_is_never_negative(nf, id_nf):
+    """A reaction rate is not negative, anywhere on the table, for any reaction.
+
+    The other tests here look at D-T only.  Every reaction shares the fit (ten
+    knots at 1, 2, 5, 10, ... keV, a cubic spline of <sigma v> itself over
+    log10(T)), and a spline of a function that climbs by decades between two
+    knots can dip below zero there.  It does for the eight reactions marked
+    above; SPL1DF succeeds, so libnf reports nothing.  Those reactions are in
+    the sets model_pnf = 3, 4 and 14, which evaluate and publish nothing, so
+    today this is a wrong diagnostic and not a wrong run.
+
+    strict: when the fit is replaced by one that cannot change sign, these
+    eight go XPASS, the run is red, and the marker has to go with the fix.
+    """
+    grid = [1.0 + 0.05 * k for k in range(19981)]      # 1 ... 1000 keV
+    negative = [(t, v) for t in grid if (v := nf.sigmav(id_nf, t)) < 0.0]
+    assert not negative, (
+        f"sigmav_nf(id_nf={id_nf}) is negative at {len(negative)} of "
+        f"{len(grid)} temperatures, from {negative[0][0]:.2f} to "
+        f"{negative[-1][0]:.2f} keV; most negative "
+        f"{min(v for _, v in negative):.3e} m^3/s"
     )
 
 

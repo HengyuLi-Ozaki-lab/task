@@ -1,8 +1,11 @@
-"""P1 Task 6: the model_pnf dispatch into the ported multi-reaction path.
+"""P1 Tasks 6 and 7: the model_pnf dispatch, and what it publishes against trx.
 
-What this pins is the *contract* of the dispatch, not the physics the ported
-routines compute -- cross-validating the reaction sources against trx is P1
-Task 7.  Concretely:
+Most of this file pins the *contract* of the dispatch (Task 6), listed below.
+The comparison with trx (Task 7) is at the end:
+``test_fusion_differential_matches_the_trx_reference``, with the comment
+block before ``FUSION_DIFFERENTIAL_TOL_SCALAR`` saying what that comparison
+detects and what it cannot (SNF at any magnitude, an error the two codes
+share, the outermost radial point).  The contract:
 
 * ``model_pnf`` reaches the library at all (it is registered in
   ``tr_param_registry``; before Task 6 it was declared but unreachable, so
@@ -36,6 +39,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import math
 import os
 from pathlib import Path
 
@@ -923,8 +927,10 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # Four single-token defects that pass this test, all measured here against a
 # verified 0.2942x control, each restored afterwards:
 #
-# ('passed' is python/trlib/tests, all 104 -- the scope is stated because a
-# number without one is what this block is about.)
+# ('passed' is python/trlib/tests, all 104 on the tree these were measured
+# on, 2094fbcd of p1/trx-tr-port-rebased; the directory holds more tests
+# since -- the scope is stated because a number without one is what this
+# block is about.)
 #
 #   PZ(ns)**2 -> PZ(ns) in the VC3 loop        0.8964x  0/209  104 passed
 #     (the same typo eight lines later, in TAUS, is caught at 313.66x and
@@ -1115,6 +1121,20 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
     # Skipping it silently would let a dead channel pass -- metrics.json has
     # two such scalars today (AJRFT, RQ1), neither in FUSION_CHANNELS, and the
     # comment above invites adding channels.  Refuse instead.
+    # Before anything is compared: a NaN fails no inequality, so a value that
+    # is not finite on either side would pass every check below (`rel > tol`
+    # is False for a NaN rel) and the run would read as an agreement.  rel
+    # itself is left out: it is inf by construction where d_ref is zero, and
+    # `quiet` below is what reports that.
+    nonfinite = [(lb, dr, dk) for lb, dr, dk, base, _, _ in rows
+                 if not all(map(math.isfinite, (dr, dk, base)))]
+    assert not nonfinite, (
+        f"{len(nonfinite)} of {len(rows)} compared entries are not finite, "
+        f"so no tolerance below can fail on them. First: {nonfinite[0][0]} "
+        f"(reference differential {nonfinite[0][1]!r}, this code "
+        f"{nonfinite[0][2]!r})"
+    )
+
     unscaled = [(lb, dr) for lb, dr, _, base, _, _ in rows if not base]
     assert not unscaled, (
         f"{len(unscaled)} of {len(rows)} compared entries have a reference "
