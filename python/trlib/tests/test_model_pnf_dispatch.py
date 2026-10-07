@@ -1306,13 +1306,18 @@ def test_a_model_pnf_the_case_was_not_prepared_for_is_refused(monkeypatch, prepa
 
 
 def _alpha_arrays(lib):
-    """RNF and RTF, (NRMAX, 2) each: what the legacy TRNFDT writes and nothing clears."""
+    """The fusion slot of RNF and RTF: what the legacy TRNFDT writes and nothing clears.
+
+    Both are (NRMAX, NFM = 2), column-major: slot 1 is the beam's, which
+    tr/trpnb.f90 writes every step when NBI is on (it is, on tr_iter01), and
+    slot 2 the fusion alphas', written by TRNFDT and TRNFDHE3 alone.
+    """
     nrmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value
     out = {}
     for name, sym in (("RNF", "__trcomm_profile_MOD_rnf"), ("RTF", "__trcomm_profile_MOD_rtf")):
         addr = ctypes.c_void_p.in_dll(lib, sym)
         assert addr.value, f"{sym} is not allocated"
-        out[name] = list((ctypes.c_double * (2 * nrmax)).from_address(addr.value))
+        out[name] = list((ctypes.c_double * (2 * nrmax)).from_address(addr.value))[nrmax:]
     return out
 
 
@@ -1337,15 +1342,15 @@ def test_mdlnf_set_on_a_prepared_model_pnf_case_is_refused(monkeypatch):
             with pytest.raises(TrlibError):
                 tr.run(1)
             assert _alpha_arrays(lib) == before[1], (
-                "the refused step wrote RNF or RTF: the refusal came after "
-                "the MDLNF block of TRCALC"
+                "the refused step wrote the fusion slot of RNF or RTF: the "
+                "refusal came after the MDLNF block of TRCALC"
             )
             assert tr.get_state().to_dict() == before[0], "the refused step changed the state"
             _poke(lib, SYM_MDLNF, 0)
             tr.run(1)
             assert _alpha_arrays(lib) == before[1], (
-                "RNF or RTF changed in the run after the refusal: at MDLNF = 0 "
-                "and model_pnf = 1 nothing writes them"
+                "the fusion slot of RNF or RTF changed in the run after the "
+                "refusal: at MDLNF = 0 and model_pnf = 1 nothing writes it"
             )
     finally:
         _poke(lib, SYM_MODEL_PNF, 0)
