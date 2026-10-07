@@ -24,7 +24,6 @@ if the dispatch one day clears the prepared flag.
 from __future__ import annotations
 
 import ctypes
-import os
 from pathlib import Path
 
 import pytest
@@ -55,9 +54,11 @@ def _hot_iter01(tot):
 def _max_pnf():
     """The largest value of TR's published fusion power profile.
 
-    Read from the TR library image, which is the one ``libtotapi.so`` drives
-    in the per-module build.  With ``MONO_LIB_PATH`` set the two wrappers may
-    resolve different images, and this reading would say nothing.
+    Read from the image ``trlib`` resolves, which is the one ``Tot`` drives:
+    ``libtrapi.so`` beside ``libtotapi.so`` in the per-module build, and the
+    one mono image when ``MONO_LIB_PATH`` is set (both loaders look at that
+    variable first).  If they were ever not the same, PNF would not be
+    allocated in this one and the assertion below says so.
     """
     from trlib._ffi import load_library
 
@@ -66,13 +67,6 @@ def _max_pnf():
     addr = ctypes.c_void_p.in_dll(lib, "__trcomm_profile_MOD_pnf").value
     assert addr, "TR's PNF is not allocated in the image trlib resolves: tot is driving another one"
     return max((ctypes.c_double * nrmax).from_address(addr))
-
-
-pytestmark = pytest.mark.skipif(
-    bool(os.environ.get("MONO_LIB_PATH")),
-    reason="reads TR module state through trlib's image; with MONO_LIB_PATH "
-           "set, tot and trlib may not be on the same one",
-)
 
 
 @pytest.fixture(autouse=True)
@@ -136,6 +130,11 @@ def test_another_model_pnf_after_a_run_is_refused(monkeypatch, then):
         with pytest.raises(TotlibError):
             tot.run(1)
 
+        # Refused for the switch and not for anything else: put back, it runs.
+        tot.set_param("tr:MODEL_PNF", 1.0)
+        tot.run(1)
+        assert _max_pnf() > 0.0
+
 
 def test_model_pnf_set_after_a_first_run_is_not_ignored(monkeypatch):
     """It was: the run went on at MODEL_PNF = 0 and said nothing."""
@@ -148,3 +147,8 @@ def test_model_pnf_set_after_a_first_run_is_not_ignored(monkeypatch):
         tot.set_param("tr:MODEL_PNF", 1.0)
         with pytest.raises(TotlibError):
             tot.run(1)
+
+        # Refused for the switch and not for anything else: put back, it runs.
+        tot.set_param("tr:MODEL_PNF", 0.0)
+        tot.run(1)
+        assert _max_pnf() == 0.0

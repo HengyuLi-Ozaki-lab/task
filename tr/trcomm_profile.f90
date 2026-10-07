@@ -149,7 +149,7 @@ CONTAINS
     ! the previous run's poloidal-field values. trcalc.f90:102 *does*
     ! overwrite BP every step, but RDP feeds into that very assignment
     ! (BP=AR1RHOG*RDP/RR), and stale RDP can leak into BP. Same for
-    ! EZOH (1060 below) and any profile that an MDL flag short-circuits
+    ! EZOH (trcalc.f90:1168) and any profile that an MDL flag short-circuits
     ! out of being recomputed.
     BP(:)   = 0.D0
     RDP(:)  = 0.D0
