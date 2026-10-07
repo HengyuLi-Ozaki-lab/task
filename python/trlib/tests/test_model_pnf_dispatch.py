@@ -42,7 +42,7 @@ from pathlib import Path
 import pytest
 
 from trlib import Trlib
-from trlib.errors import TrlibError
+from trlib.errors import TrlibError, TrlibParamError
 
 from .fixtures import tr_tst2_params as FIXTURE
 
@@ -90,7 +90,7 @@ def probe(monkeypatch):  # noqa: PT004 (yield fixture)
     def run(model_pnf: int) -> dict:
         with Trlib() as tr:
             FIXTURE.apply(tr)
-            tr.set_param("model_pnf", model_pnf)
+            tr.set_param("MODEL_PNF", model_pnf)
             tr.run(1)
             return {
                 "nnfmax": ctypes.c_int.in_dll(lib, SYM_NNFMAX).value,
@@ -110,13 +110,27 @@ def probe(monkeypatch):  # noqa: PT004 (yield fixture)
 def test_model_pnf_is_settable():
     """Registered in tr_param_registry -- otherwise the dispatch is dead code."""
     with Trlib() as tr:
-        tr.set_param("model_pnf", 0)
-
-
-def test_model_pnf_accepts_the_uppercase_spelling():
-    """Every other registry entry is uppercase and the CASE compare is literal."""
-    with Trlib() as tr:
         tr.set_param("MODEL_PNF", 0)
+
+
+def test_model_pnf_has_one_registry_name():
+    """Uppercase, like every other entry; the lowercase source name is refused.
+
+    The CASE compare is literal, so a second spelling is a second name to
+    whatever reads the registry, and a parameter reference kept one file per
+    name cannot hold `model_pnf.md` beside `MODEL_PNF.md` on macOS or Windows.
+    """
+    with Trlib() as tr:
+        with pytest.raises(TrlibParamError):
+            tr.set_param("model_pnf", 0)
+
+
+@pytest.mark.parametrize("value", [1.0e10, -1.0e10, float("nan")])
+def test_model_pnf_refuses_what_an_integer_cannot_hold(value):
+    """Listed in value_refused with the other integer parameters."""
+    with Trlib() as tr:
+        with pytest.raises(TrlibParamError):
+            tr.set_param("MODEL_PNF", value)
 
 
 @pytest.mark.parametrize("model_pnf", sorted(REACTION_COUNT))
@@ -239,7 +253,7 @@ def test_reaction_loop_runs_and_its_output_is_reset_every_step(monkeypatch):
         # they write the same SNF/PNF/TAUF and would double-count the D-T
         # alphas, once from SIGMAM and once from libnf.
         tr.set_param("MDLNF", 0)
-        tr.set_param("model_pnf", 2)
+        tr.set_param("MODEL_PNF", 2)
         tr.set_param("NTMAX", NSTEPS)
         tr.run(NSTEPS)
 
@@ -386,7 +400,7 @@ def test_session_state_is_released_and_reset_across_a_cycle(monkeypatch):
             tr.set_param(f"PT[{i}]", 2000.0)   # above the table top -> errors
             tr.set_param(f"PTS[{i}]", 2000.0)
         tr.set_param("MDLNF", 0)   # mutually exclusive with model_pnf
-        tr.set_param("model_pnf", 4)
+        tr.set_param("MODEL_PNF", 4)
         tr.set_param("NTMAX", 1)
         tr.run(1)
         assert ctypes.c_int.in_dll(lib, SYM_NNFMAX).value == 13
@@ -433,7 +447,7 @@ def test_model_pnf_is_reset_by_init(monkeypatch):
     with Trlib() as tr:
         FIXTURE.apply(tr)
         tr.set_param("MDLNF", 0)   # mutually exclusive with model_pnf
-        tr.set_param("model_pnf", 4)
+        tr.set_param("MODEL_PNF", 4)
         tr.run(1)
         assert ctypes.c_int.in_dll(lib, SYM_MODEL_PNF).value == 4
 
@@ -587,7 +601,7 @@ def _run_hot_in_subprocess(script_body):
             for i in range(1, 5):
                 tr.set_param("PT[%%d]" %% i, pt)
                 tr.set_param("PTS[%%d]" %% i, pt)
-            tr.set_param("model_pnf", 2)
+            tr.set_param("MODEL_PNF", 2)
         """
         % (str(Path(__file__).resolve().parents[2]), str(FIXTURES_DIR))
     ) + textwrap.dedent(script_body) + '\nprint("PROBE-COMPLETE")\n'
@@ -695,7 +709,7 @@ def test_model_pnf_publishes_into_the_solver_arrays(monkeypatch):
     def run(model_pnf):
         with Trlib() as tr:
             _hot_dt(tr)
-            tr.set_param("model_pnf", model_pnf)
+            tr.set_param("MODEL_PNF", model_pnf)
             tr.set_param("NTMAX", 1)
             tr.run(1)
             nrmax = ctypes.c_int.in_dll(lib, "__trcom0_MOD_nrmax").value
@@ -993,7 +1007,7 @@ def _run_hot_deck(model_pnf):
             tr.set_param(f"PNS[{i}]", HOT_PNS[i - 1])
             tr.set_param(f"PT[{i}]", 10.0)
             tr.set_param(f"PTS[{i}]", 1.0)
-        tr.set_param("model_pnf", model_pnf)
+        tr.set_param("MODEL_PNF", model_pnf)
         tr.run(HOT_DECK["NTMAX"])
         return tr.get_state().to_dict()
 
@@ -1173,7 +1187,7 @@ def test_model_pnf_ge_2_stays_diagnostic_only(monkeypatch):
     monkeypatch.chdir(FIXTURES_DIR)
     with Trlib() as tr:
         _hot_dt(tr)
-        tr.set_param("model_pnf", 2)
+        tr.set_param("MODEL_PNF", 2)
         tr.set_param("NTMAX", 1)
         tr.run(1)
         assert ctypes.c_int.in_dll(lib, SYM_NNFMAX).value == 4
@@ -1197,7 +1211,7 @@ def test_mdlnf_and_model_pnf_together_are_refused(monkeypatch):
             from .fixtures import tr_iter01_params as HOT
 
             HOT.apply(tr)          # ships MDLNF=1
-            tr.set_param("model_pnf", 1)
+            tr.set_param("MODEL_PNF", 1)
             tr.run(1)
 
 
@@ -1229,7 +1243,7 @@ def test_a_publishing_failure_aborts_the_step(monkeypatch):
         for i in range(1, 5):
             tr.set_param(f"PT[{i}]", 2000.0)   # above the 1000 keV table top
             tr.set_param(f"PTS[{i}]", 2000.0)
-        tr.set_param("model_pnf", 1)           # nnfmax == 1 -> publishing
+        tr.set_param("MODEL_PNF", 1)           # nnfmax == 1 -> publishing
         with pytest.raises(TrlibError):
             tr.run(1)
 

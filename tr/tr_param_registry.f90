@@ -159,10 +159,13 @@ CONTAINS
     ! the ported reaction set.  Not range-checked here: the value is
     ! validated where it is consumed, by set_usigmav_nf, which returns
     ! ierr_nf=2 for anything else and which tr_prep propagates.
-    ! Both spellings: the source name is lowercase (it comes from trx), but
-    ! every other entry in this registry is uppercase and the CASE compare
-    ! is literal, so accepting only one spelling would surprise callers.
-    CASE ("model_pnf","MODEL_PNF"); model_pnf = INT(value)
+    ! One name, uppercase like every other entry (the CASE compare is
+    ! literal): a second, lowercase spelling would be a second parameter
+    ! name to every reader of this file, and a parameter reference that
+    ! keeps one file per name cannot hold two that differ only in case
+    ! on macOS or Windows.  The variable keeps the lowercase name it has
+    ! in trx; Fortran does not tell the two apart.
+    CASE ("MODEL_PNF"); model_pnf = INT(value)
     CASE ("MDLUF");  MDLUF  = INT(value)
     ! --- heating / current-drive scalars ---------------------------
     !     NBI
@@ -233,7 +236,7 @@ CONTAINS
     CASE ("MODELG", "NSMAX", "MDLIMP", "NTMAX", "NTSTEP", "LMAXTR", &
           "NGTSTP", "NGRSTP", "MDLKAI", "MDLETA", "MDLAD", "MDLAVK", &
           "MDLNB", "MDLEC", "MDLLH", "MDLIC", "MDLPEL", "MDLJBS", &
-          "MDLST", "MDLNF", "MDLUF")
+          "MDLST", "MDLNF", "MODEL_PNF", "MDLUF")
        refused = ABS(value) > REAL(HUGE(0), rkind)
     END SELECT
   END FUNCTION value_refused
