@@ -63,6 +63,11 @@ Task 1 recon done. Findings + decisions that REVISE the plan below:
    satisfied for the structural tasks.
 3. **[Task 1 Step 4] FTAUE/FTAUI reconcile: use `AMM`.** kyoshimi `trcomm_const.f90:19` has `AMM`
    (=1.672621637D-27) but NOT `AMP`; adopt bpsi's guarded form with `AMM`.
+   **CORRECTION (2026-10-08, after Tasks 1 to 7 were merged): the guard is narrower than bpsi's.** bpsi returns
+   `1.D8` for `ABS(ANIL) <= 1.D-8` ahead of every branch. Adopted as it was, it also replaced finite results (a
+   species at a trace density; `FTAUE`'s impurity branch, which divides by `ANEL`): `tr_iter01` with helium at
+   `1.D-9` moved by up to 2.3e-9 against the library before the port. The author decided for a test on exactly
+   zero, in the branch that divides by `ANIL` (`tr/trcoll.f90`, `python/trlib/tests/test_collision_times.py`).
    **CORRECTION (Task 3 as-built): `AMM` and bpsd's `AMP` are NO LONGER the same number.**
    `../bpsd/bpsd_constants.f90:39` (the sibling repo; `tr/Makefile` compiles it via `BPSD_SRC=../../bpsd`, and
    `pl/plcomm.f90:36` re-exports it) now carries the CODATA-2018 `AMP = 1.67262192369E-27`, a relative

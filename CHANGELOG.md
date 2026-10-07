@@ -52,8 +52,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   (k-yoshimi/task#235, #236, #238); the four that are on the fusion path
   are not in the port either. `python/trlib/tests/test_libnf.py` holds the
   D-T reactivity to the legacy `SIGMAM` at the table's points from 1 to
-  500 keV (6 %; at 1000 keV the table is 1.46 times `SIGMAM`) and from 5 to
-  100 keV (2 %), and holds that every reaction's rate is finite and that
+  500 keV (6 %; at 1000 keV the table is 1.46 times `SIGMAM`) and at nine
+  points from 5 to 100 keV (2 %; 2.2 % anywhere in that range), and holds that every reaction's rate is finite and that
   none is negative (strict `xfail` for D-He3 and T-He3).
 
 ### Changed
@@ -78,19 +78,19 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   Not changed: a subscript that is a whole number is still taken for a
   scalar (`PROFN1[1]` sets TR's `PROFN1`, which `test_property_fanout.py`
   relies on).
-- **TR: `FTAUE` and `FTAUI` return `1.D8` when the ion density they are
-  given is within `1.D-8` of zero (`ABS(n) <= 1.D-8`, in 10^20 m^-3)**, as
-  `trx` does. At a density of exactly zero that replaces an infinity (the
-  absent species of a two-species run, whose result nothing reads), and
-  the results are bit-identical. For a species that is there at a trace
-  density it replaces a finite time, and the run changes: `tr_iter01` with
-  helium at `1.D-9`, 20 steps, differs in 182 of 567 state values, by
-  2.3e-9 at most (at `1.D-7` and at 0 it is bit-identical). `FTAUE` with
-  impurities (`Zeff` above the charge of species 2) divides by the electron
-  density and not by the ion density it is given, and is replaced all the
-  same. No baseline case has a live density that small. The two functions
-  now live in the module `trcoll`, and `COULOG` and `HY` in `trlib` (moved,
-  not changed).
+- **TR: `FTAUE` and `FTAUI` return `1.D8` where they divided by an ion
+  density of exactly zero**, which gave an infinity: the absent species of a
+  run with fewer ion species than the code has slots, whose result nothing
+  reads. Every result that was finite is the number it was: `tr_iter01`
+  with helium at `1.D-9`, `1.D-12`, `1.D-8`, `1.D-7` and 0 is bit-identical,
+  after 20 steps, to the library before the port. `trx` guards more widely
+  (`ABS(n) <= 1.D-8`, ahead of every branch), which also replaces the finite
+  time of a species at a trace density and the result of `FTAUE`'s impurity
+  branch, which divides by the electron density; the port first took that
+  guard, and it was narrowed before any release (with it, helium at `1.D-9`
+  moved 182 of 567 state values by up to 2.3e-9). The two functions now
+  live in the module `trcoll`, and `COULOG` and `HY` in `trlib` (moved, not
+  changed).
 
 ### Fixed
 
