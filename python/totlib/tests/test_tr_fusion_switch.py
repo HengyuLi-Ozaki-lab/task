@@ -75,6 +75,22 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def _switches_back_to_zero():
+    """tot_finalize does not reset TR's switches, and a later init is what does.
+
+    Under --forked that does not matter.  In one interpreter a test that left
+    MODEL_PNF at 1, 4 or 9 would hand it to whatever loads the TR library
+    next: test_libnf.py asserts that it finds 0.
+    """
+    yield
+    from trlib._ffi import load_library
+
+    lib = load_library()
+    for symbol in ("__trcomm_param_MOD_model_pnf", "__trcomm_param_MOD_mdlnf"):
+        ctypes.c_int.in_dll(lib, symbol).value = 0
+
+
 def test_mdlnf_set_after_a_model_pnf_run_is_refused_and_the_case_goes_on(monkeypatch):
     monkeypatch.chdir(TR_FIXTURES_DIR)
     with Tot() as tot:
