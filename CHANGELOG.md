@@ -53,7 +53,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   are not in the port either. `python/trlib/tests/test_libnf.py` holds the
   D-T reactivity to the legacy `SIGMAM` at the table's points from 1 to
   500 keV (6 %; at 1000 keV the table is 1.46 times `SIGMAM`) and at nine
-  points from 5 to 100 keV (2 %; 2.2 % anywhere in that range), and holds that every reaction's rate is finite and that
+  points from 5 to 100 keV (2 %; 2.2 % anywhere in that range), and holds
+  that every reaction's rate is finite and that
   none is negative (strict `xfail` for D-He3 and T-He3).
 
 ### Changed
@@ -79,11 +80,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   scalar (`PROFN1[1]` sets TR's `PROFN1`, which `test_property_fanout.py`
   relies on).
 - **TR: `FTAUE` and `FTAUI` return `1.D8` where they divided by an ion
-  density of exactly zero**, which gave an infinity: the absent species of a
-  run with fewer ion species than the code has slots, whose result nothing
-  reads. Every result that was finite is the number it was: `tr_iter01`
-  with helium at `1.D-9`, `1.D-12`, `1.D-8`, `1.D-7` and 0 is bit-identical,
-  after 20 steps, to the library before the port. `trx` guards more widely
+  density of exactly zero**, which gave a number that is not finite (an
+  infinity at a positive temperature and electron density). That is the
+  absent species of a run with fewer ion species than the code has slots,
+  whose result is not read, and a solved species set to exactly zero. What
+  the two functions returned as a finite number they still return, and no
+  run was found to change: `tr_iter01` with helium at `1.D-9`, `1.D-12`,
+  `1.D-8`, `1.D-7` and 0 is bit-identical, after 20 steps, to the library
+  before the port (at 0 the transport coefficients of that species too,
+  which are not a number with or without the guard). `trx` guards more widely
   (`ABS(n) <= 1.D-8`, ahead of every branch), which also replaces the finite
   time of a species at a trace density and the result of `FTAUE`'s impurity
   branch, which divides by the electron density; the port first took that

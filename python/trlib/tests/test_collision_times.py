@@ -69,10 +69,11 @@ def test_ftaue_takes_the_branch_this_file_assumes(coll):
     assert ftaue(ANE, 0.2, TEMP, Z_EFF) == ftaue(ANE, 0.4, TEMP, Z_EFF)
 
 
-def test_no_ions_at_all_gives_the_large_finite_time(coll):
+@pytest.mark.parametrize("zero", [0.0, -0.0])
+def test_no_ions_at_all_gives_the_large_finite_time(coll, zero):
     ftaue, ftaui = coll
-    assert ftaue(ANE, 0.0, TEMP, Z_MAIN) == GUARD_VALUE
-    assert ftaui(ANE, 0.0, TEMP, 1.0, 2.0) == GUARD_VALUE
+    assert ftaue(ANE, zero, TEMP, Z_MAIN) == GUARD_VALUE
+    assert ftaui(ANE, zero, TEMP, 1.0, 2.0) == GUARD_VALUE
 
 
 @pytest.mark.parametrize("n", TRACE)

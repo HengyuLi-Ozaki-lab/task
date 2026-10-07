@@ -54,9 +54,12 @@ CONTAINS
 
 !     No ions of this species at all (ANIL exactly 0.D0): the collision time
 !     is infinite.  Return a large finite value instead of dividing by zero,
-!     which gives Inf, or NaN once that is multiplied by a zero pressure
-!     downstream.  This is what the absent species of a run with fewer ions
-!     look like (TRAJBS calls with species 3 and 4 at NSMAX = 2).
+!     which gives Inf (NaN when the temperature or the electron density is
+!     zero too), or NaN once that is multiplied by a zero pressure
+!     downstream.  Every caller gives FTAUE the density of species 2, so here
+!     that means a run with no species 2; it is FTAUI that sees the absent
+!     species of a run with fewer ions (TRAJBS asks it for species 3 and 4
+!     at NSMAX = 2).
 !
 !     Narrower than trx on purpose.  trx tests ABS(ANIL) <= 1.D-8 before
 !     either branch, and the port first did the same.  That also replaced

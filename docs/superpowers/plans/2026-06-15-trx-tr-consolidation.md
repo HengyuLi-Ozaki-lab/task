@@ -149,7 +149,7 @@ bpsi `trcoll` differs from kyoshimi `trcalc` inline:
 | `FTAUE` | `PZ(2)`, **no** `ABS(ANIL)` guard, `USE ...AME...` | `PZ(NS_D)`, `IF(ABS(ANIL).LE.1.D-8) FTAUE=1.D8`, `coulomb_log(1,2,..)` |
 | `FTAUI` | `AMM` | `AMP`, `IF(ABS(ANIL).LE.1.D-8) FTAUI=1.D8` |
 
-Decision: **adopt bpsi's guard, but keep kyoshimi's `AMM` and `PZ(2)`** (see RECORDED DECISIONS #3 — as-built). `NS_D` does not exist in kyoshimi `tr` and `PZ(2)` is its numerically identical form; `AMP` is **NOT** equal to `AMM` any more (bpsd moved to CODATA-2018). The guard is the only behavioural delta, and it is inert for `ANIL>1e-8`. **Confirm which constant exists in kyoshimi `TRCOMM`**:
+Decision: **adopt bpsi's guard, but keep kyoshimi's `AMM` and `PZ(2)`** (see RECORDED DECISIONS #3 — as-built, and its 2026-10-08 correction: the guard is now a test on exactly zero). `NS_D` does not exist in kyoshimi `tr` and `PZ(2)` is its numerically identical form; `AMP` is **NOT** equal to `AMM` any more (bpsd moved to CODATA-2018). The guard is the only behavioural delta, and it is inert for `ANIL>1e-8`. **Confirm which constant exists in kyoshimi `TRCOMM`**:
 ```bash
 grep -rnE '\bAMP\b|\bAMM\b' /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trcom0.f90 /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/tr/trcomm_*.f90
 ```
@@ -341,7 +341,7 @@ Get the exact bodies:
 ```bash
 git -C /Users/lihengyu/Research_Project/MS10/TASK/task show bpsi/develop:trx/trcoll.f90
 ```
-Move the kyoshimi bodies between `CONTAINS` and `END MODULE`, keeping their `USE TRCOMM, ONLY: ...` lines. `AMM` and `PZ(2)` are **mandatory** (not conditional): kyoshimi `tr` has no `NS_D`, and bpsd's `AMP` is no longer equal to `AMM`. Only the `ABS(ANIL)` guard is taken from bpsi.
+Move the kyoshimi bodies between `CONTAINS` and `END MODULE`, keeping their `USE TRCOMM, ONLY: ...` lines. `AMM` and `PZ(2)` are **mandatory** (not conditional): kyoshimi `tr` has no `NS_D`, and bpsd's `AMP` is no longer equal to `AMM`. Only the guard is taken from bpsi, and since the 2026-10-08 correction of RECORDED DECISIONS #3 it is a test on exactly zero in the branch that divides by `ANIL`, not bpsi's `ABS(ANIL)` one.
 
 - [x] **Step 2: Create `tr/trlib.f90` as MODULE `trlib`** (`COULOG`, `HY`)
 ```bash
@@ -388,7 +388,7 @@ Expected: clean build of both `tr2` and `libtrapi.so`.
 cd /Users/lihengyu/Research_Project/MS10/TASK/task-kyoshimi/test_run
 ./run_tests.sh tr_m0904 && ./run_tests.sh tr_iter01 && ./run_tests.sh tr_tst2
 ```
-Expected: all three `CLOSED` + `OK: metrics match within tol=1e-10`. (The collision math is unchanged for `ANIL>1e-8`, so the bootstrap-current path `TRAJBS` must reproduce the baseline exactly. If a case drifts, the guard/`NS_D`/`AMP` reconcile changed a number — investigate before continuing.)
+Expected: all three `CLOSED` + `OK: metrics match within tol=1e-10`. (The collision math is unchanged for `ANIL>1e-8` — since the 2026-10-08 correction of RECORDED DECISIONS #3, for every nonzero `ANIL` — so the bootstrap-current path `TRAJBS` must reproduce the baseline exactly. If a case drifts, the guard/`NS_D`/`AMP` reconcile changed a number — investigate before continuing.)
 
 - [x] **Step 8: Commit**
 ```bash
