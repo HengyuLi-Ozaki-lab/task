@@ -1,9 +1,10 @@
 """FTAUE and FTAUI (``tr/trcoll.f90``): what the zero-density guard replaces.
 
-Both divide by the density of the ion species they are given, and a run with
-fewer ion species than the code has slots calls them with a density of
-exactly zero (TRAJBS asks for species 3 and 4 whatever NSMAX is).  The guard
-returns ``1.D8`` there instead of dividing by zero.
+Both divide by the density of the ion species they are given.  A run with
+fewer ion species than the code has slots calls FTAUI with a density of
+exactly zero (TRAJBS asks it for species 3 and 4 whatever NSMAX is); FTAUE is
+only ever given species 2.  The guard returns ``1.D8`` instead of dividing by
+zero.
 
 It is for exactly zero, and only where the function divides by that density.
 ``trx`` tests ``ABS(ANIL) <= 1.D-8`` at the head of both functions, and the
