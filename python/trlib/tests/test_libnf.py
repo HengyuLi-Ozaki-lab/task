@@ -29,9 +29,13 @@ says:
   Confirmed by the ratio landing on 1.0 at
   every table point rather than by reading a comment.
 * **Where they disagree.** The report describes a low-temperature overshoot
-  below ~3 keV with good behaviour above. That is not what the sweep shows.
-  T=1 and T=2 agree to 0.2%; the two large deviations are T=3 keV (-60%) and
-  T=1000 keV (+46%), and they have different causes:
+  below ~3 keV with good behaviour above. At the table's points that is not
+  what the sweep shows: T=1 and T=2 agree to 0.2%.  Between them it is, and
+  worse than the report says -- the fit is 12.2 times SIGMAM at 1.2 keV and
+  0.10 of it at 2.5 keV (pinned below with the 3 keV point; all three are
+  the same sparse interval, task-web-client#58).  The two large deviations
+  at the sweep's own points are T=3 keV (-60%) and T=1000 keV (+46%), and
+  they have different causes:
 
   - **3 keV** sits in the sparse 2->5 keV gap, where a spline through raw
     sigma-v against log10(T) undershoots. That one is the interpolant.
@@ -87,6 +91,7 @@ TABLE_POINTS = (1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0)
 FUSION_BAND = (5.0, 7.0, 10.0, 15.0, 20.0, 30.0, 50.0, 70.0, 100.0)
 
 TOL_TABLE = 0.06  # measured worst |ratio-1| over TABLE_POINTS: 0.0579 at 500 keV
+TOL_BAND = 0.02   # measured worst over FUSION_BAND: 0.0177 at 30 keV
 
 # Every reaction of tr/libnf.f90 (id_nf_DT = 1 ... id_nf_THe36 = 13), and the
 # ones whose fitted <sigma v> goes below zero between the first knots:
@@ -94,7 +99,6 @@ TOL_TABLE = 0.06  # measured worst |ratio-1| over TABLE_POINTS: 0.0579 at 500 ke
 # 1-1000 keV in steps of 0.05 keV.  HengyuLi-Ozaki-lab/task-web-client#58.
 ALL_REACTIONS = tuple(range(1, 14))
 NEGATIVE_BETWEEN_KNOTS = frozenset({5, 6, 8, 9, 10, 11, 12, 13})
-TOL_BAND = 0.02   # measured worst over FUSION_BAND: 0.0177 at 30 keV
 
 
 def _parses_as_float(stdout: str) -> bool:
@@ -383,6 +387,17 @@ T=3 keV reads 40% of SIGMAM (sparse 2->5 keV interval, the interpolant);
     """
     r3 = nf.ratio(3.0)
     r1000 = nf.ratio(1000.0)
+    # The same sparse interval, off the sweep's points: what the CHANGELOG and
+    # the parameter reference quote.  Measured 12.211 and 0.102.
+    r1p2, r2p5 = nf.ratio(1.2), nf.ratio(2.5)
+    assert 11.0 < r1p2 < 13.5, (
+        f"ratio at 1.2 keV is {r1p2:.3f}, measured 12.211: between the 1 and "
+        "2 keV knots the fit overshoots SIGMAM by an order of magnitude"
+    )
+    assert 0.08 < r2p5 < 0.13, (
+        f"ratio at 2.5 keV is {r2p5:.3f}, measured 0.102: between the 2 and "
+        "5 keV knots the fit undershoots SIGMAM by an order of magnitude"
+    )
     assert 0.35 < r3 < 0.45, (
         f"ratio at 3 keV is {r3:.4f}, measured 0.4012 when the port landed. "
         "This point is in the sparse 2->5 keV interval; a move here means the "
@@ -397,7 +412,7 @@ T=3 keV reads 40% of SIGMAM (sparse 2->5 keV interval, the interpolant);
 
 @pytest.mark.parametrize("id_nf", [
     pytest.param(i, marks=pytest.mark.xfail(
-        strict=True,
+        strict=True, raises=AssertionError,
         reason="HengyuLi-Ozaki-lab/task-web-client#58: the cubic spline of "
                "<sigma v> over log10(T) undershoots below zero between the "
                "first knots for D-He3 and T-He3"))

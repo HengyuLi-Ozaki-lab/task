@@ -54,7 +54,7 @@
             model_pnf.NE.nf_model_prepared) THEN
             WRITE(6,*) 'XX TRCALC: model_pnf=',model_pnf,' MDLNF=',MDLNF, &
                  ' on a case prepared for model_pnf=',nf_model_prepared, &
-                 ' -- prepare the run again'
+                 ': not with MDLNF, and not a model_pnf it was not prepared for'
             IERR = 10
             RETURN
          END IF

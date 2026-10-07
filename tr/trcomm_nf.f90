@@ -9,9 +9,10 @@
 ! Most of this is sized by `nnfmax`, which trcomm_ctrl defaults to 0, so at
 ! model_pnf = 0 those arrays come out zero-size.  The two _NSNR roll-ups are
 ! the exception: they are (NSTM,NRMAX) unconditionally and take real heap on
-! every run.  No legacy behaviour changes either way -- nothing outside
-! trpnf_multi reads any symbol declared here -- but the allocation is not
-! free and it shifts every address allocated after it.
+! every run.  No legacy behaviour changes either way -- outside trpnf_multi
+! only the two scalars at the foot of the declarations are touched (trcalc
+! reads them, tr_prep clears them) -- but the allocation is not free and it
+! shifts every address allocated after it.
 !
 ! Naming follows trx's own convention: the trailing `_NSNNFNR` / `_NNFNR` /
 ! `_NSNR` records the rank so the new arrays never collide with the legacy

@@ -1056,7 +1056,7 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
     and so WPT, BETA* and TAUE -- nearly unchanged, and would otherwise be
     invisible.  The per-species resolution is free rather than load-bearing on
     this path: no alpha power reaches the thermal species at all.  PFCL enters
-    PIN, and it is zeroed every step at trcalc.f90:57; its only other writers
+    PIN, and it is zeroed every step at the head of TRCALC; its only other writers
     are TRNFDT and TRNFDHe3, which SELECT CASE(MDLNF) reaches at 1:4 and 5:6 --
     not at the 0 this deck sets.  So a mis-split is currently unreachable, and
     would matter the day PNFCL is implemented.  RN is deliberately not compared:
@@ -1117,11 +1117,6 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
 
     rows = _differentials(ref_on, ref_off, on, off, entries)
 
-    # A channel whose reference model_pnf=0 value is exactly zero has no scale
-    # to measure a signal against, so the floor below cannot be applied to it.
-    # Skipping it silently would let a dead channel pass -- metrics.json has
-    # two such scalars today (AJRFT, RQ1), neither in FUSION_CHANNELS, and the
-    # comment above invites adding channels.  Refuse instead.
     # Before anything is compared: a NaN fails no inequality, so a value that
     # is not finite on either side would pass every check below (`rel > tol`
     # is False for a NaN rel) and the run would read as an agreement.  rel
@@ -1136,6 +1131,11 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
         f"{nonfinite[0][2]!r})"
     )
 
+    # A channel whose reference model_pnf=0 value is exactly zero has no scale
+    # to measure a signal against, so the floor below cannot be applied to it.
+    # Skipping it silently would let a dead channel pass -- metrics.json has
+    # two such scalars today (AJRFT, RQ1), neither in FUSION_CHANNELS, and the
+    # comment above invites adding channels.  Refuse instead.
     unscaled = [(lb, dr) for lb, dr, _, base, _, _ in rows if not base]
     assert not unscaled, (
         f"{len(unscaled)} of {len(rows)} compared entries have a reference "
@@ -1284,15 +1284,23 @@ def test_model_pnf_set_to_zero_on_a_prepared_case_is_off(monkeypatch):
 
 @pytest.mark.parametrize("prepared, then", [(0, 1), (1, 4), (4, 1)])
 def test_a_model_pnf_the_case_was_not_prepared_for_is_refused(monkeypatch, prepared, then):
-    """Not ignored (0 -> 1), and not run on another model's tables (1 <-> 4)."""
+    """Not ignored (0 -> 1), and not run on another model's tables (1 <-> 4).
+
+    Refused, and the case is as it was: with the switch put back, the next
+    run goes through.
+    """
     lib = _lib()
     monkeypatch.chdir(FIXTURES_DIR)
     try:
         with Trlib() as tr:
             _prepared_hot_run(tr, lib, prepared)
+            before = tr.get_state().to_dict()
             _poke(lib, SYM_MODEL_PNF, then)
             with pytest.raises(TrlibError):
                 tr.run(1)
+            assert tr.get_state().to_dict() == before, "the refused step changed the state"
+            _poke(lib, SYM_MODEL_PNF, prepared)
+            tr.run(1)
     finally:
         _poke(lib, SYM_MODEL_PNF, 0)
 
@@ -1315,34 +1323,33 @@ def test_mdlnf_set_on_a_prepared_model_pnf_case_is_refused(monkeypatch):
     dispatch, after the MDLNF block: TRNFDT had by then written RNF and RTF,
     which neither MDLNF = 0 nor tr_pnf clears, so a caller that put MDLNF
     back and ran again went on with the alpha density of the refused step.
-    Hence the second half: the retry is the run that was never interrupted.
+    Everything is compared inside the one session (before the refused step
+    and after it): two sessions of one process are not held to the same bits
+    here.
     """
     lib = _lib()
     monkeypatch.chdir(FIXTURES_DIR)
     try:
         with Trlib() as tr:
             _prepared_hot_run(tr, lib, 1)
-            tr.run(1)
-            control = (tr.get_state().to_dict(), _alpha_arrays(lib))
-
-        with Trlib() as tr:
-            _prepared_hot_run(tr, lib, 1)
-            before = _alpha_arrays(lib)
+            before = (tr.get_state().to_dict(), _alpha_arrays(lib))
             _poke(lib, SYM_MDLNF, 1)
             with pytest.raises(TrlibError):
                 tr.run(1)
-            assert _alpha_arrays(lib) == before, (
+            assert _alpha_arrays(lib) == before[1], (
                 "the refused step wrote RNF or RTF: the refusal came after "
                 "the MDLNF block of TRCALC"
             )
+            assert tr.get_state().to_dict() == before[0], "the refused step changed the state"
             _poke(lib, SYM_MDLNF, 0)
             tr.run(1)
-            retried = (tr.get_state().to_dict(), _alpha_arrays(lib))
+            assert _alpha_arrays(lib) == before[1], (
+                "RNF or RTF changed in the run after the refusal: at MDLNF = 0 "
+                "and model_pnf = 1 nothing writes them"
+            )
     finally:
         _poke(lib, SYM_MODEL_PNF, 0)
         _poke(lib, SYM_MDLNF, 0)
-    assert retried[1] == control[1], "RNF/RTF after the retry are not the uninterrupted run's"
-    assert retried[0] == control[0], "the state after the retry is not the uninterrupted run's"
 
 
 def test_a_refused_prepare_leaves_the_path_disarmed(monkeypatch):
