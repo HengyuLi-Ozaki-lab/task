@@ -56,7 +56,7 @@ show the pattern: each `CASE` checks `idx` against
 Turbulent heat-transport coefficients are dispatched via
 `SELECT CASE(MDLKAI)` at
 `tr/trcoef_turbulence.f90:401`. (The earlier `select case`
-at line 64 handles graph-label assignment, NOT the actual
+at line 65 handles graph-label assignment, NOT the actual
 coefficient computation.) Each `MDLKAI` value invokes a
 different model.
 
@@ -77,7 +77,7 @@ The numbering convention (per the source-side comments at
    choosing the next free integer if you are adding
    alongside existing models.
 2. **Add a `CASE (N)` block** in
-   `tr/trcoef_turbulence.f90` after line 400. The block
+   `tr/trcoef_turbulence.f90` after line 401. The block
    should fill the appropriate transport-coefficient
    arrays — `AKDW` (heat anomalous), `ADDW` (particle
    anomalous), `AVK` (heat pinch / convective).

@@ -53,7 +53,7 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:85+`
 ## Walkthrough B — `MDLKAI` 配下に新規 transport model を追加
 
 乱流熱輸送係数は `tr/trcoef_turbulence.f90:401` の
-`SELECT CASE(MDLKAI)` で dispatch されます. (line 64 の
+`SELECT CASE(MDLKAI)` で dispatch されます. (line 65 の
 別の `select case` はグラフラベル割り当て用で, 係数計算
 自体ではありません.) 各 `MDLKAI` 値が異なるモデルを呼び
 ます.
@@ -73,7 +73,7 @@ numbering 規約 (`tr/trcoef_turbulence.f90:393-399` の
 1. **`MDLKAI` 値を選ぶ.** 該当範囲内で次に空いている整数を
    選ぶ (既存モデルの隣に追加する場合).
 2. **`CASE (N)` ブロックを追加する.**
-   `tr/trcoef_turbulence.f90` の line 400 の後に追加.
+   `tr/trcoef_turbulence.f90` の line 401 の後に追加.
    ブロックは適切な輸送係数配列を埋める — `AKDW` (熱
    anomalous), `ADDW` (粒子 anomalous), `AVK` (熱 pinch /
    convective).

@@ -346,8 +346,8 @@ at once.
 
 It does not replace `MDLNF` yet:
 
-- `MODEL_PNF = 1` passes `SNF`, `PNF` and `TAUF` to the solve and nothing else. `PFIN`, `PFCL`, `RNF` and `RTF` stay
-  zero, as in `trx`: the alpha power fills the fast-ion energy and is not passed to the thermal species, so a D-T
+- `MODEL_PNF = 1` passes `SNF`, `PNF` and `TAUF` to the solve and nothing else. `PFIN`, `PFCL` and the fusion slot of
+  `RNF` and `RTF` stay zero, as in `trx`: the alpha power fills the fast-ion energy and is not passed to the thermal species, so a D-T
   run is not heated by its alphas as it is with `MDLNF = 1`.
 - It reads the reactants from species 2 and 3 and gives the alpha to species 4, as `MDLNF` does, and does not check
   that they are D, T and He⁴.

@@ -146,7 +146,7 @@ fast-alpha energy.
 (`tr/trinit.f90`) and neither deck overrides it, so the density equations are
 never entered into the reduced solve — the run's `NEQ` table gives `NST=0` on
 all four `NSV=1` rows — so `SNF`'s contribution is assembled and then dropped.
-(An earlier revision said `SSIN` is never evaluated. It is: `tr/trcalc.f90:219`
+(An earlier revision said `SSIN` is never evaluated. It is: `tr/trcalc.f90:264`
 writes `SSIN(NR,4)=SNF(NR)+…` under a guard on `MDLEQ0`, which is 0. And `SNF`
 has other readers, `tr/trrslt_globals.f90`'s `SNFT` among them. The conclusion
 below is unchanged; only the mechanism was wrong.)

@@ -21,8 +21,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   per-reaction rates are not in `tr_get_state`.
   **It does not replace `MDLNF` yet.** With one reaction (`MODEL_PNF = 1`)
   the model's `SNF`, `PNF` and `TAUF` reach the solve in place of
-  `MDLNF`'s, and nothing else does: `PFIN`, `PFCL`, `RNF` and `RTF` stay
-  zero, as in `trx`, so the alpha power fills the fast-ion energy and is
+  `MDLNF`'s, and nothing else does: `PFIN`, `PFCL` and the fusion slot of
+  `RNF` and `RTF` stay zero, as in `trx`, so the alpha power fills the fast-ion energy and is
   not passed to the thermal species. On `tr_iter01` at 10 keV after 20
   steps the electron temperature on axis is 10.717 keV, against 10.727 with
   fusion off and 11.237 with `MDLNF = 1`. The reactants are read from

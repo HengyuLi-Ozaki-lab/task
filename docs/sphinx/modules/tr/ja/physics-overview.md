@@ -181,10 +181,10 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
 
 - **Sawtooth 振動.** `MDLST` selector
   (`tr/trinit.f90:393-403`). 混合は `TRSAWT` で実装
-  (header が `tr/trcalc.f90:1172`,
+  (header が `tr/trcalc.f90:1180`,
   `tr/trloop.f90:59-65` から呼ばれる) され,
   温度 / 密度 / `q` の再分配ステップは
-  `tr/trcalc.f90:1227-1250` にあります. 現象論的な
+  `tr/trcalc.f90:1235-1258` にあります. 現象論的な
   reconnection / mixing モデルで, kink モードを解いている
   わけではありません.
 - **ELM 縮約.** `MDLELM` selector (`tr/trinit.f90:757-766`).

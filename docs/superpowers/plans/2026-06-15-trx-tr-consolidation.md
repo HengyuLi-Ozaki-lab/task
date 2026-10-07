@@ -720,14 +720,16 @@ git commit -m "feat(tr): port species-resolved NBI/RF current arrays from trx"
 > **READ FIRST (2026-10-07, when Tasks 1 to 7 were re-cut onto the product line): the steps below were written
 > before the port and four of them are wrong as written.**
 > - Step 1 is done (`model_pnf` is in `NAMELIST /TR/` since Task 7). `nnfmax` must **not** become a namelist key or
->   a registry name: it is derived from `model_pnf` by `set_usigmav_nf` (`tr/trcomm_ctrl.f90`), and a caller that
+>   a registry name: it is derived from `model_pnf` by `set_usigmav_nf` (`tr/libnf.f90`; declared in
+>   `tr/trcomm_ctrl.f90`), and a caller that
 >   set it would put the reaction tables and the arrays out of step.
 > - Step 2: the registry name is `MODEL_PNF`, uppercase only, and it is listed in `value_refused` (one name per
 >   parameter: the product line's registry rules, `python/trlib/tests/test_param_values.py`). Do not add a lowercase
 >   `CASE`.
 > - Step 5: `tr_mcp`'s `describe_parameters` does not derive from the Fortran registry. `PARAMETER_REGISTRY` in
 >   `python/mcp-servers/tr_mcp/server.py` is written by hand: declaring `MODEL_PNF` there is the change, and
->   task-web then needs a wiki page for it (its registry parity already asks for one once the Fortran name exists).
+>   task-web then needs a wiki page for it (its `scripts/check_wiki.py` already asks for one once the Fortran name
+>   exists).
 >   What is left of this task is that declaration, and the reaction count and the per-reaction rates in
 >   `tr_get_state`.
 > - Steps 3, 4 and 6 name the research checkout. Work in a clone of your own, on a branch from

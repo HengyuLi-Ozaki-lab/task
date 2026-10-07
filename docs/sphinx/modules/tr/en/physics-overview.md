@@ -189,9 +189,9 @@ phenomenological models, not first-principles MHD:
 
 - **Sawtooth oscillation.** `MDLST` selector
   (`tr/trinit.f90:393-403`). The mixing is implemented in
-  `TRSAWT` (header at `tr/trcalc.f90:1172`, called from
+  `TRSAWT` (header at `tr/trcalc.f90:1180`, called from
   `tr/trloop.f90:59-65`), with the temperature / density / `q`
-  redistribution step at `tr/trcalc.f90:1227-1250`. This is a
+  redistribution step at `tr/trcalc.f90:1235-1258`. This is a
   phenomenological reconnection / mixing model, not a kink-mode
   solve.
 - **ELM reduction.** `MDLELM` selector

@@ -354,9 +354,10 @@ OBJ_CORE_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
 # above). The PIC path has no per-file rules, so without these `make -j
 # libtrapi.so` can compile a consumer before trlib.mod / trcoll.mod exist.
 # These rules order the modules named in them and nothing else: a -j build
-# of the PIC tree from clean still fails, with and without them, on
-# trcom0.mod (measured: `make -C tr -j8 libtrapi.so` on a5634697).  CI and
-# task-web's build are sequential.
+# of the PIC tree from clean still fails on a module no rule orders
+# (measured, `make -C tr -j8 libtrapi.so`, one run each: trcom0.mod on
+# a5634697, which has none of these rules, and trcomm_const.mod with
+# them).  CI and task-web's build are sequential.
 $(OBJDIR_PIC)/trlib.o               : $(OBJDIR_PIC)/trcomm.o
 # The PIC block had no rule tying trcomm.o to its submodule SOURCES, while the
 # non-PIC block has had one since forever ($(OBJDIR)/trcomm.o, below).  Without
