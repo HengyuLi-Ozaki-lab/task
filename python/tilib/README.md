@@ -29,25 +29,35 @@ No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
 
 ## Installation
 
-Build the shared library once:
+Per-system files first (all gitignored; once per checkout):
+
+```bash
+cd /path/to/task
+cp make.header.org make.header            # edit compiler / flags for your system
+cp mtxp/make.mtxp.nompi mtxp/make.mtxp    # or another mtxp/make.mtxp.* template
+git clone --branch develop https://github.com/k-yoshimi/bpsd.git ../bpsd   # patched fork, see docs/external-patches/bpsd-fork.md
+make -C ../bpsd libbpsd.a                 # populates ../bpsd/mod/*.mod, which pl's PIC build reads
+```
+
+The TASK checkout must be named `task`: `../bpsd/Makefile` includes
+`../task/make.header`.
+
+Then build the shared library once:
 
 ```bash
 cd /path/to/task
 make -C ti libtiapi.so
 ```
 
+The target builds the dependent PIC archives (`../lib`, `../mtxp`, `../pl`, `../eq`, `../adpost`, `../open-adas/adf11`) and the in-tree
+PIC copy of bpsd (`make -C ti bpsd_pic`) in dependency order before
+compiling the ti objects, so this one command works from a clean
+tree (#230). Build serially: `make -jN` is not supported by the
+per-directory Makefiles (no intra-directory object dependencies).
+
 This is intended to produce `ti/libtiapi.so` with 5 exported symbols
 (`ti_init`, `ti_run`, `ti_set_param`, `ti_get_state`, `ti_finalize`)
 plus PIC variants of the dependent libraries (`lib*_pic.a`).
-
-> **Known gap (2026-04-18):** the `libtiapi.so` target is not yet
-> merged into the `ti/Makefile` on `develop`. Phase L-4 lives on
-> `feature/ti-library-L4-shared-lib` and will provide the rule in a
-> follow-up PR. Until that lands, obtain `libtiapi.so` by building
-> from that branch and copying the artefact into place, or point
-> `TILIB_PATH` at a library built elsewhere. The Python wrapper,
-> test suite, and examples tolerate a missing `libtiapi.so` —
-> FFI-level tests are skipped until the library is available.
 
 Put the wrapper on `PYTHONPATH`:
 
