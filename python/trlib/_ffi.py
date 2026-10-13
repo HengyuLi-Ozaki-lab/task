@@ -1,4 +1,4 @@
-"""Low-level ctypes FFI for libtrapi.so.
+"""Low-level ctypes FFI for libtrapi.so (``libtrapi.dll`` on Windows).
 
 Mirrors ``tr/tr_api.h`` (C ABI). Higher-level helpers live in
 ``trlib.py``; this module intentionally exposes only raw ctypes objects
@@ -139,7 +139,8 @@ def _repo_root() -> Path:
 # directory is registered once however often a library is opened (the MCP
 # servers build a fresh library handle after every finalize), and so it
 # could later be removed with close(). Dropping a handle does NOT unregister
-# its directory.
+# its directory. A directory enters the dict only after a library loaded
+# from it; a load that fails closes the handle it had just made.
 _DLL_DIR_HANDLES: dict = {}
 
 
@@ -160,7 +161,7 @@ def _candidate_paths() -> list[Path]:
 
 
 def _default_lib_path() -> Path:
-    """Resolve the default ``libtrapi.so`` path.
+    """Resolve the default ``libtrapi.so`` path (``libtrapi.dll`` on Windows).
 
     Priority (highest first):
       0. ``mono_lib_path()`` — global mono override (``MONO_LIB_PATH``)
@@ -251,7 +252,8 @@ _RTLD_LAZY = 1
 
 
 def load_library(path: Optional[str] = None) -> ctypes.CDLL:
-    """Load libtrapi.so and return the CDLL handle with prototypes applied.
+    """Load libtrapi.so (``libtrapi.dll`` on Windows) and return the CDLL
+    handle with prototypes applied.
 
     Uses ``RTLD_LAZY`` because libtrapi.so may retain unresolved
     symbols pointing into graphics-only call paths that the C ABI
@@ -264,11 +266,21 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     p = Path(path) if path else _default_lib_path()
     if not p.exists():
         tried = [str(x) for x in _candidate_paths()]
+        if sys.platform == "win32":
+            # The Makefiles have no .dll target, so there is no make
+            # command to name here.
+            hint = (
+                f"Build {_lib_filename()} from the Fortran sources "
+                "or set TRLIB_PATH."
+            )
+        else:
+            hint = "Build it via `make -C tr libtrapi.so` or set TRLIB_PATH."
         raise FileNotFoundError(
             f"{_lib_filename()} not found at {p}. "
             f"Tried TRLIB_PATH and {tried}. "
-            "Build it via `make -C tr libtrapi.so` or set TRLIB_PATH."
+            + hint
         )
+    new_dir_handle = None
     if sys.platform == "win32":
         # Python 3.8+ no longer resolves a DLL's dependencies through PATH.
         # The gfortran runtime (libgfortran-5.dll, libquadmath-0.dll,
@@ -283,12 +295,24 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
         p = Path(dll_dir) / p.name
         key = os.path.normcase(dll_dir)
         if key not in _DLL_DIR_HANDLES:
-            _DLL_DIR_HANDLES[key] = os.add_dll_directory(dll_dir)
+            new_dir_handle = os.add_dll_directory(dll_dir)
     # ctypes.RTLD_LAZY may not be defined on all Python builds; fall
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
-    lib = ctypes.CDLL(str(p), mode=mode)
-    return _apply_prototypes(lib)
+    try:
+        lib = _apply_prototypes(ctypes.CDLL(str(p), mode=mode))
+    except BaseException:
+        # A file that does not load (wrong architecture, a missing
+        # dependency) or is not this library must not leave its directory
+        # in the process-wide DLL search set, nor an entry in the dict.
+        # BaseException, re-raised: an interrupt during the load cleans
+        # up too.
+        if new_dir_handle is not None:
+            new_dir_handle.close()
+        raise
+    if new_dir_handle is not None:
+        _DLL_DIR_HANDLES[key] = new_dir_handle
+    return lib
 
 
 __all__ = [
