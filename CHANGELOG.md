@@ -22,6 +22,18 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   menu) started from the previous run's psi_p. `tr_set_metric` now sets the
   flag at the start of each `MODELG=9` preparation, and `tr_init` and
   `tr_finalize` restore it.
+- **TR library, `MODELG=9`: a failure of the initial q-scaling fails the
+  run** (`TR_ERR_CALC_FAILED` from `tr_run`, the cause on unit 6) instead of
+  being printed at most: a non-zero status from a step of `eq_calc` (which
+  has an optional `ierr` for this), from `tr_bpsd_get` or from
+  `tr_bpsd_put`, a scale factor that is zero or not finite, or no
+  agreement after 30 iterations. `tr_eq_init` stays set after a failure.
+  When the equilibrium solve fails, the scaling used to go on with what
+  was left: depending on the input the process ended at a run-time check
+  (in a build with them) or `tr_run` returned 0. `EQLOOP` running out of
+  `NLPMAX` is still accepted inside the scaling, as `EQCALC` goes on after
+  it, and a failure that `EQCALC` or `EQCALQ` do not return is still not
+  seen.
 
 ## TR Phase L — library-ization (2026-04-18)
 
