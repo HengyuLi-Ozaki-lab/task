@@ -18,6 +18,8 @@ extern "C" {
  *   - eq_run(1) : real EQDSK load via equnit::eq_load using the current
  *                 MODELG + KNAMEQ. eq_run(0) and other modes still
  *                 return EQ_ERR_NOT_IMPL pending L-4.
+ *   - eq_save   : writes the TASK/EQ binary file named by KNAMEQ (EQSAVE).
+ *                 Fails (see eq_save below) when no file was written.
  *
  * Memory note: every array in eq_state_t is fixed-size (max-capacity).
  * Valid runtime slots are 1..nrmax / 1..npsmax / 1..nrgmax / etc.;
@@ -158,6 +160,23 @@ typedef struct {
  * → run.
  */
 int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
+
+/* Write the equilibrium of the last eq_run to the TASK/EQ binary file
+   named by KNAMEQ (set it with eq_set_param_str first; KNAMEQ holds 80
+   characters and eq_set_param_str cuts a longer value).
+   EQ_ERR_NOT_INIT    before eq_init.
+   EQ_ERR_INVALID     nothing is touched: no successful eq_run since
+                      eq_init, since a later solve or load that failed, or
+                      since eq_set_param of anything but MODEFR and MODEFW; a
+                      blank KNAMEQ; MODEFW other than 0 (overwrite an
+                      existing file) or 3 (refuse one): with 1, 2 and 4 to
+                      7 FWOPEN can read unit 5.
+   EQ_ERR_CALC_FAILED the file could not be opened (a directory that is
+                      missing or not writable; MODEFW=3 and an existing
+                      file) or not written (an existing file without write
+                      permission), or no non-empty file exists afterwards.
+   EQ_OK              otherwise. */
+int eq_save(void);
 
 #ifdef __cplusplus
 }

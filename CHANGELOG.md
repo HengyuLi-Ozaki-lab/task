@@ -8,6 +8,29 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **EQ library: `eq_save`, `Eq.save(path)` and the `save` tool of `eq_mcp`**
+  write the equilibrium of the last `eq_run` to a TASK/EQ binary file through
+  `EQSAVE`, the file that `MODELG=3` with `KNAMEQ` loads. A save that wrote
+  nothing is an error, not `EQ_OK`. `EQSAVE` now has an argument, `IERR_OUT`:
+  `FWOPEN`'s failure (a directory that is missing or not writable, `MODEFW=3`
+  and an existing file), or 9 when the file was opened and could not be
+  written (an existing file without write permission, which used to end the
+  program at the first `WRITE`). `eq_save` returns `EQ_ERR_CALC_FAILED` for
+  those, and `EQ_ERR_INVALID`, touching no file, when the fields do not hold
+  the equilibrium of the present parameters (no successful `eq_run` yet, a
+  later solve or load that failed, or `eq_set_param` of anything but `MODEFR`
+  and `MODEFW` since), for a blank `KNAMEQ`, and for `MODEFW` other than 0 or
+  3 (with 1, 2 and 4 to 7 `FWOPEN` can read unit 5). The callers of `EQSAVE`
+  in the tree, the `S` command of the `eq` menu and `tr/f77/trfile.f` (which
+  no Makefile builds), pass the argument. In the same change, `eq_run(1)`
+  reports a load that failed: `EQ_READ` called `EQCALQ` after `EQDSKR` had
+  failed (`MODELG=5`, a missing file) and returned `EQCALQ`'s code, and left
+  `IERR` unassigned for a `MODELG` that is no file format; it now starts from
+  `IERR=0`, calls `EQCALQ` only after a successful `EQDSKR`, and returns 1 for
+  an unknown `MODELG`.
+
 ### Changed
 
 - **FP library: `fp_run` refuses `NRMAX` above `FP_MAX_NRMAX` (100).** Such a

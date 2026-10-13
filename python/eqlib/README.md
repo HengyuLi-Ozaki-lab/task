@@ -131,6 +131,26 @@ Profile arrays are sliced to the active runtime size (`[0:nrgmax]`,
 `[0:npsmax]`, etc.); the trailing zero-padding (up to `EQ_MAX_*`)
 is hidden from callers.
 
+### `Eq.save(path) -> None`
+
+Write the equilibrium of the last `run` to a TASK/EQ binary file
+(`EQSAVE`): sets `KNAMEQ` to `path` (a `str` or a `pathlib.Path`), then
+calls `eq_save`. The file is what `MODELG=3` with `KNAMEQ=path` loads, in
+EQ (`run(1)`) and in the modules that read an equilibrium file.
+
+A save that wrote nothing is an error:
+
+- `EqlibInvalidParamError`, and no file is touched: the fields do not
+  hold the equilibrium of the present parameters (no `run` since the
+  handle was opened, a later solve or load that failed, or `set_param` of anything
+  but `MODEFR` and `MODEFW` since the last one: run again first); a blank
+  path, one longer than the 80 bytes of `KNAMEQ` (refused, not cut), or
+  one that ends in a blank; `MODEFW` other than 0 (overwrite an existing
+  file) or 3 (refuse one): with 1, 2 and 4 to 7 `FWOPEN` can read unit 5.
+- `EqlibCalculationFailedError`: the file could not be opened (a
+  directory that is missing or not writable; `MODEFW=3` and an existing
+  file) or not written (an existing file without write permission).
+
 ### `Eq.close() -> None`
 
 Idempotent. The context manager calls this automatically on exit.

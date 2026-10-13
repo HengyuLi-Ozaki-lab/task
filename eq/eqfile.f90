@@ -21,7 +21,7 @@
 !
 !     ***** SAVE TASK/EQ DATA *****
 !
-      SUBROUTINE EQSAVE
+      SUBROUTINE EQSAVE(IERR_OUT)
 
       USE libfio
       USE plcomm
@@ -30,11 +30,29 @@
       USE eqcom2_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
 
+!     IERR_OUT: 0 when the file was opened and written; FWOPEN's IERR (1 to
+!     8) when it refused the file; 9 when the file was opened and its first
+!     record could not be written (#227 item 3). A caller cannot tell success
+!     from failure by looking for the file afterwards: a repeat save to a path
+!     that already holds a previous, non-empty file looks identical.
+      IERR_OUT=0
       CALL FWOPEN(21,KNAMEQ,0,MODEFW,'EQ',IERR)
-      IF(IERR.NE.0) RETURN
+      IF(IERR.NE.0) THEN
+         IERR_OUT=IERR
+         RETURN
+      ENDIF
 
       REWIND(21)
-      WRITE(21) RR,BB,RIP
+!     FWOPEN opens an existing file with STATUS='OLD' and no ACTION: a file
+!     without write permission is then opened for reading, FWOPEN returns 0,
+!     and it is this first WRITE that fails.
+      WRITE(21,IOSTAT=IST) RR,BB,RIP
+      IF(IST.NE.0) THEN
+         WRITE(6,*) 'XX EQSAVE: FILE CANNOT BE WRITTEN: IOSTAT = ',IST
+         CLOSE(21)
+         IERR_OUT=9
+         RETURN
+      ENDIF
       WRITE(21) NRGMAX,NZGMAX
       WRITE(21) (RG(NRG),NRG=1,NRGMAX)
       WRITE(21) (ZG(NZG),NZG=1,NZGMAX)
@@ -105,17 +123,21 @@
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
 
+      IERR=0
       IF(MODELG.EQ.3.OR.MODELG.EQ.9) THEN
          CALL EQRTSK(IERR)
       ELSEIF(MODELG.EQ.5) THEN
          CALL EQDSKR(IERR)
-         CALL EQCALQ(IERR)
+!        Keep EQDSKR's error: EQCALQ would reset IERR and report a
+!        failed load (e.g. a missing file) as success.
+         IF(IERR.EQ.0) CALL EQCALQ(IERR)
       ELSEIF(MODELG.EQ.8) THEN
          CALL EQJAEAR(IERR)
       ELSEIF(MODELG.EQ.15) THEN
          CALL EQDSK
       ELSE
          WRITE(6,*) 'XX EQLOAD: UNKNOWN MODELG: MODELG=',MODELG
+         IERR=1
       ENDIF
 
       RETURN

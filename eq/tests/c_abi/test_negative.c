@@ -61,6 +61,7 @@ int main(void) {
     EXPECT_EQ(eq_set_param_str("KNAMEQ", "x"),
                                         EQ_ERR_NOT_INIT, "set_param_str-before-init");
     EXPECT_EQ(eq_run(1),                EQ_ERR_NOT_INIT, "run-before-init");
+    EXPECT_EQ(eq_save(),                EQ_ERR_NOT_INIT, "save-before-init");
     /* eq_finalize is intentionally idempotent (returns EQ_OK when not
      * initialized) -- this matches the tr_api / fp_api / wr_api / etc.
      * convention so callers can wrap finalize in unconditional cleanup

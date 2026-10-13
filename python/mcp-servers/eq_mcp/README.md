@@ -24,7 +24,7 @@ pip install -e python/mcp-servers/eq_mcp
 
 ```bash
 python -m eq_mcp.server --help
-python -m eq_mcp.server --print-tools   # 11 tool names, sorted
+python -m eq_mcp.server --print-tools   # 12 tool names, sorted
 ```
 
 ## Use from Claude
@@ -57,6 +57,7 @@ Register in `claude_desktop_config.json` (or `claude mcp add task-eq …`):
 | `run`               | `eq_run(mode)`; `mode=1` real EQDSK load (default), `mode=0` analytic Grad-Shafranov solve (with `MODELG=2`) |
 | `get_state`         | grid counters, 12 scalars, profile arrays |
 | `validate`          | pre-run diagnostics (Issue #143) |
+| `save`              | write the equilibrium of the last `run` to a TASK/EQ binary file (`eq_save`); an error when no file was written |
 | `describe_parameters` / `describe_state_schema` | discovery / schema |
 | `run_and_get_state` | one-shot `init + set + run + get_state` |
 

@@ -26,6 +26,9 @@ wrx_mcp):
   exposing :py:meth:`eqlib.Eq.validate`. Returns a list of
   ``{param, code, message}`` dicts; an empty list means the current
   state will not trip any validator.
+* ``save`` — writes the equilibrium of the last ``run`` to a TASK/EQ
+  binary file through :py:meth:`eqlib.Eq.save`; an error when no file
+  was written.
 
 This mirrors the ``tr_mcp`` / ``wrx_mcp`` reference implementations
 as closely as possible; the main eq-specific additions are the
@@ -165,8 +168,8 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELG": {"type": "int", "group": "models", "description": "equilibrium/geometry selector (1..9; 3 = TASK/EQ binary load)"},
     "MODELQ": {"type": "int", "group": "models", "description": "q-profile model selector"},
     "IDEBUG": {"type": "int", "group": "models", "description": "debug-output level"},
-    "MODEFR": {"type": "int", "group": "models", "description": "frequency-space mode switch"},
-    "MODEFW": {"type": "int", "group": "models", "description": "wave-frequency mode switch"},
+    "MODEFR": {"type": "int", "group": "models", "description": "file-read mode of FROPEN: 0 reads the file named by KNAMEQ; 1 asks for a file name on unit 5 (not for a server)"},
+    "MODEFW": {"type": "int", "group": "models", "description": "file-write mode of FWOPEN, used by save: 0 overwrites an existing file, 3 refuses one; 1, 2 and 4 to 7 can read unit 5, and save takes 0 and 3 only"},
     "MDLEQF": {"type": "int", "group": "models", "description": "equilibrium-fixed-boundary model"},
     "MDLEQC": {"type": "int", "group": "models", "description": "equilibrium-constraint model"},
     "MDLEQA": {"type": "int", "group": "models", "description": "equilibrium-axisymmetry model"},
@@ -435,6 +438,15 @@ def handle_set_param_str(name: str, value: str) -> str:
         raise _wrap_eqlib_error(exc) from exc
 
 
+def handle_save(path: str) -> str:
+    try:
+        eq = STATE.ensure_open()
+        eq.save(path)
+        return f"saved equilibrium to {path}"
+    except Exception as exc:
+        raise _wrap_eqlib_error(exc) from exc
+
+
 def handle_set_params(params: Dict[str, SupportedValue]) -> str:
     if not isinstance(params, dict):
         raise ToolError(  # type: ignore[call-arg]
@@ -551,7 +563,7 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 11 eq tools."""
+    """Build and return a FastMCP server instance with the 12 eq tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -566,7 +578,9 @@ def build_server() -> Any:
             "/ `set_param_str` / `set_params`, optionally run "
             "`validate` to check the configuration, execute the "
             "equilibrium load with `run`, and read state with "
-            "`get_state`. Use `describe_parameters` to discover valid "
+            "`get_state`. `save` writes that equilibrium to a TASK/EQ "
+            "file for another module to load. Use `describe_parameters` "
+            "to discover valid "
             "parameter names. `run_and_get_state` is a convenience "
             "one-shot wrapper. EQ-specific note: PSIB is 0-origin "
             "(PSIB[0]..PSIB[5]); all other 1D arrays are 1-origin."
@@ -603,6 +617,28 @@ def build_server() -> Any:
         KNAMFO, KNAMPF`` (CHARACTER(LEN=80) on the Fortran side).
         """
         return handle_set_param_str(name, value)
+
+    @mcp.tool()
+    def save(path: str) -> str:
+        """Save the equilibrium of the last ``run`` to a TASK/EQ binary file.
+
+        ``path`` is set as KNAMEQ before eq_save is called; the file is
+        what ``set_param_str("KNAMEQ", path)`` plus ``MODELG=3`` loads in
+        tr_mcp and the other modules. Relative paths are resolved against
+        the server's working directory, and ``path`` is limited to the 80
+        bytes of KNAMEQ.
+
+        Success means that this call wrote a non-empty file at ``path``.
+        "invalid parameter": no successful ``run`` since ``init``, since
+        a solve or load that failed, or since ``set_param`` of anything
+        but the two file modes (run again first); a blank or over-long
+        path; or ``MODEFW`` other than 0
+        (overwrite) or 3 (refuse an existing file). "calculation failed":
+        the file could not be opened or
+        written (a missing or unwritable directory, an existing file that
+        is read-only, ``MODEFW=3`` and an existing file).
+        """
+        return handle_save(path)
 
     @mcp.tool()
     def set_params(params: Dict[str, Any]) -> str:
@@ -730,6 +766,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "init",
                 "set_param",
                 "set_param_str",
+                "save",
                 "set_params",
                 "run",
                 "get_state",
