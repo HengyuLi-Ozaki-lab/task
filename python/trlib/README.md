@@ -187,6 +187,26 @@ cross-section equals `EXTERNAL_DRIVEN_I [MA]` exactly.
 `EXTERNAL_DRIVEN_I != 0` together with `EXTERNAL_DRIVEN_RW <= 0`
 (which would silently no-op in trprf otherwise).
 
+## Species profiles must be evolvable (`run` refuses, `validate` reports)
+
+Outside the UFILE modes (`MDLUF` not in 1/2/3, i.e. every fixture in the
+repo) the density and temperature of every active species `1..NSMAX` come
+from the namelist pairs `PN/PNS` and `PT/PTS`. A species whose density is
+identically zero (`PN=PNS=0`, the `tr_init` default for species 3 and 4)
+or negative, or whose temperature is non-positive at the centre or the
+edge, makes the transport step divide by zero and every scalar NaN after
+one step (#189); non-finite values do the same. `run()` therefore raises
+`TrlibParamError` before `tr_prep` (one `XX tr_run: PN[3]: ...` line on
+stdout per finding) and `validate()` returns the same findings as
+diagnostics named `PN[ns]` / `PT[ns]` / `PTS[ns]` (`OUT_OF_RANGE_AFTER_DEP`
+for the zero-density case, `OUT_OF_RANGE` otherwise). `run()` also
+refuses `NSMAX` above the compile-time `NSM` (4), which `validate()`
+already reported. Raising `NSMAX` above a fixture's species count
+therefore needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the new
+species; `PN[ns]=0` with `PNS[ns]>0` is allowed. In the UFILE modes
+`MDLUF=1/2/3` the species that `tr_prof` still takes from the namelist
+are not checked yet (follow-up issue).
+
 ## BPSD ブローカー pull 検証 (`Trlib.check_bpsd_pull`)
 
 `Trlib.check_bpsd_pull()` は L-7b-ii で追加した非破壊ヘルパで、tr 側
