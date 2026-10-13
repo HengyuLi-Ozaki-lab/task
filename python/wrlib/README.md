@@ -29,12 +29,31 @@ No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
 
 ## Installation
 
-Build the shared library once:
+Per-system files first (all gitignored; once per checkout):
+
+```bash
+cd /path/to/task
+cp make.header.org make.header            # edit compiler / flags for your system
+cp mtxp/make.mtxp.nompi mtxp/make.mtxp    # or another mtxp/make.mtxp.* template
+git clone --branch develop https://github.com/k-yoshimi/bpsd.git ../bpsd   # patched fork, see docs/external-patches/bpsd-fork.md
+make -C ../bpsd libbpsd.a                 # populates ../bpsd/mod/*.mod, which pl's PIC build reads
+```
+
+The TASK checkout must be named `task`: `../bpsd/Makefile` includes
+`../task/make.header`.
+
+Then build the shared library once:
 
 ```bash
 cd /path/to/task
 make -C wr libwrapi.so
 ```
+
+The target builds the dependent PIC archives (`../lib`, `../mtxp`, `../pl`, `../eq`, `../dp`) and the in-tree
+PIC copy of bpsd (`make -C wr bpsd_pic`) in dependency order before
+compiling the wr objects, so this one command works from a clean
+tree (#230). Build serially: `make -jN` is not supported by the
+per-directory Makefiles (no intra-directory object dependencies).
 
 This produces `wr/libwrapi.so` with 5 exported symbols (`wr_init`,
 `wr_run`, `wr_set_param`, `wr_get_state`, `wr_finalize`) plus PIC

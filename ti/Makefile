@@ -61,7 +61,7 @@ libti.a: $(OBJS)
 	$(LD) $(LDFLAGS) $@ $(OBJS)
 
 ../../bpsd/libbpsd.a:
-	(cd ../../bpsd; make libbpsd.a)
+	(cd ../../bpsd; $(MAKE) libbpsd.a)
 ../lib/libtask.a:
 	(cd ../lib; make libtask.a)
 ../lib/libgrf.a:
@@ -319,24 +319,71 @@ LIBS_PIC=../eq/libeq_pic.a ../pl/libpl_pic.a \
 LIBMTX_PIC=../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o
 
 # Build dependent PIC libs on demand (matches the libXX.a recipes above).
+#
+# pl and eq are built in two phases (pl/Makefile: libpl_noeq_pic, then
+# libpl_pic.a) because the non-PIC archives are cyclic at link time (eq
+# USE pl via plinit); pl's eq-phase sources (plprof*) USE no eq module,
+# so the pl -> eq edge below is order-only. Sequence: plnoeq -> eq_pic
+# -> pl_pic.
 ../eq/libeq_pic.a:
-	(cd ../eq; make libeq_pic.a)
-../pl/libpl_pic.a:
-	(cd ../pl; make libpl_noeq_pic)
-	(cd ../eq; make libeq_pic.a)
-	(cd ../pl; make libpl_pic.a)
+	(cd ../pl; $(MAKE) libpl_noeq_pic)
+	(cd ../eq; $(MAKE) libeq_pic.a)
+../pl/libpl_pic.a: | ../eq/libeq_pic.a
+	(cd ../pl; $(MAKE) libpl_pic.a)
 ../lib/libmds_pic.a:
-	(cd ../lib; make libmds_pic.a)
+	(cd ../lib; $(MAKE) libmds_pic.a)
 ../lib/libtask_pic.a:
-	(cd ../lib; make libtask_pic.a)
+	(cd ../lib; $(MAKE) libtask_pic.a)
+# libgrf_pic.a is a compile-time prerequisite only: pl/plload.f90 USEs
+# libgrf, so its .mod must be in ../lib/mod_pic; the archive is not
+# linked into libtiapi.so.
+../lib/libgrf_pic.a:
+	(cd ../lib; $(MAKE) libgrf_pic.a)
 ../mtxp/libmtxnompi_pic.o:
-	(cd ../mtxp; make libmtxnompi_pic.o)
+	(cd ../mtxp; $(MAKE) libmtxnompi_pic.o)
 ../mtxp/libmtxbnd_pic.o:
-	(cd ../mtxp; make libmtxbnd_pic.o)
+	(cd ../mtxp; $(MAKE) libmtxbnd_pic.o)
 ../adpost/lib-adpost_pic.a:
-	(cd ../adpost; make lib-adpost_pic.a)
+	(cd ../adpost; $(MAKE) lib-adpost_pic.a)
 ../open-adas/adf11/adf11-lib/lib-adf11_pic.a:
-	(cd ../open-adas/adf11/adf11-lib; make lib-adf11_pic.a)
+	(cd ../open-adas/adf11/adf11-lib; $(MAKE) lib-adf11_pic.a)
+
+# Serialize the sibling chain top-down (lib -> mtxp -> bpsd -> pl -> eq).
+# NOTE: `make -jN` is still unsupported — the leaf Makefiles (lib, mtxp,
+# this module's PIC objects) carry no intra-directory .o dependencies,
+# so parallel builds fail on missing .mod files. Build serially.
+../lib/libgrf_pic.a: ../lib/libtask_pic.a
+../mtxp/libmtxnompi_pic.o: ../lib/libtask_pic.a
+../mtxp/libmtxbnd_pic.o: ../mtxp/libmtxnompi_pic.o
+
+# Order-only prerequisites (#230): every ti PIC object USEs modules from
+# bpsd / lib / mtxp / pl / eq (and the adf11 / adpost readers), so those
+# .mod files must exist before any $(OBJDIR_PIC)/*.o compiles. Same
+# pattern as wr / wrx / eq; `|` makes these ORDER-ONLY.
+.PHONY: libs_pic_prereq
+libs_pic_prereq: ../../bpsd/libbpsd.a \
+                 ../lib/libtask_pic.a ../lib/libgrf_pic.a ../lib/libmds_pic.a \
+                 ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o \
+                 $(OBJBPSD_PIC) ../pl/libpl_pic.a ../eq/libeq_pic.a \
+                 ../open-adas/adf11/adf11-lib/lib-adf11_pic.a \
+                 ../adpost/lib-adpost_pic.a
+
+# pl's PIC build reads ../../bpsd/mod/*.mod (populated by the sibling's
+# static `make libbpsd.a`) plus lib / mtxp .mod files; eq needs pl.
+# Order-only upstream edges so the chain is explicit regardless of the
+# order make visits the prerequisite list.
+../eq/libeq_pic.a: | ../../bpsd/libbpsd.a ../lib/libtask_pic.a \
+                     ../lib/libgrf_pic.a ../lib/libmds_pic.a \
+                     ../mtxp/libmtxbnd_pic.o
+# adf11 USEs libfio / libgrf / libbnd (lib) and mtxp; adpost USEs bpsd
+# (../../bpsd/mod) and lib.
+../open-adas/adf11/adf11-lib/lib-adf11_pic.a: | ../lib/libtask_pic.a \
+                     ../lib/libgrf_pic.a ../mtxp/libmtxbnd_pic.o
+../adpost/lib-adpost_pic.a: | ../../bpsd/libbpsd.a ../lib/libtask_pic.a \
+                     ../mtxp/libmtxbnd_pic.o
+
+$(OBJBPSD_PIC): | ../lib/libtask_pic.a
+$(OBJ_LIBTIAPI): | libs_pic_prereq
 
 # The shared library itself. gfortran drives the link so libgfortran is
 # pulled in automatically. --start-group/--end-group resolves any cyclic

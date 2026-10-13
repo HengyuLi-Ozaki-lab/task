@@ -186,11 +186,14 @@ jobs:
         # chain (lib_pic -> mtxp_pic -> pl_pic -> eq_pic -> dp_pic /
         # ob_pic -> module .so).
         #
-        # We invoke `bpsd_pic` BEFORE the .so target on each module
-        # because individual objects like obj/pic/trcom0.o use
-        # bpsd_kinds.mod but don't explicitly depend on it; without an
-        # explicit prior bpsd_pic step, sequential make fails with
-        # "Cannot open module file 'bpsd_kinds.mod'".
+        # The explicit `bpsd_pic` step before each .so target used to be
+        # required: individual objects like obj/pic/trcom0.o use
+        # bpsd_kinds.mod but did not depend on it, so sequential make
+        # failed with "Cannot open module file 'bpsd_kinds.mod'". Since
+        # #230 every module Makefile orders bpsd_pic and the sibling PIC
+        # libs before its own objects (order-only prerequisites), so the
+        # README one-liner works from a clean tree; the step is kept here
+        # so the bpsd rebuild shows up as its own line in the log.
         #
         # IMPORTANT: tot MUST come last in this loop. tot/Makefile:378
         # links libtotapi.so against ../eq/libeqapi.so + ../tr/libtrapi.so

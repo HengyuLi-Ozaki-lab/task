@@ -32,12 +32,31 @@ runtime if present.
 
 ## Installation
 
-Build the shared library once:
+Per-system files first (all gitignored; once per checkout):
+
+```bash
+cd /path/to/task
+cp make.header.org make.header            # edit compiler / flags for your system
+cp mtxp/make.mtxp.nompi mtxp/make.mtxp    # or another mtxp/make.mtxp.* template
+git clone --branch develop https://github.com/k-yoshimi/bpsd.git ../bpsd   # patched fork, see docs/external-patches/bpsd-fork.md
+make -C ../bpsd libbpsd.a                 # populates ../bpsd/mod/*.mod, which pl's PIC build reads
+```
+
+The TASK checkout must be named `task`: `../bpsd/Makefile` includes
+`../task/make.header`.
+
+Then build the shared library once:
 
 ```bash
 cd /path/to/task
 make -C eq libeqapi.so
 ```
+
+The target builds the dependent PIC archives (`../lib`, `../mtxp`, `../pl`) and the in-tree
+PIC copy of bpsd (`make -C eq bpsd_pic`) in dependency order before
+compiling the eq objects, so this one command works from a clean
+tree (#230). Build serially: `make -jN` is not supported by the
+per-directory Makefiles (no intra-directory object dependencies).
 
 This produces `eq/libeqapi.so` together with PIC variants of the
 dependent libraries (`lib*_pic.a`). The pre-existing non-PIC `*.a`
