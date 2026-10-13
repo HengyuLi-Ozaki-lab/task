@@ -256,15 +256,24 @@ class TestSubprocess(unittest.TestCase):
         self.assertIn("subTest(n=1) failed", res.stdout)
 
     def test_signal_timeout_propagates_after_subtest_failure(self):
-        # Not under --forked: pytest-timeout's signal method arms SIGALRM in
-        # the parent, which a forked child does not inherit, so the parent
-        # would abort the session (INTERNALERROR) instead of failing the test.
-        # That is a pre-existing pytest-timeout/pytest-forked interaction,
-        # independent of this override.
         res = _run_child(
             _TIMEOUT_AFTER_FAILURE, "-p", "pytest_timeout",
             "--timeout=2", "--timeout-method=signal", forked=False,
         )
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("1 failed", res.stdout)
+        self.assertIn("Timeout", res.stdout)
+
+    def test_signal_timeout_propagates_after_subtest_failure_forked(self):
+        # Under --forked the timer has to be armed in the child
+        # (_forked_timeout, #247); with it the hung test is reported as a
+        # failure (the Timeout wins over the recorded subTest failure, as
+        # in the non-forked case above) instead of an INTERNALERROR.
+        res = _run_child(
+            _TIMEOUT_AFTER_FAILURE, "-p", "pytest_timeout", "-p", "_forked_timeout",
+            "--timeout=2", "--timeout-method=signal",
+        )
+        self.assertNotIn("INTERNALERROR", res.stdout + res.stderr)
         self.assertNotEqual(res.returncode, 0)
         self.assertIn("1 failed", res.stdout)
         self.assertIn("Timeout", res.stdout)
