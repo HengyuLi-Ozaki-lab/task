@@ -110,10 +110,24 @@ violation on unit 6, for a count the solver cannot run with:
 An array bound passed is an abort when the library is built with run-time
 checks and undefined behaviour without them. The reason for a refusal is on
 unit 6 only: `fp_run` returns the one code. The handle stays usable: correct
-the count and call `fp_run` again. Until that run is made do not call
-`fp_get_state`, as after any `fp_set_param`: it reads the arrays of the last
-run with the counts now set, past their end when a count was raised (and
-returns rc=3 while `NRMAX` is above `FP_MAX_NRMAX`).
+the count and call `fp_run` again. Until that run is made, as after any
+`fp_set_param` that changes `NRMAX` or `NSAMAX`, the arrays of the last run
+keep their old extents: `fp_get_state` copies, along each axis, the lesser
+of the current count and the allocated extent, and reports the extents it
+copied in `nrmax` / `nsamax`, so the `[nsamax][nrmax]` slice is always data
+that exists (#245). A lowered count truncates the snapshot to its leading
+slice at once; a raised count stays capped at the old allocation until the
+next `fp_run`. Either way the profiles are still those of the last run's
+mesh and species, so run before reading them as the new configuration. The
+C ABI has no parameter getter, so a raised `NRMAX` / `NSAMAX` is not
+observable through `fp_get_state` while its reported extents stay capped.
+`fp_get_state` still returns rc=3 while `NRMAX` is above `FP_MAX_NRMAX`.
+Before the first run in a process (nothing allocated) it returns the
+namelist counts with zero profiles. The arrays are per process, not per
+handle (`fp_finalize` keeps them, `fp_init` resets the counts to 1), so a
+second handle in the same process that reads before its own first run gets
+the previous handle's data truncated to its own counts (a 1 x 1 slice after
+`fp_init`), not zeros.
 
 Not checked: a mesh too large for memory, or whose `NRMAX * NPMAX * NTHMAX`
 passes a default integer (`NPMAX` and `NTHMAX` have no upper bound); `NPMAX`
