@@ -124,18 +124,21 @@ class TestTrlibBoundaryValues(unittest.TestCase):
 
     # --- sweeps -----------------------------------------------------------
     @pytest.mark.xfail(
-        # CLAUDE.md narrow exception: failure is environment-dependent
-        # (CI passes, local libtrapi.so build fails on NSMAX=3,4 with
-        # WPT=NaN). strict=True would XPASS-fail CI; strict=False
-        # tolerates both outcomes. Removal trigger: grep
-        # XFAIL_REMOVE_WITH_#189 in this file when #189 lands.
-        strict=False,
+        # The earlier "CI passes, local fails -> environment-dependent,
+        # strict=False" reading was wrong: CI "passed" only because
+        # pytest-forked dropped the failing NSMAX=3,4 subTest reports
+        # (#241). With the strict subTest override
+        # (python/_strict_subtest.py) the NaN failure is visible under
+        # --forked as well; it is deterministic, so strict=True per
+        # CLAUDE.md (an XPASS on CI would be new information for #189).
+        # Removal trigger: grep XFAIL_REMOVE_WITH_#189 in this file when
+        # #189 lands.
+        strict=True,
         reason=(
             "#189: tst2 equilibrium import copies RNU/RTU(...,3..NSMAX) "
             "into RN/RT, but eqdata.TST-2 was built for NSMAX=2 so "
             "species 3+ are NaN; NaN propagates to WPT/BETA*/TAUE*. "
-            "Fix lands in a separate PR; environment-dependent failure "
-            "so strict=False per CLAUDE.md narrow exception."
+            "Fix lands in a separate PR."
         ),
     )
     def test_NSMAX_in_range(self):
