@@ -29,12 +29,31 @@ No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
 
 ## Installation
 
-Build the shared library once:
+Per-system files first (all gitignored; once per checkout):
+
+```bash
+cd /path/to/task
+cp make.header.org make.header            # edit compiler / flags for your system
+cp mtxp/make.mtxp.nompi mtxp/make.mtxp    # or another mtxp/make.mtxp.* template
+git clone --branch develop https://github.com/k-yoshimi/bpsd.git ../bpsd   # patched fork, see docs/external-patches/bpsd-fork.md
+make -C ../bpsd libbpsd.a                 # populates ../bpsd/mod/*.mod, which pl's PIC build reads
+```
+
+The TASK checkout must be named `task`: `../bpsd/Makefile` includes
+`../task/make.header`.
+
+Then build the shared library once:
 
 ```bash
 cd /path/to/task
 make -C tr libtrapi.so
 ```
+
+The target builds the dependent PIC archives (`../lib`, `../mtxp`, `../pl`, `../eq`) and the in-tree
+PIC copy of bpsd (`make -C tr bpsd_pic`) in dependency order before
+compiling the tr objects, so this one command works from a clean
+tree (#230). Build serially: `make -jN` is not supported by the
+per-directory Makefiles (no intra-directory object dependencies).
 
 This produces `tr/libtrapi.so` with 5 exported symbols (`tr_init`,
 `tr_run`, `tr_set_param`, `tr_get_state`, `tr_finalize`) plus PIC
@@ -167,6 +186,26 @@ cross-section equals `EXTERNAL_DRIVEN_I [MA]` exactly.
 `tr.validate()` returns an `OUT_OF_RANGE` diagnostic if you set
 `EXTERNAL_DRIVEN_I != 0` together with `EXTERNAL_DRIVEN_RW <= 0`
 (which would silently no-op in trprf otherwise).
+
+## Species profiles must be evolvable (`run` refuses, `validate` reports)
+
+Outside the UFILE modes (`MDLUF` not in 1/2/3, i.e. every fixture in the
+repo) the density and temperature of every active species `1..NSMAX` come
+from the namelist pairs `PN/PNS` and `PT/PTS`. A species whose density is
+identically zero (`PN=PNS=0`, the `tr_init` default for species 3 and 4)
+or negative, or whose temperature is non-positive at the centre or the
+edge, makes the transport step divide by zero and every scalar NaN after
+one step (#189); non-finite values do the same. `run()` therefore raises
+`TrlibParamError` before `tr_prep` (one `XX tr_run: PN[3]: ...` line on
+stdout per finding) and `validate()` returns the same findings as
+diagnostics named `PN[ns]` / `PT[ns]` / `PTS[ns]` (`OUT_OF_RANGE_AFTER_DEP`
+for the zero-density case, `OUT_OF_RANGE` otherwise). `run()` also
+refuses `NSMAX` above the compile-time `NSM` (4), which `validate()`
+already reported. Raising `NSMAX` above a fixture's species count
+therefore needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the new
+species; `PN[ns]=0` with `PNS[ns]>0` is allowed. In the UFILE modes
+`MDLUF=1/2/3` the species that `tr_prof` still takes from the namelist
+are not checked yet (follow-up issue).
 
 ## BPSD ブローカー pull 検証 (`Trlib.check_bpsd_pull`)
 

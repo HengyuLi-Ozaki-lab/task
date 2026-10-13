@@ -7,8 +7,8 @@
 
 | フィールド | 意味 |
 |---|---|
-| `state.nrmax`  | 半径メッシュ点数 |
-| `state.nsamax` | active species 数 (分布関数を解いた粒子種) |
+| `state.nrmax`  | プロファイル配列の半径メッシュ点数 (run で配列が確保された後は、現在の `NRMAX` とその確保サイズの小さい方。`NRMAX` を上げた場合は次の run から反映。最初の run の前は `NRMAX` そのもので、プロファイルは 0) |
+| `state.nsamax` | プロファイル配列の active species 数 (分布関数を解いた粒子種。同じく現在の `NSAMAX` と確保サイズの小さい方) |
 | `state.npmax`  | 運動量メッシュ点数 |
 | `state.nthmax` | ピッチ角メッシュ点数 |
 | `state.ntg2`   | 長時間軸カウンタ |

@@ -39,6 +39,7 @@ MODULE fp_param_registry
   PRIVATE
   PUBLIC :: fp_param_set
   PUBLIC :: fp_param_set_str
+  PUBLIC :: fp_param_check
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
 CONTAINS
@@ -156,6 +157,88 @@ CONTAINS
        ierr = 1   ! unknown name
     END SELECT
   END FUNCTION fp_param_set
+
+  !-------------------------------------------------------------------
+  ! fp_param_check : the counts a run cannot be made with, checked
+  ! together before the run (issue #143) instead of being met deep in
+  ! the solver as an array index out of bounds (an abort when the
+  ! library is built with run-time checks, undefined without them), a
+  ! process that ends, or a step that never ends (issue #142). Returns
+  ! 0, or 1 after writing one line per violation to unit 6.
+  !
+  !   NRMAX          1 .. max_nrmax. Below 1 fp_mesh runs past an array
+  !                  bound. max_nrmax is the caller's limit: fp_api
+  !                  passes the surfaces its state layout holds
+  !                  (fp/fp_state.f90), beyond which a run is made and
+  !                  fp_get_state cannot return it.
+  !   NPMAX, NTHMAX  2 or more: with fewer cells the solver runs past
+  !                  an array bound.
+  !   LMAXFP         0 .. HUGE-1. Below 0 no pass is made, and fp_loop
+  !                  then tests an error flag that no pass has set (on
+  !                  the build measured, mtx_abort ends the process).
+  !                  At HUGE the iteration's exit at convergence,
+  !                  N_IMPL = 1 + LMAXFP (fp/fploop.f90), overflows and
+  !                  the step never ends.
+  !   NSAMAX         at most NSBMAX: the collision arrays are sized by
+  !                  NSBMAX in both species directions (fp/fpcomm.f90).
+  !   NS_NSA(1..NSAMAX)  1 .. MIN(NSMAX, NSBMAX): a species has
+  !                  profiles up to NSMAX, and its distribution is
+  !                  copied into the background array at its species
+  !                  number (fp/fpmpi.f90).
+  !   NS_NSB(1..NSBMAX)  1 .. NSMAX.
+  !
+  ! A 0 in either map stands for the slot's own number, which
+  ! fp_set_nsa_nsb substitutes when the run is prepared (fp/fpprep.f90).
+  !-------------------------------------------------------------------
+  FUNCTION fp_param_check(max_nrmax) RESULT(ierr)
+    INTEGER, INTENT(IN) :: max_nrmax
+    INTEGER :: ierr
+    INTEGER :: i, ns
+
+    ierr = 0
+    IF (NRMAX < 1 .OR. NRMAX > max_nrmax) THEN
+       WRITE(6,'(A,I0,A,I0)') 'XX fp_run: NRMAX = ', NRMAX, &
+            ' is outside 1 to ', max_nrmax
+       ierr = 1
+    END IF
+    IF (NPMAX < 2) THEN
+       WRITE(6,'(A,I0,A)') 'XX fp_run: NPMAX = ', NPMAX, ' is below 2'
+       ierr = 1
+    END IF
+    IF (NTHMAX < 2) THEN
+       WRITE(6,'(A,I0,A)') 'XX fp_run: NTHMAX = ', NTHMAX, ' is below 2'
+       ierr = 1
+    END IF
+    IF (LMAXFP < 0 .OR. LMAXFP >= HUGE(LMAXFP)) THEN
+       WRITE(6,'(A,I0,A,I0)') 'XX fp_run: LMAXFP = ', LMAXFP, &
+            ' is outside 0 to ', HUGE(LMAXFP) - 1
+       ierr = 1
+    END IF
+    IF (NSAMAX > NSBMAX) THEN
+       WRITE(6,'(A,I0,A,I0)') 'XX fp_run: NSAMAX = ', NSAMAX, &
+            ' is above NSBMAX = ', NSBMAX
+       ierr = 1
+    END IF
+    DO i = 1, MIN(NSAMAX, SIZE(NS_NSA))
+       ns = NS_NSA(i)
+       IF (ns == 0) ns = i
+       IF (ns < 1 .OR. ns > MIN(NSMAX, NSBMAX)) THEN
+          WRITE(6,'(A,I0,A,I0,A,I0)') 'XX fp_run: NS_NSA(', i, ') = ', ns, &
+               ' is outside 1 to MIN(NSMAX, NSBMAX) = ', MIN(NSMAX, NSBMAX)
+          ierr = 1
+       END IF
+    END DO
+    DO i = 1, MIN(NSBMAX, SIZE(NS_NSB))
+       ns = NS_NSB(i)
+       IF (ns == 0) ns = i
+       IF (ns < 1 .OR. ns > NSMAX) THEN
+          WRITE(6,'(A,I0,A,I0,A,I0)') 'XX fp_run: NS_NSB(', i, ') = ', ns, &
+               ' is outside 1 to NSMAX = ', NSMAX
+          ierr = 1
+       END IF
+    END DO
+    IF (ierr /= 0) FLUSH(6)
+  END FUNCTION fp_param_check
 
   !-------------------------------------------------------------------
   ! fp_param_set_str : string-valued parameter setter.
