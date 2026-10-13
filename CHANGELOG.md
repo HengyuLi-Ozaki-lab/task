@@ -28,6 +28,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   overflows and a step never ends); `NSAMAX` above `NSBMAX`; an evolved
   species number outside 1 to `MIN(NSMAX, NSBMAX)`; a background species
   number outside 1 to `NSMAX`.
+- **MCP servers `eq_mcp`, `tr_mcp`, `tot_mcp`: Fortran output no longer
+  reaches the JSON-RPC pipe.** A stdio server's fd 1 is the pipe to its
+  client, and the library's `WRITE(6,...)` went into it: in one stdio
+  session (`initialize`, `init`, `run`) 9 of the 12 stdout lines of
+  `tr_mcp` and of `tot_mcp` were not JSON-RPC, and 2 of 5 of `eq_mcp` with
+  `run(mode=1)`. `main()` now calls `_install_fd_isolation()` immediately
+  before the stdio server starts: fd 1 is redirected to stderr and
+  `sys.stdout` keeps the pipe. Importing a server module leaves fd 1 and
+  `sys.stdout` of the importing process alone (#227 item 1); `--help` and
+  `--print-tools` print to the terminal as before.
 
 ## TR Phase L — library-ization (2026-04-18)
 
