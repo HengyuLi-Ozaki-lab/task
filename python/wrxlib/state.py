@@ -168,7 +168,24 @@ class WrxState:
         upper-case dimension header. We emit that shape so
         ``compare_metrics.py`` can diff Layer-1 output against the
         baseline at 1e-10 without further transformation.
+
+        Row orientation of ``arrays2`` follows the baseline writer
+        (``wrx/wrxregress.f90``), i.e. the Fortran index order in the
+        name: ``*_nsa_nray`` rows are species (``[nsamax][nraymax]``),
+        ``pwr_nrs_nsa`` / ``pwr_nrl_nsa`` rows are radial bins
+        (``[nrsmax][nsamax]`` / ``[nrlmax][nsamax]``). The dataclass
+        attributes keep the C struct layout (``pwr_nsa_nray[nray][nsa]``),
+        so the ``*_nsa_nray`` fields are transposed here (#239).
         """
+        nsa = self.nsamax
+
+        def _species_major(rows_by_ray: List[List[float]]) -> List[List[float]]:
+            # [nray][nsa] -> [nsa][nray]. With no rays the writer still
+            # emits one (empty) row per species, so keep that shape.
+            if not rows_by_ray:
+                return [[] for _ in range(nsa)]
+            return [list(col) for col in zip(*rows_by_ray)]
+
         return {
             "MDLWRQ": self.mdlwrq,
             "MODELG": self.modelg,
@@ -186,13 +203,13 @@ class WrxState:
                 "pwr_nsa": list(self.pwr_nsa),
             },
             "arrays2": {
-                "pos_pwrmax_rl_nsa_nray": [list(r) for r in self.pos_pwrmax_rl_nsa_nray],
-                "pos_pwrmax_rs_nsa_nray": [list(r) for r in self.pos_pwrmax_rs_nsa_nray],
+                "pos_pwrmax_rl_nsa_nray": _species_major(self.pos_pwrmax_rl_nsa_nray),
+                "pos_pwrmax_rs_nsa_nray": _species_major(self.pos_pwrmax_rs_nsa_nray),
                 "pwr_nrl_nsa": [list(r) for r in self.pwr_nrl_nsa],
                 "pwr_nrs_nsa": [list(r) for r in self.pwr_nrs_nsa],
-                "pwr_nsa_nray": [list(r) for r in self.pwr_nsa_nray],
-                "pwrmax_rl_nsa_nray": [list(r) for r in self.pwrmax_rl_nsa_nray],
-                "pwrmax_rs_nsa_nray": [list(r) for r in self.pwrmax_rs_nsa_nray],
+                "pwr_nsa_nray": _species_major(self.pwr_nsa_nray),
+                "pwrmax_rl_nsa_nray": _species_major(self.pwrmax_rl_nsa_nray),
+                "pwrmax_rs_nsa_nray": _species_major(self.pwrmax_rs_nsa_nray),
             },
             "scalars": dict(self.scalars),
         }
