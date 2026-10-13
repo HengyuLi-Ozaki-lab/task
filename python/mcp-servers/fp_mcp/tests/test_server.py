@@ -113,8 +113,10 @@ class TestStateSchema(unittest.TestCase):
         """The schema must document every field fplib actually emits."""
         from fplib.state import SCALAR_FIELDS
 
-        props = srv.STATE_SCHEMA["properties"]["scalars"]["properties"]
-        self.assertEqual(sorted(props), sorted(SCALAR_FIELDS))
+        scalars = srv.STATE_SCHEMA["properties"]["scalars"]
+        self.assertEqual(sorted(scalars["properties"]), sorted(SCALAR_FIELDS))
+        # get_state always emits all seven: the schema says so.
+        self.assertEqual(scalars["required"], list(SCALAR_FIELDS))
 
     def test_describe_state_schema_tool(self) -> None:
         out = srv.handle_describe_state_schema()

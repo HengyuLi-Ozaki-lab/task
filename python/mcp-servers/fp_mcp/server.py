@@ -84,6 +84,7 @@ from fplib import (  # noqa: E402
     FplibCalcFailedError,
     FplibNotImplementedError,
 )
+from fplib.state import SCALAR_FIELDS  # noqa: E402
 
 
 # =====================================================================
@@ -210,6 +211,7 @@ STATE_SCHEMA: Dict[str, Any] = {
                 "ABSORPTION_WM":    {"type": "number", "description": "full-wave (WM) share of the absorbed power [MW]"},
                 "PLASMA_VOLUME":    {"type": "number", "description": "plasma volume TVOLR [m^3]"},
             },
+            "required": list(SCALAR_FIELDS),
             "additionalProperties": {"type": "number"},
         },
         "profile": {
