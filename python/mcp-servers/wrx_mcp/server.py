@@ -179,65 +179,77 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
 STATE_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "title": "WrxState (wire format of wrxlib.state.WrxState.to_dict())",
+    "description": (
+        "The Phase-0 baseline layout (test_run/baselines/wrx_*/metrics.json): "
+        "an upper-case dimension header plus three groups. 'arrays' holds "
+        "1-D lists, 'arrays2' holds matrices as lists of rows. Row "
+        "orientation in 'arrays2' follows the Fortran index order in the "
+        "name (wrx/wrxregress.f90): *_nsa_nray is [NSAMAX_WR][NRAYMAX] "
+        "(rows = species), pwr_nrs_nsa / pwr_nrl_nsa are [NRSMAX][NSAMAX_WR] "
+        "/ [NRLMAX][NSAMAX_WR] (rows = radial bin)."
+    ),
     "properties": {
-        "NRAYMAX": {"type": "integer", "description": "number of rays actually used"},
-        "NSTPMAX": {"type": "integer", "description": "max ray steps used"},
-        "NSAMAX":  {"type": "integer", "description": "number of species in use (for per-species power)"},
-        "NSMAX":   {"type": "integer", "description": "NSMAX (plasma species count)"},
-        "MODELG":  {"type": "integer", "description": "MODELG equilibrium model switch"},
-        "MDLWRQ":  {"type": "integer", "description": "MDLWRQ power-deposition switch"},
+        "NRAYMAX":   {"type": "integer", "description": "number of rays actually used"},
+        "NSTPMAX":   {"type": "integer", "description": "max ray steps used"},
+        "NSAMAX_WR": {"type": "integer", "description": "number of species in use (for per-species power)"},
+        "NSMAX":     {"type": "integer", "description": "NSMAX (plasma species count)"},
+        "NRSMAX":    {"type": "integer", "description": "number of minor-radius (rs) deposition bins"},
+        "NRLMAX":    {"type": "integer", "description": "number of major-radius (rl) deposition bins"},
+        "MODELG":    {"type": "integer", "description": "MODELG equilibrium model switch"},
+        "MDLWRQ":    {"type": "integer", "description": "MDLWRQ power-deposition switch"},
         "scalars": {
             "type": "object",
             "description": "global scalars; currently {'pwr_tot': total absorbed power}",
+            "properties": {"pwr_tot": {"type": "number", "description": "total absorbed power"}},
+            "required": ["pwr_tot"],
             "additionalProperties": {"type": "number"},
         },
-        "rays": {
-            "type": "array",
-            "description": "per-ray info, length = NRAYMAX",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "NRAY":     {"type": "integer", "description": "1-origin ray index"},
-                    "nstp_end": {"type": "integer", "description": "last step index reached"},
-                    "pwr":      {"type": "number",  "description": "absorbed power for this ray"},
-                    "pwr_nsa":  {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "description": "per-species absorbed power (length NSAMAX)",
-                    },
-                },
+        "arrays": {
+            "type": "object",
+            "description": "1-D arrays (list per name)",
+            "properties": {
+                "NSTPMAX_NRAY": {"type": "array", "items": {"type": "integer"},
+                                 "description": "last step index reached, per ray [NRAYMAX]"},
+                "pwr_nray": {"type": "array", "items": {"type": "number"},
+                             "description": "absorbed power per ray [NRAYMAX]"},
+                "pwr_nsa": {"type": "array", "items": {"type": "number"},
+                            "description": "absorbed power per species [NSAMAX_WR]"},
+                "pos_nrs": {"type": "array", "items": {"type": "number"},
+                            "description": "rs bin positions [NRSMAX]"},
+                "pos_nrl": {"type": "array", "items": {"type": "number"},
+                            "description": "rl bin positions [NRLMAX]"},
             },
+            "required": ["NSTPMAX_NRAY", "pwr_nray", "pwr_nsa", "pos_nrs", "pos_nrl"],
         },
-        "profile_rs": {
-            "type": "array",
-            "description": "per-species peak-power info on rs axis, length = NSAMAX",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "NSA":        {"type": "integer", "description": "1-origin species index"},
-                    "pos_pwrmax": {"type": "number",  "description": "peak-power position (rs axis)"},
-                    "pwrmax":     {"type": "number",  "description": "peak-power value (rs axis)"},
-                    "pwr":        {"type": "number",  "description": "total absorbed power for species"},
-                },
+        "arrays2": {
+            "type": "object",
+            "description": "matrices as lists of rows; see the top-level description for row orientation",
+            "properties": {
+                "pwr_nsa_nray": {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
+                                 "description": "absorbed power [NSAMAX_WR][NRAYMAX] (rows = species)"},
+                "pwr_nrs_nsa": {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
+                                "description": "rs deposition profile [NRSMAX][NSAMAX_WR] (rows = bin)"},
+                "pwr_nrl_nsa": {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
+                                "description": "rl deposition profile [NRLMAX][NSAMAX_WR] (rows = bin)"},
+                "pos_pwrmax_rs_nsa_nray": {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
+                                           "description": "rs position of peak power [NSAMAX_WR][NRAYMAX]"},
+                "pos_pwrmax_rl_nsa_nray": {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
+                                           "description": "rl position of peak power [NSAMAX_WR][NRAYMAX]"},
+                "pwrmax_rs_nsa_nray": {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
+                                       "description": "rs peak power value [NSAMAX_WR][NRAYMAX]"},
+                "pwrmax_rl_nsa_nray": {"type": "array", "items": {"type": "array", "items": {"type": "number"}},
+                                       "description": "rl peak power value [NSAMAX_WR][NRAYMAX]"},
             },
-        },
-        "profile_rl": {
-            "type": "array",
-            "description": "per-species peak-power info on rl axis, length = NSAMAX",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "NSA":        {"type": "integer", "description": "1-origin species index"},
-                    "pos_pwrmax": {"type": "number",  "description": "peak-power position (rl axis)"},
-                    "pwrmax":     {"type": "number",  "description": "peak-power value (rl axis)"},
-                },
-            },
+            "required": [
+                "pwr_nsa_nray", "pwr_nrs_nsa", "pwr_nrl_nsa",
+                "pos_pwrmax_rs_nsa_nray", "pos_pwrmax_rl_nsa_nray",
+                "pwrmax_rs_nsa_nray", "pwrmax_rl_nsa_nray",
+            ],
         },
     },
     "required": [
-        "NRAYMAX", "NSTPMAX", "NSAMAX", "NSMAX",
-        "MODELG", "MDLWRQ", "scalars", "rays",
-        "profile_rs", "profile_rl",
+        "NRAYMAX", "NSTPMAX", "NSAMAX_WR", "NSMAX", "NRSMAX", "NRLMAX",
+        "MODELG", "MDLWRQ", "scalars", "arrays", "arrays2",
     ],
 }
 
@@ -615,10 +627,12 @@ def build_server() -> Any:
     def get_state() -> Dict[str, Any]:
         """Return the current simulation state.
 
-        Returns a dict with ``NRAYMAX``, ``NSTPMAX``, ``NSAMAX``,
-        ``NSMAX``, ``MODELG``, ``MDLWRQ``, ``scalars``, ``rays``,
-        ``profile_rs``, ``profile_rl``. Schema also available via
-        `describe_state_schema`.
+        Returns ``WrxState.to_dict()``: the dimension header (``NRAYMAX``,
+        ``NSTPMAX``, ``NSAMAX_WR``, ``NSMAX``, ``NRSMAX``, ``NRLMAX``,
+        ``MODELG``, ``MDLWRQ``) plus ``scalars``, ``arrays`` (1-D lists)
+        and ``arrays2`` (matrices; ``*_nsa_nray`` rows are species,
+        ``pwr_nrs_nsa`` / ``pwr_nrl_nsa`` rows are radial bins). Schema
+        also available via `describe_state_schema`.
         """
         return handle_get_state()
 

@@ -320,7 +320,11 @@ jobs:
           #
           # --forked keeps process isolation so any single still-bad
           # test does not take down the whole suite.
-          python -m pytest python/ \
+          # test_run/scripts/tests covers compare_metrics.py and the
+          # extract_*_metrics.py baseline producers; it was never part of
+          # this run, which is how the comparator ignored the wrx array
+          # groups for months (#239).
+          python -m pytest python/ test_run/scripts/tests \
             --forked \
             --timeout=120 \
             --timeout-method=signal \
@@ -333,7 +337,7 @@ jobs:
         env:
           PYTHONPATH: python
         run: |
-          python -m pytest python/ --collect-only -q | tail -5 || true
+          python -m pytest python/ test_run/scripts/tests --collect-only -q | tail -5 || true
 
   mono-build:
     # Linux build-only validation of the L-7b-ii monolithic mode

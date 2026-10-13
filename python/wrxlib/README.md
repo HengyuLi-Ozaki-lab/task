@@ -228,6 +228,13 @@ output for cases where both apply).
 The 2-D `pwr_nsa_nray` matrix is sliced to the active `[0:nraymax]
 [0:nsamax]` corner; zero-padded struct tails are dropped.
 
+`to_dict()` groups these into the baseline's `{arrays, arrays2, scalars}`
+layout. In `arrays2` the `*_nsa_nray` blocks are emitted **species-major**
+(`[nsamax][nraymax]`, the Fortran index order in the name and the shape
+`wrx/wrxregress.f90` writes), so they are the transpose of the attributes
+above; `pwr_nrs_nsa` / `pwr_nrl_nsa` are `[nrsmax][nsamax]` /
+`[nrlmax][nsamax]` on both sides.
+
 ## Exceptions
 
 Every `wrx_*` return code maps to a concrete subclass of

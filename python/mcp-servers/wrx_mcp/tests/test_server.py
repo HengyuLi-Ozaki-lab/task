@@ -93,18 +93,49 @@ class TestStateSchema(unittest.TestCase):
         schema = srv.STATE_SCHEMA
         self.assertEqual(schema["type"], "object")
         for k in (
-            "NRAYMAX", "NSTPMAX", "NSAMAX", "NSMAX",
-            "MODELG", "MDLWRQ", "scalars", "rays",
-            "profile_rs", "profile_rl",
+            "NRAYMAX", "NSTPMAX", "NSAMAX_WR", "NSMAX", "NRSMAX", "NRLMAX",
+            "MODELG", "MDLWRQ", "scalars", "arrays", "arrays2",
         ):
             self.assertIn(k, schema["properties"])
+        self.assertEqual(set(schema["required"]), set(schema["properties"]))
 
     def test_describe_state_schema_tool(self) -> None:
         out = srv.handle_describe_state_schema()
         self.assertEqual(out["type"], "object")
-        self.assertIn("rays", out["properties"])
-        self.assertIn("profile_rs", out["properties"])
-        self.assertIn("profile_rl", out["properties"])
+        self.assertIn("arrays", out["properties"])
+        self.assertIn("arrays2", out["properties"])
+        self.assertNotIn("rays", out["properties"])
+
+    def test_schema_matches_real_to_dict(self) -> None:
+        # #239: the schema is the wire format of WrxState.to_dict(); build
+        # a state from a hand-filled WrxStateC (no libwrxapi.so) and check
+        # every advertised key is present with the advertised orientation.
+        from wrxlib import _ffi
+        from wrxlib.state import WrxState
+
+        c = _ffi.WrxStateC()
+        c.nraymax, c.nsamax, c.nsmax, c.nrsmax, c.nrlmax = 3, 2, 2, 4, 5
+        c.nstpmax, c.modelg, c.mdlwrq = 100, 2, 1
+        for i in range(3):
+            for j in range(2):
+                c.pwr_nsa_nray[i][j] = 10.0 * (i + 1) + (j + 1)
+        d = WrxState.from_c(c).to_dict()
+        schema = srv.STATE_SCHEMA
+        for k in schema["required"]:
+            self.assertIn(k, d, k)
+        for k in schema["properties"]["arrays"]["required"]:
+            self.assertIn(k, d["arrays"], k)
+        for k in schema["properties"]["arrays2"]["required"]:
+            self.assertIn(k, d["arrays2"], k)
+        for k in schema["properties"]["scalars"]["required"]:
+            self.assertIn(k, d["scalars"], k)
+        self.assertEqual(set(d) - set(schema["properties"]), set())
+        # rows = species, cols = rays, as the schema text says
+        self.assertEqual(len(d["arrays2"]["pwr_nsa_nray"]), 2)
+        self.assertEqual(len(d["arrays2"]["pwr_nsa_nray"][0]), 3)
+        self.assertEqual(d["arrays2"]["pwr_nsa_nray"][1][2], 32.0)
+        self.assertEqual(len(d["arrays2"]["pwr_nrs_nsa"]), 4)
+        self.assertEqual(len(d["arrays2"]["pwr_nrs_nsa"][0]), 2)
 
 
 class TestDescribeParameters(unittest.TestCase):
@@ -174,10 +205,15 @@ class _MockWrxlib:
         class _S:
             def to_dict(self_inner) -> Dict[str, Any]:
                 return {
-                    "NRAYMAX": 0, "NSTPMAX": 0, "NSAMAX": 0, "NSMAX": 0,
-                    "MODELG": 0, "MDLWRQ": 0,
+                    "NRAYMAX": 0, "NSTPMAX": 0, "NSAMAX_WR": 0, "NSMAX": 0,
+                    "NRSMAX": 0, "NRLMAX": 0, "MODELG": 0, "MDLWRQ": 0,
                     "scalars": {"pwr_tot": 0.0},
-                    "rays": [], "profile_rs": [], "profile_rl": [],
+                    "arrays": {"NSTPMAX_NRAY": [], "pwr_nray": [], "pwr_nsa": [],
+                               "pos_nrs": [], "pos_nrl": []},
+                    "arrays2": {k: [] for k in (
+                        "pwr_nsa_nray", "pwr_nrs_nsa", "pwr_nrl_nsa",
+                        "pos_pwrmax_rs_nsa_nray", "pos_pwrmax_rl_nsa_nray",
+                        "pwrmax_rs_nsa_nray", "pwrmax_rl_nsa_nray")},
                 }
 
         return _S()
@@ -297,7 +333,8 @@ class TestHandlersWithMockedState(unittest.TestCase):
         out = srv.handle_get_state()
         self.assertIn("NRAYMAX", out)
         self.assertIn("scalars", out)
-        self.assertIn("rays", out)
+        self.assertIn("arrays", out)
+        self.assertIn("arrays2", out)
 
     def test_handle_run_and_get_state_force_closes_prior(self) -> None:
         """Codex MCP audit 2026-04-22 (HIGH) fix: prior STATE.wrx must
