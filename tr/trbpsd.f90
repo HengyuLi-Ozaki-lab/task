@@ -111,9 +111,20 @@ CONTAINS
       USE trcomm
       INTEGER :: ierr
 ! local variables
-      INTEGER :: ns,nr
-      REAL(rkind)    :: temp(nrmp,nsm,3)
+      INTEGER :: ns,nr,nrtmp
+! temp is ALLOCATABLE and sized as in tr_bpsd_get. The module's plasmaf
+! has nrmax+1 rows after tr_bpsd_init and takes the row count of the last
+! bpsd_get_data after that; the loops below run to plasmaf%nrmax, which a
+! fixed temp(nrmp,...) does not hold when that count exceeds nrmp
+! (k-yoshimi/task#203 bug-B, the put side: #228 finding 22). Zeroed, so
+! that a row beyond the nrmax+1 that mesh_convert_mtog fills is put as
+! zero and not as whatever was there.
+      REAL(rkind), allocatable :: temp(:,:,:)
 !=======================================================================
+
+      nrtmp=max(plasmaf%nrmax,nrmp)
+      allocate(temp(nrtmp,nsm,3))
+      temp=0.d0
 
       device%rr=RR
       device%zz=0.d0
@@ -153,6 +164,7 @@ CONTAINS
      &               /((plasmaf%rho(3))**2-(plasmaf%rho(2))**2)
 
       call bpsd_put_data(plasmaf,ierr)
+      if(allocated(temp)) deallocate(temp)
       return
   END SUBROUTINE tr_bpsd_put
 
@@ -162,9 +174,21 @@ CONTAINS
       USE trcomm
       integer,intent(out) :: ierr
 ! local variables
-      integer :: ns,nr
-      real(rkind)    :: temp(nrmp,nsm,3)
-      real(rkind)    :: tempx(nrmp,17),psita,dpsitdrho,dvdrho,rgl
+      integer :: ns,nr,nrtmp,nrqp
+! temp is ALLOCATABLE: bpsd_get_data(plasmaf) hands back the row count
+! of the plasmaf that was last put, and the copy loop below runs over
+! 1..plasmaf%nrmax. With the fixed temp(nrmp,...) a count above nrmp
+! (=nrmax+1) wrote past the array (k-yoshimi/task#203 bug-B). In what tr
+! and tot link, only tr_bpsd_put stores a plasmaf, with nrmax+1 rows, so
+! the counts are equal (equ, which they do not link, stores one too:
+! eqpl_prof, eqpl_put, trpl_init, trpl_put). The failure reported in
+! #203, index 52 beyond the bound 51, came from a bpsd whose
+! bpsd_get_plasmaf did not initialise its INTENT(OUT) scalars. tempx is
+! filled over the nrmax+1 rows TR asks equ1D and metric1D for; it is
+! allocated with the same size for symmetry.
+      real(rkind), allocatable :: temp(:,:,:)
+      real(rkind), allocatable :: tempx(:,:)
+      real(rkind)    :: psita,dpsitdrho,dvdrho,rgl
       REAL(rkind)    :: FACTOR0, FACTORM, FACTORP
 !=======================================================================
 
@@ -182,6 +206,12 @@ CONTAINS
 
       call bpsd_get_data(plasmaf,ierr)
 
+! Size the work arrays now that plasmaf%nrmax is known (see the
+! declarations): at least nrmp = nrmax+1 rows.
+      nrtmp=max(plasmaf%nrmax,nrmp)
+      allocate(temp(nrtmp,nsm,3))
+      allocate(tempx(nrtmp,17))
+
       do ns=1,plasmaf%nsmax
          do nr=1,plasmaf%nrmax
             temp(nr,ns,1)=plasmaf%data(nr,ns)%density*1.d-20
@@ -189,7 +219,10 @@ CONTAINS
             temp(nr,ns,3)=plasmaf%data(nr,ns)%velocity_tor
          enddo
       enddo
-      do nr=2,plasmaf%nrmax
+! qp has NRMAX elements, so the qp(nr-1) write stops at nr = nrmax+1
+! whatever plasmaf%nrmax is (k-yoshimi/task#203 bug-B).
+      nrqp=min(plasmaf%nrmax,nrmax+1)
+      do nr=2,nrqp
          qp(nr-1)=1.d0/plasmaf%qinv(nr)
       enddo
       Q0=2.d0*qp(1)-qp(2)
@@ -376,6 +409,8 @@ CONTAINS
 
       endif
 
+      if(allocated(temp))  deallocate(temp)
+      if(allocated(tempx)) deallocate(tempx)
       return
   END SUBROUTINE tr_bpsd_get
 

@@ -18,6 +18,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **TR: `tr_bpsd_get` and `tr_bpsd_put` size `temp` to the row count BPSD
+  hands back** (`max(plasmaf%nrmax, nrmp)`), and `tr_bpsd_get` stops its
+  `qp` loop at `nrmax+1`. `temp` was fixed at `nrmp = NRMAX + 1` rows and
+  indexed up to `plasmaf%nrmax`, so a larger count ran past it and past
+  `qp` (#203 bug-B; the put side is #228 finding 22). A guard for that one
+  case, not a change of results: in what `tr` and `tot` link only
+  `tr_bpsd_put` stores a `plasmaf`, the two counts are equal in every case
+  measured (`tr_tst2`, `tr_iter01`, `tr_m0904`), and the state after a run
+  is bit-identical.
 - **FP library: `fp_run` refuses the counts the solver cannot run with**,
   before any work, with `FP_ERR_INVALID` and one `XX fp_run: ...` line per
   violation on unit 6 (`fp_param_check` in `fp/fp_param_registry.f90`).
