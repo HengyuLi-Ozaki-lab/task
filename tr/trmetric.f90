@@ -54,6 +54,10 @@ CONTAINS
          call tr_bpsd_get(ierr)  ! 
 !         call trgout
       elseif(modelg.eq.9) then
+!        Every call builds a new initial state (tr_prep is the only caller),
+!        so the adoption of EQ's psi_p is switched on again: the flag is
+!        saved and a run before this one in the same process cleared it.
+         tr_eq_init=.true.
          call eq_prof ! initial calculation of eq
 !        --- Initial q-scaling. The cylindrical initial q (set in trprof) is
 !            not consistent with the commanded Ip on the real 2D equilibrium

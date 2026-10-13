@@ -14,6 +14,14 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   documents and `EQ_READ` loads. A `plparm` namelist carrying it printed
   `XX plcheck: INVALID MODELG` (`pl_parm` returned 101) and the PL menu
   asked again. The other values outside 0 to 11 are refused as before.
+- **TR library, `MODELG=9`: every preparation adopts the equilibrium
+  again.** The saved flag `tr_eq_init` was cleared by the first run and
+  never set again, so a second `tr_init` .. `tr_finalize` lifecycle in one
+  process returned 0 from `tr_run` with q = NaN, and a second `tr_prep`
+  inside one lifecycle (after a parameter change, or a second `R` in the
+  menu) started from the previous run's psi_p. `tr_set_metric` now sets the
+  flag at the start of each `MODELG=9` preparation, and `tr_init` and
+  `tr_finalize` restore it.
 
 ## TR Phase L — library-ization (2026-04-18)
 
