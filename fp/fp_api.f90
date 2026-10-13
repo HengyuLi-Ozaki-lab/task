@@ -255,7 +255,7 @@ CONTAINS
   FUNCTION fp_api_get_state(state) RESULT(ierr) BIND(C, NAME="fp_get_state")
     TYPE(fp_state_c), INTENT(OUT) :: state
     INTEGER(C_INT) :: ierr
-    INTEGER :: nr, nsa, ntg_last
+    INTEGER :: nr, nsa, ntg_last, nr_alloc, nsa_alloc
 
     ! Always zero the struct so callers never see uninitialized memory.
     state%nrmax  = 0
@@ -279,7 +279,9 @@ CONTAINS
     IF (NRMAX > FP_MAX_NRMAX .OR. NSAMAX > FP_MAX_NSAMAX) THEN
        ! Refusing rather than silently truncating: the static layout
        ! cannot hold the requested grid; the caller needs to rebuild
-       ! libfpapi with a larger FP_MAX_* constant.
+       ! libfpapi with a larger FP_MAX_* constant. Since fp_run refuses
+       ! such counts before fp_prep (#242) this is reachable only in the
+       ! set_param-to-run window; kept so the contract stays one rule.
        ierr = FP_ERR_CALC_FAILED
        RETURN
     END IF
@@ -295,11 +297,27 @@ CONTAINS
     ! Profiles: only populate when FPCOMM arrays are allocated (i.e.
     ! after fp_prep ran successfully). Use the same NTG_LAST defensive
     ! index as fpregress.f90.
+    !
+    ! The arrays keep the extents of the last fp_prep (fp_allocate_ntg2
+    ! gives all six the same shape (NRMAX,NSAMAX,NTG2M)), while NRMAX /
+    ! NSAMAX are the current namelist values. fp_set_param on a count
+    ! clears g_prepared without reallocating, so until the next fp_run
+    ! the two can disagree (#245). Copy MIN(current count, allocated
+    ! extent) along each axis and report the copied extents, so the
+    ! [nsamax][nrmax] slice the caller reads is exactly the data that
+    ! exists: a lowered count truncates the snapshot to its leading
+    ! slice at once, a raised count stays capped at the old allocation
+    ! until the next fp_run (the C ABI has no parameter getter, so a
+    ! raised count is not observable while the reported extent is capped).
     IF (ALLOCATED(RNT) .AND. ALLOCATED(RWT) .AND. ALLOCATED(RTT) .AND. &
         ALLOCATED(RJT) .AND. ALLOCATED(RPCT) .AND. ALLOCATED(RPWT)) THEN
-       ntg_last = MAX(NTG2, 1)
-       DO nsa = 1, NSAMAX
-          DO nr = 1, NRMAX
+       nr_alloc  = MIN(NRMAX,  SIZE(RNT, 1))
+       nsa_alloc = MIN(NSAMAX, SIZE(RNT, 2))
+       ntg_last  = MIN(MAX(NTG2, 1), SIZE(RNT, 3))
+       state%nrmax  = nr_alloc
+       state%nsamax = nsa_alloc
+       DO nsa = 1, nsa_alloc
+          DO nr = 1, nr_alloc
              state%RNT (nr, nsa) = RNT (nr, nsa, ntg_last)
              state%RWT (nr, nsa) = RWT (nr, nsa, ntg_last)
              state%RTT (nr, nsa) = RTT (nr, nsa, ntg_last)
