@@ -24,8 +24,9 @@ Design notes
 * ``set_param_str`` — string parameters such as ``KNAMEQ`` (the
   equilibrium-data file name) routed through
   :py:meth:`fplib.Fplib.set_param_str`. This is what unlocks the
-  ``MODELG=3`` + ``KNAMEQ=<file>`` path, i.e. loading an equilibrium
-  produced by ``eq_mcp``'s ``save`` tool (EQ→FP coupling).
+  ``MODELG=3`` + ``KNAMEQ=<file>`` path, i.e. loading a TASK/EQ-format
+  equilibrium file (e.g. one written by ``EQSAVE`` / the ``eq``
+  program, or by ``eq_mcp``'s ``save`` tool once #226 lands).
 * **Error mapping.** :class:`fplib.FplibError` subclasses are re-raised
   as :class:`ToolError` with a human-readable message. The LLM sees
   the error string and can often recover (e.g. by calling ``init``
@@ -156,7 +157,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "PABS_WM": {"type": "float", "group": "wave", "description": "WM full-wave absorbed power [MW]"},
     "RF_WM":   {"type": "float", "group": "wave", "description": "WM wave frequency [Hz]"},
     # --- model switches (scalar int) -------------------------------
-    "MODELG": {"type": "int", "group": "models", "description": "geometry / equilibrium model (3 = typical for iter01 fixture)"},
+    "MODELG": {"type": "int", "group": "models", "description": "geometry / equilibrium model (pl_init default 2; 3 = load the TASK/EQ file named by KNAMEQ)"},
     "MODELE": {"type": "int", "group": "models", "description": "equilibrium coupling model"},
     "MODELR": {"type": "int", "group": "models", "description": "relativistic model switch"},
     "MODELS": {"type": "int", "group": "models", "description": "source-term model switch"},
@@ -409,11 +410,21 @@ def handle_set_param_str(name: str, value: str) -> str:
     rebuild hint, which :func:`_wrap_fplib_error` turns into a
     human-readable ToolError.
 
-    This is the entry point for the ``MODELG=3`` equilibrium-load path:
-    without a valid ``KNAMEQ`` the ``pl_init`` default ``'eqdata'`` is
-    missing in cwd, ``eq_load`` fails, and ``BESEKNX`` trips with
-    ``NCALC=-2`` (see the comment block in
-    ``fp/fp_param_registry.f90``).
+    This is the entry point for the ``MODELG=3`` equilibrium-load path.
+    The file is read by the next ``run``, not by this call. With
+    ``MODELG=3`` and a ``KNAMEQ`` that names a file that does not exist
+    or cannot be opened (the ``pl_init`` default is ``'eqdata'`` in
+    cwd), ``eq_load`` fails, ``fp_mesh`` returns its error
+    (``fp/fpprep.f90``) and ``fp_run`` returns ``FP_ERR_CALC_FAILED``
+    (``fp/fp_api.f90``): fplib raises :class:`FplibCalcFailedError`,
+    which ``run`` turns into a "calculation failed" ToolError. The
+    ``BESEKNX`` / ``NCALC=-2`` failure that the comment block in
+    ``fp/fp_param_registry.f90`` describes predates that propagation.
+
+    A file that opens but is not a TASK/EQ file is another matter:
+    ``eq/eqfile.f90`` reads its leading records without ``IOSTAT``, and
+    a Fortran runtime error there ends the server process (measured
+    with an empty file and with a text file).
     """
     try:
         fp = STATE.ensure_open()
@@ -569,14 +580,22 @@ def build_server() -> Any:
         (``make -C fp libfpapi.so``); older builds raise a clear
         "rebuild the shared library" error.
 
-        Typical use — load an equilibrium written by ``eq_mcp``'s
-        ``save`` tool::
+        Typical use — load a TASK/EQ-format equilibrium file (e.g.
+        one written by ``EQSAVE`` / the ``eq`` program, or by
+        ``eq_mcp``'s ``save`` tool once #226 lands)::
 
             set_param("MODELG", 3)
             set_param_str("KNAMEQ", "eq.bin")
             run(...)
 
-        Paths are resolved relative to the server process's cwd.
+        Paths are resolved relative to the server process's cwd, and
+        ``KNAMEQ`` holds 80 characters: keep the path within 80 bytes
+        (one of 81 to 128 bytes is cut to its first 80 without an
+        error; a longer one is refused). A file that does not exist
+        or cannot be opened makes the next ``run`` fail with
+        "calculation failed". A file that opens but is not a TASK/EQ
+        file can end the server process with a Fortran runtime error
+        (an empty file and a text file do): name TASK/EQ files only.
         """
         return handle_set_param_str(name, value)
 
