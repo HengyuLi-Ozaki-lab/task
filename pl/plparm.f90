@@ -174,7 +174,9 @@ CONTAINS
       IERR=0
 
       IF(MODELG.NE.3) THEN
-         IF((MODELG.LT.0).OR.(MODELG.GT.11)) THEN
+!        MODELG=25 (EQDSK geometry, see plinit and EQ_READ in eq/eqfile)
+!        lies outside the contiguous range and is allowed by name.
+         IF(((MODELG.LT.0).OR.(MODELG.GT.11)).AND.(MODELG.NE.25)) THEN
             WRITE(6,*) 'XX plcheck: INVALID MODELG: MODELG=',MODELG
             IERR=1
          ENDIF

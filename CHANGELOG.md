@@ -8,6 +8,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **PL: `plcheck` accepts `MODELG=25`**, the EQDSK geometry that `plinit`
+  documents and `EQ_READ` loads. A `plparm` namelist carrying it printed
+  `XX plcheck: INVALID MODELG` (`pl_parm` returned 101) and the PL menu
+  asked again. The other values outside 0 to 11 are refused as before.
+
 ## TR Phase L — library-ization (2026-04-18)
 
 Phase L turned TASK/TR from a CLI-only Fortran program into an
