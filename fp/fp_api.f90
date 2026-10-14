@@ -350,6 +350,9 @@ CONTAINS
     ! arrays: fpcomm::fp_allocate_ntg1) and only carry a sample once
     ! FPSGLB has bumped NTG1 (fp/fploop.f90:200). Before that they stay
     ! at the zeros set above rather than exposing uninitialised memory.
+    ! The same holds after an fp_set_param, which clears g_prepared: the
+    ! profiles above are then still the last run's (within the allocated
+    ! extents, #245) while these read zero until the next fp_prep.
     IF (g_prepared) THEN
        state%PLASMA_VOLUME = TVOLR
        IF (NTG1 >= 1 .AND. ALLOCATED(PIT) .AND. ALLOCATED(PWT) .AND. &

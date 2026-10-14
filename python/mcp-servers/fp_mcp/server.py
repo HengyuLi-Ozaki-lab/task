@@ -200,7 +200,8 @@ STATE_SCHEMA: Dict[str, Any] = {
                 "per-unit-volume profile arrays these depend on the "
                 "equilibrium through the volume element, so they are what "
                 "makes an EQ->FP handoff (MODELG=3 + KNAMEQ) observable. "
-                "All zero before the first run."
+                "All zero before the first run, and again after a set_param "
+                "until the next run that is made."
             ),
             "properties": {
                 "TOTAL_IP":         {"type": "number", "description": "total plasma current [MA]"},
