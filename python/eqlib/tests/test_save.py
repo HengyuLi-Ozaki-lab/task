@@ -1,12 +1,15 @@
 """Eq.save(): the equilibrium file is written and loads back, and a save
-that wrote nothing is an error (#227 item 3).
+whose file was not opened or came out short is an error (#227 item 3).
 
 The tests work in a temporary directory with relative file names: KNAMEQ
 holds 80 characters, and a temporary directory's own path can be longer.
 """
 from __future__ import annotations
 
+import ctypes
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -194,7 +197,7 @@ def test_save_raises_when_reopen_refused_and_an_earlier_file_exists():
 
     After one successful save, a save that fails leaves the earlier file in
     place, and "a non-empty file exists afterwards" holds. MODEFW=3 makes
-    FWOPEN refuse an existing file; EQSAVE reports that through its
+    FWOPEN refuse an existing file; EQSAVE_IERR reports that through its
     argument.
     """
     with _solved() as e:
@@ -247,3 +250,123 @@ def test_save_refuses_the_file_modes_that_ask_on_unit_5(modefw):
             e.save("eq.bin")
         assert _files() == before
     assert Path("eq.bin").read_bytes() == first
+
+
+# ----- a write that fails after the file was opened -----
+#
+# The save runs in a child process: the size limit is the process's own, and a
+# Fortran run-time that ended the process on the refused write would otherwise
+# take the test process with it. As measured with gfortran 15 on macOS, no
+# statement reports such a write when the file is new: the WRITEs and the
+# CLOSE return 0 over a short file, which is what EQSAVE_IERR's comparison of
+# the two lengths is for. (Under a 16-byte limit over a file that is not
+# empty the first WRITE does report it.) The tests accept either way of
+# noticing: an error is raised, the "XX EQSAVE" line is there, the process
+# lives.
+
+_CHILD = """
+import eqlib
+with eqlib.Eq() as e:
+    e.run(0)
+    {before_save}
+    try:
+        e.save({path!r})
+    except eqlib.EqlibCalculationFailedError:
+        print("CHILD: save raised EqlibCalculationFailedError")
+    else:
+        print("CHILD: save returned")
+print("CHILD: alive after save")
+"""
+
+_LIMIT = """import resource, signal
+    signal.signal(signal.SIGXFSZ, signal.SIG_IGN)     # write() returns EFBIG instead
+    resource.setrlimit(resource.RLIMIT_FSIZE, ({limit}, {limit}))"""
+
+
+def _save_in_a_child(path, before_save="pass"):
+    python_root = str(_HERE.parents[2])
+    inherited = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([python_root, *inherited])}
+    child = subprocess.run(
+        [sys.executable, "-c", _CHILD.format(path=path, before_save=before_save)],
+        env=env, capture_output=True, text=True, timeout=100)
+    assert child.returncode == 0, child.stdout[-2000:] + child.stderr[-2000:]
+    assert "CHILD: alive after save" in child.stdout
+    return child.stdout
+
+
+def test_the_child_process_saves_when_nothing_is_in_the_way():
+    """The control of the two tests below."""
+    out = _save_in_a_child("eq.bin")
+    assert "CHILD: save returned" in out
+    full = os.path.getsize("eq.bin")
+    assert full > 0
+    # and the limit of the next test is below this length
+    assert full > 4096
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="needs RLIMIT_FSIZE")
+@pytest.mark.parametrize("limit", [16, 4096])
+def test_a_write_the_system_refuses_is_an_error(limit):
+    """A file size limit stands in for a full disk: 16 bytes cut the first
+    record, 4096 a later one."""
+    out = _save_in_a_child("eq.bin", _LIMIT.format(limit=limit))
+    assert "CHILD: save raised EqlibCalculationFailedError" in out
+    assert "XX EQSAVE" in out
+    assert os.path.getsize("eq.bin") == limit
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="no /dev/full on this system")
+def test_a_full_device_is_an_error():
+    """Every write to ``/dev/full`` is refused for lack of space. The line of
+    ``EQSAVE_IERR`` is asked for: without it the error would only be
+    ``eq_save``'s look for a non-empty file, which any device fails."""
+    out = _save_in_a_child("/dev/full")
+    assert "CHILD: save raised EqlibCalculationFailedError" in out
+    assert "XX EQSAVE" in out
+
+
+# ----- the entry without an argument -----
+
+def _argument_less_eqsave(e):
+    """``EQSAVE`` as the EQ menu calls it. It has no C binding: the symbol is
+    the compiler's name for an external procedure. The call passes a null
+    pointer: a routine without an argument never looks at it, one that takes
+    ``IERR_OUT`` writes through it and ends the process, so the test cannot
+    pass by accident on an ``EQSAVE`` that grew an argument."""
+    entry = getattr(e._lib, "eqsave_", None)
+    assert entry is not None, "libeqapi.so has no eqsave_: the argument-less EQSAVE is gone"
+    entry.restype = None
+    entry.argtypes = [ctypes.c_void_p]
+    entry(None)
+
+
+def test_the_argument_less_eqsave_still_writes_the_file():
+    with _solved() as e:
+        e.save("by_api.bin")
+        e.set_param_str("KNAMEQ", "by_entry.bin")
+        _argument_less_eqsave(e)
+    assert Path("by_entry.bin").read_bytes() == Path("by_api.bin").read_bytes()
+
+
+# ----- paths KNAMEQ cannot hold -----
+
+def test_save_refuses_a_bytes_path_and_leaves_knameq_alone():
+    with _solved() as e:
+        e.save("first.bin")
+        before = _files()
+        with pytest.raises(eqlib.EqlibInvalidParamError):
+            e.save(b"second.bin")
+        assert _files() == before
+        # KNAMEQ is still first.bin: the entry without an argument writes there
+        os.remove("first.bin")
+        _argument_less_eqsave(e)
+        assert os.path.exists("first.bin") and not os.path.exists("second.bin")
+
+
+def test_save_refuses_a_path_that_is_not_ascii():
+    with _solved() as e:
+        before = _files()
+        with pytest.raises(eqlib.EqlibInvalidParamError):
+            e.save("平衡.bin")
+        assert _files() == before

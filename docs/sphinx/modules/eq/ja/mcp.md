@@ -152,7 +152,7 @@ eq-mcp install --client cursor --scope user
 | `run` | 平衡計算実行 (`eq_run`) | `mode` (default=1) |
 | `get_state` | 現在の状態取得 (`eq_get_state`) | なし |
 | `validate` | **事前検証 (EQ 強み)** | なし |
-| `save` | 直前の `run` の平衡を TASK/EQ 形式のバイナリファイルに保存 (`eq_save`). ファイルが書かれなければエラー | `path` |
+| `save` | 直前の `run` の平衡を TASK/EQ 形式のバイナリファイルに保存 (`eq_save`). 既存ファイルは `overwrite=true` のときだけ置き換える. ファイルを開けない, または書いた長さより短い場合はエラー | `path`, `overwrite` (既定 `false`) |
 | `finalize` | リソース解放 (`eq_finalize`) | なし |
 | `describe_parameters` | パラメータ一覧・型・グループ | なし |
 | `describe_state_schema` | `get_state` 戻り値の JSON schema | なし |

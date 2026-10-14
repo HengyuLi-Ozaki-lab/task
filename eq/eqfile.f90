@@ -21,7 +21,18 @@
 !
 !     ***** SAVE TASK/EQ DATA *****
 !
-      SUBROUTINE EQSAVE(IERR_OUT)
+!     EQSAVE is the entry it always was, without an argument: the S
+!     command of the EQ menu calls it (and tr/f77/trfile.f, which no
+!     Makefile builds, with an argument it never took). EQSAVE_IERR does
+!     the work and returns the outcome; the C API (eq_save) calls it.
+!
+      SUBROUTINE EQSAVE
+
+      CALL EQSAVE_IERR(IERR)
+      RETURN
+      END
+!
+      SUBROUTINE EQSAVE_IERR(IERR_OUT)
 
       USE libfio
       USE plcomm
@@ -29,12 +40,17 @@
       USE eqcom1_mod
       USE eqcom2_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
+      CHARACTER(LEN=256) :: KFNAME
 
-!     IERR_OUT: 0 when the file was opened and written; FWOPEN's IERR (1 to
-!     8) when it refused the file; 9 when the file was opened and its first
-!     record could not be written (#227 item 3). A caller cannot tell success
-!     from failure by looking for the file afterwards: a repeat save to a path
-!     that already holds a previous, non-empty file looks identical.
+!     IERR_OUT: 0 when the file was opened and written; FWOPEN's IERR (1
+!     to 8) when it refused the file; 9 when the file was opened and a
+!     WRITE or the CLOSE reported an error, or the file is shorter than
+!     what was written to the unit (#227 item 3). After a 9 what is at
+!     the path is left as it is. It cannot be taken for the equilibrium
+!     that was to be saved (usually it is a short file) and must not be
+!     loaded: EQRTSK does not guard its READs. A caller cannot tell success from failure by
+!     looking for the file afterwards: a repeat save to a path that
+!     already holds a previous, non-empty file looks identical.
       IERR_OUT=0
       CALL FWOPEN(21,KNAMEQ,0,MODEFW,'EQ',IERR)
       IF(IERR.NE.0) THEN
@@ -49,45 +65,74 @@
       WRITE(21,IOSTAT=IST) RR,BB,RIP
       IF(IST.NE.0) THEN
          WRITE(6,*) 'XX EQSAVE: FILE CANNOT BE WRITTEN: IOSTAT = ',IST
-         CLOSE(21)
+         CLOSE(21,IOSTAT=IST)
          IERR_OUT=9
          RETURN
       ENDIF
-      WRITE(21) NRGMAX,NZGMAX
-      WRITE(21) (RG(NRG),NRG=1,NRGMAX)
-      WRITE(21) (ZG(NZG),NZG=1,NZGMAX)
-      WRITE(21) ((PSIRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
-      WRITE(21) NPSMAX
-      WRITE(21) (PSIPS(NPS),NPS=1,NPSMAX)
-      WRITE(21) (PPPS(NPS),NPS=1,NPSMAX)
-      WRITE(21) (TTPS(NPS),NPS=1,NPSMAX)
-      WRITE(21) (TEPS(NPS),NPS=1,NPSMAX)
-      WRITE(21) (OMPS(NPS),NPS=1,NPSMAX)
+      WRITE(21,ERR=900) NRGMAX,NZGMAX
+      WRITE(21,ERR=900) (RG(NRG),NRG=1,NRGMAX)
+      WRITE(21,ERR=900) (ZG(NZG),NZG=1,NZGMAX)
+      WRITE(21,ERR=900) ((PSIRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
+      WRITE(21,ERR=900) NPSMAX
+      WRITE(21,ERR=900) (PSIPS(NPS),NPS=1,NPSMAX)
+      WRITE(21,ERR=900) (PPPS(NPS),NPS=1,NPSMAX)
+      WRITE(21,ERR=900) (TTPS(NPS),NPS=1,NPSMAX)
+      WRITE(21,ERR=900) (TEPS(NPS),NPS=1,NPSMAX)
+      WRITE(21,ERR=900) (OMPS(NPS),NPS=1,NPSMAX)
 
-      WRITE(21) NSGMAX,NTGMAX,NUGMAX,NRMAX,NTHMAX,NSUMAX,NRVMAX,NTVMAX
-      WRITE(21) ((PSI(NSG,NTG),NSG=1,NSGMAX),NTG=1,NTGMAX)
-      WRITE(21) ((DELPSI(NSG,NTG),NSG=1,NSGMAX),NTG=1,NTGMAX)
-      WRITE(21) ((HJT(NSG,NTG),NSG=1,NSGMAX),NTG=1,NTGMAX)
-      WRITE(21) RAXIS,ZAXIS,PSITA,PSIPA,PSI0
-      WRITE(21) (PSIPNV(NRV),NRV=1,NRVMAX)
-      WRITE(21) (PSIPV(NRV),NRV=1,NRVMAX)
-      WRITE(21) (PSITV(NRV),NRV=1,NRVMAX)
-      WRITE(21) (QPV(NRV),NRV=1,NRVMAX)
-      WRITE(21) (TTV(NRV),NRV=1,NRVMAX)
-      WRITE(21) RA,RKAP,RDLT,RB,FRBIN
-      WRITE(21) PJ0,PJ1,PJ2,PROFJ0,PROFJ1,PROFJ2
-      WRITE(21) PP0,PP1,PP2,PROFP0,PROFP1,PROFP2
-      WRITE(21) PT0,PT1,PT2,PROFTP0,PROFTP1,PROFTP2
-      WRITE(21) PV0,PV1,PV2,PROFV0,PROFV1,PROFV2
-      WRITE(21) PROFR0,PROFR1,PROFR2
+      WRITE(21,ERR=900) NSGMAX,NTGMAX,NUGMAX,NRMAX,NTHMAX,NSUMAX,NRVMAX,NTVMAX
+      WRITE(21,ERR=900) ((PSI(NSG,NTG),NSG=1,NSGMAX),NTG=1,NTGMAX)
+      WRITE(21,ERR=900) ((DELPSI(NSG,NTG),NSG=1,NSGMAX),NTG=1,NTGMAX)
+      WRITE(21,ERR=900) ((HJT(NSG,NTG),NSG=1,NSGMAX),NTG=1,NTGMAX)
+      WRITE(21,ERR=900) RAXIS,ZAXIS,PSITA,PSIPA,PSI0
+      WRITE(21,ERR=900) (PSIPNV(NRV),NRV=1,NRVMAX)
+      WRITE(21,ERR=900) (PSIPV(NRV),NRV=1,NRVMAX)
+      WRITE(21,ERR=900) (PSITV(NRV),NRV=1,NRVMAX)
+      WRITE(21,ERR=900) (QPV(NRV),NRV=1,NRVMAX)
+      WRITE(21,ERR=900) (TTV(NRV),NRV=1,NRVMAX)
+      WRITE(21,ERR=900) RA,RKAP,RDLT,RB,FRBIN
+      WRITE(21,ERR=900) PJ0,PJ1,PJ2,PROFJ0,PROFJ1,PROFJ2
+      WRITE(21,ERR=900) PP0,PP1,PP2,PROFP0,PROFP1,PROFP2
+      WRITE(21,ERR=900) PT0,PT1,PT2,PROFTP0,PROFTP1,PROFTP2
+      WRITE(21,ERR=900) PV0,PV1,PV2,PROFV0,PROFV1,PROFV2
+      WRITE(21,ERR=900) PROFR0,PROFR1,PROFR2
 !      WRITE(21) PTS,PN0,HM
-      WRITE(21) ((HJTRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
-      CLOSE(21)
+      WRITE(21,ERR=900) ((HJTRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
+
+!     A write the system refuses is not always reported. Measured with
+!     gfortran 15 on macOS and a file size limit of 16 to 20000 bytes,
+!     with nothing, an empty file or a file of 8 to 45956 bytes at the
+!     path: the first WRITE returned an error under the 16-byte limit
+!     over a file that was not empty, and in every other case the WRITEs
+!     and the CLOSE returned 0 over a short file. So the length written
+!     to the unit is compared with the length of the file after the
+!     CLOSE. The name is asked of the unit: with MODEFW 4 to 7
+!     FWOPEN opens the name it read, not KNAMEQ. A file that is not a
+!     regular file (a device) has length 0 and is reported short as well.
+!     When either length cannot be had (-1) the comparison is left out.
+      NSIZEW=-1
+      INQUIRE(UNIT=21,NAME=KFNAME,SIZE=NSIZEW)
+      CLOSE(21,ERR=900)
+      IF(NSIZEW.GE.0) THEN
+         NSIZEF=-1
+         INQUIRE(FILE=KFNAME,SIZE=NSIZEF)
+         IF(NSIZEF.GE.0.AND.NSIZEF.LT.NSIZEW) THEN
+            WRITE(6,*) 'XX EQSAVE: FILE IS SHORTER THAN WRITTEN: ', &
+                       NSIZEF,' OF ',NSIZEW,' BYTES'
+            IERR_OUT=9
+            RETURN
+         ENDIF
+      ENDIF
 
 !      WRITE(6,*) 'HJTRZ=',HJTRZ(10,10)
 
       WRITE(6,*) '# DATA WAS SUCCESSFULLY SAVED TO THE FILE.'
 
+      RETURN
+
+  900 WRITE(6,*) 'XX EQSAVE: FILE WRITE ERROR'
+      CLOSE(21,IOSTAT=IST)
+      IERR_OUT=9
       RETURN
       END
 !

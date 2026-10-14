@@ -298,11 +298,20 @@ class Eq:
     def save(self, path) -> None:
         """Save the equilibrium of the last ``run`` to a TASK/EQ binary file.
 
-        Sets KNAMEQ to ``path`` (a ``str`` or an ``os.PathLike``; anything
-        else is a ``TypeError``), then calls ``eq_save``. The file is what
-        ``MODELG=3`` with ``KNAMEQ=path`` loads.
+        Sets KNAMEQ to ``path``, then calls ``eq_save``. The file is what
+        ``MODELG=3`` with ``KNAMEQ=path`` loads. ``path`` is a ``str`` or an
+        ``os.PathLike`` that gives one (what ``os.fspath`` refuses is a
+        ``TypeError``); KNAMEQ is ASCII, so a ``bytes`` path and a
+        non-ASCII one are refused like the other paths listed below.
 
-        A save that wrote nothing raises (#227 item 3):
+        Once the path is accepted, KNAMEQ is ``path``, also when the save
+        then fails. After a failed write, what is at the path cannot be
+        taken for the equilibrium that was to be saved (usually it is a
+        short file): do not load it. ``run(1)`` with ``MODELG=3`` ends the process on a file
+        that is cut off; the loader does not guard its reads.
+
+        A save whose file was not opened, or is shorter than what was
+        written, raises (#227 item 3):
 
         * :class:`EqlibInvalidParamError`, and no file is touched:
           the fields do not hold the equilibrium of the present parameters
@@ -314,11 +323,18 @@ class Eq:
           (Fortran would drop the blank and write another file);
           ``MODEFW`` other than 0 (overwrite an existing file) or 3
           (refuse one): with 1, 2 and 4 to 7 ``FWOPEN`` can read unit 5.
+          A ``bytes`` path and one that is not ASCII are refused here too,
+          before KNAMEQ is set.
         * :class:`EqlibCalculationFailedError`: the file could not be
           opened (a directory that is missing or not writable;
-          ``MODEFW=3`` and an existing file) or not written (an existing
-          file without write permission). An earlier file at ``path`` is
-          not taken for a success: ``EQSAVE`` reports the failure itself.
+          ``MODEFW=3`` and an existing file), a write failed (an existing
+          file without write permission), or the file is shorter than what
+          was written (a write the system refused, as under a file size
+          limit; a device such as ``/dev/null``). An earlier file at
+          ``path`` is not taken for a success: ``EQSAVE_IERR`` reports the
+          failure itself. Measured with gfortran 15 on macOS under a file
+          size limit: a save that leaves a short file also leaves one
+          descriptor open in the process.
         * :class:`EqlibError`: the handle is closed, the library does not
           export ``eq_save``, or no non-empty file exists after a call
           that reported success.

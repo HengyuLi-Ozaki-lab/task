@@ -242,6 +242,11 @@ CONTAINS
     END DO
 
     reg_ierr = eq_param_set_str(TRIM(fname), TRIM(fvalue))
+    ! g_has_equilibrium is left as it is, unlike in eq_api_set_param: the
+    ! strings are file names (KNAMEQ and the other KNAM*). The analytic
+    ! solve reads none of them; a load (eq_run(1)) reads its file and sets
+    ! the flag itself; and KNAMEQ is where eq_save writes, so setting it
+    ! must not invalidate what is to be saved.
     IF (reg_ierr == 0) THEN
        ierr = EQ_OK
     ELSE
@@ -510,7 +515,7 @@ CONTAINS
   END FUNCTION eq_api_validate
 
   !=====================================================================
-  ! eq_save : C-ABI wrapper around eqfile::EQSAVE.
+  ! eq_save : C-ABI wrapper around EQSAVE_IERR (eq/eqfile.f90).
   !
   !   - Writes the current EQ state (PSIRZ, profiles, scalars) to the
   !     TASK-internal binary file at the path stored in module-level
@@ -525,10 +530,11 @@ CONTAINS
   !     other than 0 (overwrite an existing file) or 3 (refuse one):
   !     with 1, 2 and 4 to 7 FWOPEN can read unit 5, for a Y/N or for
   !     the file name.
-  !   - EQ_ERR_CALC_FAILED when EQSAVE reports that the file could not be
-  !     opened (a directory that is missing or not writable, MODEFW=3 and
-  !     an existing file) or not written (an existing file without write
-  !     permission), or when no non-empty file exists afterwards.
+  !   - EQ_ERR_CALC_FAILED when EQSAVE_IERR reports that the file could
+  !     not be opened (a directory that is missing or not writable,
+  !     MODEFW=3 and an existing file), that a write failed (an existing
+  !     file without write permission) or that the file is shorter than
+  !     what was written, or when no non-empty file exists afterwards.
   !   - EQ_OK otherwise.
   !=====================================================================
   FUNCTION eq_api_save() RESULT(ierr) BIND(C, NAME="eq_save")
@@ -555,11 +561,12 @@ CONTAINS
        RETURN
     END IF
     ! #227 item 3: a save that wrote nothing must not return EQ_OK.
-    ! EQSAVE reports a failed open or write through its argument. Looking
-    ! for the file afterwards is not enough on its own: a save to a path
-    ! that already holds an earlier, non-empty file would pass for a
-    ! success.
-    CALL EQSAVE(ierr_save)
+    ! EQSAVE_IERR (the body of EQSAVE, which keeps its argument-less
+    ! entry for the menu) reports a failed open or write through its
+    ! argument. Looking for the file afterwards is not enough on its own:
+    ! a save to a path that already holds an earlier, non-empty file would
+    ! pass for a success.
+    CALL EQSAVE_IERR(ierr_save)
     IF (ierr_save /= 0) THEN
        ierr = EQ_ERR_CALC_FAILED
        RETURN

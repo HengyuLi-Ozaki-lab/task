@@ -157,7 +157,7 @@ eq-mcp install --client cursor --scope user
 | `run` | run the equilibrium calculation (`eq_run`) | `mode` (default=1) |
 | `get_state` | fetch the current state (`eq_get_state`) | none |
 | `validate` | **pre-run validation (an EQ strength)** | none |
-| `save` | write the equilibrium of the last `run` to a TASK/EQ binary file (`eq_save`); fails when no file was written | `path` |
+| `save` | write the equilibrium of the last `run` to a TASK/EQ binary file (`eq_save`); an existing file is replaced only with `overwrite=true`; fails when the file was not opened or is shorter than what was written | `path`, `overwrite` (default `false`) |
 | `finalize` | release resources (`eq_finalize`) | none |
 | `describe_parameters` | list parameters with types and groups | none |
 | `describe_state_schema` | JSON schema for the `get_state` return value | none |

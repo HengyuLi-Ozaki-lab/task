@@ -37,6 +37,7 @@ PFC-coil arrays + ~60 scalar registry entries).
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -169,7 +170,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELQ": {"type": "int", "group": "models", "description": "q-profile model selector"},
     "IDEBUG": {"type": "int", "group": "models", "description": "debug-output level"},
     "MODEFR": {"type": "int", "group": "models", "description": "file-read mode of FROPEN: 0 reads the file named by KNAMEQ; 1 asks for a file name on unit 5 (not for a server)"},
-    "MODEFW": {"type": "int", "group": "models", "description": "file-write mode of FWOPEN, used by save: 0 overwrites an existing file, 3 refuses one; 1, 2 and 4 to 7 can read unit 5, and save takes 0 and 3 only"},
+    "MODEFW": {"type": "int", "group": "models", "description": "file-write mode of FWOPEN: 0 overwrites an existing file, 3 refuses one; 1, 2 and 4 to 7 can read unit 5, and eq_save takes 0 and 3 only. The save tool sets it itself before it saves (3, or 0 with overwrite=true)"},
     "MDLEQF": {"type": "int", "group": "models", "description": "equilibrium-fixed-boundary model"},
     "MDLEQC": {"type": "int", "group": "models", "description": "equilibrium-constraint model"},
     "MDLEQA": {"type": "int", "group": "models", "description": "equilibrium-axisymmetry model"},
@@ -438,13 +439,26 @@ def handle_set_param_str(name: str, value: str) -> str:
         raise _wrap_eqlib_error(exc) from exc
 
 
-def handle_save(path: str) -> str:
+def handle_save(path: str, overwrite: bool = False) -> str:
+    # When it saves, the tool chooses FWOPEN's mode itself: 3 refuses an
+    # existing file, 0 overwrites one. The look at the path first is for
+    # the message, and leaves KNAMEQ and MODEFW alone when it refuses;
+    # mode 3 is what holds if a file appears in between.
     try:
         eq = STATE.ensure_open()
-        eq.save(path)
-        return f"saved equilibrium to {path}"
+        refused = (not overwrite) and os.path.lexists(path)
+        if not refused:
+            eq.set_param("MODEFW", 0 if overwrite else 3)
+            eq.save(path)
     except Exception as exc:
         raise _wrap_eqlib_error(exc) from exc
+    if refused:
+        if os.path.isfile(path):
+            hint = "exists; pass overwrite=true to replace it"
+        else:
+            hint = "exists and is not a regular file"
+        raise ToolError(f"save: {path} {hint}")  # type: ignore[call-arg]
+    return f"saved equilibrium to {path}"
 
 
 def handle_set_params(params: Dict[str, SupportedValue]) -> str:
@@ -619,26 +633,33 @@ def build_server() -> Any:
         return handle_set_param_str(name, value)
 
     @mcp.tool()
-    def save(path: str) -> str:
+    def save(path: str, overwrite: bool = False) -> str:
         """Save the equilibrium of the last ``run`` to a TASK/EQ binary file.
 
         ``path`` is set as KNAMEQ before eq_save is called; the file is
         what ``set_param_str("KNAMEQ", path)`` plus ``MODELG=3`` loads in
         tr_mcp and the other modules. Relative paths are resolved against
         the server's working directory, and ``path`` is limited to the 80
-        bytes of KNAMEQ.
+        ASCII bytes of KNAMEQ.
 
-        Success means that this call wrote a non-empty file at ``path``.
+        An existing file is not replaced unless ``overwrite`` is true, and
+        the refusal changes nothing. Otherwise the tool sets ``MODEFW``
+        itself before it saves (3, or 0 with ``overwrite``), whatever
+        ``set_param`` put there, and once the path is accepted (not
+        over-long, no blank at its end, ASCII) KNAMEQ is ``path``, also
+        when ``eq_save`` fails.
+
+        Success means that this call wrote the file at ``path``.
         "invalid parameter": no successful ``run`` since ``init``, since
         a solve or load that failed, or since ``set_param`` of anything
         but the two file modes (run again first); a blank or over-long
-        path; or ``MODEFW`` other than 0
-        (overwrite) or 3 (refuse an existing file). "calculation failed":
-        the file could not be opened or
-        written (a missing or unwritable directory, an existing file that
-        is read-only, ``MODEFW=3`` and an existing file).
+        path. "calculation failed": the file could not be opened (a
+        missing or unwritable directory), a write failed (an existing
+        file that is read-only) or the file came out shorter than what
+        was written (a file size limit). What is then at ``path`` stays
+        there: do not load it.
         """
-        return handle_save(path)
+        return handle_save(path, overwrite)
 
     @mcp.tool()
     def set_params(params: Dict[str, Any]) -> str:

@@ -23,11 +23,16 @@ from eqlib import (  # noqa: E402
 
 
 class _Eq:
-    """Stands in for eqlib.Eq: records a save, or raises what it is given."""
+    """Stands in for eqlib.Eq: records a save and the parameters set before
+    it, or raises what it is given."""
 
     def __init__(self, exc=None):
         self.saved = []
+        self.params = []
         self._exc = exc
+
+    def set_param(self, name, value):
+        self.params.append((name, value))
 
     def save(self, path):
         if self._exc is not None:
@@ -44,12 +49,49 @@ def _serve(monkeypatch, eq):
     monkeypatch.setattr(srv, "STATE", state)
 
 
-def test_handle_save_saves_to_the_path(monkeypatch):
+def test_handle_save_saves_to_the_path(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)         # the handler looks at the path first
     eq = _Eq()
     _serve(monkeypatch, eq)
     message = srv.handle_save("out/eq.bin")
     assert eq.saved == ["out/eq.bin"]
     assert "out/eq.bin" in message
+
+
+def test_handle_save_refuses_an_existing_file_by_default(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    Path("eq.bin").write_bytes(b"earlier")
+    eq = _Eq()
+    _serve(monkeypatch, eq)
+    with pytest.raises(Exception) as info:
+        srv.handle_save("eq.bin")
+    assert "exists" in str(info.value) and "overwrite" in str(info.value)
+    assert eq.saved == [] and eq.params == []
+    assert Path("eq.bin").read_bytes() == b"earlier"
+
+
+def test_handle_save_does_not_offer_overwrite_for_what_is_not_a_file(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    os.mkdir("there")
+    eq = _Eq()
+    _serve(monkeypatch, eq)
+    with pytest.raises(Exception) as info:
+        srv.handle_save("there")
+    assert "not a regular file" in str(info.value) and "overwrite" not in str(info.value)
+    assert eq.saved == [] and eq.params == []
+
+
+def test_handle_save_sets_the_write_mode_itself(monkeypatch, tmp_path):
+    """3 (FWOPEN refuses an existing file) unless ``overwrite``, then 0."""
+    monkeypatch.chdir(tmp_path)
+    eq = _Eq()
+    _serve(monkeypatch, eq)
+    srv.handle_save("new.bin")
+    assert eq.params == [("MODEFW", 3)]
+    Path("old.bin").write_bytes(b"earlier")
+    srv.handle_save("old.bin", overwrite=True)
+    assert eq.params == [("MODEFW", 3), ("MODEFW", 0)]
+    assert eq.saved == ["new.bin", "old.bin"]
 
 
 def test_handle_save_reports_a_save_that_wrote_nothing(monkeypatch):
@@ -88,7 +130,26 @@ def test_save_through_the_real_library(monkeypatch, tmp_path):
 
         srv.handle_run(0)
         assert "eq.bin" in srv.handle_save("eq.bin")
-        assert os.path.getsize("eq.bin") > 0
+        size = os.path.getsize("eq.bin")
+        assert size > 0
+
+        # a second save to the same path: refused, then allowed
+        Path("eq.bin").write_bytes(b"earlier")
+        with pytest.raises(Exception) as info:
+            srv.handle_save("eq.bin")
+        assert "overwrite" in str(info.value)
+        assert Path("eq.bin").read_bytes() == b"earlier"
+        assert "eq.bin" in srv.handle_save("eq.bin", overwrite=True)
+        assert os.path.getsize("eq.bin") == size
+
+        # a file that appears after the handler's look: FWOPEN's mode 3 holds
+        Path("late.bin").write_bytes(b"earlier")
+        with monkeypatch.context() as patched:
+            patched.setattr(srv.os.path, "lexists", lambda path: False)
+            with pytest.raises(Exception) as info:
+                srv.handle_save("late.bin")
+        assert "calculation failed" in str(info.value)
+        assert Path("late.bin").read_bytes() == b"earlier"
 
         with pytest.raises(Exception) as info:
             srv.handle_save("no_such_dir/eq.bin")
