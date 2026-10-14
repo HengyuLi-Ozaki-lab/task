@@ -33,11 +33,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   client, and the library's `WRITE(6,...)` went into it: in one stdio
   session (`initialize`, `init`, `run`) 9 of the 12 stdout lines of
   `tr_mcp` and of `tot_mcp` were not JSON-RPC, and 2 of 5 of `eq_mcp` with
-  `run(mode=1)`. `main()` now calls `_install_fd_isolation()` immediately
-  before the stdio server starts: fd 1 is redirected to stderr and
-  `sys.stdout` keeps the pipe. Importing a server module leaves fd 1 and
-  `sys.stdout` of the importing process alone (#227 item 1); `--help` and
-  `--print-tools` print to the terminal as before.
+  `run(mode=1)`. `main()` now calls `_fd_isolation.install()` (one module
+  shared by the three servers, `python/_fd_isolation.py`, with one flag for
+  the process) immediately before the stdio server is built: fd 1 is
+  redirected to stderr and `sys.stdout` keeps the pipe. Importing a server
+  module leaves fd 1 and `sys.stdout` of the importing process alone (#227
+  item 1); `--help` and `--print-tools` print to the terminal as before.
+  Two descriptor layouts in which the redirect alone does nothing are
+  handled: with fd 2 closed it is opened on the null device first (and
+  `sys.stderr` given it), and when stdout and stderr are the same file (the
+  host merged them, `2>&1`) fd 1 goes to the null device and one line on
+  stderr says that what is written to fd 1 is discarded. A terminal on
+  both counts as the same file too: a server started by hand in a
+  terminal shows that line and no longer the library's output. Where
+  `fstat` gives a descriptor no identity (Windows for a pipe or a console)
+  the merged layout is not recognised and fd 1 goes to stderr as usual.
 
 ## TR Phase L — library-ization (2026-04-18)
 
