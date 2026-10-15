@@ -17,6 +17,13 @@ name: clean-tree-build
 #
 # Not a required check: the path filter skips it on Python-only PRs,
 # and a skipped required check sits at "expected" forever.
+#
+# workflow_dispatch and schedule only work for a workflow file that
+# exists on the default branch (master). master carries no workflow
+# files at all today (regen-baselines.yml has the same gap: `gh run
+# list --workflow regen-baselines.yml` answers "not found on the
+# default branch"), so those two triggers go live when the workflow
+# reaches master; pull_request and push work from develop right away.
 
 on:
   workflow_dispatch:
@@ -29,6 +36,9 @@ on:
       - '**/*.F'
       - '**/*.F90'
       - '**/*.h'
+      - '**/*.inc'
+      - '**/*.m'
+      - '**/*.for'
       - 'make.header.org'
       - 'mtxp/**'
       - '.github/workflows/clean-tree-build.yml'
@@ -42,6 +52,9 @@ on:
       - '**/*.F'
       - '**/*.F90'
       - '**/*.h'
+      - '**/*.inc'
+      - '**/*.m'
+      - '**/*.for'
       - 'make.header.org'
       - 'mtxp/**'
       - '.github/workflows/clean-tree-build.yml'
@@ -53,7 +66,9 @@ on:
     - cron: '0 3 * * 1'
 
 concurrency:
-  group: clean-tree-build-${{ github.ref }}
+  # A scheduled run tests develop but fires on refs/heads/master; give
+  # it its own group so it and a push to master cannot cancel each other.
+  group: clean-tree-build-${{ github.event_name == 'schedule' && 'schedule' || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -101,7 +116,8 @@ jobs:
         # README's (full history, no --depth), on purpose.
         run: |
           set -e
-          test "$(basename "$GITHUB_WORKSPACE")" = task
+          test "$(basename "$GITHUB_WORKSPACE")" = task \
+            || { echo "the TASK checkout must be named task (../bpsd/Makefile includes ../task/make.header)" >&2; exit 1; }
           git clone --branch develop https://github.com/k-yoshimi/bpsd.git \
             "$GITHUB_WORKSPACE/../bpsd"
           make -C "$GITHUB_WORKSPACE/../bpsd" libbpsd.a

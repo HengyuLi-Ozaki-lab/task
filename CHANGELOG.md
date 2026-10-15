@@ -43,11 +43,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   fresh-checkout sequence (per-system files, `make -C ../bpsd libbpsd.a`,
   one `make -C <mod> lib<mod>api.so`) for tr / fp / ti / wr / wrx / eq, one
   module per runner with nothing pre-built, and checks that the `.so`
-  exists and loads with `RTLD_NOW`. Triggered by Fortran / Makefile
-  changes, by hand, and weekly on `develop`. The pytest and mono-build
+  exists and loads with `RTLD_NOW` (`ctypes.CDLL`). Triggered by changes to
+  Makefiles, `make.header.org`, Fortran sources and includes, `mtxp/`, the
+  workflow file and the action; by hand (on the ref chosen in the dispatch)
+  and weekly on `develop` once the workflow file reaches `master` (a
+  dispatch or schedule needs the file on the default branch, which
+  carries no workflow files yet). The pytest and mono-build
   jobs pre-build the whole PIC chain first, which is why #230 regressed
-  unnoticed. The `make.header` / `mtxp/make.mtxp` heredoc that those two
-  jobs carried as KEEP-IN-SYNC copies is now the composite action
+  unnoticed. The `make.header` heredoc and the `mtxp/make.mtxp` copy that
+  those two jobs carried as KEEP-IN-SYNC steps are now the composite action
   `.github/actions/provision-build-env`, shared by all three.
 
 ### Changed

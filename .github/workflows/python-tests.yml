@@ -353,7 +353,7 @@ jobs:
 
       - name: Provision per-system files (make.header, mtxp/make.mtxp)
         # Composite action (.github/actions/provision-build-env): the
-        # make.header heredoc that this job and the mono-build job used to
+        # make.header heredoc that the pytest job and this job used to
         # carry as two KEEP-IN-SYNC copies now lives in one place, shared
         # with clean-tree-build.yml, so the compiler flags cannot drift
         # between the three build paths.
@@ -382,9 +382,9 @@ jobs:
         # names 5 .so files: eq/libeqapi.so + tr/libtrapi.so +
         # fp/libfpapi.so + ti/libtiapi.so + wrx/libwrxapi.so. We
         # additionally build wr/libwrapi.so (6th, NOT a mono prereq)
-        # for symmetry with the pytest job above, so a future
-        # composite-action refactor sees a single canonical module
-        # list. The wr build adds ~30s on a job that takes ~5-8 min;
+        # for symmetry with the pytest job above and with the matrix of
+        # clean-tree-build.yml, so the three places that name the six
+        # modules stay identical. The wr build adds ~30s on a job that takes ~5-8 min;
         # the symmetry value beats the time cost.
         #
         # We deliberately do NOT build tot/libtotapi.so here (the
