@@ -25,7 +25,7 @@ pytest.register_assert_rewrite("fd_isolation_cases")
 import fd_isolation_cases as cases  # noqa: E402
 from fd_isolation_cases import run  # noqa: E402
 
-SERVERS = ("eq_mcp", "tr_mcp", "tot_mcp")
+SERVERS = ("eq_mcp", "tr_mcp", "tot_mcp", "ti_mcp", "wr_mcp", "wrx_mcp")
 
 
 # ----- every server runs every shared check -----

@@ -95,6 +95,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   terminal shows that line and no longer the library's output. Where
   `fstat` gives a descriptor no identity (Windows for a pipe or a console)
   the merged layout is not recognised and fd 1 goes to stderr as usual.
+- **MCP servers `ti_mcp`, `wr_mcp`, `wrx_mcp`: the same fd isolation** (#262).
+  The three servers had the layout of the other three and the same exposure:
+  `main()` now calls `_fd_isolation.install()` immediately before the stdio
+  server is built, importing a server module leaves the importing process's
+  fd 1 and `sys.stdout` alone, and `--help` / `--print-tools` / the
+  missing-SDK path return before anything is redirected. Each server's
+  `tests/test_fd_isolation.py` runs the shared checks
+  (`python/mcp-servers/fd_isolation_cases.py`), and
+  `python/tests/test_fd_isolation.py` checks that all six servers run every
+  one of them. `fp_mcp` follows in #232.
 
 ## TR Phase L — library-ization (2026-04-18)
 
