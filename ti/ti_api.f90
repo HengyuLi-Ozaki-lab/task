@@ -8,8 +8,8 @@
 !                    populates TICOMM default values including NRMAX=50,
 !                    NSMAX=2 (from pl_init), DT=0.01, NTSTEP=1, etc.
 !   ti_set_param  -> dispatches to ti_param_registry::ti_param_set which
-!                    handles ~35 namelist scalars/arrays. Clears g_prepared
-!                    so profile-affecting changes pick up on the next run.
+!                    handles ~35 namelist scalars/arrays. The registry's
+!                    mutation counter makes the next ti_run re-prep (#253).
 !   ti_run        -> ti_prep (first call only) + ti_exec with NTMAX set to
 !                    the requested step count; NTMAX is restored after the
 !                    loop.
@@ -34,7 +34,7 @@ MODULE ti_api
        residual_loop_max, icount_loop_max, icount_mat_max, &
        RNA, RTA, RUA, RBP, RQP, RJP, ZEFF, BETA, BETAP, &
        allocate_ticomm, deallocate_ticomm
-  USE ti_param_registry, ONLY: ti_param_set
+  USE ti_param_registry, ONLY: ti_param_set, ti_param_generation
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE tiinit,            ONLY: tiinit_fortran => ti_init
@@ -60,6 +60,9 @@ MODULE ti_api
   ! Lifecycle flags (module-scope state, single instance only at L-3).
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
+  ! Registry mutation counter seen by the last successful prep (#253).
+  ! -1 = never prepared. See ti_param_generation in the registry.
+  INTEGER, SAVE :: g_prep_generation = -1
 
 CONTAINS
 
@@ -149,10 +152,10 @@ CONTAINS
     IF (ti_param_set(TRIM(fname), value) /= 0) THEN
        ierr = TI_ERR_INVALID
     ELSE
-       ! A user who changes a profile-shape-altering variable needs to
-       ! re-run ti_prep; invalidate g_prepared so the next ti_run picks
-       ! up the new parameters.
-       g_prepared = .FALSE.
+       ! A successful set advances the registry's mutation counter;
+       ! ti_run compares it with g_prep_generation and re-runs ti_prep
+       ! (#253: the same holds for sets that reach the registry without
+       ! passing through here, such as tot's "ti:" dispatcher).
        ierr = TI_OK
     END IF
   END FUNCTION ti_api_set_param
@@ -180,15 +183,18 @@ CONTAINS
 
     ! ti_prep builds the initial profile, metric and bpsd state. It must
     ! run before the first ti_exec call and any time the caller updated
-    ! a profile-shape-altering namelist variable (ti_api_set_param
-    ! clears g_prepared).
-    IF (.NOT. g_prepared) THEN
+    ! a profile-shape-altering namelist variable: the registry counts
+    ! every successful set (ti_param_generation), from ti_api_set_param
+    ! or from tot's "ti:" dispatcher alike (#253), and a changed count
+    ! means re-prep.
+    IF (.NOT. g_prepared .OR. g_prep_generation /= ti_param_generation()) THEN
        CALL ti_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           ierr = TI_ERR_CALC_FAILED
           RETURN
        END IF
        g_prepared = .TRUE.
+       g_prep_generation = ti_param_generation()
     END IF
 
     ! Override NTMAX for this call so ti_exec runs exactly ntmax_in

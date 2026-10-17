@@ -10,6 +10,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
+  run re-preps the module, whoever set it (#253).** `tr_set_param` /
+  `fp_set_param` / `ti_set_param` used to clear the module's private
+  "prepared" flag themselves; tot's `tr:` / `fp:` / `ti:` dispatcher wrote
+  to the registries directly and left the flag standing, so after a run a
+  `Tot.set_param("tr:NSMAX", 3)` continued the old state with `tr_prep`
+  skipped and the #189 pre-run species check never fired. The registries
+  now count every successful set and `tr_run` / `fp_run` / `ti_run`
+  re-prep when the count moved since their last prep. Behaviour change for
+  `Tot` and `tot_mcp` only: a set after a run now restarts the module
+  (`NT` and `T` back to 0), which is what `trlib` / `fplib` / `tilib` and
+  `TotPipeline` have always done; a set the registry refused changes
+  nothing. `eq` has no prepared flag on `develop`; the same counter is the
+  natural precondition for `eq_save` (#256).
+
 - **FP library: `fp_run` refuses `NRMAX` above `FP_MAX_NRMAX` (100).** Such a
   run was made, and `fp_get_state` then returned rc=3: its results could be
   read only from the log on unit 6 or from `fp_regress.dat`

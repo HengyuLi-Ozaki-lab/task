@@ -586,12 +586,16 @@ jobs:
         # Re-uses the default libtotapi.so artifact built earlier in
         # this job (the "Build default libtotapi.so" step landed in
         # PR #207) for test_non_mono_so_raises.
+        # test_set_after_run.py (#253) is listed here as well so its
+        # MONO_LIB_PATH-gated classes run on the mono image; its
+        # default-image classes also run in the main pytest step.
         env:
           MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
           TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so
           PYTHONPATH: python
         run: |
           python -m pytest python/totlib/tests/test_mono_routing.py \
+                 python/totlib/tests/test_set_after_run.py \
                  --forked --timeout=120 --timeout-method=signal -v
 
       - name: Mono pipeline coupling (Phase 2c PR-B)
