@@ -39,6 +39,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   returned `EQCALQ`'s code, and left `IERR` unassigned for a `MODELG` that
   is no file format; it now starts from `IERR=0`, calls `EQCALQ` only after
   a successful `EQDSKR`, and returns 1 for an unknown `MODELG`.
+- **CI: `clean-tree-build` workflow (#250).** Runs the wrapper READMEs'
+  fresh-checkout sequence (per-system files, `make -C ../bpsd libbpsd.a`,
+  one `make -C <mod> lib<mod>api.so`) for tr / fp / ti / wr / wrx / eq, one
+  module per runner with nothing pre-built, and checks that the `.so`
+  exists and loads with `RTLD_NOW` (`ctypes.CDLL`). Triggered by changes to
+  Makefiles, `make.header.org`, Fortran sources and includes, `mtxp/`, the
+  workflow file and the action; by hand (on the ref chosen in the dispatch)
+  and weekly on `develop` once the workflow file reaches `master` (a
+  dispatch or schedule needs the file on the default branch, which
+  carries no workflow files yet). The pytest and mono-build
+  jobs pre-build the whole PIC chain first, which is why #230 regressed
+  unnoticed. The `make.header` heredoc and the `mtxp/make.mtxp` copy that
+  those two jobs carried as KEEP-IN-SYNC steps are now the composite action
+  `.github/actions/provision-build-env`, shared by all three.
 
 ### Changed
 
