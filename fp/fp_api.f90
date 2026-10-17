@@ -35,7 +35,7 @@ MODULE fp_api
        NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2, TIMEFP, &
        NTMAX, &
        RNT, RWT, RTT, RJT, RPCT, RPWT
-  USE fp_param_registry, ONLY: fp_param_set, fp_param_set_str
+  USE fp_param_registry, ONLY: fp_param_set, fp_param_set_str, fp_param_generation
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE obinit,            ONLY: ob_init
@@ -62,6 +62,9 @@ MODULE fp_api
   ! Lifecycle flags (module-scope state, single instance only at L-3).
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
+  ! Registry mutation counter seen by the last successful prep (#253).
+  ! -1 = never prepared. See fp_param_generation in the registry.
+  INTEGER, SAVE :: g_prep_generation = -1
 
 CONTAINS
 
@@ -135,10 +138,10 @@ CONTAINS
     IF (fp_param_set(TRIM(fname), REAL(value, KIND=rkind)) /= 0) THEN
        ierr = FP_ERR_INVALID
     ELSE
-       ! A user who changes a profile-shape-altering variable needs to
-       ! re-run fp_prep; invalidate g_prepared so the next fp_run picks
-       ! up the new parameters.
-       g_prepared = .FALSE.
+       ! A successful set advances the registry's mutation counter;
+       ! fp_run compares it with g_prep_generation and re-runs fp_prep
+       ! (#253: the same holds for sets that reach the registry without
+       ! passing through here, such as tot's "fp:" dispatcher).
        ierr = FP_OK
     END IF
   END FUNCTION fp_api_set_param
@@ -179,7 +182,8 @@ CONTAINS
     IF (fp_param_set_str(TRIM(fname), TRIM(fvalue)) /= 0) THEN
        ierr = FP_ERR_INVALID
     ELSE
-       g_prepared = .FALSE.
+       ! The registry's mutation counter makes the next fp_run re-prep
+       ! (see fp_api_set_param).
        ierr = FP_OK
     END IF
   END FUNCTION fp_api_set_param_str
@@ -219,15 +223,18 @@ CONTAINS
     ! fp_prep allocates the FPCOMM arrays, sets up the velocity / radial
     ! mesh, and initializes the distribution function. It must run before
     ! the first fp_loop call and any time the caller updated a profile-
-    ! shape-altering namelist variable (fp_api_set_param clears
-    ! g_prepared).
-    IF (.NOT. g_prepared) THEN
+    ! shape-altering namelist variable: the registry counts every
+    ! successful set (fp_param_generation), from fp_api_set_param or
+    ! from tot's "fp:" dispatcher alike (#253), and a changed count
+    ! means re-prep.
+    IF (.NOT. g_prepared .OR. g_prep_generation /= fp_param_generation()) THEN
        CALL fp_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           ierr = FP_ERR_CALC_FAILED
           RETURN
        END IF
        g_prepared = .TRUE.
+       g_prep_generation = fp_param_generation()
     END IF
 
     ! Override NTMAX for this call so fp_loop steps exactly ntmax_in
@@ -301,7 +308,8 @@ CONTAINS
     ! The arrays keep the extents of the last fp_prep (fp_allocate_ntg2
     ! gives all six the same shape (NRMAX,NSAMAX,NTG2M)), while NRMAX /
     ! NSAMAX are the current namelist values. fp_set_param on a count
-    ! clears g_prepared without reallocating, so until the next fp_run
+    ! advances the registry counter without reallocating, so until the
+    ! next fp_run
     ! the two can disagree (#245). Copy MIN(current count, allocated
     ! extent) along each axis and report the copied extents, so the
     ! [nsamax][nrmax] slice the caller reads is exactly the data that

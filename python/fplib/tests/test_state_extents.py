@@ -2,8 +2,8 @@
 
 The FPCOMM profile arrays (``RNT``, ``RWT``, ... in ``fp/fpcomm.f90``) keep
 the extents of the last ``fp_prep``; ``NRMAX`` / ``NSAMAX`` are the current
-namelist values. ``fp_set_param`` on either count clears ``g_prepared``
-without reallocating, so until the next ``fp_run`` the two disagree, and
+namelist values. ``fp_set_param`` on either count marks the module for
+re-prep without reallocating, so until the next ``fp_run`` the two disagree, and
 ``fp_get_state`` used to copy ``nsa = 1..NSAMAX``, ``nr = 1..NRMAX`` out of
 arrays that are smaller than that (a read past the allocation: an abort
 under ``-fcheck=all``, garbage in the padding otherwise).

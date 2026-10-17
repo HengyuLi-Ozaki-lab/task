@@ -126,6 +126,27 @@ Set one numeric parameter. `name` MUST be `"<ns>:<bare>"`. Validation
 runs Python-side first, so missing/unknown prefixes raise
 `TotlibInvalidParamError` before any FFI call.
 
+A set after a run restarts the module it addresses on that module's
+next run: `tr:` / `fp:` / `ti:` parameters reach the module's registry,
+which counts every successful set, and `tr_run` / `fp_run` / `ti_run`
+re-run their `*_prep` (initial profiles, metric, BPSD state; `NT` and `T`
+back to 0) when the count moved since their last prep. `Tot.run` drives
+`tr_run` only (L-6), so for `tr:` that is the next `Tot.run`; for `fp:` /
+`ti:` it is the next `fp_run` / `ti_run`, reached through `Fplib` /
+`Tilib` on the mono image or through the C ABI. This is the same
+semantics as `Trlib.set_param` / `TotPipeline.set_param` (#253). A set the
+registry refuses (unknown name, bad index) changes nothing and the next
+run continues. There is no "live" update of a running module through
+`set_param`; a coupling input that should not restart the module is a
+registry-level classification still to be designed.
+
+The count is per registry. On the mono image several modules read the
+same `plcomm` variables (`ti:RR` and `eq:RR` are one `RR`), and a set
+through one module's registry does not move another module's count:
+after `Tot.set_param("ti:RR", ...)`, `fp_run` does not re-prep. That is
+the pre-existing shared-storage property of the mono image, not something
+`set_param` can see; set each module's own parameters.
+
 ### `Tot.set_param_str(name, value) -> None`
 
 Set one string parameter. At L-3, only the `tr:` and `eq:` namespaces
