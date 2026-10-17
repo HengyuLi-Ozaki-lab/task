@@ -60,3 +60,13 @@ def raise_for_ierr(func: str, ierr: int) -> None:
         return
     cls = _CODE_MAP.get(int(ierr), WrlibError)
     raise cls(f"{func}: ierr={ierr}")
+
+class WrlibAbiError(WrlibError):
+    """libwrapi.so's wr_state_t layout is not the one this wrapper has (#246).
+
+    Raised by :func:`wrlib._ffi.load_library` before any struct is passed:
+    the library does not export ``wr_state_abi_version`` / ``wr_state_size``
+    (built before the layout check), or its version or sizeof differs from
+    ``wrlib._ffi.WrStateC``. The message names the fix (rebuild the
+    library, or update the wrapper).
+    """

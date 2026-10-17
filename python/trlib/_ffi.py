@@ -23,7 +23,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from _abi_check import AbiMismatchError, check_state_layout
 from _runtime_mode import mono_lib_path
+
+from .errors import TrlibAbiError
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -38,6 +41,12 @@ except ImportError:  # pragma: no cover - numpy is optional
 # ---------------------------------------------------------------------
 TR_MAX_NRMAX = 500
 TR_MAX_NSMAX = 8
+
+# tr_state_t layout version; mirrors TR_STATE_ABI_VERSION in tr/tr_api.h
+# and tr/tr_state.f90. load_library() refuses a library whose
+# tr_state_abi_version() / tr_state_size() differ from this and from
+# ctypes.sizeof(TrStateC) (#246).
+TR_STATE_ABI_VERSION = 2
 
 
 # ---------------------------------------------------------------------
@@ -252,6 +261,15 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
     lib = ctypes.CDLL(str(p), mode=mode)
+    # #246: refuse a library whose tr_state_t layout is not TrStateC's,
+    # before any struct is passed. A library built before #246 has no
+    # query symbols and is refused too (it may or may not match).
+    try:
+        check_state_layout(lib, prefix="tr", struct=TrStateC,
+                           expected_version=TR_STATE_ABI_VERSION,
+                           lib_name=os.path.basename(str(p)))
+    except AbiMismatchError as exc:
+        raise TrlibAbiError(str(exc)) from exc
     return _apply_prototypes(lib)
 
 

@@ -27,6 +27,7 @@
 
 MODULE ti_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE ti_state, ONLY: TI_STATE_ABI_VERSION
   USE ti_state, ONLY: ti_state_c, TI_MAX_NRMAX, TI_MAX_NSA_MAX
   USE ticomm,   ONLY: rkind, &
        NRMAX, NSMAX, NT, T, NTMAX, &
@@ -63,6 +64,9 @@ MODULE ti_api
   ! Registry mutation counter seen by the last successful prep (#253).
   ! -1 = never prepared. See ti_param_generation in the registry.
   INTEGER, SAVE :: g_prep_generation = -1
+
+  ! #246: layout query, callable before ti_init.
+  PUBLIC :: ti_api_state_abi_version, ti_api_state_size
 
 CONTAINS
 
@@ -322,5 +326,24 @@ CONTAINS
     g_prepared    = .FALSE.
     ierr = TI_OK
   END FUNCTION ti_api_finalize
+
+  !-------------------------------------------------------------------
+  ! ti_state_abi_version / ti_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before ti_init.
+  ! A caller compares both with its own sizeof(ti_state_t) and its copy
+  ! of TI_STATE_ABI_VERSION before passing a struct to ti_get_state;
+  ! python/tilib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION ti_api_state_abi_version() RESULT(v) BIND(C, NAME="ti_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = TI_STATE_ABI_VERSION
+  END FUNCTION ti_api_state_abi_version
+
+  FUNCTION ti_api_state_size() RESULT(n) BIND(C, NAME="ti_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(ti_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION ti_api_state_size
 
 END MODULE ti_api

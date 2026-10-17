@@ -120,11 +120,18 @@ numbering 規約 (`tr/trcoef_turbulence.f90:392-398` の
    - **per-radius / per-species profile loops** が
      `:321-330` — 新配列 field は `RN` / `RT` / `AJ` /
      `QP` の loop パターンに従う.
-5. **`TR_STATE_ABI_VERSION` を bump する.**
-   `tr/tr_api.h:38` で. 現値は `2`; 次の整数 (現在の
-   流れだと `3`) に上げる.
+5. **`TR_STATE_ABI_VERSION` を 2 箇所で bump する.**
+   `tr/tr_api.h` の `#define` と `tr/tr_state.f90` の
+   `PARAMETER` (#246). 現値は `2`; 次の整数 (現在の流れだと
+   `3`) に上げる. ライブラリは PARAMETER を
+   `tr_state_abi_version()` で, `sizeof` を `tr_state_size()`
+   で export し, `tr/tests/c_abi/test_negative.c` は header と
+   ずれると落ちる. `python/trlib/_ffi.py` は version か size が
+   `TrStateC` と違う `libtrapi.so` を load 時に拒否する
+   (`TrlibAbiError`) ので, bump 忘れや古いビルドは黙った 0 では
+   なく load 時のエラーとして現れる.
 6. **ctypes 側にミラー.**
-   `python/trlib/_ffi.py:94-120` の `TrStateC._fields_` に
+   `python/trlib/_ffi.py` (`TrStateC._fields_`) の `TrStateC._fields_` に
    tuple を append. BIND-C struct と同じ field 順を使う
    ことで両 layout が byte-compatible に保たれる.
 7. **Python `TrState` dataclass に表面化.**

@@ -1,6 +1,6 @@
 # C ABI state structs — runtime layout check (design, #246)
 
-**Status**: design, pre-implementation, awaiting one decision (§7)
+**Status**: implemented (option 2 only, one PR, #246 first); §7 records the decisions taken on 2026-10-17
 **Date**: 2026-10-17
 **Tracking issue**: #246 (raised by the Codex review of #233)
 **Related**: #187 / #193 (AJRFT, the first `tr_state_t` / `tot_state_t`
@@ -72,10 +72,16 @@ and the only downstream consumer (the TASK Web Client, via the MCP
 servers) goes through the Python wrappers.
 
 **Recommendation: (2) now, (1) only if an out-of-tree C consumer
-appears.** (2) alone meets goals 1–3: a pre-#246 library has no query
-symbol (new caller / old library → refused at load), and a library whose
-struct grew reports a larger size than the wrapper's (old caller / new
-library → refused at load).
+appears.** (2) meets goals 1–3 for every caller that runs the check,
+i.e. every wrapper and C driver from this change on: a pre-#246 library
+has no query symbol (new caller / old library → refused at load), and a
+library whose struct grew reports a larger size than the wrapper's
+(old caller / new library → refused at load). What (2) cannot do is
+protect a caller that predates it: a wrapper or C program older than
+this change never asks, and `X_get_state` still takes no buffer size,
+so that pairing can still write past the caller's struct. The only such
+callers are this repository's own, which rebuild with the library; an
+out-of-tree C consumer that cannot be rebuilt is the case for (1).
 
 ## 4. Design (option 2)
 
@@ -107,17 +113,17 @@ side effects, callable before `X_init`):
 ```
 
 The size comes from the `BIND(C)` type, so the library, not the header,
-is authoritative. `probe` is a local of up to ~5 MB for eq (the type is
-large); if a compiler objects to the stack frame, `STORAGE_SIZE` of a
-dummy with `TYPE(X_state_c), INTENT(IN) :: t` needs no object at all —
-pick whichever gfortran 13 and the `-fcheck=all` build accept and use
-it in all seven.
+is authoritative. `probe` is a local of 20 to 106 KB (wr 20448, tr 72128,
+tot 72144, wrx 70424, eq 80816, ti 105640 bytes); above gfortran's
+default `-fmax-stack-var-size` (64 KiB) it is placed in static storage,
+never written, so there is no stack concern. `C_SIZEOF` is what the seven
+modules use.
 
-Mono image: `libtotapi_mono.so` co-links every module's objects, so it
-exports all fourteen symbols without any tot-level addition; the
-version is per module, not per image. The `libtotapi_mono_inspect`
-target gets one more `nm` line asserting the seven `_state_size`
-symbols are present.
+Mono image: `libtotapi_mono.so` co-links the objects of eq, tr, fp, ti,
+wrx and tot (wr is not part of it), so it exports those twelve symbols
+without any tot-level addition; the version is per module, not per
+image. The `libtotapi_mono_inspect` target gets a gate asserting the
+twelve symbols are present.
 
 ### 4.2 C header: macro mirrors the PARAMETER
 

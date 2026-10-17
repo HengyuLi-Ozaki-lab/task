@@ -18,10 +18,18 @@ MODULE fp_state
   USE, INTRINSIC :: ISO_C_BINDING
   IMPLICIT NONE
   PRIVATE
+  PUBLIC :: FP_STATE_ABI_VERSION
   PUBLIC :: fp_state_c, FP_MAX_NRMAX, FP_MAX_NSAMAX
 
   INTEGER(C_INT), PARAMETER :: FP_MAX_NRMAX  = 100
   INTEGER(C_INT), PARAMETER :: FP_MAX_NSAMAX = 8
+
+  ! Layout version of fp_state_c / fp_state_t (#246). Bump it together
+  ! with FP_STATE_ABI_VERSION in fp_api.h whenever a field is added,
+  ! removed or reordered; fp_state_abi_version() exports it and the C-ABI
+  ! driver fails when the two drift. fp_state_size() exports the
+  ! BIND(C) size, so the library, not the header, is authoritative.
+  INTEGER(C_INT), PARAMETER :: FP_STATE_ABI_VERSION = 1
 
   TYPE, BIND(C) :: fp_state_c
      INTEGER(C_INT) :: nrmax

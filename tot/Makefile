@@ -718,6 +718,18 @@ libtotapi_mono_inspect: libtotapi_mono.so
 	else \
 	  echo "  OK: 8 unique bpsd storage symbols (one per bpsd module type)"; \
 	fi
+	@echo "=== HARD GATE 1b: every module's layout query must be exported (#246: X_state_abi_version + X_state_size for eq tr fp ti wrx tot) ==="
+	@missing=""; for m in eq tr fp ti wrx tot; do \
+	  for f in state_abi_version state_size; do \
+	    nm libtotapi_mono.so | grep -qE "[ _]$${m}_$${f}$$" || missing="$$missing $${m}_$${f}"; \
+	  done; \
+	done; \
+	if [ -n "$$missing" ]; then \
+	  echo "  FAIL: missing layout-query symbols:$$missing"; \
+	  exit 1; \
+	else \
+	  echo "  OK: 12 layout-query symbols exported"; \
+	fi
 	@echo "=== HARD GATE 2: no per-module lib*api.so runtime deps (the mono build must be self-contained) ==="
 	@deps=$$( ( ldd libtotapi_mono.so 2>/dev/null || otool -L libtotapi_mono.so ) \
 	          | grep -E 'lib(eq|tr|fp|ti|wr|wrx|tot)api\.so' \

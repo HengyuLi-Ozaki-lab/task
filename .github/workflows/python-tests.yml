@@ -178,6 +178,20 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Run per-module dlopen C ABI drivers (X_api_check_so, #246)
+        # Each driver dlopens libXapi.so, checks X_state_abi_version() and
+        # X_state_size() against X_api.h (the Fortran BIND(C) type vs the
+        # C struct, #246) and runs the init/run/get_state/finalize cycle.
+        # The static-link drivers (X_api_check_all) stay local: tr's does
+        # not link on macOS and they need the non-PIC chain; the dlopen
+        # path is what the Python wrappers use.
+        run: |
+          for mod in tr fp ti wr wrx eq; do
+            echo "::group::${mod}_api_check_so"
+            make -C "$mod" "${mod}_api_check_so"
+            echo "::endgroup::"
+          done
+
       - name: Run orchestrator Layer 2 + Layer 4 C ABI checks (tot_api_check_all)
         # Phase L-6 composite target. Builds and runs every C ABI driver:
         #   tot_api_check    -> test_smoke + test_param  (Layer 3 dispatcher)
@@ -410,14 +424,17 @@ jobs:
         run: |
           make -C tot libtotapi_mono.so
 
-      - name: Inspect libtotapi_mono.so (8-bpsd + no-lib*api.so-deps hard-gated)
-        # libtotapi_mono_inspect runs TWO hard-gates plus several
+      - name: Inspect libtotapi_mono.so (8-bpsd + 12-layout-syms + no-lib*api.so-deps hard-gated)
+        # libtotapi_mono_inspect runs THREE hard-gates plus several
         # observational checks:
         #
         # HARD GATE 1: BPSD storage symbol count == 8 (one per bpsd module
         #   type: device + equ1d + metric1d + plasmaf + shot + species +
         #   trmatrix + trsource). If the per-module dedup ever fails
         #   and we get 5×8=40 (or any other count), the build fails.
+        #
+        # HARD GATE 1b: the 12 X_state_abi_version / X_state_size symbols
+        # (eq tr fp ti wrx tot) are exported (#246).
         #
         # HARD GATE 2: No `lib*api.so` runtime dep in the .so's NEEDED
         #   list (Linux `ldd`) / load commands (macOS `otool -L`). The

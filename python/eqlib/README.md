@@ -101,6 +101,18 @@ See `examples/` for runnable scripts:
 All three accept `--dry-run` so you can validate argument parsing on a
 machine without `libeqapi.so` built.
 
+## Library layout check (#246)
+
+`load_library()` asks `libeqapi.so` for its `eq_state_t` layout
+(`eq_state_abi_version()`, `eq_state_size()`) and refuses it with
+`EqlibAbiError` when the version or the size differs from this wrapper's
+`EqStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C eq libeqapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
+
 ## API reference
 
 ### `Eq(lib_path: str | None = None)`

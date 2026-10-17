@@ -106,6 +106,18 @@ See `examples/` for runnable scripts (all support `--dry-run`):
 - `examples/parameter_sweep.py` — `eq:RR` × `eq:BB` grid
 - `examples/state_dump.py` — single run, `TotState.to_dict()` as JSON
 
+## Library layout check (#246)
+
+`load_library()` asks `libtotapi.so` for its `tot_state_t` layout
+(`tot_state_abi_version()`, `tot_state_size()`) and refuses it with
+`TotlibAbiError` when the version or the size differs from this wrapper's
+`TotStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C tot libtotapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
+
 ## API reference
 
 ### `Tot(lib_path: str | None = None)`

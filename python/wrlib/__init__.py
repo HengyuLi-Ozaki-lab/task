@@ -23,6 +23,7 @@ from .errors import (
     WrlibStateError,
     WrlibRunError,
     WrlibNotImplementedError,
+    WrlibAbiError,
     # Aliases kept for spec-style naming.
     WrLibError,
     WrLibInvalidParam,
@@ -41,6 +42,7 @@ __all__ = [
     "WrlibStateError",
     "WrlibRunError",
     "WrlibNotImplementedError",
+    "WrlibAbiError",
     "WrLibError",
     "WrLibInvalidParam",
     "WrLibNotInitialized",

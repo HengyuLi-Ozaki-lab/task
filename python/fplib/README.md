@@ -114,6 +114,18 @@ See `examples/` for runnable scripts:
 - `examples/parameter_sweep.py` — 3×3 RR × BB grid
 - `examples/state_dump.py` — single run, full `FpState.to_dict()` as JSON
 
+## Library layout check (#246)
+
+`load_library()` asks `libfpapi.so` for its `fp_state_t` layout
+(`fp_state_abi_version()`, `fp_state_size()`) and refuses it with
+`FplibAbiError` when the version or the size differs from this wrapper's
+`FpStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C fp libfpapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
+
 ## API reference
 
 ### `Fplib(lib_path: str | None = None)`
