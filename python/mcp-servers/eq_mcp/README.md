@@ -46,6 +46,20 @@ Register in `claude_desktop_config.json` (or `claude mcp add task-eq …`):
 }
 ```
 
+## Logs
+
+The server's stderr is what the client shows (Claude Desktop's log viewer,
+or the terminal under Claude Code). The library's `WRITE(6,...)` (unit 6,
+fd 1) goes there too: fd 1 is the JSON-RPC pipe of a stdio server, so
+`main()` hands fd 1 to stderr through the shared `python/_fd_isolation.py`
+right before the server is built (#227 / #257 / #263). When stdout and
+stderr are the same file (a server started by hand in a terminal, or
+`2>&1`), unit 6 output is discarded and one warning line says so on
+stderr; give the server a stderr of its own to keep it
+(`python -m eq_mcp.server 2>server.log`). The same-file test uses the
+`fstat` inode, so on Windows, where a pipe or console has none, a merged
+stream is not recognised and fd 1 goes to stderr as usual.
+
 ## Tools
 
 | Tool | Purpose |
