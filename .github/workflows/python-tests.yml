@@ -587,8 +587,8 @@ jobs:
         # this job (the "Build default libtotapi.so" step landed in
         # PR #207) for test_non_mono_so_raises.
         # test_set_after_run.py (#253) is listed here as well so its
-        # MONO_LIB_PATH-gated classes run on the mono image; its
-        # default-image classes also run in the main pytest step.
+        # MONO_LIB_PATH-gated fp / ti classes run on the mono image;
+        # its TestTotSetAfterRun class also runs in the main pytest step.
         env:
           MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
           TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so

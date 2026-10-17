@@ -12,11 +12,23 @@ Observable: ``tr_prep`` resets ``NT`` and ``T`` to zero, so a set followed by
 ``run(1)`` leaves ``nt == 1`` (restart) instead of ``nt == previous + 1``
 (continue). That is what ``trlib`` has always done; ``Tot`` now agrees.
 
-fp and ti are checked through the same image with raw ctypes (``fp_run`` /
-``ti_run`` live in the tot image's dependencies, or in the mono image): for
-fp a count changed through ``tot_set_param`` must show in the next
-``fp_get_state`` (it reports the allocated extent, #248), for ti ``NT`` must
-restart; both only happen when ``<mod>_prep`` ran again.
+fp and ti are checked on the mono image (``libtotapi_mono.so``, one copy
+of every module) with raw ctypes: for fp a count changed through
+``tot_set_param`` must show in the next ``fp_get_state`` (it reports the
+allocated extent, #248), for ti ``NT`` must restart; both only happen when
+``<mod>_prep`` ran again. The default image is not used for these two:
+``libtotapi.so`` carries five PIC copies of pl / eq / bpsd (one per
+sibling ``lib*api.so``, no ``-Bsymbolic``); on ELF the dynamic linker
+picks one definer per symbol across all copies, so the pl / eq state
+that ``tot_init`` prepared and the state ``fp_run`` touches are not
+guaranteed to live in the same copy. ``fp_run`` through that image
+crashed on Linux CI (SIGSEGV / SIGBUS) while the mono image passed;
+macOS's two-level namespaces bind each library to its own copy and hide
+it. No product path calls ``fp_run`` / ``ti_run`` through
+``libtotapi.so`` after ``tot_init`` (``tot_run`` drives tr only;
+``TotPipeline`` uses ``Fplib``'s own handle without ``tot_init``), and
+running fp / ti alongside tot in one process is what the mono image
+exists for.
 
 Process isolation: ``pytestmark`` requests per-test forking (effective when
 pytest-forked is installed, which CI and local dev have), because every
@@ -194,8 +206,8 @@ def _drive_through_tot(lib: ctypes.CDLL, mod: str, state_cls, *,
         lib.tot_finalize()
 
 
-class _SiblingReprepCases:
-    """Shared bodies; subclasses say which image to load."""
+class _FpReprepCase:
+    """fp body; the subclass says which image to load."""
 
     image: str = ""
     NEW_NRMAX = 20
@@ -235,25 +247,11 @@ class _TiReprepCase(TiDataCwdMixin):
                          "ti_run after tot_set_param('ti:NRMAX') must re-run ti_prep (#253)")
 
 
-class TestSiblingReprepOnDefaultImage(_SiblingReprepCases, unittest.TestCase):
-    """libtotapi.so: fp_run / fp_get_state resolve through its lib*api.so
-    dependencies, the same copies that tot_set_param('fp:...') wrote to."""
+class TestSiblingReprepOnMonoImage(_FpReprepCase, unittest.TestCase):
+    """libtotapi_mono.so: one image, one copy of every module's state.
 
-    def setUp(self):
-        _skip_unless_tot(self)
-        self.image = str(_tot_so())
-        super().setUp()
-
-
-class TestTiReprepOnDefaultImage(_TiReprepCase, unittest.TestCase):
-    def setUp(self):
-        _skip_unless_tot(self)
-        self.image = str(_tot_so())
-        super().setUp()
-
-
-class TestSiblingReprepOnMonoImage(_SiblingReprepCases, unittest.TestCase):
-    """libtotapi_mono.so: one image, one copy of every module's state."""
+    Runs in CI's mono routing step (MONO_LIB_PATH set); skipped elsewhere.
+    """
 
     def setUp(self):
         _skip_unless_mono(self)
