@@ -27,6 +27,7 @@ MODULE wrx_state
   USE, INTRINSIC :: ISO_C_BINDING
   IMPLICIT NONE
   PRIVATE
+  PUBLIC :: WRX_STATE_ABI_VERSION
   PUBLIC :: wrx_state_c, &
             WRX_MAX_NRAYMAX, WRX_MAX_NSAMAX, &
             WRX_MAX_NRSMAX,  WRX_MAX_NRLMAX
@@ -35,6 +36,13 @@ MODULE wrx_state
   INTEGER(C_INT), PARAMETER :: WRX_MAX_NSAMAX  =   8
   INTEGER(C_INT), PARAMETER :: WRX_MAX_NRSMAX  = 256
   INTEGER(C_INT), PARAMETER :: WRX_MAX_NRLMAX  = 256
+
+  ! Layout version of wrx_state_c / wrx_state_t (#246). Bump it together
+  ! with WRX_STATE_ABI_VERSION in wrx_api.h whenever a field is added,
+  ! removed or reordered; wrx_state_abi_version() exports it and the C-ABI
+  ! driver fails when the two drift. wrx_state_size() exports the
+  ! BIND(C) size, so the library, not the header, is authoritative.
+  INTEGER(C_INT), PARAMETER :: WRX_STATE_ABI_VERSION = 1
 
   TYPE, BIND(C) :: wrx_state_c
      ! --- runtime dims ---

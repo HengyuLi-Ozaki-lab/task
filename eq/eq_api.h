@@ -1,6 +1,8 @@
 #ifndef EQ_API_H
 #define EQ_API_H
 
+#include <stddef.h>  /* size_t for eq_state_size (#246) */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,6 +41,20 @@ extern "C" {
 #define EQ_MAX_NRM  1001
 #define EQ_MAX_NTHM 2049
 #define EQ_MAX_NSUM 1343
+
+/*
+ * eq_state_t ABI version. Bumped whenever a field is added/removed/reordered
+ * in eq_state_t (i.e. whenever sizeof(eq_state_t) changes), together with
+ * the EQ_STATE_ABI_VERSION PARAMETER in eq_state.f90 that the library
+ * exports through eq_state_abi_version(); tests/c_abi/test_negative.c
+ * fails when the two drift. In-tree consumers (the C-ABI drivers,
+ * python/eqlib/_ffi.py) rebuild from this header and check the library's
+ * version and sizeof at load time (#246).
+ *
+ * History:
+ *   1 -> initial layout
+ */
+#define EQ_STATE_ABI_VERSION 1
 
 /* Error codes returned by every eq_* entry point. */
 enum eq_error {
@@ -113,6 +129,13 @@ int eq_set_param(const char* name, double value);
 int eq_set_param_str(const char* name, const char* value);
 int eq_get_state(eq_state_t* state);
 int eq_finalize(void);
+
+/* Layout query (#246): the library's EQ_STATE_ABI_VERSION and
+   sizeof(eq_state_t), callable before eq_init. Compare both with this
+   header's values before passing a struct to eq_get_state; a mismatch
+   means the library and this header come from different commits. */
+int    eq_state_abi_version(void);
+size_t eq_state_size(void);
 
 /*
  * Issue #143: pre-run parameter validation API. Pilot module = eq.

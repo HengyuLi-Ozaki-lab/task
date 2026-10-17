@@ -51,6 +51,22 @@
 } while (0)
 
 int main(void) {
+    /* ---- 0: layout query must match this header (#246) ---------- */
+    {
+        int    v = eq_state_abi_version();
+        size_t n = eq_state_size();
+        if (v != EQ_STATE_ABI_VERSION) {
+            fprintf(stderr, "FAIL abi-version: library reports %d, eq_api.h says %d\n",
+                    v, EQ_STATE_ABI_VERSION);
+            return (__LINE__);
+        }
+        if (n != sizeof(eq_state_t)) {
+            fprintf(stderr, "FAIL state-size: library reports %lu, sizeof(eq_state_t) is %lu\n",
+                    (unsigned long) n, (unsigned long) sizeof(eq_state_t));
+            return (__LINE__);
+        }
+    }
+
     int rc;
     eq_state_t s;
 

@@ -2,8 +2,9 @@
 !
 ! Phase L-2/L-3: C ABI entry points for libeqapi.
 !
-! Eight BIND(C) functions are exposed (eq_validate and eq_save are
-! described where they are defined, at the end of the module):
+! Ten BIND(C) functions are exposed (eq_validate, eq_save and the layout
+! queries eq_state_abi_version / eq_state_size are described where they
+! are defined, at the end of the module):
 !
 !   eq_init           -> marks the library as initialized (idempotent)
 !                        and returns EQ_OK. Does NOT touch the legacy
@@ -41,6 +42,7 @@
 
 MODULE eq_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE eq_state, ONLY: EQ_STATE_ABI_VERSION
   USE eq_state, ONLY: eq_state_c, &
                       EQ_MAX_NRGM, EQ_MAX_NZGM, EQ_MAX_NPSM, &
                       EQ_MAX_NRM,  EQ_MAX_NTHM, EQ_MAX_NSUM, &
@@ -78,6 +80,9 @@ MODULE eq_api
   ! of anything but the two file modes (EQSAVE writes the parameters and
   ! counts as they stand, over fields computed for the old ones).
   LOGICAL, SAVE :: g_has_equilibrium = .FALSE.
+
+  ! #246: layout query, callable before eq_init.
+  PUBLIC :: eq_api_state_abi_version, eq_api_state_size
 
 CONTAINS
 
@@ -579,5 +584,24 @@ CONTAINS
     END IF
     ierr = EQ_OK
   END FUNCTION eq_api_save
+
+  !-------------------------------------------------------------------
+  ! eq_state_abi_version / eq_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before eq_init.
+  ! A caller compares both with its own sizeof(eq_state_t) and its copy
+  ! of EQ_STATE_ABI_VERSION before passing a struct to eq_get_state;
+  ! python/eqlib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION eq_api_state_abi_version() RESULT(v) BIND(C, NAME="eq_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = EQ_STATE_ABI_VERSION
+  END FUNCTION eq_api_state_abi_version
+
+  FUNCTION eq_api_state_size() RESULT(n) BIND(C, NAME="eq_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(eq_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION eq_api_state_size
 
 END MODULE eq_api

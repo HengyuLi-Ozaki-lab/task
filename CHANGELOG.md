@@ -53,6 +53,23 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   unnoticed. The `make.header` heredoc and the `mtxp/make.mtxp` copy that
   those two jobs carried as KEEP-IN-SYNC steps are now the composite action
   `.github/actions/provision-build-env`, shared by all three.
+- **C ABI: every library reports its state-struct layout, and the Python
+  wrappers refuse a mismatch (#246).** `X_state_abi_version()` returns
+  `X_STATE_ABI_VERSION` (now a `PARAMETER` in `X_state.f90`, mirrored by
+  the `#define` in `X_api.h`; tr and tot stay at 2, eq / fp / ti / wr / wrx
+  start at 1) and `X_state_size()` the `sizeof` of the `BIND(C)` type, both
+  callable before `X_init`, for tr / fp / eq / ti / wr / wrx / tot and the
+  mono image. The C-ABI drivers (`test_negative.c`, `test_run_so.c`) fail
+  when either differs from the header; `python/Xlib/_ffi.py::load_library`
+  raises `XlibAbiError` when the library's version or size differs from
+  `XStateC`, or when the library exports neither symbol (built before this
+  change), naming the fix. CI runs the six per-module dlopen drivers
+  (`X_api_check_so`) and `libtotapi_mono_inspect` checks the twelve symbols.
+  A library and a wrapper from different commits used to fail silently:
+  a longer library struct wrote past the wrapper's allocation, a shorter
+  one left the appended fields as plausible zeros. The check protects
+  callers from this change on; a caller older than it never asks, and
+  `X_get_state` still takes no buffer size.
 
 ### Changed
 

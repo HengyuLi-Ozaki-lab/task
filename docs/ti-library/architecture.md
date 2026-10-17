@@ -65,13 +65,13 @@ diagram and per-phase status.
 |---|---|---|
 | 0. Regression baseline | `test_run/baselines/ti_*/metrics.json` | Phase 0 ground truth (tol `1e-10`) |
 | 1. Fortran backend | `ti/ti_api.f90`, `ti_param_registry.f90`, `tiprep`, `tiexec`, ... | Numerics, shared with `ti` binary |
-| 2. C ABI | `ti/ti_api.h` + BIND(C) exports in `ti_api.f90` | 5 functions, stable contract |
+| 2. C ABI | `ti/ti_api.h` + BIND(C) exports in `ti_api.f90` | 5 functions + 2 layout queries (#246), stable contract |
 | 3. Shared library | `ti/libtiapi.so` | `make -C ti libtiapi.so` (target lands in L-4) |
 | 4. Python FFI | `python/tilib/_ffi.py` | `ctypes` layout mirror of `ti_state_t` |
 | 5. High-level wrapper | `python/tilib/tilib.py`, `state.py`, `errors.py` | Context manager + dataclass |
 | 6. User scripts | `python/tilib/examples/*.py`, user notebooks | |
 
-### 5 C ABI entry points
+### 5 C ABI entry points (+ 2 layout queries, #246)
 
 From `ti/ti_api.h`:
 
@@ -172,6 +172,29 @@ Mirrors the tr spec's §12.2 for the TI module:
 - `DN0`, `DT0`, `DR0`, `DRS`, `DN0_NS[i]` are namelist keys not yet
   in `ti_param_registry.f90`; the L-6 fixtures list them under
   `UNREGISTERED_KEYS` and fall back to `ti_init` defaults.
+
+## State struct layout rule (#246)
+
+`ti_state_t` (`ti/ti_api.h`) and `ti_state_c` (`ti/ti_state.f90`) are
+one fixed layout, filled by `ti_get_state`. Changing it:
+
+1. append the field at the end of both (never reorder, never remove);
+2. bump `TI_STATE_ABI_VERSION` **in both files** (the `#define` and the
+   `PARAMETER`; currently `1`);
+3. mirror the field in `python/tilib/_ffi.py` (`TiStateC._fields_`) and
+   `state.py`;
+4. rebuild `libtiapi.so` in the same commit.
+
+The library exports its own view: `ti_state_abi_version()` returns the
+PARAMETER and `ti_state_size()` the `sizeof` of the BIND(C) type, both
+callable before `ti_init`. `ti/tests/c_abi/test_negative.c` and
+`test_run_so.c` fail when either differs from the header, and
+`python/tilib/_ffi.py::load_library` refuses a library whose version or
+size differs from `TiStateC`, or that exports neither symbol (built
+before #246), with `TiLibAbiError` naming the fix. Both silent
+failure modes of a stale pair are therefore caught at load time: a longer
+library struct would have written past the wrapper's allocation, a
+shorter one would have left the appended fields as plausible zeros.
 
 ## References
 

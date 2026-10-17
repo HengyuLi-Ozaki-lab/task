@@ -30,6 +30,7 @@
 
 MODULE fp_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE fp_state, ONLY: FP_STATE_ABI_VERSION
   USE fp_state, ONLY: fp_state_c, FP_MAX_NRMAX, FP_MAX_NSAMAX
   USE fpcomm,   ONLY: rkind, &
        NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2, TIMEFP, &
@@ -65,6 +66,9 @@ MODULE fp_api
   ! Registry mutation counter seen by the last successful prep (#253).
   ! -1 = never prepared. See fp_param_generation in the registry.
   INTEGER, SAVE :: g_prep_generation = -1
+
+  ! #246: layout query, callable before fp_init.
+  PUBLIC :: fp_api_state_abi_version, fp_api_state_size
 
 CONTAINS
 
@@ -375,5 +379,24 @@ CONTAINS
     g_prepared    = .FALSE.
     ierr = FP_OK
   END FUNCTION fp_api_finalize
+
+  !-------------------------------------------------------------------
+  ! fp_state_abi_version / fp_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before fp_init.
+  ! A caller compares both with its own sizeof(fp_state_t) and its copy
+  ! of FP_STATE_ABI_VERSION before passing a struct to fp_get_state;
+  ! python/fplib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION fp_api_state_abi_version() RESULT(v) BIND(C, NAME="fp_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = FP_STATE_ABI_VERSION
+  END FUNCTION fp_api_state_abi_version
+
+  FUNCTION fp_api_state_size() RESULT(n) BIND(C, NAME="fp_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(fp_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION fp_api_state_size
 
 END MODULE fp_api

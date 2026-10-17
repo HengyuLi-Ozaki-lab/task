@@ -26,6 +26,7 @@
 MODULE tr_api
   USE, INTRINSIC :: ISO_C_BINDING
   USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
+  USE tr_state, ONLY: TR_STATE_ABI_VERSION
   USE tr_state, ONLY: tr_state_c, TR_MAX_NRMAX, TR_MAX_NSMAX, &
                       tr_diag_entry_c, &
                       TR_DIAG_PARAM_LEN, TR_DIAG_MSG_LEN, &
@@ -74,6 +75,9 @@ MODULE tr_api
   ! Registry mutation counter seen by the last successful prep (#253).
   ! -1 = never prepared. See tr_param_generation in the registry.
   INTEGER, SAVE :: g_prep_generation = -1
+
+  ! #246: layout query, callable before tr_init.
+  PUBLIC :: tr_api_state_abi_version, tr_api_state_size
 
 CONTAINS
 
@@ -638,5 +642,24 @@ CONTAINS
     END SUBROUTINE add
 
   END SUBROUTINE species_profile_violations
+
+  !-------------------------------------------------------------------
+  ! tr_state_abi_version / tr_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before tr_init.
+  ! A caller compares both with its own sizeof(tr_state_t) and its copy
+  ! of TR_STATE_ABI_VERSION before passing a struct to tr_get_state;
+  ! python/trlib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_state_abi_version() RESULT(v) BIND(C, NAME="tr_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = TR_STATE_ABI_VERSION
+  END FUNCTION tr_api_state_abi_version
+
+  FUNCTION tr_api_state_size() RESULT(n) BIND(C, NAME="tr_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(tr_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION tr_api_state_size
 
 END MODULE tr_api

@@ -1,6 +1,8 @@
 #ifndef TR_API_H
 #define TR_API_H
 
+#include <stddef.h>  /* size_t for tr_state_size (#246) */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -30,6 +32,11 @@ extern "C" {
  * against any cached layout assumption and recompile when it bumps. In-tree
  * consumers (tot_api_check_*, python/trlib/_ffi.py) all rebuild from this
  * header, so they are kept in sync automatically by the build system.
+ * Since #246 the same value is a PARAMETER in tr_state.f90, exported by
+ * tr_state_abi_version() together with sizeof via tr_state_size(); bump
+ * both places together. tests/c_abi/test_negative.c fails when they
+ * drift, and python/trlib/_ffi.py refuses a library whose version or
+ * size differs from its struct at load time.
  *
  * History:
  *   1 -> initial layout (Phase L-2)
@@ -94,6 +101,13 @@ int tr_set_param(const char* name, double value);
 int tr_set_param_str(const char* name, const char* value);
 int tr_get_state(tr_state_t* state);
 int tr_finalize(void);
+
+/* Layout query (#246): the library's TR_STATE_ABI_VERSION and
+   sizeof(tr_state_t), callable before tr_init. Compare both with this
+   header's values before passing a struct to tr_get_state; a mismatch
+   means the library and this header come from different commits. */
+int    tr_state_abi_version(void);
+size_t tr_state_size(void);
 
 /*
  * Return codes:

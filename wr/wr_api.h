@@ -1,6 +1,8 @@
 #ifndef WR_API_H
 #define WR_API_H
 
+#include <stddef.h>  /* size_t for wr_state_size (#246) */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +31,20 @@ extern "C" {
 #define WR_MAX_NRSMAX  200
 #define WR_MAX_NRLMAX  400
 #define WR_MAX_NRAY_EQ 9
+
+/*
+ * wr_state_t ABI version. Bumped whenever a field is added/removed/reordered
+ * in wr_state_t (i.e. whenever sizeof(wr_state_t) changes), together with
+ * the WR_STATE_ABI_VERSION PARAMETER in wr_state.f90 that the library
+ * exports through wr_state_abi_version(); tests/c_abi/test_negative.c
+ * fails when the two drift. In-tree consumers (the C-ABI drivers,
+ * python/wrlib/_ffi.py) rebuild from this header and check the library's
+ * version and sizeof at load time (#246).
+ *
+ * History:
+ *   1 -> initial layout
+ */
+#define WR_STATE_ABI_VERSION 1
 
 /* Error codes returned by every wr_* entry point. */
 enum wr_error {
@@ -59,6 +75,13 @@ int wr_run(int nray_request);
 int wr_set_param(const char* name, double value);
 int wr_get_state(wr_state_t* state);
 int wr_finalize(void);
+
+/* Layout query (#246): the library's WR_STATE_ABI_VERSION and
+   sizeof(wr_state_t), callable before wr_init. Compare both with this
+   header's values before passing a struct to wr_get_state; a mismatch
+   means the library and this header come from different commits. */
+int    wr_state_abi_version(void);
+size_t wr_state_size(void);
 
 #ifdef __cplusplus
 }
