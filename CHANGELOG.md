@@ -136,6 +136,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   (`python/mcp-servers/fd_isolation_cases.py`), and
   `python/tests/test_fd_isolation.py` checks that all six servers run every
   one of them. `fp_mcp` follows in #232.
+- **MCP server `fp_mcp`: the same fd isolation** (#232). `fp_mcp` had the
+  most of it: `FPWRTPRF` writes the radial profile table to unit 6 once at
+  preparation and then every `NTG2STEP` steps (every step by default), so
+  the lines that are not JSON-RPC grew with `NTMAX`: in one stdio session
+  (`initialize`, `init`, `run`, library defaults) 63 of the 66 stdout lines
+  at `NTMAX=1`, 83 of 86 at `NTMAX=2`. `main()` now calls `_fd_isolation.install()`
+  immediately before the stdio server is built, as the other six servers
+  do; its `tests/test_fd_isolation.py` runs the shared checks, and
+  `python/tests/test_fd_isolation.py` checks all seven servers.
 
 ## TR Phase L — library-ization (2026-04-18)
 

@@ -354,6 +354,8 @@ FP の Fortran 側は FPCOMM 単一状態なので、1 プロセス = 1 イン�
 
 MCP サーバの標準エラー出力が LLM クライアントに渡ります。Claude Desktop なら「開発者ツール」相当のログビューア、Claude Code なら実行ターミナルで確認できます。
 
+Fortran 側の `WRITE(6,...)`（unit 6 = fd 1）も同じ標準エラー出力に流れます。stdio サーバでは fd 1 が JSON-RPC の送信パイプなので、`main()` がサーバ構築の直前に共有モジュール `python/_fd_isolation.py` で fd 1 を stderr に付け替えています（#227 / #232 / #257）。FP は半径プロファイルの表を unit 6 に書きます（準備時に 1 回、その後は `NTG2STEP` ステップごと、既定では毎ステップ）。この付け替えが無いと、その出力がステップ数とともに増え、パイプを壊します。端末で手動起動したときや `2>&1` で stdout と stderr が同じファイルになっているときは、unit 6 の出力は捨てられ、その旨の警告が stderr に 1 行出ます（同一ファイルの判定は `fstat` の inode によるので、パイプやコンソールに inode が無い Windows では判定されず、fd 1 は通常どおり stderr に向きます）。ライブラリの出力を残したい場合は stderr を別に渡してください（例: `python -m fp_mcp.server 2>server.log`）。
+
 ## 10. 参考資料
 
 - MCP spec: <https://modelcontextprotocol.io/>
