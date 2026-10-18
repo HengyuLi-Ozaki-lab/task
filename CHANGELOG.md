@@ -96,10 +96,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **MCP servers: the `mcp` dependency is pinned to `>=0.9,<2`** in the
+- **MCP servers: the `mcp` dependency is pinned to `>=1.2,<2`** in the
   seven server `pyproject.toml` files, the CI workflow, the servers' own
-  "not installed" message, the READMEs and the Sphinx MCP pages. mcp 2.0
-  removed `mcp.server.fastmcp`, so an unpinned install (`pip install -e
+  "not installed" message, the READMEs, the Sphinx MCP pages, the
+  trlib presentation and its builder, and the 2026-04-18 MCP plan.
+  `mcp.server.fastmcp` exists from mcp 1.2.0 (the old floor, 0.9, let
+  1.0 and 1.1 in, where the import fails the same way) and mcp 2.0
+  removed it, so an unpinned install (`pip install -e
   python/mcp-servers/eq_mcp` on a fresh environment, or the workflow's
   bare `pip install mcp`, which took mcp 2.3.0) left every server with
   `MCP_AVAILABLE = False`: `python -m <mod>_mcp.server` exited 2 and the
