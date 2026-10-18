@@ -62,8 +62,11 @@ def check_state_layout(lib: Any, *, prefix: str, struct: type,
     """
     wrapper_size = ctypes.sizeof(struct)
     # The rebuild hint: the mono image is built under tot, everything
-    # else under its own module directory.
-    if lib_name.startswith("libtotapi_mono"):
+    # else under its own module directory. The Makefiles have no .dll
+    # target, so for a Windows library there is no make command to name.
+    if lib_name.endswith(".dll"):
+        rebuild = f"{lib_name} from the Fortran sources"
+    elif lib_name.startswith("libtotapi_mono"):
         rebuild = f"`make -C tot {lib_name}`"
     else:
         rebuild = f"`make -C {prefix} {lib_name}`"
