@@ -110,11 +110,22 @@ jobs:
           # mcp = Anthropic's official Python MCP SDK. Required by the
           # build_server / TestBuildServer classes in
           # python/mcp-servers/<mod>/tests/test_server.py — without it
-          # 9 tests across 6 modules silently skipUnless'd
+          # the 7 TestBuildServer classes (one per module) silently skipUnless'd
           # (MCP_AVAILABLE = False). See server.py's optional-import
           # block; CI now exercises the FastMCP construction path that
           # production users hit.
-          pip install mcp
+          # Pinned below 2.0: mcp 2.0.0 removed `mcp.server.fastmcp`
+          # entirely (replaced by MCPServer/Server with a different
+          # decorator API), so every server.py falls back to
+          # MCP_AVAILABLE=False and the stdio servers refuse to start.
+          # Porting the 7 servers to the 2.x API is its own change.
+          pip install 'mcp>=1.2,<2'
+          # Tripwire. MCP_AVAILABLE is set by a bare `except Exception`,
+          # so ANY future breakage of the FastMCP import path -- a bad
+          # transitive resolution, a circular import, a real regression --
+          # would silently turn the 7 server test-suites green-by-skip.
+          # In THIS environment those tests must actually run, so assert it.
+          PYTHONPATH=python:python/mcp-servers python -c "import eq_mcp.server as s; assert s.MCP_AVAILABLE, 'FastMCP import is broken -- the mcp pin regressed; the MCP suites would skip instead of run'"
 
       - name: Build PIC support libraries (bpsd, lib, mtxp, pl, eq, dp, ob)
         # Pre-build all shared support libraries so each module Makefile

@@ -19,7 +19,7 @@ TASK プロジェクトの各 Phase-L モジュール（現時点で `trlib`, `t
 ## 2. Why MCP
 
 1. LLM は標準 JSON-RPC (over stdio) で MCP サーバと会話できる。Claude Desktop / Claude Code / Cursor などが既に対応。
-2. Python MCP SDK (`pip install mcp`) の FastMCP デコレータ API はほぼボイラープレート無しでツール公開できる。
+2. Python MCP SDK (`pip install 'mcp>=1.2,<2'`) の FastMCP デコレータ API はほぼボイラープレート無しでツール公開できる。
 3. `python/<mod>lib/` は既に ctypes ラッパとして仕上がっており、MCP サーバはそれを薄く被せるだけ。Fortran にも Makefile にも手を入れない。
 
 ## 3. ディレクトリレイアウト
@@ -32,7 +32,7 @@ python/
     ├── tr_mcp/              # ← this PR のリファレンス実装
     │   ├── __init__.py
     │   ├── server.py        # FastMCP server (9 tools)
-    │   ├── pyproject.toml   # mcp>=0.9 + path dep on trlib
+    │   ├── pyproject.toml   # mcp>=1.2,<2 + path dep on trlib
     │   ├── README.md        # 初心者向け使い方 (です・ます調)
     │   └── tests/
     │       ├── __init__.py
@@ -71,7 +71,7 @@ python/
 
 ## 5. Dependencies
 
-- `mcp>=0.9` （Python MCP SDK, [GitHub](https://github.com/modelcontextprotocol/python-sdk)）。
+- `mcp>=1.2,<2` （Python MCP SDK, [GitHub](https://github.com/modelcontextprotocol/python-sdk)）。
 - Path dep on `python/<mod>lib/` （例: `trlib`）。`pip install -e .` で local 開発インストール。
 - Python 3.10+ を要求 (MCP SDK の最低ライン)。trlib 自体は 3.8+ だが MCP 側で 3.10+ に引き上げる。
 - 追加の外部依存なし（numpy なども不要）。
