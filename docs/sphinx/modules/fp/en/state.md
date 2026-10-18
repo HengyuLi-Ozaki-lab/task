@@ -38,7 +38,8 @@ state.scalars["TOTAL_IP"]         # total plasma current [MA]
 | `PLASMA_VOLUME`    | Plasma volume | m³ |
 
 All seven are zero until the first `run()`, and again after a
-`set_param` until the next `run()` that is made, while the profiles are
+`set_param` or `set_param_str` until the next `run()` that is made, while
+the profiles are
 still those of the last run. Unlike the per-unit-volume profiles
 below, they depend on the equilibrium through the volume element. `fp`
 still does not carry the plasma-performance scalars of `tr`/`eq`:

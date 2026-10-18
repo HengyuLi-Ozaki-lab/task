@@ -23,8 +23,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the scalars as zeros. `FpState.scalars`, `to_dict()["scalars"]`
   and the `scalars` object of fp_mcp's state carry them, and an FP step of
   the `totlib` pipeline keeps them beside `timefp` and its counts. They are
-  zero until the first run, and again after a `fp_set_param` until the next
-  run that is made.
+  zero until the first run, and again after any successful parameter set
+  (`fp_set_param`, `fp_set_param_str`, or tot's `fp:` parameters, which the
+  registry counts since #259) until the next run that is made.
 - **EQ library: `eq_save`, `Eq.save(path)` and the `save` tool of `eq_mcp`**
   write the equilibrium of the last `eq_run` to a TASK/EQ binary file through
   `EQSAVE`, the file that `MODELG=3` with `KNAMEQ` loads. A save whose file

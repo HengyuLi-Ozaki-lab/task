@@ -1,8 +1,9 @@
 """The seven global scalars of ``fp_get_state`` between a ``set_param`` and
 the next run.
 
-``fp_set_param`` clears the prepared flag without touching the arrays. In
-that window ``fp_get_state`` still returns the profiles of the last run,
+A successful set (``fp_set_param``, ``fp_set_param_str``, or tot's ``fp:``
+parameters) advances the registry's count (#253), so the next run prepares
+again, and the arrays are not touched until it does. In that window ``fp_get_state`` still returns the profiles of the last run,
 within the extents that are allocated (#245), while the global scalars
 (``TOTAL_IP`` ... ``PLASMA_VOLUME``) are only filled from a prepared state
 and read zero. The two rules meet here; these cases pin what the state
@@ -112,6 +113,20 @@ def test_after_a_set_param_the_scalars_are_zero_and_the_profiles_the_last_run_s(
     for profile in PROFILES:
         rows_before, rows_after = getattr(before, profile), getattr(after, profile)
         assert rows_after == [row[:nr] for row in rows_before[:nsa]], profile
+
+
+def test_a_string_set_opens_the_same_window():
+    # The registry counts fp_set_param_str (KNAMEQ) like a numeric set (#253).
+    with Fplib() as fp:
+        _configure(fp)
+        fp.run(1)
+        assert fp.get_state().scalars["PLASMA_VOLUME"] > 0.0
+        fp.set_param_str("KNAMEQ", "eqdata")
+        assert _all_zero(fp.get_state())
+        fp.run(1)
+        state = fp.get_state()
+    assert state.scalars["PLASMA_VOLUME"] > 0.0
+    assert state.scalars["STORED_ENERGY"] > 0.0
 
 
 def test_the_next_run_fills_the_scalars_again():

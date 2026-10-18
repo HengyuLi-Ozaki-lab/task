@@ -88,7 +88,8 @@ typedef struct {
      * WRITEs to unit 6: the rtotal* line block (fp/fpsave.f90:305-311),
      * the W column of the per-species line (fp/fpsave.f90:252) and the
      * TVOLR banner (fp/fpprep.f90:237). Zero until the first run, and
-     * again after an fp_set_param until the next run that is made. */
+     * again after any successful set (fp_set_param, fp_set_param_str, or
+     * tot's fp: parameters; #253) until the next run that is made. */
     double TOTAL_IP;          /* total plasma current  [MA]  */
     double STORED_ENERGY;     /* stored energy         [MJ]  */
     double COLLISION_POWER;   /* total collision power [MW]  */

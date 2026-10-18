@@ -144,7 +144,9 @@ doubles: six volume-integrated globals summed over the species at the
 latest `NTG1` sample, `TOTAL_IP` [MA], `STORED_ENERGY` [MJ],
 `COLLISION_POWER`, `ABSORPTION_POWER`, `ABSORPTION_WR`, `ABSORPTION_WM`
 [MW], and `PLASMA_VOLUME` [m^3] (`TVOLR`). They are zero until the first
-run, and again after a `fp_set_param` until the next run that is made,
+run, and again after any successful parameter set (`fp_set_param`,
+`fp_set_param_str`, or tot's `fp:` parameters: the registry counts every
+set, #253) until the next run that is made,
 while the profiles above are still those of the last run. The
 struct grows at its end only, and `fp/fp_state.f90`, `fp/fp_api.h` and
 `fplib._ffi.FpStateC` change together with a rebuilt `libfpapi.so`.

@@ -362,11 +362,11 @@ CONTAINS
     ! arrays: fpcomm::fp_allocate_ntg1) and only carry a sample once
     ! FPSGLB has bumped NTG1 (fp/fploop.f90:200). Before that they stay
     ! at the zeros set above rather than exposing uninitialised memory.
-    ! The same holds after a successful set, from fp_set_param or from
-    ! tot's "fp:" dispatcher (the registry's count then differs from the
-    ! one of the last fp_prep, #253): the profiles above are then still
-    ! the last run's (within the allocated extents, #245) while these
-    ! read zero until the next fp_prep.
+    ! The same holds after a successful set, from fp_set_param,
+    ! fp_set_param_str or tot's "fp:" dispatcher (the registry's count
+    ! then differs from the one of the last fp_prep, #253): the profiles
+    ! above are then still the last run's (within the allocated extents,
+    ! #245) while these read zero until the next fp_prep.
     IF (g_prepared .AND. g_prep_generation == fp_param_generation()) THEN
        state%PLASMA_VOLUME = TVOLR
        IF (NTG1 >= 1 .AND. ALLOCATED(PIT) .AND. ALLOCATED(PWT) .AND. &

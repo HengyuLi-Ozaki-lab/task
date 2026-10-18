@@ -215,8 +215,8 @@ via `state.to_dict()` (JSON-serialisable, layout compatible with
 profile arrays: the first six are summed over the kinetic species at the
 latest global-diagnostic sample (`NTG1`), and `PLASMA_VOLUME` is `TVOLR`,
 the sum of the radial cell volumes. All seven are zero until the first
-`run()`, and again after a `set_param` until the next `run()` that is
-made, while the profiles are still those of the last run:
+`run()`, and again after a `set_param` or `set_param_str` until the next
+`run()` that is made, while the profiles are still those of the last run:
 
 | Key | Unit | Meaning |
 |---|---|---|
