@@ -4,7 +4,17 @@ import sys
 
 import pytest
 
+from _abi_check import AbiMismatchError
 from eqlib import _ffi
+from eqlib.errors import EqlibAbiError
+
+
+@pytest.fixture(autouse=True)
+def _no_layout_check(monkeypatch):
+    # These cases fake the loaded library, which the layout check (#246)
+    # would refuse; that check has cases of its own (test_ffi.py,
+    # TestLibraryLayout). The one case below that needs it puts it back.
+    monkeypatch.setattr(_ffi, "check_state_layout", lambda *args, **kwargs: None)
 
 
 def test_windows_candidates_are_dlls(monkeypatch):
@@ -223,6 +233,28 @@ def test_windows_library_without_the_api_leaves_no_directory_registered(monkeypa
 
     monkeypatch.setattr(_ffi, "_apply_prototypes", no_such_symbol)
     with pytest.raises(AttributeError):
+        _ffi.load_library(str(lib))
+    assert handles[0].closed
+    assert _ffi._DLL_DIR_HANDLES == {}
+
+
+def test_windows_library_of_another_layout_leaves_no_directory_registered(monkeypatch, tmp_path):
+    lib = tmp_path / "libeqapi.dll"
+    lib.write_bytes(b"")
+    events, handles = [], []
+    _fake_windows(monkeypatch, events, handles)
+    monkeypatch.setattr(_ffi.ctypes, "CDLL", lambda path, mode=0: object())
+    # the prototypes pass, so that only the layout check can refuse the load
+    monkeypatch.setattr(_ffi, "_apply_prototypes", lambda handle: handle)
+
+    def another_layout(lib, **kw):
+        raise AbiMismatchError(f"{kw['lib_name']}: another layout", prefix=kw["prefix"],
+                               lib_name=kw["lib_name"], wrapper_version=kw["expected_version"],
+                               wrapper_size=0, library_version=kw["expected_version"] + 1,
+                               library_size=0)
+
+    monkeypatch.setattr(_ffi, "check_state_layout", another_layout)
+    with pytest.raises(EqlibAbiError):
         _ffi.load_library(str(lib))
     assert handles[0].closed
     assert _ffi._DLL_DIR_HANDLES == {}

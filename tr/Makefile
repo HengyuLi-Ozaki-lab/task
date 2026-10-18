@@ -108,7 +108,7 @@ libtr3.a: $(OBJTR) $(OBJ3D) $(INCNC) $(INCGLF)
 	$(LD) $(LDFLAGS) libtr3.a $(OBJTR) $(OBJ3D)
 
 ../../bpsd/libbpsd.a:
-	(cd ../../bpsd; make libbpsd.a)
+	(cd ../../bpsd; $(MAKE) libbpsd.a)
 ../lib/libtask.a:
 	(cd ../lib; make libtask.a)
 ../lib/libgrf.a:
@@ -365,18 +365,64 @@ LIBS_PIC=../eq/libeq_pic.a ../pl/libpl_pic.a \
 LIBMTX_PIC=../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o
 
 # Build dependent PIC libs on demand (matches the libXX.a recipes above).
+#
+# pl and eq are built in two phases (pl/Makefile: libpl_noeq_pic, then
+# libpl_pic.a) because the non-PIC archives are cyclic at link time (eq
+# USE pl via plinit); pl's eq-phase sources (plprof*) USE no eq module,
+# so the pl -> eq edge below is order-only. Sequence: plnoeq -> eq_pic
+# -> pl_pic.
 ../eq/libeq_pic.a:
-	(cd ../eq; make libeq_pic.a)
-../pl/libpl_pic.a:
-	(cd ../pl; make libpl_pic.a)
+	(cd ../pl; $(MAKE) libpl_noeq_pic)
+	(cd ../eq; $(MAKE) libeq_pic.a)
+../pl/libpl_pic.a: | ../eq/libeq_pic.a
+	(cd ../pl; $(MAKE) libpl_pic.a)
 ../lib/libmds_pic.a:
-	(cd ../lib; make libmds_pic.a)
+	(cd ../lib; $(MAKE) libmds_pic.a)
 ../lib/libtask_pic.a:
-	(cd ../lib; make libtask_pic.a)
+	(cd ../lib; $(MAKE) libtask_pic.a)
+# libgrf_pic.a is a compile-time prerequisite only: pl/plload.f90 (and
+# tr's own trgsub / trcoef_turbulence) USE libgrf, so its .mod must be
+# in ../lib/mod_pic; the archive is not linked into libtrapi.so.
+../lib/libgrf_pic.a:
+	(cd ../lib; $(MAKE) libgrf_pic.a)
 ../mtxp/libmtxnompi_pic.o:
-	(cd ../mtxp; make libmtxnompi_pic.o)
+	(cd ../mtxp; $(MAKE) libmtxnompi_pic.o)
 ../mtxp/libmtxbnd_pic.o:
-	(cd ../mtxp; make libmtxbnd_pic.o)
+	(cd ../mtxp; $(MAKE) libmtxbnd_pic.o)
+
+# Serialize the sibling chain top-down (lib -> mtxp -> bpsd -> pl -> eq).
+# NOTE: `make -jN` is still unsupported — the leaf Makefiles (lib, mtxp,
+# this module's PIC objects) carry no intra-directory .o dependencies,
+# so parallel builds fail on missing .mod files. Build serially.
+../lib/libgrf_pic.a: ../lib/libtask_pic.a
+../mtxp/libmtxnompi_pic.o: ../lib/libtask_pic.a
+../mtxp/libmtxbnd_pic.o: ../mtxp/libmtxnompi_pic.o
+
+# Order-only prerequisites (#230): every tr PIC object USEs modules from
+# bpsd / lib / mtxp / pl / eq, so those .mod files must exist before any
+# $(OBJDIR_PIC)/*.o compiles. Without this, `make -C tr libtrapi.so` on
+# a clean tree compiles trcom0.o before mod_pic/bpsd_kinds.mod exists
+# (make builds libtrapi.so's prerequisites left to right, and the
+# in-tree objects come first). Same pattern as wr / wrx / eq. The `|`
+# makes these ORDER-ONLY: a newer sibling archive does not cascade a
+# rebuild of the tr objects.
+.PHONY: libs_pic_prereq
+libs_pic_prereq: ../../bpsd/libbpsd.a \
+                 ../lib/libtask_pic.a ../lib/libgrf_pic.a ../lib/libmds_pic.a \
+                 ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o \
+                 $(OBJBPSD_PIC) ../pl/libpl_pic.a ../eq/libeq_pic.a
+
+# pl's PIC build reads ../../bpsd/mod/*.mod (pl/Makefile MODINCLUDE_PIC),
+# which the sibling's static `make libbpsd.a` populates, and lib / mtxp
+# .mod files; eq needs pl. Order-only upstream edges so the sibling
+# chain is explicit (lib -> mtxp -> bpsd -> pl -> eq) regardless of the
+# order make visits libs_pic_prereq's prerequisites.
+../eq/libeq_pic.a: | ../../bpsd/libbpsd.a ../lib/libtask_pic.a \
+                     ../lib/libgrf_pic.a ../lib/libmds_pic.a \
+                     ../mtxp/libmtxbnd_pic.o
+
+$(OBJBPSD_PIC): | ../lib/libtask_pic.a
+$(OBJ_LIBTRAPI): | libs_pic_prereq
 
 # The shared library itself. gfortran drives the link so libgfortran is
 # pulled in automatically. --start-group/--end-group resolves the cyclic

@@ -270,15 +270,27 @@ class CompareMetricsNumericTest(unittest.TestCase):
     def _paths(self, td):
         return Path(td) / "base.json", Path(td) / "act.json"
 
-    def test_fails_when_baseline_is_tiny_and_actual_is_zero(self):
-        # 1e-300 vs 0: absolute diff is negligible but the relative
-        # error is 1.0 because the comparator clamps the denominator
-        # at 1e-300. Documents this (intentional) failure mode so that
-        # any later change to _rel_err breaks this test.
+    def test_passes_when_baseline_is_tiny_and_actual_is_zero(self):
+        # 1e-300 vs 0: both below _NEAR_ZERO_THRESHOLD (1e-10), so the
+        # comparator uses the absolute difference instead of the
+        # relative error (0ed723fc). Before that commit this case failed
+        # with rel_err = 1.0; the test kept asserting the old behaviour
+        # and nobody noticed because test_run/scripts/tests was not in
+        # the CI pytest run (#239).
         with tempfile.TemporaryDirectory() as td:
             base, act = self._paths(td)
             write_json(base, _minimal(scalars={"X": 1e-300}))
             write_json(act,  _minimal(scalars={"X": 0.0}))
+            res = run_compare(act, base, tol="1e-10")
+            self.assertEqual(res.returncode, 0, res.stdout)
+
+    def test_fails_when_only_one_side_is_near_zero(self):
+        # 1e-300 vs 2e-10: the actual is above the near-zero threshold,
+        # so the relative rule applies and rel_err = 1.0 > tol.
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _minimal(scalars={"X": 1e-300}))
+            write_json(act,  _minimal(scalars={"X": 2e-10}))
             res = run_compare(act, base, tol="1e-10")
             self.assertNotEqual(res.returncode, 0, res.stdout)
             self.assertIn("scalars.X", res.stdout)
@@ -529,6 +541,264 @@ class CompareMetricsFpTest(unittest.TestCase):
             write_json(act, short)
             res = run_compare(act, base)
             self.assertNotEqual(res.returncode, 0)
+
+
+def _wrx_sample() -> dict:
+    """extract_wrx_metrics.py shape: {arrays, arrays2, scalars} (#239).
+
+    ``*_nsa_nray`` rows are species (NSAMAX_WR x NRAYMAX, as
+    wrx/wrxregress.f90 writes them); ``pwr_nrs_nsa`` rows are bins.
+    """
+    return {
+        "MDLWRQ": 1, "MODELG": 2, "NRAYMAX": 2, "NRLMAX": 3, "NRSMAX": 2,
+        "NSAMAX_WR": 2, "NSMAX": 2, "NSTPMAX": 100,
+        "scalars": {"pwr_tot": 0.75},
+        "arrays": {
+            "NSTPMAX_NRAY": [17, 23],
+            "pwr_nray": [0.5, 0.25],
+            "pwr_nsa": [0.7, 0.05],
+            "pos_nrs": [0.25, 0.75],
+            "pos_nrl": [3.0, 3.5, 4.0],
+        },
+        "arrays2": {
+            "pwr_nsa_nray": [[0.45, 0.25], [0.05, 0.0]],
+            "pwr_nrs_nsa": [[0.3, 0.02], [0.4, 0.03]],
+            "pwr_nrl_nsa": [[0.1, 0.0], [0.5, 0.05], [0.1, 0.0]],
+            "pos_pwrmax_rs_nsa_nray": [[0.3, 0.4], [0.3, 0.0]],
+            "pos_pwrmax_rl_nsa_nray": [[3.2, 3.4], [3.2, 0.0]],
+            "pwrmax_rs_nsa_nray": [[0.2, 0.1], [0.02, 0.0]],
+            "pwrmax_rl_nsa_nray": [[0.2, 0.1], [0.02, 0.0]],
+        },
+    }
+
+
+class CompareMetricsWrxArraysTest(unittest.TestCase):
+    """``arrays`` / ``arrays2`` are compared element-wise (#239).
+
+    Before the fix only the dimension header and ``scalars.pwr_tot``
+    were checked for the wrx schema; corrupting or dropping the array
+    groups passed.
+    """
+
+    def _paths(self, td):
+        return Path(td) / "base.json", Path(td) / "act.json"
+
+    def _run(self, mutate) -> subprocess.CompletedProcess:
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _wrx_sample())
+            actual = _wrx_sample()
+            mutate(actual)
+            write_json(act, actual)
+            return run_compare(act, base)
+
+    def test_passes_on_identical(self):
+        res = self._run(lambda a: None)
+        self.assertEqual(res.returncode, 0, res.stdout)
+
+    def test_passes_on_array_drift_within_tolerance(self):
+        def mutate(a):
+            a["arrays"]["pwr_nray"][0] *= 1.0 + 1e-12
+            a["arrays2"]["pwr_nsa_nray"][0][1] *= 1.0 + 1e-12
+        res = self._run(mutate)
+        self.assertEqual(res.returncode, 0, res.stdout)
+
+    def test_fails_on_1d_array_drift(self):
+        def mutate(a):
+            a["arrays"]["pwr_nray"][1] += 1e-6
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays.pwr_nray[1]", res.stdout)
+
+    def test_fails_on_2d_array_drift(self):
+        def mutate(a):
+            a["arrays2"]["pwr_nrl_nsa"][1][1] += 1e-6
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays2.pwr_nrl_nsa[1][1]", res.stdout)
+
+    def test_fails_when_every_array_value_is_corrupted(self):
+        # The issue's MWE: +1e6 on every element with scalars intact.
+        def mutate(a):
+            for k, v in a["arrays"].items():
+                a["arrays"][k] = [x + 1e6 for x in v]
+            for k, rows in a["arrays2"].items():
+                a["arrays2"][k] = [[x + 1e6 for x in row] for row in rows]
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("FAIL", res.stdout)
+
+    def test_fails_when_array_groups_are_dropped(self):
+        def mutate(a):
+            del a["arrays"]
+            del a["arrays2"]
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays: missing on one side", res.stdout)
+        self.assertIn("arrays2: missing on one side", res.stdout)
+
+    def test_fails_when_array_name_missing_on_one_side(self):
+        def mutate(a):
+            del a["arrays2"]["pwrmax_rl_nsa_nray"]
+            a["arrays"]["extra"] = [1.0]
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays2.pwrmax_rl_nsa_nray: missing", res.stdout)
+        self.assertIn("arrays.extra: missing", res.stdout)
+
+    def test_fails_on_1d_length_mismatch_against_header(self):
+        # A known name whose length disagrees with the dimension header
+        # is reported against the header, before any element comparison.
+        def mutate(a):
+            a["arrays"]["pos_nrl"].append(4.5)
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays.pos_nrl (actual): shape (4,) does not match the header {'NRLMAX': 3}", res.stdout)
+
+    def test_fails_on_1d_length_mismatch_for_unknown_name(self):
+        # A name without a header rule only has to agree between sides.
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            b = _wrx_sample(); b["arrays"]["extra"] = [1.0, 2.0, 3.0]
+            a = _wrx_sample(); a["arrays"]["extra"] = [1.0, 2.0, 3.0, 4.0]
+            write_json(base, b); write_json(act, a)
+            res = run_compare(act, base)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays.extra: length differ (3 vs 4)", res.stdout)
+
+    def test_fails_on_2d_row_length_mismatch_for_unknown_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            b = _wrx_sample(); b["arrays2"]["extra"] = [[1.0, 2.0], [3.0, 4.0]]
+            a = _wrx_sample(); a["arrays2"]["extra"] = [[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]]
+            write_json(base, b); write_json(act, a)
+            res = run_compare(act, base)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays2.extra[0]: row length differ (2 vs 3)", res.stdout)
+
+    def test_fails_on_transposed_2d_array(self):
+        # The to_dict() bug hidden by the old comparator: same values,
+        # rows = ray instead of rows = species. A square block
+        # (NRAYMAX == NSAMAX_WR == 2) so only the values can tell.
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            b = _wrx_sample()
+            b["arrays2"]["pwr_nsa_nray"] = [[1.0, 2.0], [3.0, 4.0]]
+            write_json(base, b)
+            actual = _wrx_sample()
+            actual["arrays2"]["pwr_nsa_nray"] = [[1.0, 3.0], [2.0, 4.0]]
+            write_json(act, actual)
+            res = run_compare(act, base)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays2.pwr_nsa_nray[0][1]", res.stdout)
+
+    def test_fails_on_2d_shape_mismatch_against_header(self):
+        def mutate(a):
+            a["arrays2"]["pwr_nsa_nray"] = [[0.45, 0.25, 0.0], [0.05, 0.0, 0.0]]
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays2.pwr_nsa_nray (actual): shape (2, 3) does not match the header {'NSAMAX_WR': 2, 'NRAYMAX': 2}", res.stdout)
+
+    def test_int_array_must_match_exactly(self):
+        def mutate(a):
+            a["arrays"]["NSTPMAX_NRAY"][0] = 18
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays.NSTPMAX_NRAY[0]: baseline=17 actual=18", res.stdout)
+
+    def test_int_array_accepts_integral_float(self):
+        def mutate(a):
+            a["arrays"]["NSTPMAX_NRAY"][0] = 17.0
+        res = self._run(mutate)
+        self.assertEqual(res.returncode, 0, res.stdout)
+
+    def test_int_array_rejects_drifting_float(self):
+        # Within the float tolerance, but an int array must not drift.
+        def mutate(a):
+            a["arrays"]["NSTPMAX_NRAY"][0] = 17.000000000001
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays.NSTPMAX_NRAY[0]", res.stdout)
+        self.assertIn("integer", res.stdout)
+
+    def test_fails_on_ragged_rows_even_when_identical(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            b = _wrx_sample()
+            b["arrays2"]["pwr_nrs_nsa"] = [[0.3, 0.02], [0.4]]
+            write_json(base, b)
+            write_json(act, b)
+            res = run_compare(act, base)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays2.pwr_nrs_nsa (baseline): ragged rows", res.stdout)
+        self.assertIn("arrays2.pwr_nrs_nsa (actual): ragged rows", res.stdout)
+
+    def test_fails_when_array_shape_disagrees_with_header_on_both_sides(self):
+        # Both dumps carry the same malformed block: fewer rows than
+        # NSAMAX_WR says. Element-wise they match; the header does not.
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            b = _wrx_sample()
+            b["arrays2"]["pwr_nsa_nray"] = [[0.45, 0.25]]
+            b["arrays"]["pwr_nsa"] = [0.7]
+            write_json(base, b)
+            write_json(act, b)
+            res = run_compare(act, base)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays2.pwr_nsa_nray (baseline): shape (1, 2) does not match the header", res.stdout)
+        self.assertIn("arrays.pwr_nsa (baseline): shape (1,) does not match the header", res.stdout)
+
+    def test_passes_with_zero_rays(self):
+        # No rays: NRAYMAX=0, per-ray lists empty, *_nsa_nray has one
+        # empty row per species (what wrxregress.f90 writes).
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            b = _wrx_sample()
+            b["NRAYMAX"] = 0
+            b["arrays"]["NSTPMAX_NRAY"] = []
+            b["arrays"]["pwr_nray"] = []
+            for k in ("pwr_nsa_nray", "pos_pwrmax_rs_nsa_nray", "pos_pwrmax_rl_nsa_nray",
+                      "pwrmax_rs_nsa_nray", "pwrmax_rl_nsa_nray"):
+                b["arrays2"][k] = [[], []]
+            write_json(base, b)
+            write_json(act, b)
+            res = run_compare(act, base)
+        self.assertEqual(res.returncode, 0, res.stdout)
+
+    def test_fails_on_boolean_nan_and_non_numeric_elements(self):
+        def mutate(a):
+            a["arrays"]["pwr_nray"][0] = True
+            a["arrays"]["pos_nrs"][1] = "0.75"
+            a["arrays2"]["pwr_nrl_nsa"][0][0] = float("nan")
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays.pwr_nray[0]: boolean, not numeric data", res.stdout)
+        self.assertIn("arrays.pos_nrs[1]: non-numeric", res.stdout)
+        self.assertIn("arrays2.pwr_nrl_nsa[0][0]: NaN", res.stdout)
+
+    def test_fails_when_array_value_is_not_a_list(self):
+        def mutate(a):
+            a["arrays"]["pwr_nsa"] = 0.75
+            a["arrays2"]["pwr_nsa_nray"] = [0.45, 0.05]
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("arrays.pwr_nsa: not a list on both sides", res.stdout)
+        self.assertIn("arrays2.pwr_nsa_nray[0] (actual): row is not a list", res.stdout)
+
+    def test_fails_on_nsamax_wr_dimension_drift(self):
+        def mutate(a):
+            a["NSAMAX_WR"] = 3
+        res = self._run(mutate)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("NSAMAX_WR: baseline=2 actual=3", res.stdout)
+
+    def test_non_wrx_schema_without_array_groups_still_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            base, act = self._paths(td)
+            write_json(base, _sample())
+            write_json(act, _sample())
+            res = run_compare(act, base)
+        self.assertEqual(res.returncode, 0, res.stdout)
 
 
 if __name__ == "__main__":

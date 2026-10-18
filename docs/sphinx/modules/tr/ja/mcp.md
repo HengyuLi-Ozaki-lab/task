@@ -306,7 +306,8 @@ MCP サーバの標準エラー出力が LLM クライアントに渡ります.
 | `ModuleNotFoundError: trlib` | `PYTHONPATH` にリポジトリ `python/` を追加 |
 | `ModuleNotFoundError: mcp` | `pip install 'mcp>=0.9'`. 仮想環境を確認 |
 | `invalid parameter` | `describe_parameters` で名前を確認 (大小区別あり, 1-origin) |
-| `calculation failed` | `NSMAX`, `PN`, `PT`, `DT` の整合性. `finalize` → `init` でリセット |
+| `invalid parameter` (`run` から) | 発展できないプロファイルを持つ active 粒子種 (`PN`/`PNS` が負・両方 0・非有限, `PT`/`PTS` が 0 以下, #189) か, コンパイル時上限を超える `NSMAX`. `validate` が該当の `PN[ns]` / `PT[ns]` / `PTS[ns]` を列挙 |
+| `calculation failed` | `DT` と平衡入力の整合性. `finalize` → `init` でリセット |
 
 詳細は `python/mcp-servers/tr_mcp/README.md` の §8 FAQ を参照してください.
 

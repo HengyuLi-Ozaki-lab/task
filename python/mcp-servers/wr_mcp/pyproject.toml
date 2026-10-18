@@ -48,6 +48,3 @@ packages = ["wr_mcp"]
 
 [tool.setuptools.package-dir]
 wr_mcp = "."
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

@@ -41,14 +41,40 @@ MODULE ti_param_registry
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: ti_param_set
+  PUBLIC :: ti_param_generation
 
   INTEGER, PARAMETER :: ERR_OK            = 0
   INTEGER, PARAMETER :: ERR_UNKNOWN_NAME  = 1
   INTEGER, PARAMETER :: ERR_BAD_INDEX     = 2
 
+  INTEGER, SAVE :: g_generation = 0
+
 CONTAINS
 
+  !-------------------------------------------------------------------
+  ! Mutation counter (#253).
+  !
+  ! Every successful set through this registry, whoever calls it
+  ! (ti_api_set_param, tot's "ti:" dispatcher, a future caller),
+  ! advances g_generation. ti_api compares the value it saw when it
+  ! last ran ti_prep with the current one and re-preps on a change,
+  ! so the "prepared" state cannot go stale behind the C ABI's back.
+  ! A set that fails leaves the counter alone: nothing changed.
+  !-------------------------------------------------------------------
+  FUNCTION ti_param_generation() RESULT(gen)
+    INTEGER :: gen
+    gen = g_generation
+  END FUNCTION ti_param_generation
+
   FUNCTION ti_param_set(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    REAL(rkind),      INTENT(IN) :: value
+    INTEGER :: ierr
+    ierr = ti_param_set_impl(name, value)
+    IF (ierr == 0) g_generation = g_generation + 1
+  END FUNCTION ti_param_set
+
+  FUNCTION ti_param_set_impl(name, value) RESULT(ierr)
     CHARACTER(LEN=*), INTENT(IN) :: name
     REAL(rkind),      INTENT(IN) :: value
     INTEGER :: ierr
@@ -190,7 +216,7 @@ CONTAINS
     CASE DEFAULT
        ierr = ERR_UNKNOWN_NAME
     END SELECT
-  END FUNCTION ti_param_set
+  END FUNCTION ti_param_set_impl
 
   ! Parse "BASE", "BASE[i]", or "BASE[i,j]" into base + indices.
   ! i / j default to 0 when absent; -1 on parse error.
