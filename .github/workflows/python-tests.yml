@@ -114,7 +114,12 @@ jobs:
           # (MCP_AVAILABLE = False). See server.py's optional-import
           # block; CI now exercises the FastMCP construction path that
           # production users hit.
-          pip install mcp
+          # Pinned below 2.0: mcp 2.0.0 removed `mcp.server.fastmcp`
+          # entirely (replaced by MCPServer/Server with a different
+          # decorator API), so every server.py falls back to
+          # MCP_AVAILABLE=False and the stdio servers refuse to start.
+          # Porting the 7 servers to the 2.x API is its own change.
+          pip install 'mcp>=0.9,<2'
 
       - name: Build PIC support libraries (bpsd, lib, mtxp, pl, eq, dp, ob)
         # Pre-build all shared support libraries so each module Makefile
