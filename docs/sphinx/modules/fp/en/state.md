@@ -8,8 +8,8 @@ the distribution function $f(r, p, \theta)$ itself — it exposes only
 
 | Field | Meaning |
 |---|---|
-| `state.nrmax`  | Number of radial mesh points |
-| `state.nsamax` | Number of active species (those whose distribution functions were solved) |
+| `state.nrmax`  | Number of radial mesh points in the profile arrays: once a run has allocated them, the lesser of the current `NRMAX` and that allocation (a raised `NRMAX` applies from the next run); before the first run, `NRMAX` itself with zero profiles |
+| `state.nsamax` | Number of active species (those whose distribution functions were solved) in the profile arrays: the lesser of the current `NSAMAX` and the allocation, likewise |
 | `state.npmax`  | Number of momentum mesh points |
 | `state.nthmax` | Number of pitch-angle mesh points |
 | `state.ntg2`   | Long-time-axis counter |

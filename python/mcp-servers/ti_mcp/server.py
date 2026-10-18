@@ -20,6 +20,21 @@ Design notes
 The server is intentionally small — the real heavy lifting is in
 :mod:`tilib`. This file mirrors ``tr_mcp/server.py`` and swaps the
 backing library, registry, and state schema to match TI.
+
+fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC)
+-----------------------------------------------
+Fortran WRITE(6,...) targets OS fd 1, which is also the JSON-RPC write
+pipe to the MCP client parent.  Any Fortran diagnostic line corrupts the
+pipe: the client logs "Failed to parse JSONRPC message from server" for
+each junk line, and in the worst case the session drops with
+"Connection closed".
+
+main() therefore calls ``_fd_isolation.install()`` (the module shared by
+the stdio servers, ``python/_fd_isolation.py``) immediately before the
+stdio server is built -- NOT at import time, see #227 item 1.
+It moves the pipe to a descriptor of its own, rebuilds ``sys.stdout`` on
+it and gives fd 1 to stderr, so that Fortran WRITE(6,...) lands in the
+server's log.
 """
 from __future__ import annotations
 
@@ -75,6 +90,10 @@ from tilib import (  # noqa: E402
     TilibRunError,
     TilibNotImplementedError,
 )
+
+# The fd isolation shared by the stdio servers; it lives beside the wrapper,
+# in ``<repo>/python/``.
+import _fd_isolation  # noqa: E402
 
 
 # =====================================================================
@@ -689,6 +708,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             "       pip install 'mcp>=0.9'\n"
         )
         return 2
+
+    # Install the fd isolation now -- NOT at import time (#227 item 1).
+    # Everything above this point (--help, --print-tools, the MCP-missing
+    # error path) returns before we touch the host process's fds.
+    _fd_isolation.install()
 
     server = build_server()
     # FastMCP >=0.9 exposes .run() for stdio transport by default.

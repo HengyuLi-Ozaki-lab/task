@@ -30,12 +30,13 @@
 
 MODULE fp_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE fp_state, ONLY: FP_STATE_ABI_VERSION
   USE fp_state, ONLY: fp_state_c, FP_MAX_NRMAX, FP_MAX_NSAMAX
   USE fpcomm,   ONLY: rkind, &
        NRMAX, NSAMAX, NPMAX, NTHMAX, NTG2, TIMEFP, &
        NTMAX, &
        RNT, RWT, RTT, RJT, RPCT, RPWT
-  USE fp_param_registry, ONLY: fp_param_set, fp_param_set_str
+  USE fp_param_registry, ONLY: fp_param_set, fp_param_set_str, fp_param_generation
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE obinit,            ONLY: ob_init
@@ -62,6 +63,12 @@ MODULE fp_api
   ! Lifecycle flags (module-scope state, single instance only at L-3).
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
+  ! Registry mutation counter seen by the last successful prep (#253).
+  ! -1 = never prepared. See fp_param_generation in the registry.
+  INTEGER, SAVE :: g_prep_generation = -1
+
+  ! #246: layout query, callable before fp_init.
+  PUBLIC :: fp_api_state_abi_version, fp_api_state_size
 
 CONTAINS
 
@@ -135,10 +142,10 @@ CONTAINS
     IF (fp_param_set(TRIM(fname), REAL(value, KIND=rkind)) /= 0) THEN
        ierr = FP_ERR_INVALID
     ELSE
-       ! A user who changes a profile-shape-altering variable needs to
-       ! re-run fp_prep; invalidate g_prepared so the next fp_run picks
-       ! up the new parameters.
-       g_prepared = .FALSE.
+       ! A successful set advances the registry's mutation counter;
+       ! fp_run compares it with g_prep_generation and re-runs fp_prep
+       ! (#253: the same holds for sets that reach the registry without
+       ! passing through here, such as tot's "fp:" dispatcher).
        ierr = FP_OK
     END IF
   END FUNCTION fp_api_set_param
@@ -179,7 +186,8 @@ CONTAINS
     IF (fp_param_set_str(TRIM(fname), TRIM(fvalue)) /= 0) THEN
        ierr = FP_ERR_INVALID
     ELSE
-       g_prepared = .FALSE.
+       ! The registry's mutation counter makes the next fp_run re-prep
+       ! (see fp_api_set_param).
        ierr = FP_OK
     END IF
   END FUNCTION fp_api_set_param_str
@@ -192,6 +200,7 @@ CONTAINS
   ! BIND(C, NAME="fp_run") keeps the external symbol as `fp_run`.
   !-------------------------------------------------------------------
   FUNCTION fp_api_run(ntmax_in) RESULT(ierr) BIND(C, NAME="fp_run")
+    USE fp_param_registry, ONLY: fp_param_check
     INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax_in
     INTEGER(C_INT) :: ierr
     INTEGER :: ntmax_save, prep_ierr
@@ -205,18 +214,31 @@ CONTAINS
        RETURN
     END IF
 
+    ! The counts a run cannot be made with are refused together, before
+    ! fp_prep: they run past an array bound there or in fp_loop, end the
+    ! process, never end a step, or (NRMAX beyond the state layout) make
+    ! a run that fp_api_get_state cannot return. fp_param_check says
+    ! which, on unit 6.
+    IF (fp_param_check(INT(FP_MAX_NRMAX)) /= 0) THEN
+       ierr = FP_ERR_INVALID
+       RETURN
+    END IF
+
     ! fp_prep allocates the FPCOMM arrays, sets up the velocity / radial
     ! mesh, and initializes the distribution function. It must run before
     ! the first fp_loop call and any time the caller updated a profile-
-    ! shape-altering namelist variable (fp_api_set_param clears
-    ! g_prepared).
-    IF (.NOT. g_prepared) THEN
+    ! shape-altering namelist variable: the registry counts every
+    ! successful set (fp_param_generation), from fp_api_set_param or
+    ! from tot's "fp:" dispatcher alike (#253), and a changed count
+    ! means re-prep.
+    IF (.NOT. g_prepared .OR. g_prep_generation /= fp_param_generation()) THEN
        CALL fp_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           ierr = FP_ERR_CALC_FAILED
           RETURN
        END IF
        g_prepared = .TRUE.
+       g_prep_generation = fp_param_generation()
     END IF
 
     ! Override NTMAX for this call so fp_loop steps exactly ntmax_in
@@ -244,7 +266,7 @@ CONTAINS
   FUNCTION fp_api_get_state(state) RESULT(ierr) BIND(C, NAME="fp_get_state")
     TYPE(fp_state_c), INTENT(OUT) :: state
     INTEGER(C_INT) :: ierr
-    INTEGER :: nr, nsa, ntg_last
+    INTEGER :: nr, nsa, ntg_last, nr_alloc, nsa_alloc
 
     ! Always zero the struct so callers never see uninitialized memory.
     state%nrmax  = 0
@@ -268,7 +290,9 @@ CONTAINS
     IF (NRMAX > FP_MAX_NRMAX .OR. NSAMAX > FP_MAX_NSAMAX) THEN
        ! Refusing rather than silently truncating: the static layout
        ! cannot hold the requested grid; the caller needs to rebuild
-       ! libfpapi with a larger FP_MAX_* constant.
+       ! libfpapi with a larger FP_MAX_* constant. Since fp_run refuses
+       ! such counts before fp_prep (#242) this is reachable only in the
+       ! set_param-to-run window; kept so the contract stays one rule.
        ierr = FP_ERR_CALC_FAILED
        RETURN
     END IF
@@ -284,11 +308,28 @@ CONTAINS
     ! Profiles: only populate when FPCOMM arrays are allocated (i.e.
     ! after fp_prep ran successfully). Use the same NTG_LAST defensive
     ! index as fpregress.f90.
+    !
+    ! The arrays keep the extents of the last fp_prep (fp_allocate_ntg2
+    ! gives all six the same shape (NRMAX,NSAMAX,NTG2M)), while NRMAX /
+    ! NSAMAX are the current namelist values. fp_set_param on a count
+    ! advances the registry counter without reallocating, so until the
+    ! next fp_run
+    ! the two can disagree (#245). Copy MIN(current count, allocated
+    ! extent) along each axis and report the copied extents, so the
+    ! [nsamax][nrmax] slice the caller reads is exactly the data that
+    ! exists: a lowered count truncates the snapshot to its leading
+    ! slice at once, a raised count stays capped at the old allocation
+    ! until the next fp_run (the C ABI has no parameter getter, so a
+    ! raised count is not observable while the reported extent is capped).
     IF (ALLOCATED(RNT) .AND. ALLOCATED(RWT) .AND. ALLOCATED(RTT) .AND. &
         ALLOCATED(RJT) .AND. ALLOCATED(RPCT) .AND. ALLOCATED(RPWT)) THEN
-       ntg_last = MAX(NTG2, 1)
-       DO nsa = 1, NSAMAX
-          DO nr = 1, NRMAX
+       nr_alloc  = MIN(NRMAX,  SIZE(RNT, 1))
+       nsa_alloc = MIN(NSAMAX, SIZE(RNT, 2))
+       ntg_last  = MIN(MAX(NTG2, 1), SIZE(RNT, 3))
+       state%nrmax  = nr_alloc
+       state%nsamax = nsa_alloc
+       DO nsa = 1, nsa_alloc
+          DO nr = 1, nr_alloc
              state%RNT (nr, nsa) = RNT (nr, nsa, ntg_last)
              state%RWT (nr, nsa) = RWT (nr, nsa, ntg_last)
              state%RTT (nr, nsa) = RTT (nr, nsa, ntg_last)
@@ -338,5 +379,24 @@ CONTAINS
     g_prepared    = .FALSE.
     ierr = FP_OK
   END FUNCTION fp_api_finalize
+
+  !-------------------------------------------------------------------
+  ! fp_state_abi_version / fp_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before fp_init.
+  ! A caller compares both with its own sizeof(fp_state_t) and its copy
+  ! of FP_STATE_ABI_VERSION before passing a struct to fp_get_state;
+  ! python/fplib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION fp_api_state_abi_version() RESULT(v) BIND(C, NAME="fp_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = FP_STATE_ABI_VERSION
+  END FUNCTION fp_api_state_abi_version
+
+  FUNCTION fp_api_state_size() RESULT(n) BIND(C, NAME="fp_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(fp_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION fp_api_state_size
 
 END MODULE fp_api

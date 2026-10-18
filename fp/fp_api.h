@@ -1,6 +1,8 @@
 #ifndef FP_API_H
 #define FP_API_H
 
+#include <stddef.h>  /* size_t for fp_state_size (#246) */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -37,6 +39,20 @@ extern "C" {
 #define FP_MAX_NRMAX  100
 #define FP_MAX_NSAMAX 8
 
+/*
+ * fp_state_t ABI version. Bumped whenever a field is added/removed/reordered
+ * in fp_state_t (i.e. whenever sizeof(fp_state_t) changes), together with
+ * the FP_STATE_ABI_VERSION PARAMETER in fp_state.f90 that the library
+ * exports through fp_state_abi_version(); tests/c_abi/test_negative.c
+ * fails when the two drift. In-tree consumers (the C-ABI drivers,
+ * python/fplib/_ffi.py) rebuild from this header and check the library's
+ * version and sizeof at load time (#246).
+ *
+ * History:
+ *   1 -> initial layout
+ */
+#define FP_STATE_ABI_VERSION 1
+
 /* Error codes returned by every fp_* entry point. */
 enum fp_error {
     FP_OK              = 0,
@@ -67,6 +83,13 @@ int fp_set_param(const char* name, double value);
 int fp_set_param_str(const char* name, const char* value);
 int fp_get_state(fp_state_t* state);
 int fp_finalize(void);
+
+/* Layout query (#246): the library's FP_STATE_ABI_VERSION and
+   sizeof(fp_state_t), callable before fp_init. Compare both with this
+   header's values before passing a struct to fp_get_state; a mismatch
+   means the library and this header come from different commits. */
+int    fp_state_abi_version(void);
+size_t fp_state_size(void);
 
 #ifdef __cplusplus
 }

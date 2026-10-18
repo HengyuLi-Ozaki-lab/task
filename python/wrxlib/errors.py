@@ -64,3 +64,13 @@ def raise_for_ierr(func: str, ierr: int) -> None:
 
 # Alias: matches the naming used by some sibling packages (fplib, trlib).
 raise_for_rc = raise_for_ierr
+
+class WrxlibAbiError(WrxlibError):
+    """libwrxapi.so's wrx_state_t layout is not the one this wrapper has (#246).
+
+    Raised by :func:`wrxlib._ffi.load_library` before any struct is passed:
+    the library does not export ``wrx_state_abi_version`` / ``wrx_state_size``
+    (built before the layout check), or its version or sizeof differs from
+    ``wrxlib._ffi.WrxStateC``. The message names the fix (rebuild the
+    library, or update the wrapper).
+    """

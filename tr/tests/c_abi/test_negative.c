@@ -40,6 +40,22 @@
 } while (0)
 
 int main(void) {
+    /* ---- 0: layout query must match this header (#246) ---------- */
+    {
+        int    v = tr_state_abi_version();
+        size_t n = tr_state_size();
+        if (v != TR_STATE_ABI_VERSION) {
+            fprintf(stderr, "FAIL abi-version: library reports %d, tr_api.h says %d\n",
+                    v, TR_STATE_ABI_VERSION);
+            return (__LINE__);
+        }
+        if (n != sizeof(tr_state_t)) {
+            fprintf(stderr, "FAIL state-size: library reports %lu, sizeof(tr_state_t) is %lu\n",
+                    (unsigned long) n, (unsigned long) sizeof(tr_state_t));
+            return (__LINE__);
+        }
+    }
+
     int rc;
     tr_state_t s;
 

@@ -51,6 +51,3 @@ packages = ["tot_mcp"]
 
 [tool.setuptools.package-dir]
 tot_mcp = "."
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
