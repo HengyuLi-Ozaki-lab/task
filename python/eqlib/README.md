@@ -101,6 +101,18 @@ See `examples/` for runnable scripts:
 All three accept `--dry-run` so you can validate argument parsing on a
 machine without `libeqapi.so` built.
 
+## Library layout check (#246)
+
+`load_library()` asks `libeqapi.so` for its `eq_state_t` layout
+(`eq_state_abi_version()`, `eq_state_size()`) and refuses it with
+`EqlibAbiError` when the version or the size differs from this wrapper's
+`EqStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C eq libeqapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
+
 ## API reference
 
 ### `Eq(lib_path: str | None = None)`
@@ -149,6 +161,41 @@ Snapshot the current grid/profile state into an `EqState` dataclass.
 Profile arrays are sliced to the active runtime size (`[0:nrgmax]`,
 `[0:npsmax]`, etc.); the trailing zero-padding (up to `EQ_MAX_*`)
 is hidden from callers.
+
+### `Eq.save(path) -> None`
+
+Write the equilibrium of the last `run` to a TASK/EQ binary file
+(`EQSAVE`): sets `KNAMEQ` to `path` (a `str` or a `pathlib.Path`), then
+calls `eq_save`. The file is what `MODELG=3` with `KNAMEQ=path` loads, in
+EQ (`run(1)`) and in the modules that read an equilibrium file. `KNAMEQ`
+is ASCII: a `bytes` path and a non-ASCII one are refused. Once the path is
+accepted, `KNAMEQ` stays at it also when the save then fails. After a
+failed write, what is at the path cannot be taken for the equilibrium that
+was to be saved (usually it is a short file): do not load it (`run(1)` with `MODELG=3`
+ends the process on a file that is cut off).
+
+A save whose file was not opened, or is shorter than what was written, is
+an error:
+
+- `EqlibInvalidParamError`, and no file is touched: the fields do not
+  hold the equilibrium of the present parameters (no `run` since the
+  handle was opened, a later solve or load that failed, or `set_param` of anything
+  but `MODEFR` and `MODEFW` since the last one: run again first); a blank
+  path, one longer than the 80 bytes of `KNAMEQ` (refused, not cut), or
+  one that ends in a blank; `MODEFW` other than 0 (overwrite an existing
+  file) or 3 (refuse one): with 1, 2 and 4 to 7 `FWOPEN` can read unit 5.
+- `EqlibCalculationFailedError`: the file could not be opened (a
+  directory that is missing or not writable; `MODEFW=3` and an existing
+  file), a write failed (an existing file without write permission), or
+  the file is shorter than what was written (a write the system refused,
+  as under a file size limit; a device such as `/dev/null`).
+
+"A `run` since" is what this handle's own calls saw. In the mono image
+(`MONO_LIB_PATH`, `libtotapi_mono.so`) the other modules change the
+equilibrium without passing through `eq_api` (for example tot's `eq:`
+parameters, the `eq_init` or `EQINIT` of the other modules' init,
+`eq_load` and `eq_calc` in the tr, fp and wrx run paths), and `save` then
+writes what the fields hold.
 
 ### `Eq.close() -> None`
 

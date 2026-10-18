@@ -97,6 +97,18 @@ See `examples/` for runnable scripts:
 - `examples/parameter_sweep.py` — RR / BB grid
 - `examples/state_dump.py` — single run, full `TrState.to_dict()` as JSON
 
+## Library layout check (#246)
+
+`load_library()` asks `libtrapi.so` for its `tr_state_t` layout
+(`tr_state_abi_version()`, `tr_state_size()`) and refuses it with
+`TrlibAbiError` when the version or the size differs from this wrapper's
+`TrStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C tr libtrapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
+
 ## API reference
 
 ### `Trlib(lib_path: str | None = None)`

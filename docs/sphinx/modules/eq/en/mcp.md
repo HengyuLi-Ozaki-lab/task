@@ -40,7 +40,7 @@ Differences from `tr_mcp`:
 - A **`validate`** tool is exposed independently — pre-run validation
   (PR #164) is published on a dedicated endpoint. The LLM can detect
   missing EQDSK files before `run`.
-- **11** tools in total (`tr` has 9).
+- **12** tools in total (`tr` has 9).
 
 ## Prerequisites
 
@@ -72,7 +72,7 @@ python -m eq_mcp.server --help
 python -m eq_mcp.server --print-tools
 ```
 
-You should see 11 tools (see "Tool catalog" below).
+You should see 12 tools (see "Tool catalog" below).
 
 ### Environment health check
 
@@ -146,7 +146,7 @@ eq-mcp install --client cursor --scope user
 
 ## Tool catalog
 
-`eq_mcp` exposes **11** tools.
+`eq_mcp` exposes **12** tools.
 
 | Tool | Purpose | Main args |
 |---|---|---|
@@ -157,6 +157,7 @@ eq-mcp install --client cursor --scope user
 | `run` | run the equilibrium calculation (`eq_run`) | `mode` (default=1) |
 | `get_state` | fetch the current state (`eq_get_state`) | none |
 | `validate` | **pre-run validation (an EQ strength)** | none |
+| `save` | write the equilibrium of the last `run` to a TASK/EQ binary file (`eq_save`); an existing file is replaced only with `overwrite=true`; fails when the file was not opened or is shorter than what was written | `path`, `overwrite` (default `false`) |
 | `finalize` | release resources (`eq_finalize`) | none |
 | `describe_parameters` | list parameters with types and groups | none |
 | `describe_state_schema` | JSON schema for the `get_state` return value | none |

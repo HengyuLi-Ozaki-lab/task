@@ -23,7 +23,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from _abi_check import AbiMismatchError, check_state_layout
 from _runtime_mode import mono_lib_path
+
+from .errors import FplibAbiError
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -38,6 +41,12 @@ except ImportError:  # pragma: no cover - numpy is optional
 # ---------------------------------------------------------------------
 FP_MAX_NRMAX = 100
 FP_MAX_NSAMAX = 8
+
+# fp_state_t layout version; mirrors FP_STATE_ABI_VERSION in fp/fp_api.h
+# and fp/fp_state.f90. load_library() refuses a library whose
+# fp_state_abi_version() / fp_state_size() differ from this and from
+# ctypes.sizeof(FpStateC) (#246).
+FP_STATE_ABI_VERSION = 1
 
 
 # ---------------------------------------------------------------------
@@ -179,6 +188,15 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
     lib = ctypes.CDLL(str(p), mode=mode)
+    # #246: refuse a library whose fp_state_t layout is not FpStateC's,
+    # before any struct is passed. A library built before #246 has no
+    # query symbols and is refused too (it may or may not match).
+    try:
+        check_state_layout(lib, prefix="fp", struct=FpStateC,
+                           expected_version=FP_STATE_ABI_VERSION,
+                           lib_name=os.path.basename(str(p)))
+    except AbiMismatchError as exc:
+        raise FplibAbiError(str(exc)) from exc
     return _apply_prototypes(lib)
 
 

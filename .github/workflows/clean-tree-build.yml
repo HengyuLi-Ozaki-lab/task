@@ -1,0 +1,142 @@
+name: clean-tree-build
+
+# Issue #250. The pytest and mono-build jobs in python-tests.yml
+# pre-build the whole PIC support chain (bpsd, lib, mtxp, pl, eq, dp,
+# ob, adf11, adpost) before their per-module `make -C <mod>
+# lib<mod>api.so` loop, so the sequence the wrapper READMEs document
+# for a fresh checkout (per-system files + `make -C ../bpsd libbpsd.a`
+# + one `make -C <mod> lib<mod>api.so`) is never what makes CI green.
+# #230 regressed silently for months that way and was fixed (#251)
+# with hand-run fresh clones.
+#
+# This workflow runs exactly the README sequence and nothing else,
+# one module per runner: in a single runner module 2 would inherit
+# the lib/, pl/, eq/ ... that module 1 built, and a missing
+# prerequisite would be hidden again. tot is not in the matrix: it
+# has no one-liner (it links the sibling .so files).
+#
+# Not a required check: the path filter skips it on Python-only PRs,
+# and a skipped required check sits at "expected" forever.
+#
+# workflow_dispatch and schedule only work for a workflow file that
+# exists on the default branch (master). master carries no workflow
+# files at all today (regen-baselines.yml has the same gap: `gh run
+# list --workflow regen-baselines.yml` answers "not found on the
+# default branch"), so those two triggers go live when the workflow
+# reaches master; pull_request and push work from develop right away.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [develop, master, chore/pre-push-hook-worktree-compat]
+    paths:
+      - '**/Makefile'
+      - '**/*.f'
+      - '**/*.f90'
+      - '**/*.F'
+      - '**/*.F90'
+      - '**/*.h'
+      - '**/*.inc'
+      - '**/*.m'
+      - '**/*.for'
+      - 'make.header.org'
+      - 'mtxp/**'
+      - '.github/workflows/clean-tree-build.yml'
+      - '.github/actions/**'
+  push:
+    branches: [develop, master, chore/pre-push-hook-worktree-compat]
+    paths:
+      - '**/Makefile'
+      - '**/*.f'
+      - '**/*.f90'
+      - '**/*.F'
+      - '**/*.F90'
+      - '**/*.h'
+      - '**/*.inc'
+      - '**/*.m'
+      - '**/*.for'
+      - 'make.header.org'
+      - 'mtxp/**'
+      - '.github/workflows/clean-tree-build.yml'
+      - '.github/actions/**'
+  schedule:
+    # Weekly, Monday 03:00 UTC (12:00 JST). A schedule fires from the
+    # default branch (master), whose tree is far behind develop; the
+    # checkout step below switches to develop for scheduled runs.
+    - cron: '0 3 * * 1'
+
+concurrency:
+  # A scheduled run tests develop but fires on refs/heads/master; give
+  # it its own group so it and a push to master cannot cancel each other.
+  group: clean-tree-build-${{ github.event_name == 'schedule' && 'schedule' || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  clean-tree:
+    name: clean-tree build (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    # bpsd + one module's full PIC chain (lib, mtxp, pl, eq, ...) is
+    # 4-8 minutes on the GitHub runner; 20 leaves slack.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [tr, fp, ti, wr, wrx, eq]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Scheduled runs check out develop (see the schedule comment
+          # above); every other event checks out its own ref.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
+
+      - name: Install Fortran/C build deps
+        # Same toolchain as python-tests.yml: Ubuntu 24.04's default
+        # gfortran. No Python packages are needed.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran gcc make
+          gfortran --version | head -1
+
+      - name: README steps 1-2, per-system files (make.header, mtxp/make.mtxp)
+        # The README says `cp make.header.org make.header` and edit it
+        # for your system; the composite action is that edit for a
+        # Linux gfortran runner, shared with python-tests.yml.
+        uses: ./.github/actions/provision-build-env
+
+      - name: README steps 3-4, clone and build BPSD
+        # ../bpsd/Makefile includes ../task/make.header, so the TASK
+        # checkout must be named `task`. $GITHUB_WORKSPACE is
+        # .../work/task/task only because this repository is named
+        # task; a renamed fork needs a symlink. The clone line is the
+        # README's (full history, no --depth), on purpose.
+        run: |
+          set -e
+          test "$(basename "$GITHUB_WORKSPACE")" = task \
+            || { echo "the TASK checkout must be named task (../bpsd/Makefile includes ../task/make.header)" >&2; exit 1; }
+          git clone --branch develop https://github.com/k-yoshimi/bpsd.git \
+            "$GITHUB_WORKSPACE/../bpsd"
+          make -C "$GITHUB_WORKSPACE/../bpsd" libbpsd.a
+
+      - name: README step 5, make -C ${{ matrix.module }} lib${{ matrix.module }}api.so (nothing pre-built)
+        # No bpsd_pic, no lib/pl/eq pre-build, no -j: the module's own
+        # Makefile must pull every prerequisite in (#230 / #251).
+        run: |
+          set -e
+          mod='${{ matrix.module }}'
+          make -C "$mod" "lib${mod}api.so"
+
+      - name: The .so exists and loads
+        # `make` can succeed and still leave unresolved symbols in a
+        # shared library; dlopen with RTLD_NOW (what ctypes uses) is
+        # what the Python wrappers do first, so it is the check here.
+        run: |
+          set -e
+          mod='${{ matrix.module }}'
+          test -s "$mod/lib${mod}api.so"
+          python3 -c 'import ctypes, sys; ctypes.CDLL(sys.argv[1]); print("loaded", sys.argv[1])' \
+            "$PWD/$mod/lib${mod}api.so"

@@ -1,6 +1,8 @@
 #ifndef TOT_API_H
 #define TOT_API_H
 
+#include <stddef.h>  /* size_t for tot_state_size (#246) */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -53,6 +55,11 @@ extern "C" {
  * it bumps. In-tree consumers (python/totlib/_ffi.py and any future
  * tot_api_check_* helpers) all rebuild from this header, so they are
  * kept in sync automatically by the build system.
+ * Since #246 the same value is a PARAMETER in tot_state.f90, exported by
+ * tot_state_abi_version() together with sizeof via tot_state_size(); bump
+ * both places together. tests/c_abi/test_negative.c fails when they
+ * drift, and python/totlib/_ffi.py refuses a library whose version or
+ * size differs from its struct at load time.
  *
  * History:
  *   1 -> initial layout (Phase L-2)
@@ -115,6 +122,13 @@ int tot_set_param(const char* name, double value);
 int tot_set_param_str(const char* name, const char* value);
 int tot_get_state(tot_state_t* state);
 int tot_finalize(void);
+
+/* Layout query (#246): the library's TOT_STATE_ABI_VERSION and
+   sizeof(tot_state_t), callable before tot_init. Compare both with this
+   header's values before passing a struct to tot_get_state; a mismatch
+   means the library and this header come from different commits. */
+int    tot_state_abi_version(void);
+size_t tot_state_size(void);
 
 /*
  * tot_is_mono : introspection — am I the monolithic libtotapi*.so?

@@ -82,13 +82,13 @@ namespace.
 |---|---|---|
 | 0. Regression baseline | `test_run/baselines/tot_*/metrics.json` | Phase L-0 ground truth (`tot_iter01`, `tot_demo2014`) |
 | 1. Fortran orchestrator | `tot/tot_api.f90`, `tot_param_registry.f90`, `tot_state.f90`, `totexec` | Numerics / fan-out, shared with the `tot` binary |
-| 2. C ABI | `tot/tot_api.h` + BIND(C) exports in `tot_api.f90` | 6 functions, stable contract, namespaced names |
+| 2. C ABI | `tot/tot_api.h` + BIND(C) exports in `tot_api.f90` | 6 functions + 2 layout queries (#246), stable contract, namespaced names |
 | 3. Shared library | `tot/libtotapi.so` | `make -C tot libtotapi.so`, links the 6 PIC archives + deps |
 | 4. Python FFI | `python/totlib/_ffi.py` | `ctypes` mirror of `tot_state_t`, `RTLD_LAZY` loader, namespace constants |
 | 5. High-level wrapper | `python/totlib/totlib.py`, `state.py`, `errors.py` | Context manager, dataclass, namespace guard, exception hierarchy |
 | 6. User scripts | `python/totlib/examples/*.py`, user notebooks | Quickstart, sweep, state-dump |
 
-### 6 C ABI entry points
+### 6 C ABI entry points (+ 2 layout queries, #246)
 
 From `tot/tot_api.h`:
 
@@ -242,6 +242,29 @@ Mirrors the tr spec's §12.2 for the TOT module:
   notebooks (Q0 maximize, Pareto front) described in the original
   L-7 plan are deferred; this PR ships only the documentation /
   examples subset.
+
+## State struct layout rule (#246)
+
+`tot_state_t` (`tot/tot_api.h`) and `tot_state_c` (`tot/tot_state.f90`) are
+one fixed layout, filled by `tot_get_state`. Changing it:
+
+1. append the field at the end of both (never reorder, never remove);
+2. bump `TOT_STATE_ABI_VERSION` **in both files** (the `#define` and the
+   `PARAMETER`; currently `2`);
+3. mirror the field in `python/totlib/_ffi.py` (`TotStateC._fields_`) and
+   `state.py`;
+4. rebuild `libtotapi.so` in the same commit.
+
+The library exports its own view: `tot_state_abi_version()` returns the
+PARAMETER and `tot_state_size()` the `sizeof` of the BIND(C) type, both
+callable before `tot_init`. `tot/tests/c_abi/test_negative.c` and
+`test_run_so.c` fail when either differs from the header, and
+`python/totlib/_ffi.py::load_library` refuses a library whose version or
+size differs from `TotStateC`, or that exports neither symbol (built
+before #246), with `TotlibAbiError` naming the fix. Both silent
+failure modes of a stale pair are therefore caught at load time: a longer
+library struct would have written past the wrapper's allocation, a
+shorter one would have left the appended fields as plausible zeros.
 
 ## References
 

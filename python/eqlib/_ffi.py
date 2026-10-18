@@ -23,7 +23,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from _abi_check import AbiMismatchError, check_state_layout
 from _runtime_mode import mono_lib_path
+
+from .errors import EqlibAbiError
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -44,6 +47,12 @@ EQ_MAX_NPSM = 513
 EQ_MAX_NRM = 1001
 EQ_MAX_NTHM = 2049
 EQ_MAX_NSUM = 1343
+
+# eq_state_t layout version; mirrors EQ_STATE_ABI_VERSION in eq/eq_api.h
+# and eq/eq_state.f90. load_library() refuses a library whose
+# eq_state_abi_version() / eq_state_size() differ from this and from
+# ctypes.sizeof(EqStateC) (#246).
+EQ_STATE_ABI_VERSION = 1
 
 
 # ---------------------------------------------------------------------
@@ -236,6 +245,13 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     except AttributeError:  # pragma: no cover - only on pre-#143 builds
         pass
 
+    # eq_save: () -> int
+    try:
+        lib.eq_save.argtypes = []
+        lib.eq_save.restype = ctypes.c_int
+    except AttributeError:  # pragma: no cover - a libeqapi.so built before eq_save
+        pass
+
     lib.eq_finalize.restype = ctypes.c_int
     lib.eq_finalize.argtypes = []
     return lib
@@ -272,6 +288,15 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
     lib = ctypes.CDLL(str(p), mode=mode)
+    # #246: refuse a library whose eq_state_t layout is not EqStateC's,
+    # before any struct is passed. A library built before #246 has no
+    # query symbols and is refused too (it may or may not match).
+    try:
+        check_state_layout(lib, prefix="eq", struct=EqStateC,
+                           expected_version=EQ_STATE_ABI_VERSION,
+                           lib_name=os.path.basename(str(p)))
+    except AbiMismatchError as exc:
+        raise EqlibAbiError(str(exc)) from exc
     return _apply_prototypes(lib)
 
 

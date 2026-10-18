@@ -26,6 +26,7 @@
 MODULE tr_api
   USE, INTRINSIC :: ISO_C_BINDING
   USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
+  USE tr_state, ONLY: TR_STATE_ABI_VERSION
   USE tr_state, ONLY: tr_state_c, TR_MAX_NRMAX, TR_MAX_NSMAX, &
                       tr_diag_entry_c, &
                       TR_DIAG_PARAM_LEN, TR_DIAG_MSG_LEN, &
@@ -40,7 +41,7 @@ MODULE tr_api
        AJRFT, &
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_RW, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
-  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str
+  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE trinit,            ONLY: trinit_fortran => tr_init
@@ -71,6 +72,12 @@ MODULE tr_api
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
+  ! Registry mutation counter seen by the last successful prep (#253).
+  ! -1 = never prepared. See tr_param_generation in the registry.
+  INTEGER, SAVE :: g_prep_generation = -1
+
+  ! #246: layout query, callable before tr_init.
+  PUBLIC :: tr_api_state_abi_version, tr_api_state_size
 
 CONTAINS
 
@@ -155,10 +162,10 @@ CONTAINS
     IF (tr_param_set(TRIM(fname), value) /= 0) THEN
        ierr = TR_ERR_INVALID
     ELSE
-       ! A user who changes a profile-shape-altering variable needs to
-       ! re-run tr_prep; invalidate g_prepared so the next tr_run picks
-       ! up the new parameters.
-       g_prepared = .FALSE.
+       ! A successful set advances the registry's mutation counter;
+       ! tr_run compares it with g_prep_generation and re-runs tr_prep
+       ! (#253: the same holds for sets that reach the registry without
+       ! passing through here, such as tot's "tr:" dispatcher).
        ierr = TR_OK
     END IF
   END FUNCTION tr_api_set_param
@@ -200,8 +207,8 @@ CONTAINS
        ierr = TR_ERR_INVALID
     ELSE
        ! Changing KNAMEQ (equilibrium data file) alters the tr_prep
-       ! inputs; invalidate g_prepared so the next tr_run rebuilds.
-       g_prepared = .FALSE.
+       ! inputs; the registry's mutation counter makes the next tr_run
+       ! rebuild (see tr_api_set_param).
        ierr = TR_OK
     END IF
   END FUNCTION tr_api_set_param_str
@@ -232,10 +239,11 @@ CONTAINS
     END IF
 
     ! tr_prep builds the initial profile, metric and bpsd state. It must
-    ! run before the first tr_loop call and any time the caller updated
-    ! a profile-shape-altering namelist variable (tr_api_set_param
-    ! clears g_prepared).
-    IF (.NOT. g_prepared) THEN
+    ! run before the first tr_loop call and any time a parameter was set
+    ! since the last prep: the registry counts every successful set
+    ! (tr_param_generation), from tr_api_set_param or from tot's "tr:"
+    ! dispatcher alike (#253), and a changed count means re-prep.
+    IF (.NOT. g_prepared .OR. g_prep_generation /= tr_param_generation()) THEN
        ! NSMAX above the solver's compile-time NSM: tr_api_validate
        ! reports it, but a caller that skips validate must not reach
        ! tr_prep with it (the registry accepts up to TR_MAX_NSMAX=8).
@@ -263,6 +271,7 @@ CONTAINS
           RETURN
        END IF
        g_prepared = .TRUE.
+       g_prep_generation = tr_param_generation()
     END IF
 
     ! Override NTMAX for this call so tr_loop steps exactly ntmax_in
@@ -633,5 +642,24 @@ CONTAINS
     END SUBROUTINE add
 
   END SUBROUTINE species_profile_violations
+
+  !-------------------------------------------------------------------
+  ! tr_state_abi_version / tr_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before tr_init.
+  ! A caller compares both with its own sizeof(tr_state_t) and its copy
+  ! of TR_STATE_ABI_VERSION before passing a struct to tr_get_state;
+  ! python/trlib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_state_abi_version() RESULT(v) BIND(C, NAME="tr_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = TR_STATE_ABI_VERSION
+  END FUNCTION tr_api_state_abi_version
+
+  FUNCTION tr_api_state_size() RESULT(n) BIND(C, NAME="tr_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(tr_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION tr_api_state_size
 
 END MODULE tr_api

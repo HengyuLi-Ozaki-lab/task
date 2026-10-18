@@ -152,6 +152,18 @@ All three accept `--dry-run` to validate argument parsing and import
 wiring without invoking the FFI (useful for smoke runs without the
 shared library present).
 
+## Library layout check (#246)
+
+`load_library()` asks `libwrxapi.so` for its `wrx_state_t` layout
+(`wrx_state_abi_version()`, `wrx_state_size()`) and refuses it with
+`WrxlibAbiError` when the version or the size differs from this wrapper's
+`WrxStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C wrx libwrxapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
+
 ## API reference
 
 ### `Wrxlib(lib_path: str | None = None)`

@@ -66,13 +66,13 @@ diagram and per-phase status.
 |---|---|---|
 | 0. Regression baseline | `test_run/baselines/fp_{iter01,jt60,dt1}/` | Phase 0 ground truth (tol `1e-10`) |
 | 1. Fortran backend | `fp/fp_api.f90`, `fp_param_registry.f90`, `fpprep`, `fploop`, ... | Numerics, shared with `fp` binary |
-| 2. C ABI | `fp/fp_api.h` + BIND(C) exports in `fp_api.f90` | 5 functions, stable contract |
+| 2. C ABI | `fp/fp_api.h` + BIND(C) exports in `fp_api.f90` | 5 functions + 2 layout queries (#246), stable contract |
 | 3. Shared library | `fp/libfpapi.so` | `make -C fp libs_pic && make -C fp libfpapi.so` |
 | 4. Python FFI | `python/fplib/_ffi.py` | `ctypes` layout mirror of `fp_state_t` |
 | 5. High-level wrapper | `python/fplib/fplib.py`, `state.py`, `errors.py` | Context manager + dataclass |
 | 6. User scripts | `python/fplib/examples/*.py`, user notebooks | |
 
-### 5 C ABI entry points
+### 5 C ABI entry points (+ 2 layout queries, #246)
 
 From `fp/fp_api.h`:
 
@@ -232,6 +232,29 @@ Mirrors the tr spec's §12.2 for the FP module:
   `fp/fp_api.h` + `fp/fp_state.f90` and rebuilding `libfpapi.so`.
 - **Single instance per process.** FP globals are module-level
   state; two concurrent `Fplib()` instances share FPCOMM.
+
+## State struct layout rule (#246)
+
+`fp_state_t` (`fp/fp_api.h`) and `fp_state_c` (`fp/fp_state.f90`) are
+one fixed layout, filled by `fp_get_state`. Changing it:
+
+1. append the field at the end of both (never reorder, never remove);
+2. bump `FP_STATE_ABI_VERSION` **in both files** (the `#define` and the
+   `PARAMETER`; currently `1`);
+3. mirror the field in `python/fplib/_ffi.py` (`FpStateC._fields_`) and
+   `state.py`;
+4. rebuild `libfpapi.so` in the same commit.
+
+The library exports its own view: `fp_state_abi_version()` returns the
+PARAMETER and `fp_state_size()` the `sizeof` of the BIND(C) type, both
+callable before `fp_init`. `fp/tests/c_abi/test_negative.c` and
+`test_run_so.c` fail when either differs from the header, and
+`python/fplib/_ffi.py::load_library` refuses a library whose version or
+size differs from `FpStateC`, or that exports neither symbol (built
+before #246), with `FplibAbiError` naming the fix. Both silent
+failure modes of a stale pair are therefore caught at load time: a longer
+library struct would have written past the wrapper's allocation, a
+shorter one would have left the appended fields as plausible zeros.
 
 ## References
 

@@ -87,6 +87,7 @@ __all__ = [
     "EqlibNotInitializedError",
     "EqlibCalculationFailedError",
     "EqlibNotImplementedError",
+    "EqlibAbiError",
     "EqLibError",
     "EqLibInvalidParam",
     "EqLibNotInitialized",
@@ -95,3 +96,13 @@ __all__ = [
     "raise_for_rc",
     "raise_for_ierr",
 ]
+
+class EqlibAbiError(EqlibError):
+    """libeqapi.so's eq_state_t layout is not the one this wrapper has (#246).
+
+    Raised by :func:`eqlib._ffi.load_library` before any struct is passed:
+    the library does not export ``eq_state_abi_version`` / ``eq_state_size``
+    (built before the layout check), or its version or sizeof differs from
+    ``eqlib._ffi.EqStateC``. The message names the fix (rebuild the
+    library, or update the wrapper).
+    """

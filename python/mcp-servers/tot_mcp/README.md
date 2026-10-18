@@ -394,6 +394,8 @@ TOT のバックエンドは Fortran COMMON-block を使った単一状態なの
 
 MCP サーバの標準エラー出力が LLM クライアントに渡ります。Claude Desktop なら「開発者ツール」相当のログビューア、Claude Code なら実行ターミナルで確認できます。
 
+Fortran 側の `WRITE(6,...)`（unit 6 = fd 1）も同じ標準エラー出力に流れます。stdio サーバでは fd 1 が JSON-RPC の送信パイプなので、`main()` がサーバ構築の直前に共有モジュール `python/_fd_isolation.py` で fd 1 を stderr に付け替えています（#227 / #257 / #263）。端末で手動起動したときや `2>&1` で stdout と stderr が同じファイルになっているときは、unit 6 の出力は捨てられ、その旨の警告が stderr に 1 行出ます（同一ファイルの判定は `fstat` の inode によるので、パイプやコンソールに inode が無い Windows では判定されず、fd 1 は通常どおり stderr に向きます）。ライブラリの出力を残したい場合は stderr を別に渡してください（例: `python -m tot_mcp.server 2>server.log`）。
+
 ## 10. 参考資料
 
 - MCP spec: <https://modelcontextprotocol.io/>

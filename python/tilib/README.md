@@ -97,6 +97,18 @@ See `examples/` for runnable scripts:
 - `examples/parameter_sweep.py` — 3×3 NRMAX × BB grid
 - `examples/state_dump.py` — single run, full `TiState.to_dict()` as JSON
 
+## Library layout check (#246)
+
+`load_library()` asks `libtiapi.so` for its `ti_state_t` layout
+(`ti_state_abi_version()`, `ti_state_size()`) and refuses it with
+`TilibAbiError` when the version or the size differs from this wrapper's
+`TiStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C ti libtiapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
+
 ## API reference
 
 ### `TiLib(lib_path: str | None = None)`
