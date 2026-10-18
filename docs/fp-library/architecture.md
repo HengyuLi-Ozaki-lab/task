@@ -239,8 +239,9 @@ Mirrors the tr spec's §12.2 for the FP module:
 one fixed layout, filled by `fp_get_state`. Changing it:
 
 1. append the field at the end of both (never reorder, never remove);
-2. bump `FP_STATE_ABI_VERSION` **in both files** (the `#define` and the
-   `PARAMETER`; currently `1`);
+2. bump `FP_STATE_ABI_VERSION` **in all three places** (the `#define`, the
+   `PARAMETER` and the constant in `python/fplib/_ffi.py`, without which
+   `load_library` refuses the rebuilt library; currently `2`);
 3. mirror the field in `python/fplib/_ffi.py` (`FpStateC._fields_`) and
    `state.py`;
 4. rebuild `libfpapi.so` in the same commit.

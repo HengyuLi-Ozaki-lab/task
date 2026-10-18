@@ -75,6 +75,13 @@ class TestFpStateCLayout(unittest.TestCase):
                 dict(f[:2] for f in _ffi.FpStateC._fields_)[n], ctypes.c_double
             )
 
+    def test_layout_version_is_the_one_with_the_global_scalars(self):
+        # fp_api.h's History: 1 is the profiles only, 2 appends the seven
+        # global scalars. load_library refuses a libfpapi.so of another
+        # version (#246), so a library built before them is not read.
+        self.assertEqual(_ffi.FP_STATE_ABI_VERSION, 2)
+        self.assertEqual(len(state.SCALAR_FIELDS), 7)
+
     def test_size_matches_header_math(self):
         # 5 ints + 1 double + 6 * NSA*NR doubles + 7 scalar doubles.
         # Compilers may pad the 5 ints to a multiple of 8 before the

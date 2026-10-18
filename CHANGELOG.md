@@ -17,8 +17,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `PLASMA_VOLUME` [m^3]. They are what shows an EQ to FP handoff: the six
   profiles are local quantities and stay bit-identical when only the
   equilibrium changes (without radial transport, waves or current drive).
-  `fp_state_t` grows by 56 bytes at its end, so `libfpapi.so` and
-  its callers are rebuilt together; `FpState.scalars`, `to_dict()["scalars"]`
+  `fp_state_t` grows by 56 bytes at its end (layout version 2, #246), so
+  `libfpapi.so` and its callers are rebuilt together: `fplib` refuses a
+  library built before this change with `FplibAbiError` instead of reading
+  the scalars as zeros. `FpState.scalars`, `to_dict()["scalars"]`
   and the `scalars` object of fp_mcp's state carry them, and an FP step of
   the `totlib` pipeline keeps them beside `timefp` and its counts. They are
   zero until the first run, and again after a `fp_set_param` until the next

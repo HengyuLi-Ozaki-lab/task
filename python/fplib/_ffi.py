@@ -46,7 +46,7 @@ FP_MAX_NSAMAX = 8
 # and fp/fp_state.f90. load_library() refuses a library whose
 # fp_state_abi_version() / fp_state_size() differ from this and from
 # ctypes.sizeof(FpStateC) (#246).
-FP_STATE_ABI_VERSION = 1
+FP_STATE_ABI_VERSION = 2
 
 
 # ---------------------------------------------------------------------

@@ -35,7 +35,7 @@ MODULE fp_state
   ! removed or reordered; fp_state_abi_version() exports it and the C-ABI
   ! driver fails when the two drift. fp_state_size() exports the
   ! BIND(C) size, so the library, not the header, is authoritative.
-  INTEGER(C_INT), PARAMETER :: FP_STATE_ABI_VERSION = 1
+  INTEGER(C_INT), PARAMETER :: FP_STATE_ABI_VERSION = 2
 
   TYPE, BIND(C) :: fp_state_c
      INTEGER(C_INT) :: nrmax

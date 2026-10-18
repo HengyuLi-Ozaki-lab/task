@@ -56,8 +56,10 @@ extern "C" {
  *
  * History:
  *   1 -> initial layout
+ *   2 -> appended the seven global scalars TOTAL_IP .. PLASMA_VOLUME
+ *        (56 bytes); existing field offsets preserved.
  */
-#define FP_STATE_ABI_VERSION 1
+#define FP_STATE_ABI_VERSION 2
 
 /* Error codes returned by every fp_* entry point. */
 enum fp_error {
