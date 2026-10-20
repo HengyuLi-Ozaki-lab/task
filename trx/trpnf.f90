@@ -66,6 +66,7 @@ CONTAINS
     PNFCL_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0 ! collisional transfer in
     SNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron number
     PNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron power
+    PNF_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0   ! fusion power
     
     DO nnf=1,nnfmax
        id_nf=id_nf_nnf(nnf)
