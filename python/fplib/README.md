@@ -209,6 +209,29 @@ via `state.to_dict()` (JSON-serialisable, layout compatible with
 | `RJT` | list[list[float]] | `[nsamax][nrmax]` current density profile |
 | `RPCT` | list[list[float]] | `[nsamax][nrmax]` collisional power profile |
 | `RPWT` | list[list[float]] | `[nsamax][nrmax]` wave-absorbed power profile |
+| `scalars` | dict[str, float] | the seven volume-integrated globals below |
+
+`scalars` holds the seven doubles that `fp_state_t` carries after the
+profile arrays: the first six are summed over the kinetic species at the
+latest global-diagnostic sample (`NTG1`), and `PLASMA_VOLUME` is `TVOLR`,
+the sum of the radial cell volumes. All seven are zero until the first
+`run()`, and again after a `set_param` or `set_param_str` until the next
+`run()` that is made, while the profiles are still those of the last run:
+
+| Key | Unit | Meaning |
+|---|---|---|
+| `TOTAL_IP` | MA | total plasma current |
+| `STORED_ENERGY` | MJ | stored energy |
+| `COLLISION_POWER` | MW | total collisional power |
+| `ABSORPTION_POWER` | MW | total absorbed wave power |
+| `ABSORPTION_WR` | MW | ray-tracing (WR) part of the absorbed power |
+| `ABSORPTION_WM` | MW | full-wave (WM) part of the absorbed power |
+| `PLASMA_VOLUME` | m^3 | plasma volume (`TVOLR`) |
+
+`state.to_dict()` puts them under a top-level `"scalars"` key.
+`fp_state_t` grows at its end only: a `libfpapi.so` built before these
+members existed must be rebuilt (`make -C fp libfpapi.so`) together with
+this wrapper.
 
 Memory-layout note: C declares `RNT[NSAMAX][NRMAX]` (row-major); the
 Fortran backend declares `RNT(NRMAX, NSAMAX)` (column-major). Both lay
@@ -258,9 +281,9 @@ menu — those live in `fp/fp` only.
   between `fp_allocate` and `fp_deallocate`). A single
   `fp_init` / `fp_run` / `fp_finalize` cycle per process is the
   supported lifecycle at Phase L-3.
-- **String parameters not yet wired** (e.g. `KNAMFP`). File-name
-  namelist keys must be left at their defaults; the float-only C ABI
-  cannot carry strings.
+- **One string parameter.** `set_param_str` sets `KNAMEQ`, the
+  equilibrium file of `MODELG=3`; `KNAMFP` and the other string keys of
+  the namelist stay at their defaults.
 - **Unregistered namelist keys** — any name missing from
   `fp_param_registry.f90` returns `FplibInvalidParamError`. The
   current registry covers ~55 settable variables across geometry,

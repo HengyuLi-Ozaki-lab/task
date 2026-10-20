@@ -139,7 +139,17 @@ run is made without that species' collisions with its own kind).
 `nthmax`, `ntg2`), the simulation time `timefp` (double), and six 2-D
 profile arrays `RNT`, `RWT`, `RTT`, `RJT`, `RPCT`, `RPWT` of shape
 `[FP_MAX_NSAMAX][FP_MAX_NRMAX]` = `[8][100]`. The runtime copy uses
-only the `[0:nsamax][0:nrmax]` slice.
+only the `[0:nsamax][0:nrmax]` slice. After the arrays come seven
+doubles: six volume-integrated globals summed over the species at the
+latest `NTG1` sample, `TOTAL_IP` [MA], `STORED_ENERGY` [MJ],
+`COLLISION_POWER`, `ABSORPTION_POWER`, `ABSORPTION_WR`, `ABSORPTION_WM`
+[MW], and `PLASMA_VOLUME` [m^3] (`TVOLR`). They are zero until the first
+run, and again after any successful parameter set (`fp_set_param`,
+`fp_set_param_str`, or tot's `fp:` parameters: the registry counts every
+set, #253) until the next run that is made,
+while the profiles above are still those of the last run. The
+struct grows at its end only, and `fp/fp_state.f90`, `fp/fp_api.h` and
+`fplib._ffi.FpStateC` change together with a rebuilt `libfpapi.so`.
 
 ### Fortran backend
 
@@ -173,7 +183,7 @@ only the `[0:nsamax][0:nrmax]` slice.
   to the bracket syntax.
 - `fplib.FpState` is a `@dataclass` snapshot; `to_dict()` is
   JSON-serialisable and uses a
-  `{"NRMAX": ..., "NSAMAX": ..., "profile": [{"NSA": i, "RNT": ...}, ...]}`
+  `{"NRMAX": ..., "NSAMAX": ..., "scalars": {"TOTAL_IP": ..., ...}, "profile": [{"NSA": i, "RNT": ...}, ...]}`
   layout so downstream tools can diff wrapper output against `fp`
   CLI runs.
 
@@ -214,10 +224,9 @@ Mirrors the tr spec's §12.2 for the FP module:
   lifecycle. Repeated cycles (as in the 3×3 sweep) work in practice
   because `fp_init` resets the necessary SAVE state, but long-running
   processes can leak FPCOMM allocations.
-- **String parameters not wired.** `KNAMFP` and similar namelist
-  keys cannot flow through the float-only C ABI; they stay at their
-  defaults. A follow-up PR with a `fp_set_param_str` entry point is
-  tracked separately (mirrors the trlib L-L approach).
+- **One string parameter.** `fp_set_param_str` (`Fplib.set_param_str`)
+  sets `KNAMEQ`, the equilibrium file of `MODELG=3`; `KNAMFP` and the
+  other string keys of the namelist stay at their defaults.
 - **Compile-time mesh caps.** `FP_MAX_NRMAX=100` and
   `FP_MAX_NSAMAX=8` are baked into the exported `fp_state_t`; runs
   needing larger meshes require bumping the constants in
@@ -231,8 +240,9 @@ Mirrors the tr spec's §12.2 for the FP module:
 one fixed layout, filled by `fp_get_state`. Changing it:
 
 1. append the field at the end of both (never reorder, never remove);
-2. bump `FP_STATE_ABI_VERSION` **in both files** (the `#define` and the
-   `PARAMETER`; currently `1`);
+2. bump `FP_STATE_ABI_VERSION` **in all three places** (the `#define`, the
+   `PARAMETER` and the constant in `python/fplib/_ffi.py`, without which
+   `load_library` refuses the rebuilt library; currently `2`);
 3. mirror the field in `python/fplib/_ffi.py` (`FpStateC._fields_`) and
    `state.py`;
 4. rebuild `libfpapi.so` in the same commit.
