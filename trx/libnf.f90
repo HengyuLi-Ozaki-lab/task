@@ -2,8 +2,8 @@
 
 MODULE libnf_local
   USE bpsd_kinds
-  INTEGER:: id_nf_local,pm_local
-  REAL(rkind):: temperature_local
+  INTEGER:: id_nf_local
+  REAL(rkind):: pm_local,temperature_local
 END MODULE libnf_local
 
 MODULE libnf
