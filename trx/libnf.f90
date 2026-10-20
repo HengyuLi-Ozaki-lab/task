@@ -243,10 +243,10 @@ CONTAINS
     ns1_idnf(id_nf_dd3)=NS_D
     ns2_idnf(id_nf_dd3)=NS_D
     wgt_idnf(id_nf_dd3)=0.5D0
-    IF(model_pnf.EQ.12) THEN
-       nsp_idnf(id_nf_dd3)=NS_He3
-    ELSE
+    IF(model_pnf.EQ.12.OR.model_pnf.EQ.14) THEN
        nsp_idnf(id_nf_dd3)=NS_He4
+    ELSE
+       nsp_idnf(id_nf_dd3)=NS_He3
     END IF
     eng_idnf(id_nf_dd3)=0.82D3*RKEV
     enn_idnf(id_nf_dd3)=2.45D3*RKEV
