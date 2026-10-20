@@ -63,13 +63,19 @@ def check_state_layout(lib: Any, *, prefix: str, struct: type,
     wrapper_size = ctypes.sizeof(struct)
     # The rebuild hint: the mono image is built under tot, everything
     # else under its own module directory. The Makefiles have no .dll
-    # target, so for a Windows library there is no make command to name.
-    if lib_name.endswith(".dll"):
-        rebuild = f"{lib_name} from the Fortran sources"
-    elif lib_name.startswith("libtotapi_mono"):
-        rebuild = f"`make -C tot {lib_name}`"
+    # target, so for a Windows library (any case: an explicit path keeps
+    # its own) the hint names the sources, as the wrappers' not-found
+    # hint does, and no make command.
+    if lib_name.lower().endswith(".dll"):
+        rebuild_now = f"Build {lib_name} from the Fortran sources."
+        rebuild_or = f"build {lib_name} again from the Fortran sources"
     else:
-        rebuild = f"`make -C {prefix} {lib_name}`"
+        if lib_name.startswith("libtotapi_mono"):
+            target = f"`make -C tot {lib_name}`"
+        else:
+            target = f"`make -C {prefix} {lib_name}`"
+        rebuild_now = f"Rebuild it: {target}."
+        rebuild_or = f"rebuild the library ({target})"
     try:
         fn_version = getattr(lib, f"{prefix}_state_abi_version")
         fn_size = getattr(lib, f"{prefix}_state_size")
@@ -78,8 +84,7 @@ def check_state_layout(lib: Any, *, prefix: str, struct: type,
             f"{lib_name} does not export {prefix}_state_abi_version / "
             f"{prefix}_state_size: it was built before the layout check "
             f"(#246) and may not match this wrapper's {struct.__name__} "
-            f"(v{expected_version}, {wrapper_size} bytes). Rebuild it: "
-            f"{rebuild}.",
+            f"(v{expected_version}, {wrapper_size} bytes). {rebuild_now}",
             prefix=prefix, lib_name=lib_name,
             wrapper_version=expected_version, wrapper_size=wrapper_size,
             library_version=None, library_size=None,
@@ -95,9 +100,8 @@ def check_state_layout(lib: Any, *, prefix: str, struct: type,
             f"{lib_name} state layout is v{library_version} / "
             f"{library_size} bytes; this wrapper's {struct.__name__} is "
             f"v{expected_version} / {wrapper_size} bytes. The library and "
-            f"the wrapper come from different commits: rebuild the library "
-            f"({rebuild}) or update "
-            f"python/{prefix}lib/_ffi.py.",
+            f"the wrapper come from different commits: {rebuild_or} or "
+            f"update python/{prefix}lib/_ffi.py.",
             prefix=prefix, lib_name=lib_name,
             wrapper_version=expected_version, wrapper_size=wrapper_size,
             library_version=library_version, library_size=library_size,

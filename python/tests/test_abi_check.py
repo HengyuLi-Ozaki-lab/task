@@ -109,14 +109,18 @@ class TestCheckStateLayout(unittest.TestCase):
     def test_rebuild_hint_for_a_dll_names_no_make_target(self):
         """The Makefiles have no .dll target: a Windows library is rebuilt from
         the sources, as the wrappers' not-found hint says."""
-        for lib_name in ("libxxapi.dll", "libtotapi_mono.dll"):
-            for lib in (_Lib(), _Lib(version=4, size=ctypes.sizeof(_State))):
-                with self.subTest(lib_name=lib_name, query=hasattr(lib, "xx_state_size")):
-                    with self.assertRaises(AbiMismatchError) as ctx:
-                        check_state_layout(lib, prefix="xx", struct=_State,
-                                           expected_version=3, lib_name=lib_name)
-                    self.assertIn(f"{lib_name} from the Fortran sources", str(ctx.exception))
-                    self.assertNotIn("make -C", str(ctx.exception))
+        # an explicit path keeps its own case: LIBXXAPI.DLL is a .dll too
+        for lib_name in ("libxxapi.dll", "libtotapi_mono.dll", "LIBXXAPI.DLL"):
+            for lib, expected in (
+                    (_Lib(), f"Build {lib_name} from the Fortran sources."),
+                    (_Lib(version=4, size=ctypes.sizeof(_State)),
+                     f"build {lib_name} again from the Fortran sources or update")):
+                # no subTest: the expected text names the library
+                with self.assertRaises(AbiMismatchError) as ctx:
+                    check_state_layout(lib, prefix="xx", struct=_State,
+                                       expected_version=3, lib_name=lib_name)
+                self.assertIn(expected, str(ctx.exception))
+                self.assertNotIn("make -C", str(ctx.exception))
 
     def test_error_is_a_runtime_error(self):
         self.assertTrue(issubclass(AbiMismatchError, RuntimeError))
