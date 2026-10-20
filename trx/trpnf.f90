@@ -105,10 +105,10 @@ CONTAINS
        DO nnf=1,nnfmax
           nsp=nsp_nnf(nnf)
           WF = RW(NR,NNBMAX+NNF)
-          VF =SQRT(2.D0*eng_nnf(nnf)*RKEV/(PA(ns)*AMP))
+          VF =SQRT(2.D0*eng_nnf(nnf)*RKEV/(PA(nsp)*AMP))
           HYF=HY(VF/VCR)
-          TAUS = 0.2D0*PA(ns)*ABS(TE)**1.5D0 &
-               /(PZ(ns)**2*ANE*COULOG(1,ns,ANE,TE))
+          TAUS = 0.2D0*PA(nsp)*ABS(TE)**1.5D0 &
+               /(PZ(nsp)**2*ANE*COULOG(1,nsp,ANE,TE))
           TAUF(NNF,NR)= 0.5D0*TAUS*(1.D0-HYF)
        END DO
     END DO
