@@ -427,6 +427,12 @@ CONTAINS
        WRITE(6,'(A,ES12.4)') '       temperature=',temperature
        STOP
     END IF
+    ! The svnf_* tables are in cm^3/s (D-T peaks at 8.7e-16 cm^3/s, as in
+    ! Bosch-Hale); tr_pnf needs m^3/s (its SNF has RN in 1e20 m^-3), and
+    ! the menu's B command prints the value. One conversion at the
+    ! computed exit covers all five tables; the low-temperature branch
+    ! returns 0 before it.
+    sigmav_nf=sigmav_nf*1.D-6
   END FUNCTION sigmav_nf
 
   ! --- sigmav_nf by integeral over energy ---
