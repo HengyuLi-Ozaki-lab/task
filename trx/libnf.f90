@@ -114,7 +114,7 @@ MODULE libnf
 
   PUBLIC set_usigmav_nf    ! set_usigmav_nf
   PUBLIC sigma_nf          ! sigma_nf(id_nf,energy)
-  PUBLIC sigmav_nf         ! sigmav_nf(id_nf,temperature)
+  PUBLIC sigmav_nf         ! sigmav_nf(id_nf,temperature) [m^3/s]
 
 CONTAINS
   
@@ -387,7 +387,7 @@ CONTAINS
     RETURN
   END FUNCTION sigma_nf
   
-  ! --- reaction rate of nuclear fusion: sigmav  ---
+  ! --- reaction rate of nuclear fusion: sigmav [m^3/s] ---
   ! ---     as a function of temperature in keV
 
   FUNCTION sigmav_nf(id_nf,temperature)
