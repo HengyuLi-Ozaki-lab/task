@@ -182,7 +182,7 @@ CONTAINS
     END SELECT
 
     SELECT CASE(model_pnf)
-    CASE(1,12,13)
+    CASE(1,12)
        IF(NS_D*NS_T*NS_He4.EQ.0) THEN
           IF(NS_D.EQ.0) WRITE(6,*)   'XX Error: libnf: NS_D=0'
           IF(NS_T.EQ.0) WRITE(6,*)   'XX Error: libnf: NS_T=0'
@@ -198,7 +198,7 @@ CONTAINS
           IF(NS_He3.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He3=0'
           STOP
        END IF
-    CASE(4)
+    CASE(4,14)
        IF(NS_D*NS_T*NS_He4*NS_H*NS_He3*NS_He5.EQ.0) THEN
           IF(NS_D.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_D=0'
           IF(NS_T.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_T=0'
@@ -209,7 +209,7 @@ CONTAINS
           STOP
        END IF
     CASE DEFAULT
-       WRITE(6,*) 'XX Error libnb: undefined model_pnf: model_pnf=',model_pnf
+       WRITE(6,*) 'XX Error libnf: undefined model_pnf: model_pnf=',model_pnf
        STOP
     END SELECT
 
