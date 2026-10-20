@@ -238,7 +238,7 @@ CONTAINS
        nsp_idnf(id_nf_dd2)=NS_H
     END IF
     eng_idnf(id_nf_dd2)=3.02D3*RKEV
-    enn_idnf(id_nf_dd3)=0.D0
+    enn_idnf(id_nf_dd2)=0.D0
 
     ns1_idnf(id_nf_dd3)=NS_D
     ns2_idnf(id_nf_dd3)=NS_D
