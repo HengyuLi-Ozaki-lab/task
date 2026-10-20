@@ -107,7 +107,7 @@ CONTAINS
        DO nnf=1,nnfmax
           nsp=nsp_nnf(nnf)
           WF = RW(NR,NNBMAX+NNF)
-          VF =SQRT(2.D0*eng_nnf(nnf)*RKEV/(PA(nsp)*AMP))
+          VF =SQRT(2.D0*eng_nnf(nnf)/(PA(nsp)*AMP))   ! eng_nnf is in J already
           HYF=HY(VF/VCR)
           TAUS = 0.2D0*PA(nsp)*ABS(TE)**1.5D0 &
                /(PZ(nsp)**2*ANE*COULOG(1,nsp,ANE,TE))
