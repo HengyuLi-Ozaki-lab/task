@@ -67,6 +67,7 @@ CONTAINS
     SNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron number
     PNFNN_NNFNR(1:NNFMAX,1:NRMAX)=0.D0  ! neutron power
     PNF_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0   ! fusion power
+    PNFIN_NSNNFNR(1:NSMAX,1:NNFMAX,1:NRMAX)=0.D0 ! fusion power in
     
     DO nnf=1,nnfmax
        id_nf=id_nf_nnf(nnf)
