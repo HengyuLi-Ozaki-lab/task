@@ -198,7 +198,7 @@ CONTAINS
           IF(NS_He3.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He3=0'
           STOP
        END IF
-    CASE(4,14)
+    CASE(4)
        IF(NS_D*NS_T*NS_He4*NS_H*NS_He3*NS_He5.EQ.0) THEN
           IF(NS_D.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_D=0'
           IF(NS_T.EQ.0)   WRITE(6,*) 'XX Error: libnf: NS_T=0'
@@ -208,6 +208,14 @@ CONTAINS
           IF(NS_He5.EQ.0) WRITE(6,*) 'XX Error: libnf: NS_He5=0'
           STOP
        END IF
+    CASE(14)
+       ! NS_He5 is not a species found in the run: pl_init sets it to 7 and
+       ! tr_prep_ns never matches a He5 species, so the35's product would go
+       ! to species slot 7 (past the arrays when NSMAX < 7). Refused until a
+       ! He5 species can be defined.
+       WRITE(6,*) 'XX Error: libnf: model_pnf=14 is not available: ', &
+                  'no He5 species can be defined'
+       STOP
     CASE DEFAULT
        WRITE(6,*) 'XX Error libnf: undefined model_pnf: model_pnf=',model_pnf
        STOP
