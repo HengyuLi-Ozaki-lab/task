@@ -44,7 +44,8 @@ PROFILE_FIELDS = ("RNT", "RWT", "RTT", "RJT", "RPCT", "RPWT")
 # All seven are zero until the first ``run()`` (the Fortran accumulators
 # only exist after fp_prep, and only carry a sample once FPSGLB has
 # bumped NTG1), and again after a ``set_param`` or ``set_param_str`` until
-# the next ``run()`` that is made (fp_get_state fills them from a prepared state only).
+# the next ``run()`` that is made: fp_get_state fills them only while the
+# state is prepared and no parameter was set since that preparation.
 SCALAR_FIELDS = (
     "TOTAL_IP",
     "STORED_ENERGY",

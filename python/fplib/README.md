@@ -281,9 +281,9 @@ menu — those live in `fp/fp` only.
   between `fp_allocate` and `fp_deallocate`). A single
   `fp_init` / `fp_run` / `fp_finalize` cycle per process is the
   supported lifecycle at Phase L-3.
-- **String parameters not yet wired** (e.g. `KNAMFP`). File-name
-  namelist keys must be left at their defaults; the float-only C ABI
-  cannot carry strings.
+- **One string parameter.** `set_param_str` sets `KNAMEQ`, the
+  equilibrium file of `MODELG=3`; `KNAMFP` and the other string keys of
+  the namelist stay at their defaults.
 - **Unregistered namelist keys** — any name missing from
   `fp_param_registry.f90` returns `FplibInvalidParamError`. The
   current registry covers ~55 settable variables across geometry,

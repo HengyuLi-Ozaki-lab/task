@@ -247,12 +247,59 @@ class _TiReprepCase(TiDataCwdMixin):
                          "ti_run after tot_set_param('ti:NRMAX') must re-run ti_prep (#253)")
 
 
+class _FpScalarsCase:
+    """fp's seven global scalars (#233) read zero after a set of tot's fp:
+    parameters, as after fp_set_param: the registry's count moved, so the
+    state is no longer the one of the last preparation."""
+
+    image: str = ""
+
+    def test_fp_scalars_read_zero_after_a_tot_set(self):
+        from fplib._ffi import FpStateC
+        from fplib.state import SCALAR_FIELDS
+        lib = _load_image(self.image)
+        lib.fp_run.restype = ctypes.c_int
+        lib.fp_run.argtypes = [ctypes.c_int]
+        lib.fp_get_state.restype = ctypes.c_int
+        lib.fp_get_state.argtypes = [ctypes.POINTER(FpStateC)]
+        rc = lib.tot_init()
+        if rc != 0:
+            raise AssertionError(f"tot_init returned {rc}")
+        try:
+            st = FpStateC()
+            if lib.fp_run(0) != 0:
+                raise AssertionError("fp_run(0) failed")
+            # fp_get_state zeroes the scalars before it can return an error:
+            # a failed read must not pass for the zeros expected below
+            if lib.fp_get_state(ctypes.byref(st)) != 0:
+                raise AssertionError("fp_get_state failed before the set")
+            before = {name: getattr(st, name) for name in SCALAR_FIELDS}
+            rc = lib.tot_set_param(b"fp:DELT", 0.002)
+            if rc != 0:
+                raise AssertionError(f"tot_set_param(fp:DELT) returned {rc}")
+            if lib.fp_get_state(ctypes.byref(st)) != 0:
+                raise AssertionError("fp_get_state failed after the set")
+            after = {name: getattr(st, name) for name in SCALAR_FIELDS}
+        finally:
+            lib.tot_finalize()
+        self.assertGreater(before["PLASMA_VOLUME"], 0.0)
+        self.assertEqual(after, {name: 0.0 for name in SCALAR_FIELDS},
+                         "fp_get_state after tot_set_param('fp:DELT') must report zero scalars")
+
+
 class TestSiblingReprepOnMonoImage(_FpReprepCase, unittest.TestCase):
     """libtotapi_mono.so: one image, one copy of every module's state.
 
     Runs in CI's mono routing step (MONO_LIB_PATH set); skipped elsewhere.
     """
 
+    def setUp(self):
+        _skip_unless_mono(self)
+        self.image = _mono_so()
+        super().setUp()
+
+
+class TestFpScalarsAfterTotSetOnMonoImage(_FpScalarsCase, unittest.TestCase):
     def setUp(self):
         _skip_unless_mono(self)
         self.image = _mono_so()

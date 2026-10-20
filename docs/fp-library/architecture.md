@@ -224,10 +224,9 @@ Mirrors the tr spec's §12.2 for the FP module:
   lifecycle. Repeated cycles (as in the 3×3 sweep) work in practice
   because `fp_init` resets the necessary SAVE state, but long-running
   processes can leak FPCOMM allocations.
-- **String parameters not wired.** `KNAMFP` and similar namelist
-  keys cannot flow through the float-only C ABI; they stay at their
-  defaults. A follow-up PR with a `fp_set_param_str` entry point is
-  tracked separately (mirrors the trlib L-L approach).
+- **One string parameter.** `fp_set_param_str` (`Fplib.set_param_str`)
+  sets `KNAMEQ`, the equilibrium file of `MODELG=3`; `KNAMFP` and the
+  other string keys of the namelist stay at their defaults.
 - **Compile-time mesh caps.** `FP_MAX_NRMAX=100` and
   `FP_MAX_NSAMAX=8` are baked into the exported `fp_state_t`; runs
   needing larger meshes require bumping the constants in

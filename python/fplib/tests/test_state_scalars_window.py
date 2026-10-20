@@ -3,11 +3,13 @@ the next run.
 
 A successful set (``fp_set_param``, ``fp_set_param_str``, or tot's ``fp:``
 parameters) advances the registry's count (#253), so the next run prepares
-again, and the arrays are not touched until it does. In that window ``fp_get_state`` still returns the profiles of the last run,
-within the extents that are allocated (#245), while the global scalars
-(``TOTAL_IP`` ... ``PLASMA_VOLUME``) are only filled from a prepared state
-and read zero. The two rules meet here; these cases pin what the state
-documentation says about them. One test per case, no ``subTest``.
+again, and the arrays are not touched until it does. In that window
+``fp_get_state`` still returns the profiles of the last run, within the
+extents that are allocated (#245), while the global scalars (``TOTAL_IP``
+... ``PLASMA_VOLUME``) are filled only while the state is prepared and no
+parameter was set since, and read zero. The two rules meet here; these
+cases pin what the state documentation says about them. One test per case,
+no ``subTest``.
 """
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ DEFAULT_SO = REPO / "fp" / "libfpapi.so"
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
-from fplib import Fplib  # noqa: E402
+from fplib import Fplib, FplibInvalidParamError  # noqa: E402
 from fplib.state import SCALAR_FIELDS  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
@@ -113,6 +115,20 @@ def test_after_a_set_param_the_scalars_are_zero_and_the_profiles_the_last_run_s(
     for profile in PROFILES:
         rows_before, rows_after = getattr(before, profile), getattr(after, profile)
         assert rows_after == [row[:nr] for row in rows_before[:nsa]], profile
+
+
+def test_a_refused_set_leaves_the_scalars():
+    # The registry counts successful sets only: a name it does not know
+    # changes nothing, and the scalars stay those of the last run.
+    with Fplib() as fp:
+        _configure(fp)
+        fp.run(1)
+        before = fp.get_state()
+        with pytest.raises(FplibInvalidParamError):
+            fp.set_param("NO_SUCH_PARAMETER", 1.0)
+        after = fp.get_state()
+    assert before.scalars["PLASMA_VOLUME"] > 0.0
+    assert after.scalars == before.scalars
 
 
 def test_a_string_set_opens_the_same_window():
