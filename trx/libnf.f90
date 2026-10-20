@@ -2,6 +2,7 @@
 
 MODULE libnf_local
   USE bpsd_kinds
+  IMPLICIT NONE
   INTEGER:: id_nf_local
   REAL(rkind):: pm_local,temperature_local
 END MODULE libnf_local
@@ -9,6 +10,7 @@ END MODULE libnf_local
 MODULE libnf
   USE bpsd_kinds
   USE bpsd_constants
+  IMPLICIT NONE
 
   ! Fusion model
   !   model_pnf=0 : no fusion reaction
