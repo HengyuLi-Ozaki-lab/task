@@ -26,7 +26,7 @@ Design notes
   :py:meth:`fplib.Fplib.set_param_str`. This is what unlocks the
   ``MODELG=3`` + ``KNAMEQ=<file>`` path, i.e. loading a TASK/EQ-format
   equilibrium file (e.g. one written by ``EQSAVE`` / the ``eq``
-  program, or by ``eq_mcp``'s ``save`` tool once #226 lands).
+  program, or by ``eq_mcp``'s ``save`` tool).
 * **Error mapping.** :class:`fplib.FplibError` subclasses are re-raised
   as :class:`ToolError` with a human-readable message. The LLM sees
   the error string and can often recover (e.g. by calling ``init``
@@ -128,7 +128,8 @@ import _fd_isolation  # noqa: E402
 # Source of truth: fp/fp_param_registry.f90 (~40 unique base names).
 # =====================================================================
 # Includes `str` for string-valued parameters like KNAMEQ (set via
-# fplib.Fplib.set_param_str -> fp_set_param_str on libfpapi.so).
+# fplib.Fplib.set_param_str -> fp_set_param_str on libfpapi.so), which
+# this server exposes as the `set_param_str` tool.
 SupportedValue = Union[float, int, str, List[float], Dict[int, float]]
 
 
@@ -639,7 +640,7 @@ def build_server() -> Any:
 
         Typical use — load a TASK/EQ-format equilibrium file (e.g.
         one written by ``EQSAVE`` / the ``eq`` program, or by
-        ``eq_mcp``'s ``save`` tool once #226 lands)::
+        ``eq_mcp``'s ``save`` tool)::
 
             set_param("MODELG", 3)
             set_param_str("KNAMEQ", "eq.bin")
@@ -688,8 +689,10 @@ def build_server() -> Any:
         """Return the current simulation state.
 
         Returns a dict with ``NRMAX``, ``NSAMAX``, ``NPMAX``, ``NTHMAX``,
-        ``NTG2``, ``TIMEFP``, and ``profile`` (per-species list of 6
-        radial arrays: RNT, RWT, RTT, RJT, RPCT, RPWT). Schema also
+        ``NTG2``, ``TIMEFP``, ``profile`` (per-species list of 6
+        radial arrays: RNT, RWT, RTT, RJT, RPCT, RPWT) and ``scalars``
+        (7 global plasma scalars: zero before the first run, and again
+        after a successful set until the next run). Schema also
         available via `describe_state_schema`.
         """
         return handle_get_state()

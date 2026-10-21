@@ -61,7 +61,7 @@ MCP (Model Context Protocol) は、Anthropic が策定した **「LLM と外部�
    make -C fp libfpapi.so
    ```
 
-   成功すると `fp/libfpapi.so` が生成されます (Phase L-4 で整備済みです)。エクスポートされる C ABI シンボルは 6 つ (`fp_init`, `fp_run`, `fp_set_param`, `fp_set_param_str`, `fp_get_state`, `fp_finalize`) です。
+   成功すると `fp/libfpapi.so` が生成されます (Phase L-4 で整備済みです)。エクスポートされる C ABI シンボルは 8 つ: エントリポイント 6 つ (`fp_init`, `fp_run`, `fp_set_param`, `fp_set_param_str`, `fp_get_state`, `fp_finalize`) と、`fplib` が読み込み時に `fp_state_t` のレイアウトを照合するための 2 つ (`fp_state_abi_version`, `fp_state_size`) です。
 
 3. **`mcp` パッケージ (Python MCP SDK)**
 
@@ -299,7 +299,7 @@ FP バックエンドには `fp_allocate` / `fp_deallocate` 非対称があり�
 
 現在レジストリ (`fp/fp_param_registry.f90::fp_param_set_str`) が受け付ける名前は `KNAMEQ` のみです。これは `MODELG=3` のときに `eq_load` が読む平衡データファイル名で、EQ が書き出したファイルを FP に食わせる (EQ→FP 連携) ための入口になります。
 
-読み込むのは TASK/EQ 形式の平衡ファイルです (例: `EQSAVE` / `eq` プログラムが書き出したもの。#226 が入れば `eq_mcp` の `save` ツールでも書き出せます)。
+読み込むのは TASK/EQ 形式の平衡ファイルです (例: `EQSAVE` / `eq` プログラムが書き出したもの。`eq_mcp` の `save` ツールでも書き出せます)。
 
 ```python
 # eq.bin: TASK/EQ 形式の平衡ファイル。これがある作業ディレクトリで fp_mcp を起動して読み込む

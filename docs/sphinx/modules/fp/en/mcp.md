@@ -67,15 +67,15 @@ Or `fp-mcp install --client claude-code --scope project`.
 
 ## Tools exposed
 
-`fp_mcp` exposes **9** tools. The C ABI exposes `fp_set_param_str`, but
-this is not currently surfaced through MCP — if you need to override
-`KNAMEQ`, prepare the environment beforehand instead of going through
-MCP.
+`fp_mcp` exposes **10** tools. `set_param_str` sets a string parameter
+(`KNAMEQ`, the equilibrium file that `MODELG=3` loads); `set_params` routes
+a `str` value to it. See section 8.4 of `python/mcp-servers/fp_mcp/README.md`.
 
 | Tool | Purpose | Main arguments |
 |---|---|---|
 | `init` | Initialise the library | none |
 | `set_param` | Set one parameter | `name`, `value` |
+| `set_param_str` | Set a string parameter (`KNAMEQ`) | `name`, `value` |
 | `set_params` | Bulk set | `params` |
 | `run` | Advance time | `ntmax` |
 | `get_state` | Fetch the current state | none |
