@@ -7,22 +7,39 @@
 
 | フィールド | 意味 |
 |---|---|
-| `state.nrmax`  | 半径メッシュ点数 |
-| `state.nsamax` | active species 数 (分布関数を解いた粒子種) |
+| `state.nrmax`  | プロファイル配列の半径メッシュ点数 (run で配列が確保された後は、現在の `NRMAX` とその確保サイズの小さい方。`NRMAX` を上げた場合は次の run から反映。最初の run の前は `NRMAX` そのもので、プロファイルは 0) |
+| `state.nsamax` | プロファイル配列の active species 数 (分布関数を解いた粒子種。同じく現在の `NSAMAX` と確保サイズの小さい方) |
 | `state.npmax`  | 運動量メッシュ点数 |
 | `state.nthmax` | ピッチ角メッシュ点数 |
 | `state.ntg2`   | 長時間軸カウンタ |
 
 ## スカラー量
 
-`fp` の `state.scalars` は **`timefp` 1 個のみ** です. tr/eq のような
-13/12 個のプラズマ性能指標は持ちません — これは fp の出力が分布関数
-モーメントが中心で, 派生量 (`BETA`, `TAUE` など) はユーザ側で計算する
-設計だからです.
+シミュレーション時刻はトップレベルのフィールドで, `state.scalars` は
+**7 個の大域量** の dict です. うち 6 個は体積積分された診断量で, active
+粒子種について和をとった最新の大域診断サンプル (`NTG1`) の値, 残る 1 個は
+プラズマ体積 (`TVOLR`, 半径方向セル体積の和) です.
 
 ```python
-state.timefp     # シミュレーション時刻 [s]
+state.timefp                      # シミュレーション時刻 [s]
+state.scalars["TOTAL_IP"]         # 全プラズマ電流 [MA]
 ```
+
+| `state.scalars` のキー | 物理量 | 単位 |
+|---|---|---|
+| `TOTAL_IP`         | 全プラズマ電流 | MA |
+| `STORED_ENERGY`    | 蓄積エネルギー | MJ |
+| `COLLISION_POWER`  | 衝突パワーの合計 | MW |
+| `ABSORPTION_POWER` | 波動吸収パワーの合計 | MW |
+| `ABSORPTION_WR`    | そのうちレイトレーシング (WR) 分 | MW |
+| `ABSORPTION_WM`    | そのうちフルウェーブ (WM) 分 | MW |
+| `PLASMA_VOLUME`    | プラズマ体積 | m³ |
+
+7 個とも最初の `run()` までは 0 で, `set_param` または `set_param_str` の後は次に `run()` が
+実行されるまで再び 0 になります (その間もプロファイルは直前の run のままです).
+下の単位体積あたりのプロファイルと違い, 体積要素を通じて
+平衡に依存します. tr/eq のようなプラズマ性能指標は引き続き持ちません —
+派生量 (`BETA`, `TAUE` など) はユーザ側で計算する設計です.
 
 ## プロファイル量 (radial × species のモーメント配列)
 
@@ -67,7 +84,7 @@ state.to_dict()   # JSON-ready dict
 |---|---|---|---|
 | **種別軸** | NSMAX | active NSA_MAX | active NSAMAX |
 | **位相空間** | 1D 半径 | 1D 半径 | **5D** (r, p, θ, species, t) |
-| **スカラー数** | 13 | 2 + 2int | **1** (timefp) |
+| **スカラー数** | 13 | 2 + 2int | **7** 大域量 (+ `timefp`) |
 | **主出力** | RN, RT, AJ, QP | RNA, RTA, RUA, RBP, ZEFF, BETA | RNT, RWT, RTT, RJT, RPCT, RPWT |
 | **意味** | 流体モーメント | 統合輸送モーメント | 分布関数モーメント |
 | **メモリ消費** | 低 | 中 | **高** (5D) |

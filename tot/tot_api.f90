@@ -58,6 +58,7 @@
 
 MODULE tot_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE tot_state, ONLY: TOT_STATE_ABI_VERSION
   USE tot_state, ONLY: tot_state_c, TOT_MAX_NRMAX, TOT_MAX_NSMAX
   USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str
   ! Per-module APIs (libraryized in L-3). We rename each *_api_*
@@ -106,6 +107,9 @@ MODULE tot_api
   LOGICAL, SAVE :: g_ti_present = .FALSE.
   LOGICAL, SAVE :: g_fp_present = .FALSE.
   LOGICAL, SAVE :: g_wr_present = .FALSE.
+
+  ! #246: layout query, callable before tot_init.
+  PUBLIC :: tot_api_state_abi_version, tot_api_state_size
 
 CONTAINS
 
@@ -465,6 +469,25 @@ CONTAINS
        f_str(i:i) = c_str(i)
     END DO
   END SUBROUTINE c_string_to_fortran
+
+  !-------------------------------------------------------------------
+  ! tot_state_abi_version / tot_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before tot_init.
+  ! A caller compares both with its own sizeof(tot_state_t) and its copy
+  ! of TOT_STATE_ABI_VERSION before passing a struct to tot_get_state;
+  ! python/totlib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_state_abi_version() RESULT(v) BIND(C, NAME="tot_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = TOT_STATE_ABI_VERSION
+  END FUNCTION tot_api_state_abi_version
+
+  FUNCTION tot_api_state_size() RESULT(n) BIND(C, NAME="tot_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(tot_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION tot_api_state_size
 
 END MODULE tot_api
 

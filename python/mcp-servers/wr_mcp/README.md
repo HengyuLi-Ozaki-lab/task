@@ -62,7 +62,7 @@ MCP (Model Context Protocol) は、Anthropic が策定した **「LLM と外部�
 
 3. **`mcp` パッケージ (Python MCP SDK)**
 
-   `pip install 'mcp>=0.9'` で入ります。後述の「インストール」手順に同梱しています。
+   `pip install 'mcp>=1.2,<2'` で入ります。後述の「インストール」手順に同梱しています。
 
 ## 3. インストール
 
@@ -280,7 +280,7 @@ export PYTHONPATH=/absolute/path/to/task/python:$PYTHONPATH
 
 ### Q3. `ModuleNotFoundError: No module named 'mcp'` と言われます
 
-- MCP SDK が入っていません。`pip install 'mcp>=0.9'` を実行してください。
+- MCP SDK が入っていません。`pip install 'mcp>=1.2,<2'` を実行してください。
 - 仮想環境を使っている場合は、その環境の Python が LLM クライアント側から使われているかも確認してください。
 
 ### Q4. `invalid parameter: ...` が返ってきました
@@ -302,6 +302,8 @@ WR の Fortran 側は COMMON-block 単一状態なので、1 プロセス = 1 �
 ### Q7. ログはどこで確認できますか
 
 MCP サーバの標準エラー出力が LLM クライアントに渡ります。Claude Desktop なら「開発者ツール」相当のログビューア、Claude Code なら実行ターミナルで確認できます。
+
+Fortran 側の `WRITE(6,...)`（unit 6 = fd 1）も同じ標準エラー出力に流れます。stdio サーバでは fd 1 が JSON-RPC の送信パイプなので、`main()` がサーバ構築の直前に共有モジュール `python/_fd_isolation.py` で fd 1 を stderr に付け替えています（#227 / #257 / #263）。端末で手動起動したときや `2>&1` で stdout と stderr が同じファイルになっているときは、unit 6 の出力は捨てられ、その旨の警告が stderr に 1 行出ます（同一ファイルの判定は `fstat` の inode によるので、パイプやコンソールに inode が無い Windows では判定されず、fd 1 は通常どおり stderr に向きます）。ライブラリの出力を残したい場合は stderr を別に渡してください（例: `python -m wr_mcp.server 2>server.log`）。
 
 ## 9. 参考資料
 

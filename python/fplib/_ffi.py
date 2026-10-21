@@ -1,4 +1,4 @@
-"""Low-level ctypes FFI for libfpapi.so.
+"""Low-level ctypes FFI for libfpapi.so (``libfpapi.dll`` on Windows).
 
 Mirrors ``fp/fp_api.h`` (C ABI). Higher-level helpers live in
 ``fplib.py``; this module intentionally exposes only raw ctypes objects
@@ -10,8 +10,10 @@ Library-path resolution order (first match wins):
    to the same monolithic image so eq/tr/etc. share one BPSD broker.
 1. explicit ``path`` argument to :func:`load_library`
 2. ``FPLIB_PATH`` environment variable
-3. ``<repo>/fp/libfpapi.so`` (standard L-4 build location)
-4. ``<repo>/lib/libfpapi.so`` (install-style location, future-proofing)
+3. ``<repo>/fp/libfpapi.so`` (standard L-4 build location; ``libfpapi.dll``
+   on Windows)
+4. ``<repo>/lib/libfpapi.so`` (install-style location, future-proofing;
+   ``libfpapi.dll`` on Windows)
 
 The package layout is ``python/fplib/_ffi.py`` so the repository root is
 two parents above this file (``__file__.parents[2]``).
@@ -20,10 +22,14 @@ from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
+from _abi_check import AbiMismatchError, check_state_layout
 from _runtime_mode import mono_lib_path
+
+from .errors import FplibAbiError
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -38,6 +44,12 @@ except ImportError:  # pragma: no cover - numpy is optional
 # ---------------------------------------------------------------------
 FP_MAX_NRMAX = 100
 FP_MAX_NSAMAX = 8
+
+# fp_state_t layout version; mirrors FP_STATE_ABI_VERSION in fp/fp_api.h
+# and fp/fp_state.f90. load_library() refuses a library whose
+# fp_state_abi_version() / fp_state_size() differ from this and from
+# ctypes.sizeof(FpStateC) (#246).
+FP_STATE_ABI_VERSION = 2
 
 
 # ---------------------------------------------------------------------
@@ -57,6 +69,12 @@ FP_ERR_NOT_IMPL = 4
 #   In C, RNT[NSAMAX][NRMAX] is row-major.
 #   In Fortran the matching declaration is RNT(NRMAX, NSAMAX) column-major.
 #   Both lay out the same bytes; only the index order differs.
+#
+# ABI note: ``_fields_`` must match fp/fp_api.h::fp_state_t (and
+# fp/fp_state.f90::fp_state_c) member-for-member, in order. New members
+# are only ever appended, and libfpapi.so must be rebuilt in the same
+# commit -- reading a stale .so through a longer layout yields garbage
+# in the trailing members.
 # ---------------------------------------------------------------------
 _PROFILE_2D = (ctypes.c_double * FP_MAX_NRMAX) * FP_MAX_NSAMAX
 
@@ -75,6 +93,14 @@ class FpStateC(ctypes.Structure):
         ("RJT", _PROFILE_2D),
         ("RPCT", _PROFILE_2D),
         ("RPWT", _PROFILE_2D),
+        # --- global (volume-integrated) plasma scalars ---------------
+        ("TOTAL_IP", ctypes.c_double),
+        ("STORED_ENERGY", ctypes.c_double),
+        ("COLLISION_POWER", ctypes.c_double),
+        ("ABSORPTION_POWER", ctypes.c_double),
+        ("ABSORPTION_WR", ctypes.c_double),
+        ("ABSORPTION_WM", ctypes.c_double),
+        ("PLASMA_VOLUME", ctypes.c_double),
     ]
 
 
@@ -86,14 +112,33 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+# Handles returned by os.add_dll_directory, keyed by directory. Kept so each
+# directory is registered once however often a library is opened (the MCP
+# servers build a fresh library handle after every finalize), and so it
+# could later be removed with close(). Dropping a handle does NOT unregister
+# its directory. A directory enters the dict only after a library loaded
+# from it; a load that fails closes the handle it had just made.
+_DLL_DIR_HANDLES: dict = {}
+
+
+def _lib_filename() -> str:
+    """``libfpapi.dll`` on Windows, ``libfpapi.so`` everywhere else.
+
+    macOS keeps the ``.so`` name because that is what ``make libfpapi.so``
+    produces there, even though the file is a Mach-O dylib.
+    """
+    return "libfpapi.dll" if sys.platform == "win32" else "libfpapi.so"
+
+
 def _candidate_paths() -> list:
     """All library paths that :func:`load_library` will try in order."""
     root = _repo_root()
-    return [root / "fp" / "libfpapi.so", root / "lib" / "libfpapi.so"]
+    name = _lib_filename()
+    return [root / "fp" / name, root / "lib" / name]
 
 
 def _default_lib_path() -> Path:
-    """Resolve the default ``libfpapi.so`` path.
+    """Resolve the default ``libfpapi.so`` path (``libfpapi.dll`` on Windows).
 
     Priority (highest first):
       0. ``mono_lib_path()`` — global mono override (``MONO_LIB_PATH``)
@@ -144,7 +189,8 @@ _RTLD_LAZY = 1
 
 
 def load_library(path: Optional[str] = None) -> ctypes.CDLL:
-    """Load libfpapi.so and return the CDLL handle with prototypes applied.
+    """Load libfpapi.so (``libfpapi.dll`` on Windows) and return the CDLL
+    handle with prototypes applied.
 
     Uses ``RTLD_LAZY`` because libfpapi.so may retain unresolved symbols
     pointing into code paths the C ABI never reaches. Lazy binding defers
@@ -156,16 +202,63 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     p = Path(path) if path else _default_lib_path()
     if not p.exists():
         tried = [str(x) for x in _candidate_paths()]
+        if sys.platform == "win32":
+            # The Makefiles have no .dll target, so there is no make
+            # command to name here.
+            hint = (
+                f"Build {_lib_filename()} from the Fortran sources "
+                "or set FPLIB_PATH."
+            )
+        else:
+            hint = "Build it via `make -C fp libfpapi.so` or set FPLIB_PATH."
         raise FileNotFoundError(
-            f"libfpapi.so not found at {p}. "
+            f"{_lib_filename()} not found at {p}. "
             f"Tried FPLIB_PATH and {tried}. "
-            "Build it via `make -C fp libfpapi.so` or set FPLIB_PATH."
+            + hint
         )
+    new_dir_handle = None
+    if sys.platform == "win32":
+        # Python 3.8+ no longer resolves a DLL's dependencies through PATH.
+        # The gfortran runtime (libgfortran-5.dll, libquadmath-0.dll,
+        # libgcc_s_seh-1.dll, libwinpthread-1.dll) ships next to this DLL.
+        # ctypes' default winmode searches the loaded DLL's own directory
+        # for its dependencies once the name is a full path, which the line
+        # below guarantees; registering the directory too is a second line
+        # of defence. Never pass winmode=0 to "fix" a load error: that
+        # skips registered directories and restores the PATH/cwd search.
+        # AddDllDirectory rejects relative paths, hence abspath.
+        dll_dir = os.path.abspath(p.parent)
+        p = Path(dll_dir) / p.name
+        key = os.path.normcase(dll_dir)
+        if key not in _DLL_DIR_HANDLES:
+            new_dir_handle = os.add_dll_directory(dll_dir)
     # ctypes.RTLD_LAZY may not be defined on all Python builds; fall
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
-    lib = ctypes.CDLL(str(p), mode=mode)
-    return _apply_prototypes(lib)
+    try:
+        lib = ctypes.CDLL(str(p), mode=mode)
+        # #246: refuse a library whose fp_state_t layout is not FpStateC's,
+        # before any struct is passed. A library built before #246 has no
+        # query symbols and is refused too (it may or may not match).
+        try:
+            check_state_layout(lib, prefix="fp", struct=FpStateC,
+                               expected_version=FP_STATE_ABI_VERSION,
+                               lib_name=os.path.basename(str(p)))
+        except AbiMismatchError as exc:
+            raise FplibAbiError(str(exc)) from exc
+        lib = _apply_prototypes(lib)
+    except BaseException:
+        # A file that does not load (wrong architecture, a missing
+        # dependency), is not this library or has another state layout
+        # must not leave its directory in the process-wide DLL search set,
+        # nor an entry in the dict. BaseException, re-raised: an interrupt
+        # during the load cleans up too.
+        if new_dir_handle is not None:
+            new_dir_handle.close()
+        raise
+    if new_dir_handle is not None:
+        _DLL_DIR_HANDLES[key] = new_dir_handle
+    return lib
 
 
 __all__ = [

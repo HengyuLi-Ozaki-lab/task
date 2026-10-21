@@ -66,13 +66,13 @@ diagram and per-phase status.
 |---|---|---|
 | 0. Regression baseline | `test_run/baselines/fp_{iter01,jt60,dt1}/` | Phase 0 ground truth (tol `1e-10`) |
 | 1. Fortran backend | `fp/fp_api.f90`, `fp_param_registry.f90`, `fpprep`, `fploop`, ... | Numerics, shared with `fp` binary |
-| 2. C ABI | `fp/fp_api.h` + BIND(C) exports in `fp_api.f90` | 5 functions, stable contract |
+| 2. C ABI | `fp/fp_api.h` + BIND(C) exports in `fp_api.f90` | 5 functions + 2 layout queries (#246), stable contract |
 | 3. Shared library | `fp/libfpapi.so` | `make -C fp libs_pic && make -C fp libfpapi.so` |
 | 4. Python FFI | `python/fplib/_ffi.py` | `ctypes` layout mirror of `fp_state_t` |
 | 5. High-level wrapper | `python/fplib/fplib.py`, `state.py`, `errors.py` | Context manager + dataclass |
 | 6. User scripts | `python/fplib/examples/*.py`, user notebooks | |
 
-### 5 C ABI entry points
+### 5 C ABI entry points (+ 2 layout queries, #246)
 
 From `fp/fp_api.h`:
 
@@ -89,16 +89,67 @@ Return codes (`enum fp_error`):
 | code | meaning | Python exception |
 |---|---|---|
 | 0 | OK | — |
-| 1 | invalid name / value | `FplibInvalidParamError` |
+| 1 | invalid name / value; from `fp_run`, a count it cannot run with (below) | `FplibInvalidParamError` |
 | 2 | not initialised | `FplibNotInitError` |
 | 3 | calculation failed | `FplibCalcFailedError` |
 | 4 | not implemented (Phase L-2 stub) | `FplibNotImplementedError` |
+
+`fp_run` checks the counts together before any work (`fp_param_check`,
+`fp/fp_param_registry.f90`) and returns 1, with one `XX fp_run: ...` line per
+violation on unit 6, for a count the solver cannot run with:
+
+| count | accepted | without the check |
+|---|---|---|
+| `NRMAX` | 1 to `FP_MAX_NRMAX` (100) | below 1 the mesh set-up ran past an array bound; above 100 the run was made and `fp_get_state` could not return it |
+| `NPMAX`, `NTHMAX` | 2 or more | the solver ran past an array bound |
+| `LMAXFP` | 0 to `HUGE - 1` | below 0 no pass was made and `fp_loop` tested an error flag that no pass had set; at `HUGE` a step never ended |
+| `NSAMAX` | at most `NSBMAX` | an array bound of the collision arrays |
+| `NS_NSA(1..NSAMAX)` | 1 to `MIN(NSMAX, NSBMAX)` (0: the slot's own number) | an array bound |
+| `NS_NSB(1..NSBMAX)` | 1 to `NSMAX` (0: the slot's own number) | an array bound |
+
+An array bound passed is an abort when the library is built with run-time
+checks and undefined behaviour without them. The reason for a refusal is on
+unit 6 only: `fp_run` returns the one code. The handle stays usable: correct
+the count and call `fp_run` again. Until that run is made, as after any
+`fp_set_param` that changes `NRMAX` or `NSAMAX`, the arrays of the last run
+keep their old extents: `fp_get_state` copies, along each axis, the lesser
+of the current count and the allocated extent, and reports the extents it
+copied in `nrmax` / `nsamax`, so the `[nsamax][nrmax]` slice is always data
+that exists (#245). A lowered count truncates the snapshot to its leading
+slice at once; a raised count stays capped at the old allocation until the
+next `fp_run`. Either way the profiles are still those of the last run's
+mesh and species, so run before reading them as the new configuration. The
+C ABI has no parameter getter, so a raised `NRMAX` / `NSAMAX` is not
+observable through `fp_get_state` while its reported extents stay capped.
+`fp_get_state` still returns rc=3 while `NRMAX` is above `FP_MAX_NRMAX`.
+Before the first run in a process (nothing allocated) it returns the
+namelist counts with zero profiles. The arrays are per process, not per
+handle (`fp_finalize` keeps them, `fp_init` resets the counts to 1), so a
+second handle in the same process that reads before its own first run gets
+the previous handle's data truncated to its own counts (a 1 x 1 slice after
+`fp_init`), not zeros.
+
+Not checked: a mesh too large for memory, or whose `NRMAX * NPMAX * NTHMAX`
+passes a default integer (`NPMAX` and `NTHMAX` have no upper bound); `NPMAX`
+or `NTHMAX` of 2, which runs and is too coarse for a result; an evolved
+species that no background slot names (`fp_set_nsa_nsb` reports it and the
+run is made without that species' collisions with its own kind).
 
 `fp_state_t` carries 5 integer scalars (`nrmax`, `nsamax`, `npmax`,
 `nthmax`, `ntg2`), the simulation time `timefp` (double), and six 2-D
 profile arrays `RNT`, `RWT`, `RTT`, `RJT`, `RPCT`, `RPWT` of shape
 `[FP_MAX_NSAMAX][FP_MAX_NRMAX]` = `[8][100]`. The runtime copy uses
-only the `[0:nsamax][0:nrmax]` slice.
+only the `[0:nsamax][0:nrmax]` slice. After the arrays come seven
+doubles: six volume-integrated globals summed over the species at the
+latest `NTG1` sample, `TOTAL_IP` [MA], `STORED_ENERGY` [MJ],
+`COLLISION_POWER`, `ABSORPTION_POWER`, `ABSORPTION_WR`, `ABSORPTION_WM`
+[MW], and `PLASMA_VOLUME` [m^3] (`TVOLR`). They are zero until the first
+run, and again after any successful parameter set (`fp_set_param`,
+`fp_set_param_str`, or tot's `fp:` parameters: the registry counts every
+set, #253) until the next run that is made,
+while the profiles above are still those of the last run. The
+struct grows at its end only, and `fp/fp_state.f90`, `fp/fp_api.h` and
+`fplib._ffi.FpStateC` change together with a rebuilt `libfpapi.so`.
 
 ### Fortran backend
 
@@ -132,7 +183,7 @@ only the `[0:nsamax][0:nrmax]` slice.
   to the bracket syntax.
 - `fplib.FpState` is a `@dataclass` snapshot; `to_dict()` is
   JSON-serialisable and uses a
-  `{"NRMAX": ..., "NSAMAX": ..., "profile": [{"NSA": i, "RNT": ...}, ...]}`
+  `{"NRMAX": ..., "NSAMAX": ..., "scalars": {"TOTAL_IP": ..., ...}, "profile": [{"NSA": i, "RNT": ...}, ...]}`
   layout so downstream tools can diff wrapper output against `fp`
   CLI runs.
 
@@ -173,16 +224,39 @@ Mirrors the tr spec's §12.2 for the FP module:
   lifecycle. Repeated cycles (as in the 3×3 sweep) work in practice
   because `fp_init` resets the necessary SAVE state, but long-running
   processes can leak FPCOMM allocations.
-- **String parameters not wired.** `KNAMFP` and similar namelist
-  keys cannot flow through the float-only C ABI; they stay at their
-  defaults. A follow-up PR with a `fp_set_param_str` entry point is
-  tracked separately (mirrors the trlib L-L approach).
+- **One string parameter.** `fp_set_param_str` (`Fplib.set_param_str`)
+  sets `KNAMEQ`, the equilibrium file of `MODELG=3`; `KNAMFP` and the
+  other string keys of the namelist stay at their defaults.
 - **Compile-time mesh caps.** `FP_MAX_NRMAX=100` and
   `FP_MAX_NSAMAX=8` are baked into the exported `fp_state_t`; runs
   needing larger meshes require bumping the constants in
   `fp/fp_api.h` + `fp/fp_state.f90` and rebuilding `libfpapi.so`.
 - **Single instance per process.** FP globals are module-level
   state; two concurrent `Fplib()` instances share FPCOMM.
+
+## State struct layout rule (#246)
+
+`fp_state_t` (`fp/fp_api.h`) and `fp_state_c` (`fp/fp_state.f90`) are
+one fixed layout, filled by `fp_get_state`. Changing it:
+
+1. append the field at the end of both (never reorder, never remove);
+2. bump `FP_STATE_ABI_VERSION` **in all three places** (the `#define`, the
+   `PARAMETER` and the constant in `python/fplib/_ffi.py`, without which
+   `load_library` refuses the rebuilt library; currently `2`);
+3. mirror the field in `python/fplib/_ffi.py` (`FpStateC._fields_`) and
+   `state.py`;
+4. rebuild `libfpapi.so` in the same commit.
+
+The library exports its own view: `fp_state_abi_version()` returns the
+PARAMETER and `fp_state_size()` the `sizeof` of the BIND(C) type, both
+callable before `fp_init`. `fp/tests/c_abi/test_negative.c` and
+`test_run_so.c` fail when either differs from the header, and
+`python/fplib/_ffi.py::load_library` refuses a library whose version or
+size differs from `FpStateC`, or that exports neither symbol (built
+before #246), with `FplibAbiError` naming the fix. Both silent
+failure modes of a stale pair are therefore caught at load time: a longer
+library struct would have written past the wrapper's allocation, a
+shorter one would have left the appended fields as plausible zeros.
 
 ## References
 

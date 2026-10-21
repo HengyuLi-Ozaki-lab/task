@@ -26,14 +26,33 @@ wrx_mcp):
   exposing :py:meth:`eqlib.Eq.validate`. Returns a list of
   ``{param, code, message}`` dicts; an empty list means the current
   state will not trip any validator.
+* ``save`` — writes the equilibrium of the last ``run`` to a TASK/EQ
+  binary file through :py:meth:`eqlib.Eq.save`; an error when no file
+  was written.
 
 This mirrors the ``tr_mcp`` / ``wrx_mcp`` reference implementations
 as closely as possible; the main eq-specific additions are the
 validate tool and the broader namelist surface (PSIB[0..5] + the
 PFC-coil arrays + ~60 scalar registry entries).
+
+fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC)
+-----------------------------------------------
+Fortran WRITE(6,...) targets OS fd 1, which is also the JSON-RPC write
+pipe to the MCP client parent.  Any Fortran diagnostic line corrupts the
+pipe: the client logs "Failed to parse JSONRPC message from server" for
+each junk line, and in the worst case the session drops with
+"Connection closed".
+
+main() therefore calls ``_fd_isolation.install()`` (the module shared by
+the stdio servers, ``python/_fd_isolation.py``) immediately before the
+stdio server is built -- NOT at import time, see #227 item 1.
+It moves the pipe to a descriptor of its own, rebuilds ``sys.stdout`` on
+it and gives fd 1 to stderr, so that Fortran WRITE(6,...) lands in the
+server's log.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -84,6 +103,10 @@ from eqlib import (  # noqa: E402
     EqlibCalculationFailedError,
     EqlibNotImplementedError,
 )
+
+# The fd isolation shared by the stdio servers; it lives beside the wrapper,
+# in ``<repo>/python/``.
+import _fd_isolation  # noqa: E402
 
 
 # =====================================================================
@@ -165,8 +188,8 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELG": {"type": "int", "group": "models", "description": "equilibrium/geometry selector (1..9; 3 = TASK/EQ binary load)"},
     "MODELQ": {"type": "int", "group": "models", "description": "q-profile model selector"},
     "IDEBUG": {"type": "int", "group": "models", "description": "debug-output level"},
-    "MODEFR": {"type": "int", "group": "models", "description": "frequency-space mode switch"},
-    "MODEFW": {"type": "int", "group": "models", "description": "wave-frequency mode switch"},
+    "MODEFR": {"type": "int", "group": "models", "description": "file-read mode of FROPEN: 0 reads the file named by KNAMEQ; 1 asks for a file name on unit 5 (not for a server)"},
+    "MODEFW": {"type": "int", "group": "models", "description": "file-write mode of FWOPEN: 0 overwrites an existing file, 3 refuses one; 1, 2 and 4 to 7 can read unit 5, and eq_save takes 0 and 3 only. The save tool sets it itself before it saves (3, or 0 with overwrite=true)"},
     "MDLEQF": {"type": "int", "group": "models", "description": "equilibrium-fixed-boundary model"},
     "MDLEQC": {"type": "int", "group": "models", "description": "equilibrium-constraint model"},
     "MDLEQA": {"type": "int", "group": "models", "description": "equilibrium-axisymmetry model"},
@@ -435,6 +458,28 @@ def handle_set_param_str(name: str, value: str) -> str:
         raise _wrap_eqlib_error(exc) from exc
 
 
+def handle_save(path: str, overwrite: bool = False) -> str:
+    # When it saves, the tool chooses FWOPEN's mode itself: 3 refuses an
+    # existing file, 0 overwrites one. The look at the path first is for
+    # the message, and leaves KNAMEQ and MODEFW alone when it refuses;
+    # mode 3 is what holds if a file appears in between.
+    try:
+        eq = STATE.ensure_open()
+        refused = (not overwrite) and os.path.lexists(path)
+        if not refused:
+            eq.set_param("MODEFW", 0 if overwrite else 3)
+            eq.save(path)
+    except Exception as exc:
+        raise _wrap_eqlib_error(exc) from exc
+    if refused:
+        if os.path.isfile(path):
+            hint = "exists; pass overwrite=true to replace it"
+        else:
+            hint = "exists and is not a regular file"
+        raise ToolError(f"save: {path} {hint}")  # type: ignore[call-arg]
+    return f"saved equilibrium to {path}"
+
+
 def handle_set_params(params: Dict[str, SupportedValue]) -> str:
     if not isinstance(params, dict):
         raise ToolError(  # type: ignore[call-arg]
@@ -551,11 +596,11 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 11 eq tools."""
+    """Build and return a FastMCP server instance with the 12 eq tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
-            "Install it with: pip install 'mcp>=0.9'"
+            "Install it with: pip install 'mcp>=1.2,<2'"
         )
 
     mcp = FastMCP(  # type: ignore[misc]
@@ -566,7 +611,9 @@ def build_server() -> Any:
             "/ `set_param_str` / `set_params`, optionally run "
             "`validate` to check the configuration, execute the "
             "equilibrium load with `run`, and read state with "
-            "`get_state`. Use `describe_parameters` to discover valid "
+            "`get_state`. `save` writes that equilibrium to a TASK/EQ "
+            "file for another module to load. Use `describe_parameters` "
+            "to discover valid "
             "parameter names. `run_and_get_state` is a convenience "
             "one-shot wrapper. EQ-specific note: PSIB is 0-origin "
             "(PSIB[0]..PSIB[5]); all other 1D arrays are 1-origin."
@@ -603,6 +650,35 @@ def build_server() -> Any:
         KNAMFO, KNAMPF`` (CHARACTER(LEN=80) on the Fortran side).
         """
         return handle_set_param_str(name, value)
+
+    @mcp.tool()
+    def save(path: str, overwrite: bool = False) -> str:
+        """Save the equilibrium of the last ``run`` to a TASK/EQ binary file.
+
+        ``path`` is set as KNAMEQ before eq_save is called; the file is
+        what ``set_param_str("KNAMEQ", path)`` plus ``MODELG=3`` loads in
+        tr_mcp and the other modules. Relative paths are resolved against
+        the server's working directory, and ``path`` is limited to the 80
+        ASCII bytes of KNAMEQ.
+
+        An existing file is not replaced unless ``overwrite`` is true, and
+        the refusal changes nothing. Otherwise the tool sets ``MODEFW``
+        itself before it saves (3, or 0 with ``overwrite``), whatever
+        ``set_param`` put there, and once the path is accepted (not
+        over-long, no blank at its end, ASCII) KNAMEQ is ``path``, also
+        when ``eq_save`` fails.
+
+        Success means that this call wrote the file at ``path``.
+        "invalid parameter": no successful ``run`` since ``init``, since
+        a solve or load that failed, or since ``set_param`` of anything
+        but the two file modes (run again first); a blank or over-long
+        path. "calculation failed": the file could not be opened (a
+        missing or unwritable directory), a write failed (an existing
+        file that is read-only) or the file came out shorter than what
+        was written (a file size limit). What is then at ``path`` stays
+        there: do not load it.
+        """
+        return handle_save(path, overwrite)
 
     @mcp.tool()
     def set_params(params: Dict[str, Any]) -> str:
@@ -730,6 +806,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "init",
                 "set_param",
                 "set_param_str",
+                "save",
                 "set_params",
                 "run",
                 "get_state",
@@ -746,12 +823,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not MCP_AVAILABLE:
         sys.stderr.write(
             "error: Python MCP SDK (`mcp`) is not installed.\n"
-            "       pip install 'mcp>=0.9'\n"
+            "       pip install 'mcp>=1.2,<2'\n"
         )
         return 2
 
+    # Install the fd isolation now -- NOT at import time (#227 item 1).
+    # Everything above this point (--help, --print-tools, the MCP-missing
+    # error path) returns before we touch the host process's fds.
+    _fd_isolation.install()
+
     server = build_server()
-    # FastMCP >=0.9 exposes .run() for stdio transport by default.
+    # FastMCP >=1.2 exposes .run() for stdio transport by default.
     server.run()
     return 0
 

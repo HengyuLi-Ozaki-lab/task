@@ -27,6 +27,13 @@ those flags (e.g. tot stops calling wr_init) is treated as a structural
 regression and fails the check, matching the docstring contract in
 extract_tot_metrics.py.
 
+WRX (extract_wrx_metrics.py) uses ``{arrays, arrays2, scalars}``:
+``arrays`` maps a name to a 1-D list (ints such as NSTPMAX_NRAY must
+match exactly, floats within the tolerance), ``arrays2`` maps a name to
+a list of rows. Both groups are compared element-wise; a group or a
+name missing on one side and a length / row-shape mismatch are errors
+(#239: before this, only ``scalars.pwr_tot`` was checked for wrx).
+
 Exit code 0 on match, 1 on mismatch.
 """
 import argparse
@@ -82,10 +89,147 @@ _INDEX_KEYS = ("NR", "NSA", "NS", "NRS", "NRL", "NRAY")
 _DIMENSION_KEYS = ("NT", "NRMAX", "NSMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2",
                    "NRAYMAX", "NSTPMAX", "NRSMAX", "NRLMAX",
                    "MODELG", "MDLWRI", "MDLWRQ", "mode_beam",
+                   # WRX (extract_wrx_metrics.py): the active-species count
+                   # is written as NSAMAX_WR, not NSAMAX.
+                   "NSAMAX_WR",
                    # EQ-specific dims (extract_eq_metrics.py):
                    "NSUMAX", "NSGMAX", "NTGMAX", "NPSMAX", "NRVMAX")
-# Additional list-of-dict sections beyond the default "profile" (used by WR/WRX).
+# Additional list-of-dict sections beyond the default "profile" (used by WR).
 _PROFILE_SECTIONS = ("profile", "profile_rs", "profile_rl", "rays")
+# Dict-of-list sections (WRX, extract_wrx_metrics.py): "arrays" maps a name
+# to a 1-D list, "arrays2" maps a name to a list of equal-length rows.
+_ARRAY_SECTIONS = ("arrays",)
+_ARRAY2_SECTIONS = ("arrays2",)
+
+
+# Expected shapes of the WRX arrays in terms of the dimension header, so a
+# dump whose arrays disagree with its own header (or two dumps that are
+# both malformed the same way) cannot pass. Names not listed here are only
+# required to have the same shape on both sides.
+_WRX_ARRAY_DIMS = {
+    "NSTPMAX_NRAY": ("NRAYMAX",),
+    "pwr_nray": ("NRAYMAX",),
+    "pwr_nsa": ("NSAMAX_WR",),
+    "pos_nrs": ("NRSMAX",),
+    "pos_nrl": ("NRLMAX",),
+}
+_WRX_ARRAY2_DIMS = {
+    "pwr_nsa_nray": ("NSAMAX_WR", "NRAYMAX"),
+    "pwr_nrs_nsa": ("NRSMAX", "NSAMAX_WR"),
+    "pwr_nrl_nsa": ("NRLMAX", "NSAMAX_WR"),
+    "pos_pwrmax_rs_nsa_nray": ("NSAMAX_WR", "NRAYMAX"),
+    "pos_pwrmax_rl_nsa_nray": ("NSAMAX_WR", "NRAYMAX"),
+    "pwrmax_rs_nsa_nray": ("NSAMAX_WR", "NRAYMAX"),
+    "pwrmax_rl_nsa_nray": ("NSAMAX_WR", "NRAYMAX"),
+}
+
+
+def _check_value(label: str, bv, av, tol: float, out: list) -> None:
+    """One element of an array.
+
+    If either side is an int the values must be equal exactly (17 vs 17.0
+    passes, 17 vs 17.000000000001 fails: an integer array that comes back
+    as drifting floats is a producer regression, not rounding). Otherwise
+    the float rule of ``_check_scalar`` applies.
+    """
+    if isinstance(bv, bool) or isinstance(av, bool):
+        out.append(f"{label}: boolean, not numeric data (baseline={bv!r} actual={av!r})")
+        return
+    if not isinstance(bv, (int, float)) or not isinstance(av, (int, float)):
+        out.append(f"{label}: non-numeric (baseline={bv!r} actual={av!r})")
+        return
+    if isinstance(bv, int) or isinstance(av, int):
+        if bv != av:
+            out.append(f"{label}: baseline={bv!r} actual={av!r} (integer: exact match required)")
+        return
+    _check_scalar(label, bv, av, tol, out)
+
+
+def _check_shape(section: str, name: str, value: list, is_2d: bool,
+                 header: dict, side: str, errors: list) -> bool:
+    """Rectangularity and, for the known WRX names, agreement with the
+    dimension header of ``side`` ('baseline' / 'actual'). Returns False
+    when the value should not be compared element-wise."""
+    ok = True
+    if is_2d:
+        bad_rows = [i for i, row in enumerate(value) if not isinstance(row, list)]
+        if bad_rows:
+            errors.append(f"{section}.{name}[{bad_rows[0]}] ({side}): row is not a list")
+            return False
+        widths = {len(row) for row in value}
+        if len(widths) > 1:
+            errors.append(
+                f"{section}.{name} ({side}): ragged rows (widths {sorted(widths)})"
+            )
+            return False
+    dims = (_WRX_ARRAY2_DIMS if is_2d else _WRX_ARRAY_DIMS).get(name)
+    if dims and all(k in header for k in dims):
+        expected = tuple(int(header[k]) for k in dims)
+        if is_2d:
+            got = (len(value), len(value[0]) if value else 0)
+            # No rows: the column count is unobservable, accept it.
+            if got[0] != expected[0] or (value and got[1] != expected[1]):
+                ok = False
+        else:
+            got = (len(value),)
+            ok = got == expected
+        if not ok:
+            errors.append(
+                f"{section}.{name} ({side}): shape {got} does not match the "
+                f"header {dict(zip(dims, expected))}"
+            )
+    return ok
+
+
+def _compare_arrays(baseline: dict, actual: dict, tol: float, errors: list) -> None:
+    """Compare the WRX ``arrays`` / ``arrays2`` groups element-wise.
+
+    A group missing on one side, a name missing on one side, a length or
+    row-shape mismatch, and any element outside the tolerance are all
+    errors, so a dump that drops or corrupts these groups cannot pass.
+    """
+    for section, is_2d in [(s, False) for s in _ARRAY_SECTIONS] + \
+                          [(s, True) for s in _ARRAY2_SECTIONS]:
+        b_grp = baseline.get(section)
+        a_grp = actual.get(section)
+        if b_grp is None and a_grp is None:
+            continue
+        if b_grp is None or a_grp is None:
+            errors.append(f"{section}: missing on one side")
+            continue
+        if not isinstance(b_grp, dict) or not isinstance(a_grp, dict):
+            errors.append(f"{section}: not a name->array mapping on both sides")
+            continue
+        for name in sorted(set(b_grp) | set(a_grp)):
+            if name not in b_grp or name not in a_grp:
+                errors.append(f"{section}.{name}: missing")
+                continue
+            bv, av = b_grp[name], a_grp[name]
+            if not isinstance(bv, list) or not isinstance(av, list):
+                errors.append(f"{section}.{name}: not a list on both sides")
+                continue
+            b_ok = _check_shape(section, name, bv, is_2d, baseline, "baseline", errors)
+            a_ok = _check_shape(section, name, av, is_2d, actual, "actual", errors)
+            if not (b_ok and a_ok):
+                continue
+            if len(bv) != len(av):
+                errors.append(
+                    f"{section}.{name}: length differ ({len(bv)} vs {len(av)})"
+                )
+                continue
+            if not is_2d:
+                for j, (bj, aj) in enumerate(zip(bv, av)):
+                    _check_value(f"{section}.{name}[{j}]", bj, aj, tol, errors)
+                continue
+            for i, (brow, arow) in enumerate(zip(bv, av)):
+                if len(brow) != len(arow):
+                    errors.append(
+                        f"{section}.{name}[{i}]: row length differ "
+                        f"({len(brow)} vs {len(arow)})"
+                    )
+                    continue
+                for j, (bj, aj) in enumerate(zip(brow, arow)):
+                    _check_value(f"{section}.{name}[{i}][{j}]", bj, aj, tol, errors)
 
 
 def compare(baseline: dict, actual: dict, tol: float) -> list:
@@ -187,6 +331,9 @@ def compare(baseline: dict, actual: dict, tol: float) -> list:
                     _check_scalar(
                         f"{section}[{i}].{field}", float(bv), float(av), tol, errors
                     )
+
+    # WRX dict-of-list groups (arrays / arrays2).
+    _compare_arrays(baseline, actual, tol, errors)
     return errors
 
 

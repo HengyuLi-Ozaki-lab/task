@@ -34,6 +34,21 @@ Design notes
 
 The server intentionally mirrors :mod:`tr_mcp.server` so that follow-up
 maintenance can keep the per-module and orchestrator surfaces aligned.
+
+fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC)
+-----------------------------------------------
+Fortran WRITE(6,...) targets OS fd 1, which is also the JSON-RPC write
+pipe to the MCP client parent.  Any Fortran diagnostic line corrupts the
+pipe: the client logs "Failed to parse JSONRPC message from server" for
+each junk line, and in the worst case the session drops with
+"Connection closed".
+
+main() therefore calls ``_fd_isolation.install()`` (the module shared by
+the stdio servers, ``python/_fd_isolation.py``) immediately before the
+stdio server is built -- NOT at import time, see #227 item 1.
+It moves the pipe to a descriptor of its own, rebuilds ``sys.stdout`` on
+it and gives fd 1 to stderr, so that Fortran WRITE(6,...) lands in the
+server's log.
 """
 from __future__ import annotations
 
@@ -91,6 +106,10 @@ from totlib import (  # noqa: E402
 )
 from totlib._ffi import TOT_NAMESPACES  # noqa: E402
 from totlib.errors import TotPipelineCouplingError, TotPipelineRunError  # noqa: E402
+
+# The fd isolation shared by the stdio servers; it lives beside the wrapper,
+# in ``<repo>/python/``.
+import _fd_isolation  # noqa: E402
 
 
 # =====================================================================
@@ -733,7 +752,7 @@ def build_server() -> Any:
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
-            "Install it with: pip install 'mcp>=0.9'"
+            "Install it with: pip install 'mcp>=1.2,<2'"
         )
 
     mcp = FastMCP(  # type: ignore[misc]
@@ -964,12 +983,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not MCP_AVAILABLE:
         sys.stderr.write(
             "error: Python MCP SDK (`mcp`) is not installed.\n"
-            "       pip install 'mcp>=0.9'\n"
+            "       pip install 'mcp>=1.2,<2'\n"
         )
         return 2
 
+    # Install the fd isolation now -- NOT at import time (#227 item 1).
+    # Everything above this point (--help, --print-tools, the MCP-missing
+    # error path) returns before we touch the host process's fds.
+    _fd_isolation.install()
+
     server = build_server()
-    # FastMCP >=0.9 exposes .run() for stdio transport by default.
+    # FastMCP >=1.2 exposes .run() for stdio transport by default.
     server.run()
     return 0
 
