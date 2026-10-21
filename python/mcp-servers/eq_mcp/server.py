@@ -22,6 +22,8 @@ wrx_mcp):
 
 * ``set_param_str`` — string parameters such as ``KNAMEQ`` (the EQDSK
   file path) routed through :py:meth:`eqlib.Eq.set_param_str`.
+* ``get_psi_rz`` — the 2-D PSI(R,Z) field with the RG/ZG grid, through
+  :py:meth:`eqlib.Eq.get_psi_rz` (needs numpy).
 * ``validate`` — pre-run cross-parameter validation (Issue #143)
   exposing :py:meth:`eqlib.Eq.validate`. Returns a list of
   ``{param, code, message}`` dicts; an empty list means the current
