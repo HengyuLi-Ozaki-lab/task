@@ -241,7 +241,7 @@ STATE_SCHEMA: Dict[str, Any] = {
                 "equilibrium through the volume element, so they are what "
                 "makes an EQ->FP handoff (MODELG=3 + KNAMEQ) observable. "
                 "All zero before the first run, and again after a set_param "
-                "until the next run that is made."
+                "or set_param_str until the next run that is made."
             ),
             "properties": {
                 "TOTAL_IP":         {"type": "number", "description": "total plasma current [MA]"},
