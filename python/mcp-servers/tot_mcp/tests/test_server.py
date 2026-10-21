@@ -93,6 +93,43 @@ class TestRegistryShape(unittest.TestCase):
         total = sum(len(v) for v in srv.PARAMETER_REGISTRIES.values())
         self.assertEqual(srv._flat_count(), total)
 
+    def test_fp_string_entry_marked_run_pipeline_only(self) -> None:
+        # tot_param_set_str (tot/tot_param_registry.f90) passes string
+        # values on for tr: and eq: only, while run_pipeline sets fp:
+        # strings through fplib (totlib/pipeline.py). fp_mcp lists KNAMEQ
+        # as a string since its set_param_str tool.
+        import fp_mcp.server as fp_srv
+        self.assertEqual(fp_srv.PARAMETER_REGISTRY["KNAMEQ"]["type"], "str")
+        meta = srv.PARAMETER_REGISTRIES["fp"]["KNAMEQ"]
+        self.assertEqual(meta["type"], "str")
+        self.assertTrue(meta["description"].startswith("equilibrium data file name"))
+        self.assertIn("run_pipeline's params only", meta["description"])
+        # fp_mcp's advice (its set_param_str tool) does not apply to tot_mcp
+        self.assertNotIn("set_param_str", meta["description"])
+        self.assertNotIn("run_pipeline",
+                         fp_srv.PARAMETER_REGISTRY["KNAMEQ"]["description"])
+
+    def test_string_entries_by_namespace(self) -> None:
+        reg = {"N": {"type": "int", "group": "g", "description": "n"},
+               "S": {"type": "str", "group": "g",
+                     "description": "s. Set it with set_param_str."}}
+        for ns in ("eq", "tr"):
+            with self.subTest(ns=ns):
+                self.assertEqual(srv._as_tot_sees_it(ns, reg), reg)
+        for ns in ("ti", "wr", "wrx"):
+            with self.subTest(ns=ns):
+                self.assertEqual(srv._as_tot_sees_it(ns, reg), {"N": reg["N"]})
+        fp = srv._as_tot_sees_it("fp", reg)
+        self.assertEqual(fp["N"], reg["N"])
+        self.assertEqual(fp["S"]["type"], "str")
+        self.assertTrue(fp["S"]["description"].startswith("s. Through tot_mcp:"))
+        self.assertNotIn("set_param_str", fp["S"]["description"])
+        self.assertEqual(reg["S"]["description"], "s. Set it with set_param_str.")
+
+    def test_string_entries_kept_where_tot_sets_strings(self) -> None:
+        self.assertEqual(srv.PARAMETER_REGISTRIES["eq"]["KNAMEQ"]["type"], "str")
+        self.assertEqual(srv.PARAMETER_REGISTRIES["tr"]["KNAMEQ"]["type"], "str")
+
 
 class TestStateSchema(unittest.TestCase):
     def test_schema_top_level(self) -> None:

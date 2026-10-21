@@ -192,6 +192,49 @@ def _load_sibling_registry(module_name: str) -> Dict[str, Dict[str, Any]]:
     return dict(getattr(mod, "PARAMETER_REGISTRY", {}) or {})
 
 
+# tot_param_set_str (tot/tot_param_registry.f90) passes string values on
+# for these namespaces only; fp:, ti:, wr: and wrx: string sets return
+# ierr=1.
+_TOT_STRING_NAMESPACES = ("eq", "tr")
+# run_pipeline's TotPipeline.set_param (totlib/pipeline.py) hands a string
+# to the module's own set_param_str, which these namespaces have.
+_PIPELINE_STRING_NAMESPACES = ("eq", "tr", "fp")
+
+
+def _as_tot_sees_it(
+    ns: str, registry: Dict[str, Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
+    """A sibling's registry, with its string entries as tot can set them.
+
+    A sibling server lists every parameter its module takes, string ones
+    included (``fp_mcp`` has ``KNAMEQ``). Through tot's ``set_param``,
+    strings reach ``eq:`` and ``tr:`` only; ``run_pipeline`` also sets
+    ``fp:`` strings, through fplib. So a ``fp:`` string entry stays, its
+    description saying so in place of the sibling's setting advice, and a
+    ``ti:``, ``wr:`` or ``wrx:`` one is left out.
+    """
+    if ns in _TOT_STRING_NAMESPACES:
+        return registry
+    out: Dict[str, Dict[str, Any]] = {}
+    for name, meta in registry.items():
+        if meta.get("type") != "str":
+            out[name] = meta
+        elif ns in _PIPELINE_STRING_NAMESPACES:
+            # The sibling's own setting advice (its set_param_str tool) does
+            # not apply here: keep what the parameter is, say how to set it.
+            what = meta.get("description", "").split(". ")[0].rstrip(".")
+            out[name] = dict(
+                meta,
+                description=(
+                    f"{what}. Through tot_mcp: a str value in run_pipeline's "
+                    f"params only; set_param, set_params and run_and_get_state "
+                    f"refuse {ns}: strings (tot passes strings on for eq: and "
+                    f"tr: only)."
+                ),
+            )
+    return out
+
+
 def _build_namespaced_registry() -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Assemble per-namespace dicts of {bare_name: {type, group, ...}}.
 
@@ -200,7 +243,7 @@ def _build_namespaced_registry() -> Dict[str, Dict[str, Dict[str, Any]]]:
     sibling MCP package were installed mid-process, which we don't
     support at L-5 scope.
     """
-    return {
+    registries = {
         "eq":  dict(_EQ_INLINE_REGISTRY),
         "tr":  _load_sibling_registry("tr_mcp"),
         "fp":  _load_sibling_registry("fp_mcp"),
@@ -211,6 +254,7 @@ def _build_namespaced_registry() -> Dict[str, Dict[str, Dict[str, Any]]]:
         # describe output mirrors what callers can actually set.
         "wr":  _load_sibling_registry("wrx_mcp"),
     }
+    return {ns: _as_tot_sees_it(ns, reg) for ns, reg in registries.items()}
 
 
 PARAMETER_REGISTRIES: Dict[str, Dict[str, Dict[str, Any]]] = _build_namespaced_registry()
