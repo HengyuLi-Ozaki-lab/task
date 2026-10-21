@@ -13,7 +13,7 @@ of skipping it failed with an opaque ``MCPError: Connection closed``:
   installed" and the client only saw the pipe close;
 * a built ``eq/libeqapi.so`` for that subprocess to load.
 
-The root fix for the CI failure is the ``mcp>=0.9,<2`` pin (this package's
+The root fix for the CI failure is the ``mcp>=1.2,<2`` pin (this package's
 pyproject and the workflow), so with a correct install the test RUNS rather
 than skips. These guards exist so that an environment which is missing a
 prerequisite reports which one, instead of failing opaquely.
@@ -65,7 +65,7 @@ from eq_mcp import server as _srv  # noqa: E402
     not _srv.MCP_AVAILABLE,
     reason=(
         "server-side MCP SDK unavailable (mcp.server.fastmcp missing; mcp 2.0 "
-        "removed it — install 'mcp>=0.9,<2'), so `python -m eq_mcp.server` "
+        "removed it — install 'mcp>=1.2,<2'), so `python -m eq_mcp.server` "
         "exits 2 and the stdio handshake cannot complete"
     ),
 )
