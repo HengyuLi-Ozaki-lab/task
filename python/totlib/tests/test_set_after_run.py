@@ -168,6 +168,29 @@ def _load_image(path: str) -> ctypes.CDLL:
     return lib
 
 
+def _check_layout(lib: ctypes.CDLL, mod: str, state_cls) -> None:
+    """The image fills ``state_cls``'s layout: the wrappers' check (#246).
+
+    These tests pass raw ctypes structs to the image, without going
+    through fplib or tilib, which run this check when they load a
+    library; a stale image would be written past the struct instead of
+    failing here.
+    """
+    from _abi_check import AbiMismatchError, check_state_layout
+    if mod == "fp":
+        from fplib._ffi import FP_STATE_ABI_VERSION as version
+    elif mod == "ti":
+        from tilib._ffi import TI_STATE_ABI_VERSION as version
+    else:
+        raise AssertionError(f"no state layout version known for {mod!r}")
+    try:
+        check_state_layout(lib, prefix=mod, struct=state_cls,
+                           expected_version=version,
+                           lib_name="libtotapi_mono.so")
+    except AbiMismatchError as exc:
+        raise AssertionError(str(exc)) from exc
+
+
 def _drive_through_tot(lib: ctypes.CDLL, mod: str, state_cls, *,
                        steps_before: int, param: str, value: float,
                        steps_after: int, field: str):
@@ -177,6 +200,7 @@ def _drive_through_tot(lib: ctypes.CDLL, mod: str, state_cls, *,
     Returns ``field`` of ``<mod>_get_state`` before the set and after the
     second run.
     """
+    _check_layout(lib, mod, state_cls)
     run = getattr(lib, f"{mod}_run")
     run.restype = ctypes.c_int
     run.argtypes = [ctypes.c_int]
@@ -258,6 +282,7 @@ class _FpScalarsCase:
         from fplib._ffi import FpStateC
         from fplib.state import SCALAR_FIELDS
         lib = _load_image(self.image)
+        _check_layout(lib, "fp", FpStateC)
         lib.fp_run.restype = ctypes.c_int
         lib.fp_run.argtypes = [ctypes.c_int]
         lib.fp_get_state.restype = ctypes.c_int
