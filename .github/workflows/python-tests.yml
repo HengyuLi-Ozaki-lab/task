@@ -842,40 +842,10 @@ jobs:
             https://github.com/k-yoshimi/bpsd.git "$GITHUB_WORKSPACE/../bpsd"
           ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
 
-      - name: Provision mtxp/make.mtxp from nompi template
-        run: cp mtxp/make.mtxp.nompi mtxp/make.mtxp
-
-      - name: Provision make.header for Linux gfortran (no graphics)
-        # KEEP IN SYNC with the pytest and mono-build jobs' identically-named
-        # steps. Same caveat as there: a flag that drifts in one heredoc and
-        # not the others means CI validates a different compiler-flag shape
-        # than the artifacts we ship.
-        run: |
-          cat > make.header <<'HEADER_EOF'
-          ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
-          LAPACK = nolapack.f
-          LIBLA =
-          MODLA95 =
-          MDSPLUS = nomdsplus.f
-          MDSLIB =
-          MF77 = mpif77
-          MF90 = mpif90
-          MF95 = mpif90
-          MFC  = $(MF90)
-
-          ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
-          GFLIBS=
-          OFLAGS = -g -O3 -m64 -std=legacy
-          DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
-          FCFIXED = gfortran -ffixed-form
-          FCFREE = gfortran -ffree-form
-          MOD = mod
-          MODDIR = -Jmod
-          LD=ld
-          LDFLAGS=-r -o
-          FPP=
-          HEADER_EOF
-          head -10 make.header
+      - name: Provision per-system files (make.header, mtxp/make.mtxp)
+        # Composite action (.github/actions/provision-build-env), as in the
+        # pytest and mono-build jobs: one copy of the compiler flags for all.
+        uses: ./.github/actions/provision-build-env
 
       - name: Build support libraries
         # Non-PIC counterparts of the pytest job's PIC support step; these
