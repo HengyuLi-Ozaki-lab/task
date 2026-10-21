@@ -23,7 +23,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from _abi_check import AbiMismatchError, check_state_layout
 from _runtime_mode import mono_lib_path
+
+from .errors import TilibAbiError
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -38,6 +41,12 @@ except ImportError:  # pragma: no cover - numpy is optional
 # ---------------------------------------------------------------------
 TI_MAX_NRMAX = 200
 TI_MAX_NSA_MAX = 20
+
+# ti_state_t layout version; mirrors TI_STATE_ABI_VERSION in ti/ti_api.h
+# and ti/ti_state.f90. load_library() refuses a library whose
+# ti_state_abi_version() / ti_state_size() differ from this and from
+# ctypes.sizeof(TiStateC) (#246).
+TI_STATE_ABI_VERSION = 1
 
 
 # ---------------------------------------------------------------------
@@ -167,6 +176,15 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
     lib = ctypes.CDLL(str(p), mode=mode)
+    # #246: refuse a library whose ti_state_t layout is not TiStateC's,
+    # before any struct is passed. A library built before #246 has no
+    # query symbols and is refused too (it may or may not match).
+    try:
+        check_state_layout(lib, prefix="ti", struct=TiStateC,
+                           expected_version=TI_STATE_ABI_VERSION,
+                           lib_name=os.path.basename(str(p)))
+    except AbiMismatchError as exc:
+        raise TilibAbiError(str(exc)) from exc
     return _apply_prototypes(lib)
 
 

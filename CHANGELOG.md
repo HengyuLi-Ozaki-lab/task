@@ -8,6 +8,199 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **FP library: `fp_get_state` returns seven global scalars** after the
+  profile arrays: `TOTAL_IP` [MA], `STORED_ENERGY` [MJ], `COLLISION_POWER`,
+  `ABSORPTION_POWER`, `ABSORPTION_WR`, `ABSORPTION_WM` [MW] (species sums at
+  the latest `NTG1` sample, what FP otherwise only writes to unit 6) and
+  `PLASMA_VOLUME` [m^3]. They are what shows an EQ to FP handoff: the six
+  profiles are local quantities and stay bit-identical when only the
+  equilibrium changes (without radial transport, waves or current drive).
+  `fp_state_t` grows by 56 bytes at its end (layout version 2, #246), so
+  `libfpapi.so` and its callers are rebuilt together: `fplib` refuses a
+  library built before this change with `FplibAbiError` instead of reading
+  the scalars as zeros. `FpState.scalars`, `to_dict()["scalars"]`
+  and the `scalars` object of fp_mcp's state carry them, and an FP step of
+  the `totlib` pipeline keeps them beside `timefp` and its counts. They are
+  zero until the first run, and again after any successful parameter set
+  (`fp_set_param`, `fp_set_param_str`, or tot's `fp:` parameters, which the
+  registry counts since #253) until the next run that is made.
+- **EQ library: `eq_save`, `Eq.save(path)` and the `save` tool of `eq_mcp`**
+  write the equilibrium of the last `eq_run` to a TASK/EQ binary file through
+  `EQSAVE`, the file that `MODELG=3` with `KNAMEQ` loads. A save whose file
+  was not opened, or is shorter than what was written, is an error, not
+  `EQ_OK`. The work is in a new routine, `EQSAVE_IERR(IERR_OUT)`; `EQSAVE`
+  keeps its argument-less entry and calls it, so `eq/eqmenu.f90` (the `S`
+  command) and `tr/f77/trfile.f` are unchanged. `IERR_OUT` is `FWOPEN`'s
+  failure (a directory that is missing or not writable, `MODEFW=3` and an
+  existing file), or 9 when the file was opened and a `WRITE` or the `CLOSE`
+  reported an error (an existing file without write permission, which used
+  to end the program at the first `WRITE`) or the file is shorter than what
+  was written to the unit. The comparison of the two lengths is there
+  because a write the system refuses is not always reported: measured with
+  gfortran 15 on macOS, a save to a new file under a file size limit
+  returned success over a short file, no `WRITE` and not the `CLOSE` having
+  reported it. What is then at the path is left in place and must not be
+  loaded. `eq_save` returns
+  `EQ_ERR_CALC_FAILED` for those, and `EQ_ERR_INVALID`, touching no file,
+  when the fields do not hold the equilibrium of the present parameters (no
+  successful `eq_run` yet, a later solve or load that failed, or
+  `eq_set_param` of anything but `MODEFR` and `MODEFW` since), for a blank
+  `KNAMEQ`, and for `MODEFW` other than 0 or 3 (with 1, 2 and 4 to 7
+  `FWOPEN` can read unit 5). The `save` tool replaces an existing file only
+  with `overwrite=true`: when it saves it sets `MODEFW` itself (3, or 0). In
+  the same change, `eq_run(1)` reports a load that failed: `EQ_READ` called
+  `EQCALQ` after `EQDSKR` had failed (`MODELG=5`, a missing file) and
+  returned `EQCALQ`'s code, and left `IERR` unassigned for a `MODELG` that
+  is no file format; it now starts from `IERR=0`, calls `EQCALQ` only after
+  a successful `EQDSKR`, and returns 1 for an unknown `MODELG`.
+- **CI: `clean-tree-build` workflow (#250).** Runs the wrapper READMEs'
+  fresh-checkout sequence (per-system files, `make -C ../bpsd libbpsd.a`,
+  one `make -C <mod> lib<mod>api.so`) for tr / fp / ti / wr / wrx / eq, one
+  module per runner with nothing pre-built, and checks that the `.so`
+  exists and loads with `RTLD_NOW` (`ctypes.CDLL`). Triggered by changes to
+  Makefiles, `make.header.org`, Fortran sources and includes, `mtxp/`, the
+  workflow file and the action; by hand (on the ref chosen in the dispatch)
+  and weekly on `develop` once the workflow file reaches `master` (a
+  dispatch or schedule needs the file on the default branch, which
+  carries no workflow files yet). The pytest and mono-build
+  jobs pre-build the whole PIC chain first, which is why #230 regressed
+  unnoticed. The `make.header` heredoc and the `mtxp/make.mtxp` copy that
+  those two jobs carried as KEEP-IN-SYNC steps are now the composite action
+  `.github/actions/provision-build-env`, shared by all three.
+- **C ABI: every library reports its state-struct layout, and the Python
+  wrappers refuse a mismatch (#246).** `X_state_abi_version()` returns
+  `X_STATE_ABI_VERSION` (now a `PARAMETER` in `X_state.f90`, mirrored by
+  the `#define` in `X_api.h`; tr and tot stay at 2, eq / fp / ti / wr / wrx
+  start at 1) and `X_state_size()` the `sizeof` of the `BIND(C)` type, both
+  callable before `X_init`, for tr / fp / eq / ti / wr / wrx / tot and the
+  mono image. The C-ABI drivers (`test_negative.c`, `test_run_so.c`) fail
+  when either differs from the header; `python/Xlib/_ffi.py::load_library`
+  raises `XlibAbiError` when the library's version or size differs from
+  `XStateC`, or when the library exports neither symbol (built before this
+  change), naming the fix. CI runs the six per-module dlopen drivers
+  (`X_api_check_so`) and `libtotapi_mono_inspect` checks the twelve symbols.
+  A library and a wrapper from different commits used to fail silently:
+  a longer library struct wrote past the wrapper's allocation, a shorter
+  one left the appended fields as plausible zeros. The check protects
+  callers from this change on; a caller older than it never asks, and
+  `X_get_state` still takes no buffer size.
+
+### Changed
+
+- **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
+  run re-preps the module, whoever set it (#253).** `tr_set_param` /
+  `fp_set_param` / `ti_set_param` used to clear the module's private
+  "prepared" flag themselves; tot's `tr:` / `fp:` / `ti:` dispatcher wrote
+  to the registries directly and left the flag standing, so after a run a
+  `Tot.set_param("tr:NSMAX", 3)` continued the old state with `tr_prep`
+  skipped and the #189 pre-run species check never fired. The registries
+  now count every successful set and `tr_run` / `fp_run` / `ti_run`
+  re-prep when the count moved since their last prep. Behaviour change for
+  `Tot` and `tot_mcp` only: a set after a run now restarts the module
+  (`NT` and `T` back to 0), which is what `trlib` / `fplib` / `tilib` and
+  `TotPipeline` have always done; a set the registry refused changes
+  nothing. `eq` has no prepared flag on `develop`; the same counter is the
+  natural precondition for `eq_save` (#256).
+
+- **FP library: `fp_run` refuses `NRMAX` above `FP_MAX_NRMAX` (100).** Such a
+  run was made, and `fp_get_state` then returned rc=3: its results could be
+  read only from the log on unit 6 or from `fp_regress.dat`
+  (`FP_REGRESS_DUMP=1`). `fp_run` now returns `FP_ERR_INVALID` before any
+  work.
+
+### Fixed
+
+- **MCP servers: the `mcp` dependency is pinned to `>=1.2,<2`** in the
+  seven server `pyproject.toml` files, the CI workflow, the servers' own
+  "not installed" message, the READMEs, the Sphinx MCP pages, the
+  trlib presentation and its builder, and the 2026-04-18 MCP plan.
+  `mcp.server.fastmcp` exists from mcp 1.2.0 (the old floor, 0.9, let
+  1.0 and 1.1 in, where the import fails the same way) and mcp 2.0
+  removed it, so an unpinned install (`pip install -e
+  python/mcp-servers/eq_mcp` on a fresh environment, or the workflow's
+  bare `pip install mcp`, which took mcp 2.3.0) left every server with
+  `MCP_AVAILABLE = False`: `python -m <mod>_mcp.server` exited 2 and the
+  seven `TestBuildServer` classes skipped, so CI was green without
+  exercising a single FastMCP construction. The workflow now asserts
+  `MCP_AVAILABLE` right after the install, so that skip is a failure
+  there. Porting the servers to the 2.x API is separate work. Fix by
+  Li Hengyu, cherry-picked from #226.
+- **PL: `plcheck` accepts `MODELG=25`**, the EQDSK geometry that `plinit`
+  documents and `EQ_READ` loads. A `plparm` namelist carrying it printed
+  `XX plcheck: INVALID MODELG` (`pl_parm` returned 101) and the PL menu
+  asked again. The other values outside 0 to 11 are refused as before.
+- **TR library, `MODELG=9`: every preparation adopts the equilibrium
+  again.** The saved flag `tr_eq_init` was cleared by the first run and
+  never set again, so a second `tr_init` .. `tr_finalize` lifecycle in one
+  process returned 0 from `tr_run` with q = NaN, and a second `tr_prep`
+  inside one lifecycle (after a parameter change, or a second `R` in the
+  menu) started from the previous run's psi_p. `tr_set_metric` now sets the
+  flag at the start of each `MODELG=9` preparation, and `tr_init` and
+  `tr_finalize` restore it.
+- **TR library, `MODELG=9`: a failure of the initial q-scaling fails the
+  run** (`TR_ERR_CALC_FAILED` from `tr_run`, the cause on unit 6) instead of
+  being printed at most: a non-zero status from a step of `eq_calc` (which
+  has an optional `ierr` for this), from `tr_bpsd_get` or from
+  `tr_bpsd_put`, a scale factor that is zero or not finite, or no
+  agreement after 30 iterations. `tr_eq_init` stays set after a failure.
+  When the equilibrium solve fails, the scaling used to go on with what
+  was left: depending on the input the process ended at a run-time check
+  (in a build with them) or `tr_run` returned 0. `EQLOOP` running out of
+  `NLPMAX` is still accepted inside the scaling, as `EQCALC` goes on after
+  it, and a failure that `EQCALC` or `EQCALQ` do not return is still not
+  seen.
+- **FP library: `fp_run` refuses the counts the solver cannot run with**,
+  before any work, with `FP_ERR_INVALID` and one `XX fp_run: ...` line per
+  violation on unit 6 (`fp_param_check` in `fp/fp_param_registry.f90`).
+  They were accepted when set and then ran past an array bound (an abort
+  when built with run-time checks), ended the host process, or never
+  returned: `NRMAX` below 1; `NPMAX` or `NTHMAX` below 2; `LMAXFP` below 0
+  or at the largest integer (the iteration's exit, `N_IMPL = 1 + LMAXFP`,
+  overflows and a step never ends); `NSAMAX` above `NSBMAX`; an evolved
+  species number outside 1 to `MIN(NSMAX, NSBMAX)`; a background species
+  number outside 1 to `NSMAX`.
+- **MCP servers `eq_mcp`, `tr_mcp`, `tot_mcp`: Fortran output no longer
+  reaches the JSON-RPC pipe.** A stdio server's fd 1 is the pipe to its
+  client, and the library's `WRITE(6,...)` went into it: in one stdio
+  session (`initialize`, `init`, `run`) 9 of the 12 stdout lines of
+  `tr_mcp` and of `tot_mcp` were not JSON-RPC, and 2 of 5 of `eq_mcp` with
+  `run(mode=1)`. `main()` now calls `_fd_isolation.install()` (one module
+  shared by the three servers, `python/_fd_isolation.py`, with one flag for
+  the process) immediately before the stdio server is built: fd 1 is
+  redirected to stderr and `sys.stdout` keeps the pipe. Importing a server
+  module leaves fd 1 and `sys.stdout` of the importing process alone (#227
+  item 1); `--help` and `--print-tools` print to the terminal as before.
+  Two descriptor layouts in which the redirect alone does nothing are
+  handled: with fd 2 closed it is opened on the null device first (and
+  `sys.stderr` given it), and when stdout and stderr are the same file (the
+  host merged them, `2>&1`) fd 1 goes to the null device and one line on
+  stderr says that what is written to fd 1 is discarded. A terminal on
+  both counts as the same file too: a server started by hand in a
+  terminal shows that line and no longer the library's output. Where
+  `fstat` gives a descriptor no identity (Windows for a pipe or a console)
+  the merged layout is not recognised and fd 1 goes to stderr as usual.
+- **MCP servers `ti_mcp`, `wr_mcp`, `wrx_mcp`: the same fd isolation** (#262).
+  The three servers had the layout of the other three and the same exposure:
+  `main()` now calls `_fd_isolation.install()` immediately before the stdio
+  server is built, importing a server module leaves the importing process's
+  fd 1 and `sys.stdout` alone, and `--help` / `--print-tools` / the
+  missing-SDK path return before anything is redirected. Each server's
+  `tests/test_fd_isolation.py` runs the shared checks
+  (`python/mcp-servers/fd_isolation_cases.py`), and
+  `python/tests/test_fd_isolation.py` checks that all six servers run every
+  one of them. `fp_mcp` follows in #232.
+- **MCP server `fp_mcp`: the same fd isolation** (#232). `fp_mcp` had the
+  most of it: `FPWRTPRF` writes the radial profile table to unit 6 once at
+  preparation and then every `NTG2STEP` steps (every step by default), so
+  the lines that are not JSON-RPC grew with `NTMAX`: in one stdio session
+  (`initialize`, `init`, `run`, library defaults) 63 of the 66 stdout lines
+  at `NTMAX=1`, 83 of 86 at `NTMAX=2`. `main()` now calls `_fd_isolation.install()`
+  immediately before the stdio server is built, as the other six servers
+  do; its `tests/test_fd_isolation.py` runs the shared checks, and
+  `python/tests/test_fd_isolation.py` checks all seven servers.
+
 ## TR Phase L — library-ization (2026-04-18)
 
 Phase L turned TASK/TR from a CLI-only Fortran program into an

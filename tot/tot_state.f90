@@ -22,6 +22,7 @@ MODULE tot_state
   USE, INTRINSIC :: ISO_C_BINDING
   IMPLICIT NONE
   PRIVATE
+  PUBLIC :: TOT_STATE_ABI_VERSION
   PUBLIC :: tot_state_c, &
             TOT_MAX_NRMAX, TOT_MAX_NSMAX, &
             TOT_TR_PRESENT, TOT_TI_PRESENT, &
@@ -40,6 +41,13 @@ MODULE tot_state
   INTEGER(C_INT), PARAMETER :: TOT_TI_PRESENT = 2
   INTEGER(C_INT), PARAMETER :: TOT_FP_PRESENT = 3
   INTEGER(C_INT), PARAMETER :: TOT_WR_PRESENT = 4
+
+  ! Layout version of tot_state_c / tot_state_t (#246). Bump it together
+  ! with TOT_STATE_ABI_VERSION in tot_api.h whenever a field is added,
+  ! removed or reordered; tot_state_abi_version() exports it and the C-ABI
+  ! driver fails when the two drift. tot_state_size() exports the
+  ! BIND(C) size, so the library, not the header, is authoritative.
+  INTEGER(C_INT), PARAMETER :: TOT_STATE_ABI_VERSION = 2
 
   TYPE, BIND(C) :: tot_state_c
      ! --- orchestrator presence flags ---------------------------------

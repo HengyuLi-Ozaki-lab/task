@@ -71,13 +71,13 @@ parameters (`KNAMEQ`, `KNAMEQ2`, `KNAMWR`, `KNAMWM`, `KNAMFP`,
 |---|---|---|
 | 0. Regression baseline | `test_run/baselines/eq_*/metrics.json` | Phase L-0 ground truth (`eq_iter01`, `eq_tst2`) |
 | 1. Fortran backend | `eq/eq_api.f90`, `eq_param_registry.f90`, `equnit`, `eqcalc`, ... | Numerics, shared with the `eq` binary |
-| 2. C ABI | `eq/eq_api.h` + BIND(C) exports in `eq_api.f90` | 6 functions, stable contract |
+| 2. C ABI | `eq/eq_api.h` + BIND(C) exports in `eq_api.f90` | 6 functions + 2 layout queries (#246), stable contract |
 | 3. Shared library | `eq/libeqapi.so` | `make -C eq libeqapi.so`, links `lib*_pic.a` |
 | 4. Python FFI | `python/eqlib/_ffi.py` | `ctypes` layout mirror of `eq_state_t` |
 | 5. High-level wrapper | `python/eqlib/eqlib.py`, `state.py`, `errors.py` | Context manager + dataclass + exceptions |
 | 6. User scripts | `python/eqlib/examples/*.py`, user notebooks | |
 
-### 6 C ABI entry points
+### 6 C ABI entry points (+ 2 layout queries, #246)
 
 From `eq/eq_api.h`:
 
@@ -215,6 +215,29 @@ Mirrors the tr spec's §12.2 for the EQ module:
 - **`PSIB` 0-origin trap.** Bare `"PSIB"` (no subscript) is rejected
   by the registry. Always use `set_param("PSIB[i]", v)` for
   `i ∈ 0..5`.
+
+## State struct layout rule (#246)
+
+`eq_state_t` (`eq/eq_api.h`) and `eq_state_c` (`eq/eq_state.f90`) are
+one fixed layout, filled by `eq_get_state`. Changing it:
+
+1. append the field at the end of both (never reorder, never remove);
+2. bump `EQ_STATE_ABI_VERSION` **in both files** (the `#define` and the
+   `PARAMETER`; currently `1`);
+3. mirror the field in `python/eqlib/_ffi.py` (`EqStateC._fields_`) and
+   `state.py`;
+4. rebuild `libeqapi.so` in the same commit.
+
+The library exports its own view: `eq_state_abi_version()` returns the
+PARAMETER and `eq_state_size()` the `sizeof` of the BIND(C) type, both
+callable before `eq_init`. `eq/tests/c_abi/test_negative.c` and
+`test_run_so.c` fail when either differs from the header, and
+`python/eqlib/_ffi.py::load_library` refuses a library whose version or
+size differs from `EqStateC`, or that exports neither symbol (built
+before #246), with `EqlibAbiError` naming the fix. Both silent
+failure modes of a stale pair are therefore caught at load time: a longer
+library struct would have written past the wrapper's allocation, a
+shorter one would have left the appended fields as plausible zeros.
 
 ## References
 

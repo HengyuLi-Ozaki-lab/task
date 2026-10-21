@@ -97,50 +97,13 @@ jobs:
           fi
           ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
 
-      - name: Provision mtxp/make.mtxp from nompi template
-        # mtxp/make.mtxp is gitignored (per-system config). The nompi
-        # template builds bnd/pcg backends without MPI / MUMPS / PETSc,
-        # which is what every libXapi.so PIC build path uses.
-        run: |
-          cp mtxp/make.mtxp.nompi mtxp/make.mtxp
-          head -5 mtxp/make.mtxp
-
-      - name: Provision make.header for Linux gfortran (no graphics)
-        # make.header is gitignored (per-system config). Generate the
-        # minimal gfortran setup needed by every module's Makefile.
-        # GFLIBS is left empty because libXapi.so excludes graphics
-        # (the actual `make X` binary builds need GFLIBS but those are
-        # not built in CI).
-        #
-        # KEEP IN SYNC with the mono-build job's identically-named step
-        # below — both heredocs must be byte-identical (see drift-risk
-        # rationale in that step's comment).
-        run: |
-          cat > make.header <<'HEADER_EOF'
-          ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
-          LAPACK = nolapack.f
-          LIBLA =
-          MODLA95 =
-          MDSPLUS = nomdsplus.f
-          MDSLIB =
-          MF77 = mpif77
-          MF90 = mpif90
-          MF95 = mpif90
-          MFC  = $(MF90)
-
-          ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
-          GFLIBS=
-          OFLAGS = -g -O3 -m64 -std=legacy
-          DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
-          FCFIXED = gfortran -ffixed-form
-          FCFREE = gfortran -ffree-form
-          MOD = mod
-          MODDIR = -Jmod
-          LD=ld
-          LDFLAGS=-r -o
-          FPP=
-          HEADER_EOF
-          head -10 make.header
+      - name: Provision per-system files (make.header, mtxp/make.mtxp)
+        # Composite action (.github/actions/provision-build-env): the
+        # make.header heredoc that this job and the mono-build job used to
+        # carry as two KEEP-IN-SYNC copies now lives in one place, shared
+        # with clean-tree-build.yml, so the compiler flags cannot drift
+        # between the three build paths.
+        uses: ./.github/actions/provision-build-env
 
       - name: Install Python test dependencies
         run: |
@@ -151,7 +114,7 @@ jobs:
           # mcp = Anthropic's official Python MCP SDK. Required by the
           # build_server / TestBuildServer classes in
           # python/mcp-servers/<mod>/tests/test_server.py — without it
-          # 9 tests across 6 modules silently skipUnless'd
+          # the 7 TestBuildServer classes (one per module) silently skipUnless'd
           # (MCP_AVAILABLE = False). See server.py's optional-import
           # block; CI now exercises the FastMCP construction path that
           # production users hit.
@@ -160,7 +123,7 @@ jobs:
           # decorator API), so every server.py falls back to
           # MCP_AVAILABLE=False and the stdio servers refuse to start.
           # Porting the 7 servers to the 2.x API is its own change.
-          pip install 'mcp>=0.9,<2'
+          pip install 'mcp>=1.2,<2'
           # Tripwire. MCP_AVAILABLE is set by a bare `except Exception`,
           # so ANY future breakage of the FastMCP import path -- a bad
           # transitive resolution, a circular import, a real regression --
@@ -238,11 +201,14 @@ jobs:
         # chain (lib_pic -> mtxp_pic -> pl_pic -> eq_pic -> dp_pic /
         # ob_pic -> module .so).
         #
-        # We invoke `bpsd_pic` BEFORE the .so target on each module
-        # because individual objects like obj/pic/trcom0.o use
-        # bpsd_kinds.mod but don't explicitly depend on it; without an
-        # explicit prior bpsd_pic step, sequential make fails with
-        # "Cannot open module file 'bpsd_kinds.mod'".
+        # The explicit `bpsd_pic` step before each .so target used to be
+        # required: individual objects like obj/pic/trcom0.o use
+        # bpsd_kinds.mod but did not depend on it, so sequential make
+        # failed with "Cannot open module file 'bpsd_kinds.mod'". Since
+        # #230 every module Makefile orders bpsd_pic and the sibling PIC
+        # libs before its own objects (order-only prerequisites), so the
+        # README one-liner works from a clean tree; the step is kept here
+        # so the bpsd rebuild shows up as its own line in the log.
         #
         # IMPORTANT: tot MUST come last in this loop. tot/Makefile:378
         # links libtotapi.so against ../eq/libeqapi.so + ../tr/libtrapi.so
@@ -261,6 +227,20 @@ jobs:
               make -C "$mod" bpsd_pic
             fi
             make -C "$mod" "lib${mod}api.so"
+            echo "::endgroup::"
+          done
+
+      - name: Run per-module dlopen C ABI drivers (X_api_check_so, #246)
+        # Each driver dlopens libXapi.so, checks X_state_abi_version() and
+        # X_state_size() against X_api.h (the Fortran BIND(C) type vs the
+        # C struct, #246) and runs the init/run/get_state/finalize cycle.
+        # The static-link drivers (X_api_check_all) stay local: tr's does
+        # not link on macOS and they need the non-PIC chain; the dlopen
+        # path is what the Python wrappers use.
+        run: |
+          for mod in tr fp ti wr wrx eq; do
+            echo "::group::${mod}_api_check_so"
+            make -C "$mod" "${mod}_api_check_so"
             echo "::endgroup::"
           done
 
@@ -404,7 +384,11 @@ jobs:
           #
           # --forked keeps process isolation so any single still-bad
           # test does not take down the whole suite.
-          python -m pytest python/ \
+          # test_run/scripts/tests covers compare_metrics.py and the
+          # extract_*_metrics.py baseline producers; it was never part of
+          # this run, which is how the comparator ignored the wrx array
+          # groups for months (#239).
+          python -m pytest python/ test_run/scripts/tests \
             --forked \
             --timeout=120 \
             --timeout-method=signal \
@@ -431,7 +415,7 @@ jobs:
         env:
           PYTHONPATH: python:python/mcp-servers
         run: |
-          python -m pytest python/ --collect-only -q | tail -5 || true
+          python -m pytest python/ test_run/scripts/tests --collect-only -q | tail -5 || true
 
   mono-build:
     # Linux build-only validation of the L-7b-ii monolithic mode
@@ -488,47 +472,13 @@ jobs:
           fi
           ls -la "$GITHUB_WORKSPACE/../bpsd" | head -5
 
-      - name: Provision mtxp/make.mtxp from nompi template
-        run: |
-          cp mtxp/make.mtxp.nompi mtxp/make.mtxp
-          head -5 mtxp/make.mtxp
-
-      - name: Provision make.header for Linux gfortran (no graphics)
-        # KEEP IN SYNC with the pytest job's identically-named step
-        # (~line 110 of this file). Both heredocs must be byte-identical:
-        # if a flag drifts in one (e.g. OFLAGS, DFLAGS) and not the
-        # other, the mono CI job will silently validate a different
-        # compiler-flag shape than the per-module .so path that pytest
-        # exercises — i.e. CI would go green while the binaries we
-        # actually ship under each path diverge. The composite-action
-        # extraction that would enforce this structurally is tracked as
-        # follow-up; until then, mirror manually.
-        run: |
-          cat > make.header <<'HEADER_EOF'
-          ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
-          LAPACK = nolapack.f
-          LIBLA =
-          MODLA95 =
-          MDSPLUS = nomdsplus.f
-          MDSLIB =
-          MF77 = mpif77
-          MF90 = mpif90
-          MF95 = mpif90
-          MFC  = $(MF90)
-
-          ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
-          GFLIBS=
-          OFLAGS = -g -O3 -m64 -std=legacy
-          DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
-          FCFIXED = gfortran -ffixed-form
-          FCFREE = gfortran -ffree-form
-          MOD = mod
-          MODDIR = -Jmod
-          LD=ld
-          LDFLAGS=-r -o
-          FPP=
-          HEADER_EOF
-          head -10 make.header
+      - name: Provision per-system files (make.header, mtxp/make.mtxp)
+        # Composite action (.github/actions/provision-build-env): the
+        # make.header heredoc that the pytest job and this job used to
+        # carry as two KEEP-IN-SYNC copies now lives in one place, shared
+        # with clean-tree-build.yml, so the compiler flags cannot drift
+        # between the three build paths.
+        uses: ./.github/actions/provision-build-env
 
       - name: Build PIC support libraries (bpsd, lib, mtxp, pl, eq, dp, ob, adf11, adpost)
         # Mirrors the pytest job's PIC-support step. The mono Makefile
@@ -553,9 +503,9 @@ jobs:
         # names 5 .so files: eq/libeqapi.so + tr/libtrapi.so +
         # fp/libfpapi.so + ti/libtiapi.so + wrx/libwrxapi.so. We
         # additionally build wr/libwrapi.so (6th, NOT a mono prereq)
-        # for symmetry with the pytest job above, so a future
-        # composite-action refactor sees a single canonical module
-        # list. The wr build adds ~30s on a job that takes ~5-8 min;
+        # for symmetry with the pytest job above and with the matrix of
+        # clean-tree-build.yml, so the three places that name the six
+        # modules stay identical. The wr build adds ~30s on a job that takes ~5-8 min;
         # the symmetry value beats the time cost.
         #
         # We deliberately do NOT build tot/libtotapi.so here (the
@@ -581,14 +531,17 @@ jobs:
         run: |
           make -C tot libtotapi_mono.so
 
-      - name: Inspect libtotapi_mono.so (8-bpsd + no-lib*api.so-deps hard-gated)
-        # libtotapi_mono_inspect runs TWO hard-gates plus several
+      - name: Inspect libtotapi_mono.so (8-bpsd + 12-layout-syms + no-lib*api.so-deps hard-gated)
+        # libtotapi_mono_inspect runs THREE hard-gates plus several
         # observational checks:
         #
         # HARD GATE 1: BPSD storage symbol count == 8 (one per bpsd module
         #   type: device + equ1d + metric1d + plasmaf + shot + species +
         #   trmatrix + trsource). If the per-module dedup ever fails
         #   and we get 5×8=40 (or any other count), the build fails.
+        #
+        # HARD GATE 1b: the 12 X_state_abi_version / X_state_size symbols
+        # (eq tr fp ti wrx tot) are exported (#246).
         #
         # HARD GATE 2: No `lib*api.so` runtime dep in the .so's NEEDED
         #   list (Linux `ldd`) / load commands (macOS `otool -L`). The
@@ -804,6 +757,9 @@ jobs:
         # Re-uses the default libtotapi.so artifact built earlier in
         # this job (the "Build default libtotapi.so" step landed in
         # PR #207) for test_non_mono_so_raises.
+        # test_set_after_run.py (#253) is listed here as well so its
+        # MONO_LIB_PATH-gated fp / ti classes run on the mono image;
+        # its TestTotSetAfterRun class also runs in the main pytest step.
         env:
           MONO_LIB_PATH: ${{ github.workspace }}/tot/libtotapi_mono.so
           TOTLIB_PATH: ${{ github.workspace }}/tot/libtotapi.so
@@ -812,6 +768,7 @@ jobs:
           test -f "$MONO_LIB_PATH" || { echo "ERROR: $MONO_LIB_PATH missing — the mono build failed earlier in this job"; exit 1; }
           test -f "$TOTLIB_PATH"   || { echo "ERROR: $TOTLIB_PATH missing — the default libtotapi.so build failed"; exit 1; }
           python -m pytest python/totlib/tests/test_mono_routing.py \
+                 python/totlib/tests/test_set_after_run.py \
                  --forked --timeout=120 --timeout-method=signal -v
 
       - name: Mono pipeline coupling (Phase 2c PR-B)

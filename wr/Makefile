@@ -69,7 +69,7 @@ LIBS = libwr.a  ../dp/libdp.a ../eq/libeq.a ../pl/libpl.a \
 all : libs wr
 
 ../../bpsd/libbpsd.a:
-	(cd ../../bpsd; make libbpsd.a)
+	(cd ../../bpsd; $(MAKE) libbpsd.a)
 ../lib/libtask.a:
 	(cd ../lib; make libtask.a)
 ../lib/libgrf.a:
@@ -338,13 +338,16 @@ LIBMTX_PIC=../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o
 #   pl (USE bpsd) -> eq (USE pl) -> dp (USE pl + eq).
 # The `|` syntax below makes these ORDER-ONLY (no rebuild cascade).
 .PHONY: libs_pic_prereq
-libs_pic_prereq: ../lib/libtask_pic.a ../lib/libgrf_pic.a ../lib/libmds_pic.a \
+libs_pic_prereq: ../../bpsd/libbpsd.a \
+                 ../lib/libtask_pic.a ../lib/libgrf_pic.a ../lib/libmds_pic.a \
                  ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o \
                  $(OBJBPSD_PIC) \
                  ../pl/libpl_pic.a ../eq/libeq_pic.a ../dp/libdp_pic.a
 
 # Force serialization: the intermediate archives list each other as
-# prereqs so they build top-down even under `make -jN`.
+# prereqs so the chain is explicit regardless of the order make visits
+# the prerequisite list (`make -jN` itself is unsupported: the leaf
+# Makefiles carry no intra-directory .o dependencies).
 ../lib/libgrf_pic.a: ../lib/libtask_pic.a
 ../mtxp/libmtxnompi_pic.o: ../lib/libtask_pic.a
 ../mtxp/libmtxbnd_pic.o: ../mtxp/libmtxnompi_pic.o
@@ -353,6 +356,10 @@ libs_pic_prereq: ../lib/libtask_pic.a ../lib/libgrf_pic.a ../lib/libmds_pic.a \
 ../eq/libeq_pic.a: ../pl/libpl_pic.a
 ../dp/libdp_pic.a: ../eq/libeq_pic.a ../pl/libpl_pic.a
 $(OBJBPSD_PIC): | ../lib/libtask_pic.a
+# pl's PIC build reads ../../bpsd/mod/*.mod, populated by the sibling's
+# static `make libbpsd.a` (#230); eq needs pl, lib and mtxp .mod files.
+../pl/libpl_pic.a ../eq/libeq_pic.a: | ../../bpsd/libbpsd.a ../lib/libtask_pic.a \
+                     ../lib/libgrf_pic.a ../lib/libmds_pic.a ../mtxp/libmtxbnd_pic.o
 
 $(OBJ_LIBWRAPI): | libs_pic_prereq
 

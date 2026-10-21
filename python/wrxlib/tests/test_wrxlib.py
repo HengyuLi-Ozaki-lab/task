@@ -225,24 +225,65 @@ class TestWrxStateFromC(unittest.TestCase):
                 "pwrmax_rs_nsa_nray", "pwrmax_rl_nsa_nray",
             },
         )
-        # pwr_nsa_nray: [nray][nsa]
-        self.assertEqual(len(arrays2["pwr_nsa_nray"]), 2)
-        self.assertEqual(len(arrays2["pwr_nsa_nray"][0]), 3)
+        # pwr_nsa_nray: [nsa][nray], the baseline's (wrxregress.f90)
+        # species-major rows; the dataclass attribute keeps [nray][nsa].
+        self.assertEqual(len(arrays2["pwr_nsa_nray"]), 3)
+        self.assertEqual(len(arrays2["pwr_nsa_nray"][0]), 2)
         # pwr_nrs_nsa: [nrs][nsa]
         self.assertEqual(len(arrays2["pwr_nrs_nsa"]), 4)
         self.assertEqual(len(arrays2["pwr_nrs_nsa"][0]), 3)
         # pwr_nrl_nsa: [nrl][nsa]
         self.assertEqual(len(arrays2["pwr_nrl_nsa"]), 5)
         self.assertEqual(len(arrays2["pwr_nrl_nsa"][0]), 3)
-        # pos_pwrmax_*_nsa_nray / pwrmax_*_nsa_nray: [nray][nsa]
+        # pos_pwrmax_*_nsa_nray / pwrmax_*_nsa_nray: [nsa][nray]
         for key in (
             "pos_pwrmax_rs_nsa_nray",
             "pos_pwrmax_rl_nsa_nray",
             "pwrmax_rs_nsa_nray",
             "pwrmax_rl_nsa_nray",
         ):
-            self.assertEqual(len(arrays2[key]), 2, key)
-            self.assertEqual(len(arrays2[key][0]), 3, key)
+            self.assertEqual(len(arrays2[key]), 3, key)
+            self.assertEqual(len(arrays2[key][0]), 2, key)
+
+    def test_to_dict_nsa_nray_is_species_major(self):
+        # #239: the baseline writer (wrx/wrxregress.f90) emits the
+        # *_nsa_nray blocks as NSAMAX_WR rows x NRAYMAX cols. to_dict()
+        # must agree element-wise, i.e. transpose the C [nray][nsa]
+        # layout; the dataclass attribute itself stays [nray][nsa].
+        c = self._populated_state(nray=3, nsa=2, nrs=4, nrl=5)
+        state = WrxState.from_c(c)
+        d = state.to_dict()
+        for key in (
+            "pwr_nsa_nray",
+            "pos_pwrmax_rs_nsa_nray", "pos_pwrmax_rl_nsa_nray",
+            "pwrmax_rs_nsa_nray", "pwrmax_rl_nsa_nray",
+        ):
+            attr = getattr(state, key)
+            self.assertEqual(len(attr), 3, key)          # [nray]
+            self.assertEqual(len(attr[0]), 2, key)       # [nsa]
+            out = d["arrays2"][key]
+            self.assertEqual(len(out), 2, key)           # [nsa]
+            self.assertEqual(len(out[0]), 3, key)        # [nray]
+            for i in range(3):
+                for j in range(2):
+                    self.assertEqual(
+                        out[j][i], float(getattr(c, key)[i][j]), f"{key}[{j}][{i}]"
+                    )
+        # The radial-bin blocks are already row = bin on both sides.
+        self.assertEqual(d["arrays2"]["pwr_nrs_nsa"], state.pwr_nrs_nsa)
+        self.assertEqual(d["arrays2"]["pwr_nrl_nsa"], state.pwr_nrl_nsa)
+
+    def test_to_dict_nsa_nray_shape_at_zero_dims(self):
+        # The writer emits NSAMAX_WR rows x NRAYMAX cols even when one
+        # of them is zero: no rays -> one empty row per species; no
+        # species -> no rows at all.
+        for nray, nsa, expected in ((0, 2, [[], []]), (3, 0, []), (0, 0, [])):
+            c = self._populated_state(nray=nray, nsa=nsa, nrs=1, nrl=1)
+            d = WrxState.from_c(c).to_dict()
+            self.assertEqual(d["arrays2"]["pwr_nsa_nray"], expected, (nray, nsa))
+            self.assertEqual(len(d["arrays"]["pwr_nray"]), nray, (nray, nsa))
+            self.assertEqual(len(d["arrays2"]["pwr_nrs_nsa"]), 1, (nray, nsa))
+            self.assertEqual(len(d["arrays2"]["pwr_nrs_nsa"][0]), nsa, (nray, nsa))
 
     def test_to_dict_json_serialisable(self):
         import json

@@ -8,7 +8,7 @@ Run from the repository root::
     PYTHONPATH=python python3 python/tilib/examples/quickstart.py
 
 Prerequisites:
-  - ``make -C ti libtiapi.so`` has been run once (see README "Known gap").
+  - ``make -C ti libtiapi.so`` has been run once (see README "Installation").
   - Optional: ``TILIB_PATH`` set if the library lives outside the repo.
 """
 from __future__ import annotations

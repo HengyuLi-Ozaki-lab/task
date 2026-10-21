@@ -30,6 +30,26 @@ The server is intentionally small — the real heavy lifting is in
 :mod:`fplib`. This file mirrors ``tr_mcp/server.py``; adding the
 remaining modules (ti / wr / wrx / tot) should be a matter of copying
 this file and swapping the backing library.
+
+fd-isolation (Fortran WRITE(6) vs MCP JSON-RPC)
+-----------------------------------------------
+Fortran WRITE(6,...) targets OS fd 1, which is also the JSON-RPC write
+pipe to the MCP client parent.  Any Fortran diagnostic line corrupts the
+pipe: the client logs "Failed to parse JSONRPC message from server" for
+each junk line, and in the worst case the session drops with
+"Connection closed".
+
+FP is a heavy offender: ``FPWRTPRF`` prints the whole radial profile
+table to unit 6 once at preparation and then every NTG2STEP steps (every
+step by default), so the damage grows with NTMAX (measured client-side on
+the fp_iter01 fixture: 150 parse errors at NTMAX=1, 211 at NTMAX=2).
+
+main() therefore calls ``_fd_isolation.install()`` (the module shared by
+the stdio servers, ``python/_fd_isolation.py``) immediately before the
+stdio server is built -- NOT at import time, see #227 item 1.
+It moves the pipe to a descriptor of its own, rebuilds ``sys.stdout`` on
+it and gives fd 1 to stderr, so that Fortran WRITE(6,...) lands in the
+server's log.
 """
 from __future__ import annotations
 
@@ -84,6 +104,11 @@ from fplib import (  # noqa: E402
     FplibCalcFailedError,
     FplibNotImplementedError,
 )
+from fplib.state import SCALAR_FIELDS  # noqa: E402
+
+# The fd isolation shared by the stdio servers; it lives beside the wrapper,
+# in ``<repo>/python/``.
+import _fd_isolation  # noqa: E402
 
 
 # =====================================================================
@@ -176,7 +201,10 @@ STATE_SCHEMA: Dict[str, Any] = {
         "Snapshot of FPCOMM. Profile arrays are [NSAMAX][NRMAX] in the C "
         "layout (row-major), truncated from the FP_MAX_NSAMAX=8 x "
         "FP_MAX_NRMAX=100 storage. Larger meshes require bumping these "
-        "caps in fp/fp_api.h and rebuilding libfpapi.so."
+        "caps in fp/fp_api.h and rebuilding libfpapi.so. The `scalars` "
+        "block carries the volume-integrated globals; the profile arrays "
+        "are per-unit-volume moments and are insensitive to the "
+        "equilibrium on their own."
     ),
     "properties": {
         "NRMAX":  {"type": "integer", "description": "radial points in use"},
@@ -185,6 +213,32 @@ STATE_SCHEMA: Dict[str, Any] = {
         "NTHMAX": {"type": "integer", "description": "pitch-angle mesh size"},
         "NTG2":   {"type": "integer", "description": "long-time-axis counter"},
         "TIMEFP": {"type": "number",  "description": "simulation time [s]"},
+        "scalars": {
+            "type": "object",
+            "description": (
+                "7 volume-integrated global plasma scalars at the latest "
+                "NTG1 sample, summed over species: TOTAL_IP [MA], "
+                "STORED_ENERGY [MJ], COLLISION_POWER [MW], "
+                "ABSORPTION_POWER [MW], ABSORPTION_WR [MW], "
+                "ABSORPTION_WM [MW], PLASMA_VOLUME [m^3]. Unlike the "
+                "per-unit-volume profile arrays these depend on the "
+                "equilibrium through the volume element, so they are what "
+                "makes an EQ->FP handoff (MODELG=3 + KNAMEQ) observable. "
+                "All zero before the first run, and again after a set_param "
+                "until the next run that is made."
+            ),
+            "properties": {
+                "TOTAL_IP":         {"type": "number", "description": "total plasma current [MA]"},
+                "STORED_ENERGY":    {"type": "number", "description": "stored energy [MJ]"},
+                "COLLISION_POWER":  {"type": "number", "description": "total collision power [MW]"},
+                "ABSORPTION_POWER": {"type": "number", "description": "total absorbed wave power [MW]"},
+                "ABSORPTION_WR":    {"type": "number", "description": "ray-tracing (WR) share of the absorbed power [MW]"},
+                "ABSORPTION_WM":    {"type": "number", "description": "full-wave (WM) share of the absorbed power [MW]"},
+                "PLASMA_VOLUME":    {"type": "number", "description": "plasma volume TVOLR [m^3]"},
+            },
+            "required": list(SCALAR_FIELDS),
+            "additionalProperties": {"type": "number"},
+        },
         "profile": {
             "type": "array",
             "description": "per-species profile list, length = NSAMAX",
@@ -202,7 +256,10 @@ STATE_SCHEMA: Dict[str, Any] = {
             },
         },
     },
-    "required": ["NRMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2", "TIMEFP", "profile"],
+    "required": [
+        "NRMAX", "NSAMAX", "NPMAX", "NTHMAX", "NTG2", "TIMEFP",
+        "scalars", "profile",
+    ],
 }
 
 
@@ -472,7 +529,7 @@ def build_server() -> Any:
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
-            "Install it with: pip install 'mcp>=0.9,<2'"
+            "Install it with: pip install 'mcp>=1.2,<2'"
         )
 
     mcp = FastMCP(  # type: ignore[misc]
@@ -640,12 +697,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not MCP_AVAILABLE:
         sys.stderr.write(
             "error: Python MCP SDK (`mcp`) is not installed.\n"
-            "       pip install 'mcp>=0.9,<2'\n"
+            "       pip install 'mcp>=1.2,<2'\n"
         )
         return 2
 
+    # Install the fd isolation now -- NOT at import time (#227 item 1).
+    # Everything above this point (--help, --print-tools, the MCP-missing
+    # error path) returns before we touch the host process's fds.
+    _fd_isolation.install()
+
     server = build_server()
-    # FastMCP >=0.9 exposes .run() for stdio transport by default.
+    # FastMCP >=1.2 exposes .run() for stdio transport by default.
     server.run()
     return 0
 
