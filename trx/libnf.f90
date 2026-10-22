@@ -42,6 +42,7 @@ MODULE libnf
   !                 T + He3 -> He4 + p + n                          THe31 THe32
   !                 T + He3 -> He4 + D                              THe33 THe34
   !                 T + He3 -> He5 + p ! He4 + p                    THe35 THe36
+  !                 not available: no He5 species can be defined
   ! Fusion reaction id
   
   INTEGER,PARAMETER,PUBLIC:: id_nf_DT=    1 ! D + T   -> <He4> +  n
@@ -210,9 +211,9 @@ CONTAINS
        END IF
     CASE(14)
        ! NS_He5 is not a species found in the run: pl_init sets it to 7 and
-       ! tr_prep_ns never matches a He5 species, so the35's product would go
-       ! to species slot 7 (past the arrays when NSMAX < 7). Refused until a
-       ! He5 species can be defined.
+       ! tr_prep_ns never matches a He5 species, so the THe35 product would
+       ! go to species slot 7 (past tr_pnf's (NSMAX,NNFMAX,NRMAX) arrays when
+       ! NSMAX < 7). Refused until a He5 species can be defined.
        WRITE(6,*) 'XX Error: libnf: model_pnf=14 is not available: ', &
                   'no He5 species can be defined'
        STOP

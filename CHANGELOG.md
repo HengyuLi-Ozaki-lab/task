@@ -96,24 +96,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **trx: the fusion reaction path and the power totals** (#269, #270;
-  issues #229, #234, #235, #236, #238, #268). `sigmav_nf` returned its
-  tables in cm^3/s where `tr_pnf` takes m^3/s, so every `model_pnf` rate
-  was 1e6 too large (#238's 10 keV D-T deck stopped with negative
-  temperatures). `tr_pnf` took the slowing-down species from a stale loop
-  index, applied `RKEV` twice to the product's speed (so `TAUF` was
-  round-off), added `PNF_NSNNFNR` up over its calls and never set
-  `PNFIN_NSNNFNR`. Ten power integrals of `TRGLOB` stayed in W where
-  `PINT`, `QF` and the confinement times take MW. Also in `libnf`:
-  `pm_local` is a `REAL`, both modules are `IMPLICIT NONE`, the D-D branch
-  to He3 gives He3 for `model_pnf` 2, 3 and 4 and He4 for the reduced 12
-  (which ran past an array bound before), the dd2 block sets its own
-  `enn_idnf`, and the species check refuses `model_pnf=14` with its own
-  message, since no He5 species can be defined. Results of every
-  `model_pnf>0` run change. In NBI runs the printed beam collisional
-  powers (`PBCLE` to `PBCLA`) are now in MW; `PNB_TOT` and `PRF_TOT` are
-  not fixed by this, since the arrays they integrate are never filled in
-  trx (#238).
+- **trx: the fusion reaction path** (#269; issues #229, #234, #235, #236,
+  #268). `sigmav_nf` returned its tables in cm^3/s where `tr_pnf` takes
+  m^3/s, so every `model_pnf` rate was 1e6 too large (#238's 10 keV D-T
+  deck stopped with negative temperatures). `tr_pnf` took the slowing-down
+  species from a stale loop index, applied `RKEV` twice to the product's
+  speed (so `TAUF` was round-off) and added `PNF_NSNNFNR` up over its
+  calls; `PNF_NSNNFNR` and `PNFIN_NSNNFNR` are now zeroed on each call
+  (nothing else writes `PNFIN_NSNNFNR`, so its totals stay 0). Also in
+  `libnf`: `pm_local` is a `REAL`, both modules are `IMPLICIT NONE`, the
+  D-D branch to He3 gives He3 for `model_pnf` 2, 3 and 4 and He4 for the
+  reduced 12 (which ran past an array bound before), the dd2 block sets
+  its own `enn_idnf`, and the species check refuses `model_pnf=14` with
+  its own message, since no He5 species can be defined. Results of every
+  `model_pnf>0` run change.
 - **MCP servers: the `mcp` dependency is pinned to `>=1.2,<2`** in the
   seven server `pyproject.toml` files, the CI workflow, the servers' own
   "not installed" message, the READMEs, the Sphinx MCP pages, the
