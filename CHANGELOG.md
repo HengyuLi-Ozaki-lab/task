@@ -157,6 +157,26 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   terminal shows that line and no longer the library's output. Where
   `fstat` gives a descriptor no identity (Windows for a pipe or a console)
   the merged layout is not recognised and fd 1 goes to stderr as usual.
+- **tot docs and `tot_mcp`: string parameters and the tool count** (#274).
+  The tot Sphinx pages showed `tot.set_param_str("fp:KNAMEQ", ...)` and
+  `("wr:KNAMEQ", ...)`, which tot refuses: it passes string values on for
+  `eq:` and `tr:` only. They now use `eq:` and `tr:`, and say that
+  `fp:KNAMEQ` goes through `totlib.TotPipeline.set_param` (`tot_mcp`'s
+  `run_pipeline` `params`), that `ti`, `wr` and `wrx` take no strings, and
+  that `eq:KNAMEQ` is `pl`'s, which fp reads too (one variable in the mono
+  image). `tot_mcp` registers 10 tools, not 9 (`__init__.py`, the Sphinx MCP
+  pages, now with a `run_pipeline` row); its README says where `fp:KNAMEQ`
+  goes. `tot_mcp`'s hints: a refused string set no longer gets the hint to
+  namespace its name but one that names the string parameters (the seven
+  `eq:` file names, `tr:KNAMEQ`) and says to send numbers as numbers; a
+  refused numeric set of a namespaced name points at `describe_parameters`;
+  a string totlib rejects itself (too long, not ASCII) and a refused
+  `tot_run` argument get no hint. The `tot_mcp` server instructions,
+  docstrings and README, `totlib`'s errors, README and examples, and
+  `docs/tot-library/architecture.md` no longer say that `run` and
+  `get_state` are stubs until L-6 (#96, #124), nor that `tot_mcp` has a
+  `set_param_str`; `architecture.md`'s quirks and limitations follow the
+  code (eq in the fan-out, one live `Tot()` per process).
 - **MCP servers `ti_mcp`, `wr_mcp`, `wrx_mcp`: the same fd isolation** (#262).
   The three servers had the layout of the other three and the same exposure:
   `main()` now calls `_fd_isolation.install()` immediately before the stdio

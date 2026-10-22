@@ -25,12 +25,14 @@ Design notes
   re-raised as :class:`ToolError` with a human-readable message. The
   LLM sees the error string and can often recover (e.g. by adding the
   missing namespace prefix or calling ``init`` first).
-* **L-5 stub status.** ``tot_run`` and ``tot_get_state`` return
-  ``TOT_ERR_NOT_IMPL`` until L-6 wires up per-module fan-out. The
-  wrapper surfaces that as
-  :class:`totlib.TotlibNotImplementedError`; the MCP error-mapping
-  layer reports it as ``"not implemented in this libtotapi.so build"``.
-  ``set_param`` / ``set_param_str`` already work end-to-end.
+* **Run and state.** Since L-6 ``tot_run`` advances the
+  TR-authoritative loop and ``tot_get_state`` returns its state;
+  coupling between modules is ``run_pipeline``'s. No entry point
+  returns ``TOT_ERR_NOT_IMPL`` any more (a ``libtotapi.so`` built before
+  #246 is refused at load), so the "not implemented" mapping is kept
+  only for compatibility. String values reach the file-name parameters
+  of ``eq:`` and ``tr:`` only; ``fp:KNAMEQ`` goes in ``run_pipeline``'s
+  ``params``.
 
 The server intentionally mirrors :mod:`tr_mcp.server` so that follow-up
 maintenance can keep the per-module and orchestrator surfaces aligned.
@@ -513,10 +515,33 @@ def _wrap_totlib_error(exc: Exception) -> "ToolError":  # noqa: F821
     on the MCP SDK being installed.
     """
     if isinstance(exc, TotlibInvalidParamError):
-        msg = (
-            f"invalid parameter: {exc}. "
-            f"Hint: tot parameter names must be namespaced as "
-            f"'<ns>:<name>' where <ns> is one of {TOT_NAMESPACES}."
+        text = str(exc)
+        if text.startswith("tot_set_param_str("):
+            # A refused string set: the name may well be namespaced.
+            hint = (
+                "tot passes string values on only to the file names "
+                "eq:KNAMEQ, KNAMEQ2, KNAMWR, KNAMWM, KNAMFP, KNAMFO, "
+                "KNAMPF and tr:KNAMEQ; send numbers as numbers, and give "
+                "fp:KNAMEQ in run_pipeline's params (ti:, wr: and wrx: "
+                "take no strings)"
+            )
+        elif text.startswith("tot_set_param("):
+            # totlib checked the namespace before the call.
+            hint = (
+                "the module does not know the name or refused the value; "
+                "describe_parameters lists the names of each namespace"
+            )
+        elif text.startswith(("TOT C string", "tot_")):
+            # The string itself is unusable (type, ASCII, NUL, length),
+            # or another call (e.g. tot_run) refused its argument.
+            hint = None
+        else:
+            hint = (
+                f"tot parameter names must be namespaced as "
+                f"'<ns>:<name>' where <ns> is one of {TOT_NAMESPACES}"
+            )
+        msg = f"invalid parameter: {text}" if hint is None else (
+            f"invalid parameter: {text.rstrip('.')}. Hint: {hint}."
         )
     elif isinstance(exc, TotlibNotInitializedError):
         msg = f"library not initialized (call init first): {exc}"
@@ -524,9 +549,7 @@ def _wrap_totlib_error(exc: Exception) -> "ToolError":  # noqa: F821
         msg = f"calculation failed: {exc}"
     elif isinstance(exc, TotlibNotImplementedError):
         msg = (
-            f"not implemented in this libtotapi.so build: {exc}. "
-            f"L-3/L-4/L-5 ship stub init/run/get_state/finalize; L-6 "
-            f"will wire up the per-module fan-out."
+            f"not implemented in this libtotapi.so build: {exc}"
         )
     elif isinstance(exc, TotPipelineRunError):
         # H2 fix: surface partial_result metadata so MCP clients can recover
@@ -770,9 +793,9 @@ def build_server() -> Any:
             "applied before the failing key remain set; pre-validate "
             "with `describe_parameters` if a clean rollback matters. "
             "EQ-specific note: PSIB is 0-origin (eq:PSIB[0]..eq:PSIB[5]); "
-            "all other 1D arrays are 1-origin. Note: `run`/`get_state` "
-            "return TotlibNotImplementedError until L-6 lands; "
-            "`set_param`/`set_param_str` already work."
+            "all other 1D arrays are 1-origin. String values reach only "
+            "the file-name parameters of eq: and tr: (eq:KNAMEQ, "
+            "tr:KNAMEQ, ...); give fp:KNAMEQ in `run_pipeline`'s `params`."
         ),
     )
 
@@ -836,10 +859,9 @@ def build_server() -> Any:
     def run(ntmax: int = 1) -> str:
         """Advance the integrated simulation by ``ntmax`` time steps.
 
-        ``ntmax=0`` is a valid no-op (useful as a smoke test). Today
-        ``tot_run`` is a stub returning ``TOT_ERR_NOT_IMPL``; the MCP
-        layer surfaces that as a "not implemented" error. L-6 will
-        flip the switch to per-module fan-out without API changes.
+        ``ntmax=0`` is a valid no-op (useful as a smoke test).
+        ``tot_run`` advances the TR-authoritative loop; coupling between
+        modules is `run_pipeline`'s.
         """
         return handle_run(ntmax)
 
@@ -850,7 +872,7 @@ def build_server() -> Any:
         Returns a dict with ``presence`` (per-sub-module init flags),
         ``NT``, ``NRMAX``, ``NSMAX``, ``scalars`` (14 plasma scalars),
         and ``profile`` (radial profile array). Schema also available
-        via `describe_state_schema`. Stubbed until L-6.
+        via `describe_state_schema`.
         """
         return handle_get_state()
 
