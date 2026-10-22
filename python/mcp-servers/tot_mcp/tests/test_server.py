@@ -102,7 +102,11 @@ class TestRegistryShape(unittest.TestCase):
         self.assertEqual(fp_srv.PARAMETER_REGISTRY["KNAMEQ"]["type"], "str")
         meta = srv.PARAMETER_REGISTRIES["fp"]["KNAMEQ"]
         self.assertEqual(meta["type"], "str")
-        self.assertTrue(meta["description"].startswith("equilibrium data file name"))
+        # the first sentence of fp_mcp's description, exactly
+        self.assertEqual(
+            meta["description"].split(" Through tot_mcp:")[0],
+            "equilibrium data file name; read by the MODELG=3 eq_load path.",
+        )
         self.assertIn("run_pipeline's params only", meta["description"])
         # fp_mcp's advice (its set_param_str tool) does not apply to tot_mcp
         self.assertNotIn("set_param_str", meta["description"])
@@ -112,7 +116,7 @@ class TestRegistryShape(unittest.TestCase):
     def test_string_entries_by_namespace(self) -> None:
         reg = {"N": {"type": "int", "group": "g", "description": "n"},
                "S": {"type": "str", "group": "g",
-                     "description": "s. Set it with set_param_str."}}
+                     "description": "s, e.g. a file. Set it with set_param_str."}}
         for ns in ("eq", "tr"):
             with self.subTest(ns=ns):
                 self.assertEqual(srv._as_tot_sees_it(ns, reg), reg)
@@ -122,9 +126,10 @@ class TestRegistryShape(unittest.TestCase):
         fp = srv._as_tot_sees_it("fp", reg)
         self.assertEqual(fp["N"], reg["N"])
         self.assertEqual(fp["S"]["type"], "str")
-        self.assertTrue(fp["S"]["description"].startswith("s. Through tot_mcp:"))
+        # "e.g. a" is no sentence end: the first sentence is kept whole
+        self.assertTrue(fp["S"]["description"].startswith("s, e.g. a file. Through tot_mcp:"))
         self.assertNotIn("set_param_str", fp["S"]["description"])
-        self.assertEqual(reg["S"]["description"], "s. Set it with set_param_str.")
+        self.assertEqual(reg["S"]["description"], "s, e.g. a file. Set it with set_param_str.")
 
     def test_string_entries_kept_where_tot_sets_strings(self) -> None:
         self.assertEqual(srv.PARAMETER_REGISTRIES["eq"]["KNAMEQ"]["type"], "str")

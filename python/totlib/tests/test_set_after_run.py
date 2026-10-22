@@ -186,7 +186,7 @@ def _check_layout(lib: ctypes.CDLL, mod: str, state_cls) -> None:
     try:
         check_state_layout(lib, prefix=mod, struct=state_cls,
                            expected_version=version,
-                           lib_name="libtotapi_mono.so")
+                           lib_name=os.path.basename(lib._name))
     except AbiMismatchError as exc:
         raise AssertionError(str(exc)) from exc
 

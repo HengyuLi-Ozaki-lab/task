@@ -67,9 +67,10 @@ Or `fp-mcp install --client claude-code --scope project`.
 
 ## Tools exposed
 
-`fp_mcp` exposes **10** tools. `set_param_str` sets a string parameter
-(`KNAMEQ`, the equilibrium file that `MODELG=3` loads); `set_params` routes
-a `str` value to it. See section 8.4 of `python/mcp-servers/fp_mcp/README.md`.
+`fp_mcp` exposes **10** tools. `set_param_str` sets a string parameter:
+`KNAMEQ`, the TASK/EQ equilibrium file that `MODELG=3` loads (one written
+by `eq_mcp`'s `save` tool, for example). Set `MODELG=3` and `KNAMEQ` before
+`run`; `set_params` routes a `str` value to `set_param_str`.
 
 | Tool | Purpose | Main arguments |
 |---|---|---|
