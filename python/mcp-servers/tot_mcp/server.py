@@ -53,6 +53,7 @@ server's log.
 from __future__ import annotations
 
 import os  # noqa: F401  (re-exported for symmetry with sibling MCP servers)
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -118,11 +119,11 @@ import _fd_isolation  # noqa: E402
 # tot is an orchestrator: rather than re-listing every per-module
 # parameter inline (the union is ~250 entries and would drift quickly),
 # we delegate to the sibling MCP servers' PARAMETER_REGISTRY exports
-# whenever they are importable, and fall back to a small inline
-# registry when the sibling is missing (currently only ``eq:`` — there
-# is no eq_mcp yet). The dispatch matches ``tot_param_registry.f90``:
+# whenever they are importable, and keep a small inline registry for
+# ``eq:`` (written before eq_mcp existed; eq_mcp's registry is not loaded
+# here). The dispatch matches ``tot_param_registry.f90``:
 #
-#   eq   -> inline (no eq_mcp yet)
+#   eq   -> inline
 #   tr   -> tr_mcp.server.PARAMETER_REGISTRY
 #   fp   -> fp_mcp.server.PARAMETER_REGISTRY
 #   ti   -> ti_mcp.server.PARAMETER_REGISTRY
@@ -137,8 +138,8 @@ import _fd_isolation  # noqa: E402
 SupportedValue = Union[float, int, str, List[float], Dict[int, float]]
 
 
-# Inline registry for the ``eq:`` namespace. There is no eq_mcp yet, so
-# we surface the most important parameters by hand. The full list lives
+# Inline registry for the ``eq:`` namespace, written before eq_mcp
+# existed: the most important parameters, by hand. The full list lives
 # in ``eq/eq_param_registry.f90``; LLMs can still set bare names that
 # are not listed here — the request goes through and only fails if the
 # per-module registry rejects the name.
@@ -192,6 +193,52 @@ def _load_sibling_registry(module_name: str) -> Dict[str, Dict[str, Any]]:
     return dict(getattr(mod, "PARAMETER_REGISTRY", {}) or {})
 
 
+# tot_param_set_str (tot/tot_param_registry.f90) passes string values on
+# for these namespaces only; fp:, ti:, wr: and wrx: string sets return
+# ierr=1.
+_TOT_STRING_NAMESPACES = ("eq", "tr")
+# run_pipeline's TotPipeline.set_param (totlib/pipeline.py) hands a string
+# to the module's own set_param_str; of the namespaces tot does not pass
+# strings on for, only fp has one.
+_PIPELINE_ONLY_STRING_NAMESPACES = ("fp",)
+
+
+def _as_tot_sees_it(
+    ns: str, registry: Dict[str, Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
+    """A sibling's registry, with its string entries as tot can set them.
+
+    A sibling server lists every parameter its module takes, string ones
+    included (``fp_mcp`` has ``KNAMEQ``). Through tot's ``set_param``,
+    strings reach ``eq:`` and ``tr:`` only; ``run_pipeline`` also sets
+    ``fp:`` strings, through fplib. So a ``fp:`` string entry stays, its
+    description saying so in place of the sibling's setting advice, and a
+    ``ti:``, ``wr:`` or ``wrx:`` one is left out.
+    """
+    if ns in _TOT_STRING_NAMESPACES:
+        return registry
+    out: Dict[str, Dict[str, Any]] = {}
+    for name, meta in registry.items():
+        if meta.get("type") != "str":
+            out[name] = meta
+        elif ns in _PIPELINE_ONLY_STRING_NAMESPACES:
+            # The sibling's own setting advice (its set_param_str tool) does
+            # not apply here: keep what the parameter is (its first
+            # sentence, ended by a period and a capital, so an "e.g." before
+            # a lowercase word does not end it), say how to set it.
+            what = re.split(r"\.\s+(?=[A-Z])", meta.get("description", ""), maxsplit=1)[0].rstrip(".")
+            out[name] = dict(
+                meta,
+                description=(
+                    f"{what}. Through tot_mcp: a str value in run_pipeline's "
+                    f"params only; set_param, set_params and run_and_get_state "
+                    f"refuse {ns}: strings (tot passes strings on for eq: and "
+                    f"tr: only)."
+                ),
+            )
+    return out
+
+
 def _build_namespaced_registry() -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Assemble per-namespace dicts of {bare_name: {type, group, ...}}.
 
@@ -200,7 +247,7 @@ def _build_namespaced_registry() -> Dict[str, Dict[str, Dict[str, Any]]]:
     sibling MCP package were installed mid-process, which we don't
     support at L-5 scope.
     """
-    return {
+    registries = {
         "eq":  dict(_EQ_INLINE_REGISTRY),
         "tr":  _load_sibling_registry("tr_mcp"),
         "fp":  _load_sibling_registry("fp_mcp"),
@@ -211,6 +258,7 @@ def _build_namespaced_registry() -> Dict[str, Dict[str, Dict[str, Any]]]:
         # describe output mirrors what callers can actually set.
         "wr":  _load_sibling_registry("wrx_mcp"),
     }
+    return {ns: _as_tot_sees_it(ns, reg) for ns, reg in registries.items()}
 
 
 PARAMETER_REGISTRIES: Dict[str, Dict[str, Dict[str, Any]]] = _build_namespaced_registry()
@@ -803,7 +851,8 @@ def build_server() -> Any:
         ``wrx_param_set`` (see ``tot/tot_param_registry.f90``).
         ``value`` may be a number or a string — string values route
         to the ``tr:`` / ``eq:`` string setters (other namespaces
-        will reject strings). See `describe_parameters` for the full
+        will reject strings; give ``fp:KNAMEQ`` in ``run_pipeline``'s
+        ``params`` instead). See `describe_parameters` for the full
         registry.
         """
         return handle_set_param(name, value)
@@ -821,7 +870,8 @@ def build_server() -> Any:
           dict form — a list is rejected because it would silently
           start at index 1 and skip ``eq:PSIB[0]``)
         * a string (only the ``tr:`` and ``eq:`` namespaces back
-          string setters today; other namespaces will reject strings)
+          string setters today; other namespaces will reject strings;
+          give ``fp:KNAMEQ`` in ``run_pipeline``'s ``params`` instead)
 
         **Non-transactional**: keys are applied in iteration order and
         a failure on key ``N`` leaves keys ``0..N-1`` already written
@@ -922,7 +972,9 @@ def build_server() -> Any:
             steps: list of {"module": "<name>", "kwargs": {...}} dicts.
                 Module names: "fp", "tr", "eq", "wr", "wrx", "ti".
             params: optional bulk param setter, e.g. {"fp:NSAMAX": 2,
-                "tr:RR": 6.2}.
+                "tr:RR": 6.2}. A str value goes to the module's own
+                string setter, so "fp:KNAMEQ" works here, unlike in
+                set_param / set_params.
 
         Returns:
             dict: PipelineResult.to_dict() — flat per-module final scalars

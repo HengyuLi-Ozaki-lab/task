@@ -10,6 +10,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **MCP server `fp_mcp`: a `set_param_str` tool** (#231) sets `KNAMEQ`,
+  the equilibrium file that `MODELG=3` loads, so an EQ to FP handoff (an
+  equilibrium written by `eq_mcp`'s `save` tool) can be driven through
+  MCP; `set_params` passes a `str` value to it. It calls
+  `fplib.Fplib.set_param_str`, which needs a `libfpapi.so` that exports
+  `fp_set_param_str`. A successful call zeroes the state's `scalars` until
+  the next run, as a numeric set does. `tot_mcp`'s `describe_parameters`
+  marks `fp:KNAMEQ` as settable through `run_pipeline` only, since tot's
+  `set_param` passes string values on for `eq:` and `tr:` only.
 - **FP library: `fp_get_state` returns seven global scalars** after the
   profile arrays: `TOTAL_IP` [MA], `STORED_ENERGY` [MJ], `COLLISION_POWER`,
   `ABSORPTION_POWER`, `ABSORPTION_WR`, `ABSORPTION_WM` [MW] (species sums at
