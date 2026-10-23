@@ -45,6 +45,12 @@ from totlib import (  # noqa: E402
     TotlibNotImplementedError,
 )
 from totlib._ffi import TOT_NAMESPACES  # noqa: E402
+from totlib.errors import raise_for_rc  # noqa: E402
+from totlib.totlib import (  # noqa: E402
+    _MAX_C_STRING_VALUE_BYTES,
+    Tot,
+    _encode_name,
+)
 
 
 LIBTOTAPI_SO = REPO_ROOT / "tot" / "libtotapi.so"
@@ -189,6 +195,59 @@ class TestErrorWrap(unittest.TestCase):
             TotlibInvalidParamError("BAD: rc=1"),
             "invalid parameter",
         )
+
+    @staticmethod
+    def _refused(call: str) -> Exception:
+        # The exception totlib raises for a refused call (rc=1).
+        try:
+            raise_for_rc(call, 1)
+        except TotlibInvalidParamError as exc:
+            return exc
+        raise AssertionError("raise_for_rc did not raise")
+
+    def test_refused_string_set_hint(self) -> None:
+        # A correctly namespaced string set that tot refuses must not be
+        # told to namespace its name (#274).
+        exc = self._refused("tot_set_param_str('fp:KNAMEQ', 'eq.bin')")
+        msg = str(srv._wrap_totlib_error(exc))
+        self.assertIn("file names eq:KNAMEQ", msg)
+        self.assertIn("run_pipeline", msg)
+        self.assertNotIn("must be namespaced", msg)
+
+    def test_refused_numeric_string_hint(self) -> None:
+        # A number sent as a string reaches tot_set_param_str too; the
+        # hint must not read as if eq: took any string.
+        exc = self._refused("tot_set_param_str('eq:RR', '6.5')")
+        msg = str(srv._wrap_totlib_error(exc))
+        self.assertIn("send numbers as numbers", msg)
+        self.assertIn("KNAMEQ", msg)
+
+    def test_unusable_string_gets_no_namespace_hint(self) -> None:
+        # totlib's own check of a set_param_str value (here its length)
+        # is not a naming problem.
+        for value in ("x" * 300, "tot_set_param_str(\u00e9"):
+            with self.assertRaises(TotlibInvalidParamError) as ctx:
+                _encode_name(value, _MAX_C_STRING_VALUE_BYTES)
+            msg = str(srv._wrap_totlib_error(ctx.exception))
+            self.assertIn("TOT C string", msg)
+            self.assertNotIn("Hint", msg)
+
+    def test_refused_numeric_set_hint(self) -> None:
+        # The name passed totlib's namespace check before the call.
+        exc = self._refused("tot_set_param('eq:FOO', 1.0)")
+        msg = str(srv._wrap_totlib_error(exc))
+        self.assertIn("describe_parameters", msg)
+        self.assertNotIn("must be namespaced", msg)
+
+    def test_refused_run_gets_no_hint(self) -> None:
+        msg = str(srv._wrap_totlib_error(self._refused("tot_run(-1)")))
+        self.assertNotIn("Hint", msg)
+
+    def test_bad_name_keeps_namespace_hint(self) -> None:
+        with self.assertRaises(TotlibInvalidParamError) as ctx:
+            Tot._validate_namespaced_name("RR")
+        msg = str(srv._wrap_totlib_error(ctx.exception))
+        self.assertIn("must be namespaced", msg)
 
     def test_invalid_param_error_includes_namespace_hint(self) -> None:
         wrapped = srv._wrap_totlib_error(
@@ -641,11 +700,9 @@ class TestBuildServer(unittest.TestCase):
 class TestIntegration(unittest.TestCase):
     """End-to-end against the real .so (set_param works at L-3+).
 
-    L-3/L-4/L-5 keep tot_run / tot_get_state stubbed (rc=4), so we only
-    assert that init reports success and that a numeric set_param round
-    trips through the namespace-aware dispatcher. Once L-6 lands, the
-    run/get_state assertions in the sibling tr_mcp suite become valid
-    here too.
+    Init and a numeric set_param through the namespace-aware
+    dispatcher; the full cycle (run, get_state, finalize) is in
+    test_integration.py.
     """
 
     def setUp(self) -> None:
