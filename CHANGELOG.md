@@ -323,6 +323,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   fails, fd 0 gets its pipe back. Elsewhere fd 0 stays as it was.
   `python/tests/test_fd_isolation.py` runs that branch on POSIX systems
   (its logic, not the Windows pipes themselves).
+- **MCP servers `eq_mcp` and `tr_mcp`: `main()` returns 0 when the
+  session ends** (product line), as upstream's `main()` and #226's do. It
+  ended the process with `os._exit(0)`, to skip a Python teardown that
+  could abort in `tr_finalize`; that abort was a double `DEALLOCATE`,
+  which `DEALLOCATE_TRCOMM` no longer does (`tr/trcomm.f90`). The
+  libraries are now finalized on the way out: 20 stdio sessions of each
+  server, every one exited with 0.
 
 ## TR Phase L — library-ization (2026-04-18)
 

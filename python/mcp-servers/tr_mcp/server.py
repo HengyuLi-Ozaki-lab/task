@@ -724,15 +724,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     server = build_server()
     # FastMCP >=1.2 exposes .run() for stdio transport by default.
     server.run()
-    # Skip Python teardown (Trlib.__del__ → tr_finalize → SIGABRT) by
-    # using os._exit.  The MCP session is complete at this point; clean
-    # Fortran shutdown is not required.  Flush sys.stdout (the saved
-    # JSON-RPC pipe fd) before bypassing Python teardown.
-    try:
-        sys.stdout.flush()
-    except Exception:
-        pass
-    os._exit(0)
+    return 0
 
 
 if __name__ == "__main__":
