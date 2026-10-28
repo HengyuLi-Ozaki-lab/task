@@ -310,6 +310,17 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   immediately before the stdio server is built, as the other six servers
   do; its `tests/test_fd_isolation.py` runs the shared checks, and
   `python/tests/test_fd_isolation.py` checks all seven servers.
+- **MCP servers on Windows: fd 0 leaves the stdin pipe too** (product
+  line; it was in each server's own isolation before the shared module).
+  Windows serialises the operations on a synchronous pipe, so while the
+  MCP reader thread waits on stdin, the gfortran runtime's `fstat()` /
+  `isatty()` of fd 0 when the library's DLL loads, inside the first tool
+  call, blocks forever. On Windows `_fd_isolation.install()` now also
+  saves the stdin pipe on a descriptor of its own, rebuilds `sys.stdin` on
+  it and opens fd 0 on the null device; when the redirect of fd 1 then
+  fails, fd 0 gets its pipe back. Elsewhere fd 0 stays as it was.
+  `python/tests/test_fd_isolation.py` runs that branch on POSIX systems
+  (its logic, not the Windows pipes themselves).
 
 ## TR Phase L — library-ization (2026-04-18)
 

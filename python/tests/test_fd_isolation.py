@@ -377,3 +377,93 @@ def test_a_warning_that_cannot_be_written_does_not_undo_the_installation(tmp_pat
         os.close(write_end)
     assert result.read_text() == "installed=True"
     assert child.returncode == 0
+
+
+# ----- on Windows fd 0 leaves the stdin pipe too -----
+# The move is asked for through _moves_stdin, so that its branch runs on a POSIX
+# system as well. That is the branch's logic, not Windows: a regression of the
+# Windows pipes or C runtime themselves is not seen here.
+
+def _run_with_input(code, data):
+    out = subprocess.run([sys.executable, "-c", textwrap.dedent(code)], env=cases.env(),
+                         cwd=str(cases.REPO_ROOT), input=data,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         encoding="utf-8", errors="replace", timeout=60)
+    assert out.returncode == 0, (out.stdout or "")[-1000:] + (out.stderr or "")[-2000:]
+    return out
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="compares inode numbers")
+def test_where_stdin_moves_fd0_reads_nothing_and_sys_stdin_reads_the_requests():
+    out = _run_with_input("""
+        import os, sys
+        import _fd_isolation as iso
+        iso._moves_stdin = lambda: True
+        null = os.stat(os.devnull)
+        iso.install()
+        fd0 = os.fstat(0)
+        on_null = (fd0.st_dev, fd0.st_ino) == (null.st_dev, null.st_ino)
+        sys.stdout.write("fd0_null=%s fd0_reads=%r requests=%s"
+                         % (on_null, os.read(0, 16), sys.stdin.buffer.read().decode()))
+        sys.stdout.flush()
+        os.write(1, b"FORTRAN-MARKER")
+    """, "REQUEST-MARKER")
+    assert out.stdout == "fd0_null=True fd0_reads=b'' requests=REQUEST-MARKER"
+    assert "FORTRAN-MARKER" in out.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="compares inode numbers")
+def test_elsewhere_fd0_and_sys_stdin_stay_as_they_were():
+    out = _run_with_input("""
+        import os, sys
+        import _fd_isolation as iso
+        before = os.fstat(0); stdin = sys.stdin
+        iso.install()
+        after = os.fstat(0)
+        sys.stdout.write("fd0_same=%s stdin_same=%s requests=%s"
+                         % ((before.st_dev, before.st_ino) == (after.st_dev, after.st_ino),
+                            stdin is sys.stdin, os.read(0, 64).decode()))
+        sys.stdout.flush()
+    """, "REQUEST-MARKER")
+    assert out.stdout == "fd0_same=True stdin_same=True requests=REQUEST-MARKER"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="compares inode numbers")
+def test_where_stdin_moves_a_refused_redirect_gives_fd0_its_pipe_back():
+    out = _run_with_input("""
+        import os, sys
+        import _fd_isolation as iso
+        iso._moves_stdin = lambda: True
+
+        def open_fds():
+            found = set()
+            for fd in range(256):
+                try:
+                    os.fstat(fd)
+                except OSError:
+                    continue
+                found.add(fd)
+            return found
+
+        before = os.fstat(0); stdin = sys.stdin; fds = open_fds()
+        real = iso.os.dup2
+        def failing(src, dst, *a, **k):
+            if dst == 1:
+                raise OSError("no redirect today")
+            return real(src, dst, *a, **k)
+        iso.os.dup2 = failing
+        try:
+            iso.install()
+        except OSError:
+            print("raised")
+        iso.os.dup2 = real
+        after = os.fstat(0)
+        print("installed", iso.installed())
+        print("fd0_same", (before.st_dev, before.st_ino) == (after.st_dev, after.st_ino))
+        print("stdin_same", stdin is sys.stdin)
+        print("no_leak", open_fds() == fds)
+        print("requests", sys.stdin.buffer.read().decode())
+    """, "REQUEST-MARKER")
+    assert out.stdout.split() == ["raised", "installed", "False", "fd0_same", "True",
+                                  "stdin_same", "True", "no_leak", "True",
+                                  "requests", "REQUEST-MARKER"]
