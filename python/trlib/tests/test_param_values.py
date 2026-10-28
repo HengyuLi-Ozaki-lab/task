@@ -163,7 +163,7 @@ def _integer_names_in_the_source():
         return [([name.upper() for name in re.findall(r"""["']([A-Za-z_0-9]+)["']""", m.group(1))], text[m.end():end])
                 for m, end in zip(marks, ends)]
 
-    setter = code(source[source.index("FUNCTION tr_param_set(name, value)"):source.index("END FUNCTION tr_param_set")])
+    setter = code(source[source.index("FUNCTION tr_param_set_impl(name, value)"):source.index("END FUNCTION tr_param_set_impl")])
     converted = set()
     for names, body in cases(setter):
         if re.search(r"\bN?INT\s*\(\s*value\b", body, flags=re.I):   # either intrinsic, however it is written

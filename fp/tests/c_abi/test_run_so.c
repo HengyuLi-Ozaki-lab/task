@@ -16,6 +16,8 @@
  *   1..12 = step that failed (mirrors test_run.c numbering)
  *   90 = dlopen failed
  *   91 = dlsym failed (one of the 5 entry points missing)
+ *   92 = fp_state_abi_version / fp_state_size missing (library predates #246)
+ *   93 = layout version or size differs from fp_api.h (#246)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,6 +62,28 @@ int main(void) {
                 (void*)f_get_state, (void*)f_finalize);
         dlclose(h);
         return 91;
+    }
+
+    /* #246: the layout query must agree with this header before any
+     * fp_state_t is passed. 92 = symbols missing (library predates
+     * #246), 93 = version or size differs (library and header from
+     * different commits). */
+    typedef int    (*fp_abi_version_fn)(void);
+    typedef size_t (*fp_state_size_fn)(void);
+    fp_abi_version_fn f_abi  = (fp_abi_version_fn) dlsym(h, "fp_state_abi_version");
+    fp_state_size_fn  f_size = (fp_state_size_fn)  dlsym(h, "fp_state_size");
+    if (!f_abi || !f_size) {
+        fprintf(stderr, "dlsym missing fp_state_abi_version / fp_state_size (#246)\n");
+        dlclose(h);
+        return 92;
+    }
+    if (f_abi() != FP_STATE_ABI_VERSION || f_size() != sizeof(fp_state_t)) {
+        fprintf(stderr,
+                "layout mismatch: library v%d / %lu bytes, fp_api.h v%d / %lu bytes\n",
+                f_abi(), (unsigned long) f_size(),
+                FP_STATE_ABI_VERSION, (unsigned long) sizeof(fp_state_t));
+        dlclose(h);
+        return 93;
     }
 
     /* Mirror the test_run.c cycle so the .so is proven to be a drop-in

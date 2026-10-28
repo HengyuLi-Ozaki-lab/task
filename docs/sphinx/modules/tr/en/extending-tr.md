@@ -16,7 +16,7 @@ field. Each is a recipe, not a derivation.
 ## Walkthrough A — Add a new scalar parameter
 
 The TR parameter registry uses a hand-written `SELECT CASE`
-dispatch in `tr/tr_param_registry.f90:85+`. Adding a
+dispatch in `tr/tr_param_registry.f90:119+`. Adding a
 parameter `FOO` is one new `CASE` line in that dispatch
 plus a default in `tr/trinit.f90`.
 
@@ -29,7 +29,7 @@ plus a default in `tr/trinit.f90`.
 2. **Add the registry case.** Add a line like
    `CASE ("FOO"); FOO = value` in the
    `SELECT CASE (TRIM(b))` block that starts at
-   `tr/tr_param_registry.f90:85`. Place it near similar
+   `tr/tr_param_registry.f90:119`. Place it near similar
    parameters to preserve the per-section grouping
    convention. An integer parameter (`FOO = INT(value)`)
    also goes into the name list of `value_refused` in the
@@ -41,10 +41,10 @@ plus a default in `tr/trinit.f90`.
 5. **Use from Python.** `tr.set_param("FOO", x)` works
    immediately. No C ABI change is needed because
    `tr_set_param` is string-keyed (verified at
-   `tr/tr_api.f90:125-129,137-157`).
+   `tr/tr_api.f90:139-143,151-179`).
 
 For array-valued parameters, the bounds-checked idiom at
-`tr/tr_param_registry.f90:110-115` is the template. The
+`tr/tr_param_registry.f90:144-149` is the template. The
 existing `PA[i]` / `PN[i]` / `PNS[i]` / `PT[i]` cases
 show the pattern: each `CASE` checks `idx` against
 `SIZE(...)` and either assigns or sets `ierr = 1`.
@@ -121,19 +121,28 @@ consumers may need to be rebuilt or version-checked.
    `double` (or correct C type), again at the struct end.
 4. **Populate the field inside `tr_api_get_state`.** Three
    blocks exist in `tr/tr_api.f90`:
-   - **Zero-init** at `:287-307` (the new field should be
+   - **Zero-init** at `:328-348` (the new field should be
      added there too if it has no sensible compute-time-
      zero baseline).
-   - **Scalar copy** at `:323-339` — the AJRFT precedent
+   - **Scalar copy** at `:364-380` — the AJRFT precedent
      lives here. For a new scalar, follow that pattern.
    - **Per-radius / per-species profile loops** at
-     `:345-354` — for a new array field, follow the
+     `:386-396` — for a new array field, follow the
      `RN` / `RT` / `AJ` / `QP` loop pattern.
-5. **Bump `TR_STATE_ABI_VERSION`** at `tr/tr_api.h:38`.
-   The current value is `2`; bump to the next integer
-   (currently `3`).
+5. **Bump `TR_STATE_ABI_VERSION` in both places**: the
+   `#define` in `tr/tr_api.h` and the `PARAMETER` in
+   `tr/tr_state.f90` (#246). The current value is `2`;
+   bump to the next integer (currently `3`). The library
+   exports the PARAMETER through `tr_state_abi_version()`
+   and its `sizeof` through `tr_state_size()`;
+   `tr/tests/c_abi/test_negative.c` fails when the two
+   values drift from the header, and `python/trlib/_ffi.py`
+   refuses a `libtrapi.so` whose version or size differs
+   from `TrStateC` (`TrlibAbiError`), so a forgotten bump
+   or a stale build surfaces at load time instead of as
+   silent zeros.
 6. **Mirror in the ctypes side** at
-   `python/trlib/_ffi.py:94-120` — append a tuple to
+   `python/trlib/_ffi.py` (`TrStateC._fields_`) — append a tuple to
    `TrStateC._fields_`. Use the same field order as the
    BIND-C struct so the two layouts stay byte-compatible.
 7. **Surface in the Python `TrState` dataclass** at

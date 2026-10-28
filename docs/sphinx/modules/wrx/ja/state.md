@@ -59,7 +59,10 @@ state.to_dict()   # JSON-ready dict (baseline 互換)
 ```
 
 `to_dict()` の出力は `arrays`, `arrays2`, `scalars` の 3 層構造で, 比較用
-`compare_metrics.py` に渡せます.
+`compare_metrics.py` に渡せます. `arrays2` の `*_nsa_nray` は粒子種が行
+(`[nsamax][nraymax]`, Fortran baseline が書く形) で, 属性
+`state.pwr_nsa_nray[nray][nsa]` の転置です. `pwr_nrs_nsa` / `pwr_nrl_nsa`
+は両側とも行 = 半径ビンです.
 
 ## `wr` の `WrState` との違い
 

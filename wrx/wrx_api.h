@@ -1,6 +1,8 @@
 #ifndef WRX_API_H
 #define WRX_API_H
 
+#include <stddef.h>  /* size_t for wrx_state_size (#246) */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -45,6 +47,20 @@ extern "C" {
 #define WRX_MAX_NSAMAX    8
 #define WRX_MAX_NRSMAX  256
 #define WRX_MAX_NRLMAX  256
+
+/*
+ * wrx_state_t ABI version. Bumped whenever a field is added/removed/reordered
+ * in wrx_state_t (i.e. whenever sizeof(wrx_state_t) changes), together with
+ * the WRX_STATE_ABI_VERSION PARAMETER in wrx_state.f90 that the library
+ * exports through wrx_state_abi_version(); tests/c_abi/test_negative.c
+ * fails when the two drift. In-tree consumers (the C-ABI drivers,
+ * python/wrxlib/_ffi.py) rebuild from this header and check the library's
+ * version and sizeof at load time (#246).
+ *
+ * History:
+ *   1 -> initial layout
+ */
+#define WRX_STATE_ABI_VERSION 1
 
 /* Error codes returned by every wrx_* entry point. */
 enum wrx_error {
@@ -93,6 +109,13 @@ int wrx_run(int nstpmax);
 int wrx_set_param(const char* name, double value);
 int wrx_get_state(wrx_state_t* state);
 int wrx_finalize(void);
+
+/* Layout query (#246): the library's WRX_STATE_ABI_VERSION and
+   sizeof(wrx_state_t), callable before wrx_init. Compare both with this
+   header's values before passing a struct to wrx_get_state; a mismatch
+   means the library and this header come from different commits. */
+int    wrx_state_abi_version(void);
+size_t wrx_state_size(void);
 
 #ifdef __cplusplus
 }

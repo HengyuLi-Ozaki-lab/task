@@ -62,7 +62,7 @@ MCP (Model Context Protocol) は、Anthropic が策定した **「LLM と外部�
 
 3. **`mcp` パッケージ (Python MCP SDK)**
 
-   `pip install 'mcp>=0.9,<2'` で入ります。後述の「インストール」手順に同梱しています。
+   `pip install 'mcp>=1.2,<2'` で入ります。後述の「インストール」手順に同梱しています。
 
 ## 3. インストール
 
@@ -150,7 +150,7 @@ set_params
 'set tr:DT = 0.01'
 ```
 
-> L-3/L-4/L-5 時点では `tot_run` と `tot_get_state` がスタブ (`TOT_ERR_NOT_IMPL`) のため、`handle_run` / `handle_get_state` は `not implemented in this libtotapi.so build: ...` を返します。L-6 で per-module fan-out が入ると、自動的に正常終了するようになります。
+> `handle_run` / `handle_get_state` も同じように使えます (L-6 以降。`run` は TR の時間発展を進め、`get_state` は TR の値を返します)。
 
 `handle_*` は MCP 経由でも、テストコード内でも共通で使えるプレーンな Python 関数です。
 
@@ -213,7 +213,7 @@ TOT を初期化して、eq の major radius を 6.2、tr の time step を 0.01
 1 ステップ走らせて結果を教えて。
 ```
 
-LLM は `init` → `set_params({"eq:RR": 6.2, "tr:DT": 0.01})` → `run(1)` → `get_state` の順にツールを呼んでくれます（L-6 完了後）。
+LLM は `init` → `set_params({"eq:RR": 6.2, "tr:DT": 0.01})` → `run(1)` → `get_state` の順にツールを呼んでくれます。
 
 ### 6.2. 複数モジュールに跨るパラメータ設定
 
@@ -253,7 +253,7 @@ set_params({"tr:PN": [0.7, 0.6]})
 eq の equilibrium データファイルを 'eqdata.ITER01' に設定して。
 ```
 
-LLM は `set_param("eq:KNAMEQ", "eqdata.ITER01")` を呼びます（内部で `set_param_str` に振り分けられます）。文字列パラメータをサポートしているのは `tr:` と `eq:` の名前空間だけです。
+LLM は `set_param("eq:KNAMEQ", "eqdata.ITER01")` を呼びます（内部で `set_param_str` に振り分けられます）。`set_param` / `set_params` / `run_and_get_state` で文字列を渡せるのは `tr:` と `eq:` の名前空間だけです（tot の `tot_param_set_str` がそれ以外を拒否します）。`fp:KNAMEQ` は `run_pipeline` の `params` に文字列値として渡してください。`totlib.TotPipeline` が fplib 自身の `set_param_str` に渡します。`ti:`、`wr:`、`wrx:` には文字列パラメータがありません。
 
 ### 6.5. 利用可能パラメータの確認
 
@@ -269,7 +269,7 @@ LLM は `describe_parameters` を呼び、`parameters["eq"]` を抽出して返�
 |---|---|---|
 | `init` | ライブラリ初期化 | なし |
 | `set_param` | 単一パラメータ設定 | `name` (必ず `<ns>:<bare>`), `value` |
-| `set_params` | まとめて設定 (scalar / list / dict) | `params` (キーは必ず namespaced) |
+| `set_params` | まとめて設定 (scalar / list / dict / 文字列。文字列は `tr:` と `eq:` のみ) | `params` (キーは必ず namespaced) |
 | `run` | 時間ステップ進行 | `ntmax` (default=1) |
 | `get_state` | 現在の状態取得 | なし |
 | `finalize` | リソース解放 | なし |
@@ -278,7 +278,7 @@ LLM は `describe_parameters` を呼び、`parameters["eq"]` を抽出して返�
 | `run_and_get_state` | init + set + run + get_state を一括 | `params`, `ntmax` |
 | `run_pipeline` | 複数モジュールを連結したスカラーカップリング実行 (L-7a) | `steps`, `params` |
 
-> L-3/L-4/L-5 時点では `init` / `run` / `get_state` / `finalize` の Fortran 側がスタブ (`TOT_ERR_NOT_IMPL`) です。`set_param` / `set_param_str` は端から端まで実装済みなので、パラメータ設定の挙動はいま既に確認できます。L-6 で per-module fan-out が入ると、`run` / `get_state` も自動的に正常応答に切り替わります。
+> L-6 以降、`init` / `finalize` は eq・tr・ti・fp・wr を立ち上げ / 終了し、`run` は TR の時間発展を進め、`get_state` は TR の値を返します (L-3〜L-5 ではスタブで `TOT_ERR_NOT_IMPL` を返していました)。モジュール間の結合は `run_pipeline` (7.1) が受け持ちます。
 
 ### 7.1. `run_pipeline` ツール (L-7a)
 
@@ -367,7 +367,7 @@ export PYTHONPATH=/absolute/path/to/task/python:$PYTHONPATH
 
 ### Q3. `ModuleNotFoundError: No module named 'mcp'` と言われます
 
-- MCP SDK が入っていません。`pip install 'mcp>=0.9,<2'` を実行してください。
+- MCP SDK が入っていません。`pip install 'mcp>=1.2,<2'` を実行してください。
 - 仮想環境を使っている場合は、その環境の Python が LLM クライアント側から使われているかも確認してください。
 
 ### Q4. `invalid parameter: ... is missing a namespace prefix` と返ってきました
@@ -378,8 +378,8 @@ export PYTHONPATH=/absolute/path/to/task/python:$PYTHONPATH
 
 ### Q5. `not implemented in this libtotapi.so build` と返ってきました
 
-- `tot_run` / `tot_get_state` / `tot_init` / `tot_finalize` は L-3 〜 L-5 時点ではスタブで `TOT_ERR_NOT_IMPL` を返します。L-6 で per-module fan-out が完成すると正常応答に切り替わります。
-- `set_param` / `set_param_str` は端から端まで実装済みのため、パラメータ設定の動作は今すぐ確認できます。
+- 今の `libtotapi.so` では、このコード (`TOT_ERR_NOT_IMPL`) を返す関数はありません。L-3〜L-5 のスタブ (`tot_init` / `tot_run` / `tot_get_state` / `tot_finalize`) が返していたものです。
+- #246 より前にビルドした `libtotapi.so` は、layout を問い合わせる関数がないため、読み込み時に `TotlibAbiError` で拒否されます。`make -C tot libtotapi.so` で作り直してください。
 
 ### Q6. `calculation failed: ...` と返ってきました
 
@@ -393,6 +393,8 @@ TOT のバックエンドは Fortran COMMON-block を使った単一状態なの
 ### Q8. ログはどこで確認できますか
 
 MCP サーバの標準エラー出力が LLM クライアントに渡ります。Claude Desktop なら「開発者ツール」相当のログビューア、Claude Code なら実行ターミナルで確認できます。
+
+Fortran 側の `WRITE(6,...)`（unit 6 = fd 1）も同じ標準エラー出力に流れます。stdio サーバでは fd 1 が JSON-RPC の送信パイプなので、`main()` がサーバ構築の直前に共有モジュール `python/_fd_isolation.py` で fd 1 を stderr に付け替えています（#227 / #257 / #263）。端末で手動起動したときや `2>&1` で stdout と stderr が同じファイルになっているときは、unit 6 の出力は捨てられ、その旨の警告が stderr に 1 行出ます（同一ファイルの判定は `fstat` の inode によるので、パイプやコンソールに inode が無い Windows では判定されず、fd 1 は通常どおり stderr に向きます）。ライブラリの出力を残したい場合は stderr を別に渡してください（例: `python -m tot_mcp.server 2>server.log`）。
 
 ## 10. 参考資料
 

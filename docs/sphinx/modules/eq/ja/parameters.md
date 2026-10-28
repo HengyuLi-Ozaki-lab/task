@@ -218,8 +218,8 @@ $$F(\psi) = B_T R + \mathrm{FF}_0 (1-\psi^{P_{R0}})^{P_{F0}} + \cdots$$
 | `MDLEQV` | int switch | 3 | 真空領域での $\psi$ 外挿次数 |
 | `NPRINT` | int switch | 0 | 出力詳細度 |
 | `IDEBUG` | int switch | 0 | デバッグ出力フラグ |
-| `MODEFR` | int switch | 0 | (内部用) |
-| `MODEFW` | int switch | 0 | (内部用) |
+| `MODEFR` | int switch | 0 | `FROPEN` の読み込みモード: 0 は `KNAMEQ` のファイルを読む. 1 は unit 5 からファイル名を尋ねる |
+| `MODEFW` | int switch | 0 | `FWOPEN` の書き込みモード: 0 は既存ファイルを上書き, 3 は既存ファイルを拒否. 1, 2, 4〜7 は unit 5 を読むことがあり, `eq_save` は 0 と 3 のみ受け付ける |
 
 `MODELG` の許容値:
 

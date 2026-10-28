@@ -2,8 +2,9 @@
 !
 ! Phase L-2/L-3: C ABI entry points for libeqapi.
 !
-! BIND(C) entry points (eq_validate and eq_save are described at their
-! definitions below):
+! Eleven BIND(C) functions are exposed (eq_validate, eq_save and the layout
+! queries eq_state_abi_version / eq_state_size are described where they
+! are defined, at the end of the module):
 !
 !   eq_init           -> marks the library as initialized (idempotent)
 !                        and returns EQ_OK. Does NOT touch the legacy
@@ -43,6 +44,7 @@
 
 MODULE eq_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE eq_state, ONLY: EQ_STATE_ABI_VERSION
   USE eq_state, ONLY: eq_state_c, &
                       EQ_MAX_NRGM, EQ_MAX_NZGM, EQ_MAX_NPSM, &
                       EQ_MAX_NRM,  EQ_MAX_NTHM, EQ_MAX_NSUM, &
@@ -57,7 +59,8 @@ MODULE eq_api
                     equnit_eq_load => eq_load
   ! Pull MODELG + KNAMEQ directly from plcomm so eq_api_run can forward
   ! them to equnit_eq_load without going through a COMMON-block bridge.
-  USE plcomm, ONLY: MODELG, KNAMEQ
+  ! MODEFW: eq_api_save looks at it before it lets EQSAVE open a file.
+  USE plcomm, ONLY: MODELG, KNAMEQ, MODEFW
   ! QQPS provenance flag and the failure reason eq_last_error returns.
   USE eqcom1_mod, ONLY: QQPS_FROM_FILE, EQ_ERRMSG
   IMPLICIT NONE
@@ -75,6 +78,16 @@ MODULE eq_api
 
   ! Lifecycle flag. Module-scope, single-instance (same pattern as tr / ti).
   LOGICAL, SAVE :: g_initialized = .FALSE.
+  ! .TRUE. while the fields hold the equilibrium that the last eq_run
+  ! computed or loaded for the present parameters: what eq_save writes.
+  ! Cleared by eq_init and eq_finalize, when an eq_run starts (one that
+  ! fails leaves the fields part-way), and by a successful eq_set_param
+  ! of anything but the two file modes (EQSAVE writes the parameters and
+  ! counts as they stand, over fields computed for the old ones).
+  LOGICAL, SAVE :: g_has_equilibrium = .FALSE.
+
+  ! #246: layout query, callable before eq_init.
+  PUBLIC :: eq_api_state_abi_version, eq_api_state_size
 
 CONTAINS
 
@@ -97,6 +110,7 @@ CONTAINS
     QQPS_FROM_FILE = .FALSE.
     EQ_ERRMSG = ' '
     g_initialized = .TRUE.
+    g_has_equilibrium = .FALSE.
     ierr = EQ_OK
   END FUNCTION eq_api_init
 
@@ -148,6 +162,7 @@ CONTAINS
        ! `L` path after EQ_READ) computes the metric and reduces the
        ! 2D ψ-grid to 1D ψ-surface arrays. Mirrors the legacy CLI's
        ! `R` then `F` workflow.
+       g_has_equilibrium = .FALSE.
        CALL EQCALC(calc_ierr)
        IF (calc_ierr /= 0) THEN
           CALL note_failure('EQCALC', calc_ierr)
@@ -160,18 +175,21 @@ CONTAINS
           ierr = EQ_ERR_CALC_FAILED
           RETURN
        END IF
+       g_has_equilibrium = .TRUE.
        ierr = EQ_OK
     CASE (1)
        ! EQDSK-based load via equnit::eq_load(MODELG, KNAMEQ, ierr).
        ! MODELG and KNAMEQ come from plcomm_parm; callers are expected
        ! to set them via eq_set_param / eq_set_param_str beforehand.
        knameq_local = KNAMEQ
+       g_has_equilibrium = .FALSE.
        CALL equnit_eq_load(MODELG, knameq_local, load_ierr)
        IF (load_ierr /= 0) THEN
           CALL note_failure('equnit::eq_load', load_ierr)
           ierr = EQ_ERR_CALC_FAILED
           RETURN
        END IF
+       g_has_equilibrium = .TRUE.
        ierr = EQ_OK
     CASE DEFAULT
        WRITE(EQ_ERRMSG, '(A,I0,A)', IOSTAT=ios) &
@@ -226,6 +244,10 @@ CONTAINS
 
     CALL eq_param_set(TRIM(fname), value, reg_ierr)
     IF (reg_ierr == 0) THEN
+       ! MODEFR and MODEFW say how a file is opened, not what the
+       ! equilibrium is: they leave eq_save's precondition as it was.
+       IF (TRIM(fname) /= 'MODEFW' .AND. TRIM(fname) /= 'MODEFR') &
+          g_has_equilibrium = .FALSE.
        ierr = EQ_OK
     ELSE
        ierr = EQ_ERR_INVALID
@@ -278,6 +300,11 @@ CONTAINS
     END IF
 
     reg_ierr = eq_param_set_str(TRIM(fname), TRIM(fvalue))
+    ! g_has_equilibrium is left as it is, unlike in eq_api_set_param: the
+    ! strings are file names (KNAMEQ and the other KNAM*). The analytic
+    ! solve reads none of them; a load (eq_run(1)) reads its file and sets
+    ! the flag itself; and KNAMEQ is where eq_save writes, so setting it
+    ! must not invalidate what is to be saved.
     IF (reg_ierr == 0) THEN
        ierr = EQ_OK
     ELSE
@@ -427,6 +454,7 @@ CONTAINS
     QQPS_FROM_FILE = .FALSE.
     EQ_ERRMSG = ' '
     g_initialized = .FALSE.
+    g_has_equilibrium = .FALSE.
     ierr = EQ_OK
   END FUNCTION eq_api_finalize
 
@@ -671,15 +699,27 @@ CONTAINS
   END FUNCTION eq_api_validate
 
   !=====================================================================
-  ! eq_save : C-ABI wrapper around eqfile::EQSAVE.
+  ! eq_save : C-ABI wrapper around EQSAVE_IERR (eq/eqfile.f90).
   !
   !   - Writes the current EQ state (PSIRZ, profiles, scalars) to the
   !     TASK-internal binary file at the path stored in module-level
   !     KNAMEQ. Caller MUST set KNAMEQ via eq_set_param_str before
-  !     calling this. EQSAVE itself does not propagate errors, so this
-  !     wrapper verifies the outcome: EQ_ERR_INVALID for a blank KNAMEQ,
-  !     EQ_ERR_CALC_FAILED when no non-empty file exists afterwards
-  !     (missing directory, permission denied, ...), EQ_OK otherwise.
+  !     calling this.
+  !   - EQ_ERR_INVALID, before any file is touched: the fields do not
+  !     hold the equilibrium of the present parameters (no successful
+  !     eq_run since eq_init, a later solve or load that failed, or
+  !     eq_set_param of anything but MODEFR and MODEFW since; what EQSAVE
+  !     would write then can end the process that loads it); a blank
+  !     KNAMEQ; MODEFW
+  !     other than 0 (overwrite an existing file) or 3 (refuse one):
+  !     with 1, 2 and 4 to 7 FWOPEN can read unit 5, for a Y/N or for
+  !     the file name.
+  !   - EQ_ERR_CALC_FAILED when EQSAVE_IERR reports that the file could
+  !     not be opened (a directory that is missing or not writable,
+  !     MODEFW=3 and an existing file), that a write failed (an existing
+  !     file without write permission) or that the file is shorter than
+  !     what was written, or when no non-empty file exists afterwards.
+  !   - EQ_OK otherwise.
   !=====================================================================
   FUNCTION eq_api_save() RESULT(ierr) BIND(C, NAME="eq_save")
     INTEGER(C_INT) :: ierr
@@ -689,21 +729,33 @@ CONTAINS
        ierr = EQ_ERR_NOT_INIT
        RETURN
     END IF
-    ! #227 item 3: EQSAVE is a bare external subroutine with no IERR
-    ! out-argument -- on an FWOPEN failure (blank KNAMEQ, missing
-    ! directory, permission denied) it simply RETURNs, leaving no file.
-    ! Reporting EQ_OK there claims a success that did not happen, so
-    ! verify the artefact rather than trusting the call.
+    IF (.NOT. g_has_equilibrium) THEN
+       WRITE(6,*) 'XX eq_save: no equilibrium of the present parameters:', &
+                  ' call eq_run first'
+       ierr = EQ_ERR_INVALID
+       RETURN
+    END IF
     IF (LEN_TRIM(KNAMEQ) == 0) THEN
        ierr = EQ_ERR_INVALID
        RETURN
     END IF
-    CALL EQSAVE(ierr_save)
+    IF (MODEFW /= 0 .AND. MODEFW /= 3) THEN
+       WRITE(6,*) 'XX eq_save: MODEFW must be 0 or 3 here: MODEFW=', MODEFW
+       ierr = EQ_ERR_INVALID
+       RETURN
+    END IF
+    ! #227 item 3: a save that wrote nothing must not return EQ_OK.
+    ! EQSAVE_IERR (the body of EQSAVE, which keeps its argument-less
+    ! entry for the menu) reports a failed open or write through its
+    ! argument. Looking for the file afterwards is not enough on its own:
+    ! a save to a path that already holds an earlier, non-empty file would
+    ! pass for a success.
+    CALL EQSAVE_IERR(ierr_save)
     IF (ierr_save /= 0) THEN
        ierr = EQ_ERR_CALC_FAILED
        RETURN
     END IF
-!   Belt and braces: the open succeeded, so also confirm an artefact exists.
+    ! The open succeeded; also confirm that a non-empty file is there.
     INQUIRE(FILE=TRIM(KNAMEQ), EXIST=file_exists, SIZE=file_size)
     IF ((.NOT. file_exists) .OR. (file_size <= 0)) THEN
        ierr = EQ_ERR_CALC_FAILED
@@ -737,5 +789,24 @@ CONTAINS
        IF (s(j) /= ' ') RETURN
     END DO
   END FUNCTION c_str_overflows
+
+  !-------------------------------------------------------------------
+  ! eq_state_abi_version / eq_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before eq_init.
+  ! A caller compares both with its own sizeof(eq_state_t) and its copy
+  ! of EQ_STATE_ABI_VERSION before passing a struct to eq_get_state;
+  ! python/eqlib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION eq_api_state_abi_version() RESULT(v) BIND(C, NAME="eq_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = EQ_STATE_ABI_VERSION
+  END FUNCTION eq_api_state_abi_version
+
+  FUNCTION eq_api_state_size() RESULT(n) BIND(C, NAME="eq_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(eq_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION eq_api_state_size
 
 END MODULE eq_api

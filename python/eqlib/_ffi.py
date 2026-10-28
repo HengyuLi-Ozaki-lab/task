@@ -1,4 +1,4 @@
-"""Low-level ctypes FFI for libeqapi.so.
+"""Low-level ctypes FFI for libeqapi.so (``libeqapi.dll`` on Windows).
 
 Mirrors ``eq/eq_api.h`` (C ABI). Higher-level helpers live in
 ``eqlib.py``; this module intentionally exposes only raw ctypes objects
@@ -26,7 +26,10 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from _abi_check import AbiMismatchError, check_state_layout
 from _runtime_mode import mono_lib_path
+
+from .errors import EqlibAbiError
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -47,6 +50,12 @@ EQ_MAX_NPSM = 513
 EQ_MAX_NRM = 1001
 EQ_MAX_NTHM = 2049
 EQ_MAX_NSUM = 1343
+
+# eq_state_t layout version; mirrors EQ_STATE_ABI_VERSION in eq/eq_api.h
+# and eq/eq_state.f90. load_library() refuses a library whose
+# eq_state_abi_version() / eq_state_size() differ from this and from
+# ctypes.sizeof(EqStateC) (#246).
+EQ_STATE_ABI_VERSION = 1
 
 
 # ---------------------------------------------------------------------
@@ -171,7 +180,8 @@ def _repo_root() -> Path:
 # directory is registered once however often a library is opened (the MCP
 # servers build a fresh library handle after every finalize), and so it
 # could later be removed with close(). Dropping a handle does NOT unregister
-# its directory.
+# its directory. A directory enters the dict only after a library loaded
+# from it; a load that fails closes the handle it had just made.
 _DLL_DIR_HANDLES: dict = {}
 
 
@@ -192,7 +202,7 @@ def _candidate_paths() -> list:
 
 
 def _default_lib_path() -> Path:
-    """Resolve the default ``libeqapi.so`` path.
+    """Resolve the default ``libeqapi.so`` path (``libeqapi.dll`` on Windows).
 
     Priority (highest first):
       0. ``mono_lib_path()`` — global mono override
@@ -261,7 +271,7 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     try:
         lib.eq_save.argtypes = []
         lib.eq_save.restype = ctypes.c_int
-    except AttributeError:  # pragma: no cover - only on pre-Task-1.1 builds
+    except AttributeError:  # pragma: no cover - a libeqapi.so built before eq_save
         pass
 
     # eq_last_error(char* buf, int buflen) -> int: why the last eq_run failed.
@@ -297,7 +307,8 @@ _RTLD_LAZY = 1
 
 
 def load_library(path: Optional[str] = None) -> ctypes.CDLL:
-    """Load libeqapi.so and return the CDLL handle with prototypes applied.
+    """Load libeqapi.so (``libeqapi.dll`` on Windows) and return the CDLL
+    handle with prototypes applied.
 
     Uses ``RTLD_LAZY`` because libeqapi.so may retain unresolved
     symbols pointing into graphics-only call paths that the C ABI
@@ -309,11 +320,21 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     p = Path(path) if path else _default_lib_path()
     if not p.exists():
         tried = [str(x) for x in _candidate_paths()]
+        if sys.platform == "win32":
+            # The Makefiles have no .dll target, so there is no make
+            # command to name here.
+            hint = (
+                f"Build {_lib_filename()} from the Fortran sources "
+                "or set EQLIB_PATH."
+            )
+        else:
+            hint = "Build it via `make -C eq libeqapi.so` or set EQLIB_PATH."
         raise FileNotFoundError(
             f"{_lib_filename()} not found at {p}. "
             f"Tried EQLIB_PATH and {tried}. "
-            "Build it via `make -C eq libeqapi.so` or set EQLIB_PATH."
+            + hint
         )
+    new_dir_handle = None
     if sys.platform == "win32":
         # Python 3.8+ no longer resolves a DLL's dependencies through PATH.
         # The gfortran runtime (libgfortran-5.dll, libquadmath-0.dll,
@@ -328,12 +349,34 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
         p = Path(dll_dir) / p.name
         key = os.path.normcase(dll_dir)
         if key not in _DLL_DIR_HANDLES:
-            _DLL_DIR_HANDLES[key] = os.add_dll_directory(dll_dir)
+            new_dir_handle = os.add_dll_directory(dll_dir)
     # ctypes.RTLD_LAZY may not be defined on all Python builds; fall
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
-    lib = ctypes.CDLL(str(p), mode=mode)
-    return _apply_prototypes(lib)
+    try:
+        lib = ctypes.CDLL(str(p), mode=mode)
+        # #246: refuse a library whose eq_state_t layout is not EqStateC's,
+        # before any struct is passed. A library built before #246 has no
+        # query symbols and is refused too (it may or may not match).
+        try:
+            check_state_layout(lib, prefix="eq", struct=EqStateC,
+                               expected_version=EQ_STATE_ABI_VERSION,
+                               lib_name=os.path.basename(str(p)))
+        except AbiMismatchError as exc:
+            raise EqlibAbiError(str(exc)) from exc
+        lib = _apply_prototypes(lib)
+    except BaseException:
+        # A file that does not load (wrong architecture, a missing
+        # dependency), is not this library or has another state layout
+        # must not leave its directory in the process-wide DLL search set,
+        # nor an entry in the dict. BaseException, re-raised: an interrupt
+        # during the load cleans up too.
+        if new_dir_handle is not None:
+            new_dir_handle.close()
+        raise
+    if new_dir_handle is not None:
+        _DLL_DIR_HANDLES[key] = new_dir_handle
+    return lib
 
 
 __all__ = [

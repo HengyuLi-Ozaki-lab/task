@@ -336,22 +336,49 @@ class Eq:
         raise_for_rc("eq_last_error", fn(buf, len(buf)))
         return buf.value.decode("ascii", errors="replace").strip()
 
-    def save(self, path: str) -> None:
-        """Save the current equilibrium state to a TASK-binary file.
+    def save(self, path) -> None:
+        """Save the equilibrium of the last ``run`` to a TASK/EQ binary file.
 
-        Sets KNAMEQ to ``path`` then calls ``eq_save``. The file is
-        readable by TR via ``set_param_str("KNAMEQ", path)`` plus
-        ``MODELG=3``.
+        Sets KNAMEQ to ``path``, then calls ``eq_save``. The file is what
+        ``MODELG=3`` with ``KNAMEQ=path`` loads. ``path`` is a ``str`` or an
+        ``os.PathLike`` that gives one (what ``os.fspath`` refuses is a
+        ``TypeError``); KNAMEQ is ASCII, so a ``bytes`` path and a
+        non-ASCII one are refused like the other paths listed below.
 
-        Raises :class:`EqlibError` if no non-empty file results.
+        Once the path is accepted, KNAMEQ is ``path``, also when the save
+        then fails. After a failed write, what is at the path cannot be
+        taken for the equilibrium that was to be saved (usually it is a
+        short file): do not load it. ``run(1)`` with ``MODELG=3`` ends the process on a file
+        that is cut off; the loader does not guard its reads.
 
-        The underlying Fortran ``EQSAVE`` has no error out-argument and
-        simply returns on an ``FWOPEN`` failure (blank KNAMEQ, missing
-        directory, permission denied). ``eq_api_save`` therefore verifies
-        the artefact and maps a missing/empty file to a non-zero code
-        (#227 item 3). The post-call check below repeats that at the
-        Python layer, so a stale ``libeqapi.so`` built before that fix
-        still cannot report a success that did not happen.
+        A save whose file was not opened, or is shorter than what was
+        written, raises (#227 item 3):
+
+        * :class:`EqlibInvalidParamError`, and no file is touched:
+          the fields do not hold the equilibrium of the present parameters
+          (no ``run`` since the handle was opened, a later solve or load
+          that failed, or ``set_param`` of anything but ``MODEFR`` and
+          ``MODEFW`` since the last one: run again first); a blank path,
+          one longer
+          than the 80 bytes of ``KNAMEQ``, or one that ends in a blank
+          (Fortran would drop the blank and write another file);
+          ``MODEFW`` other than 0 (overwrite an existing file) or 3
+          (refuse one): with 1, 2 and 4 to 7 ``FWOPEN`` can read unit 5.
+          A ``bytes`` path and one that is not ASCII are refused here too,
+          before KNAMEQ is set.
+        * :class:`EqlibCalculationFailedError`: the file could not be
+          opened (a directory that is missing or not writable;
+          ``MODEFW=3`` and an existing file), a write failed (an existing
+          file without write permission), or the file is shorter than what
+          was written (a write the system refused, as under a file size
+          limit; a device such as ``/dev/null``). An earlier file at
+          ``path`` is not taken for a success: ``EQSAVE_IERR`` reports the
+          failure itself. Measured with gfortran 15 on macOS under a file
+          size limit: a save that leaves a short file also leaves one
+          descriptor open in the process.
+        * :class:`EqlibError`: the handle is closed, the library does not
+          export ``eq_save``, or no non-empty file exists after a call
+          that reported success.
         """
         if self._closed:
             raise EqlibError("save on closed Eq")
@@ -360,13 +387,18 @@ class Eq:
         except AttributeError as exc:
             raise EqlibError(
                 "libeqapi.so does not export eq_save; "
-                "rebuild the shared library after the Task 1.1 PR."
+                "rebuild the shared library (`make -C eq libeqapi.so`)."
             ) from exc
+        path = os.fspath(path)
+        if isinstance(path, str) and path != path.rstrip(" "):
+            raise EqlibInvalidParamError(
+                f"eq_save: the path {path!r} ends in a blank, which a "
+                "Fortran file name cannot keep"
+            )
         self.set_param_str("KNAMEQ", path)
         rc = fn()
         raise_for_rc("eq_save", rc)
-        # Defense in depth: eq_api_save verifies this too, but an older
-        # libeqapi.so returns EQ_OK unconditionally (#227 item 3).
+        # eq_save checked this already; a second look from this side.
         if not os.path.isfile(path) or os.path.getsize(path) == 0:
             raise EqlibError(
                 f"eq_save reported success but no non-empty file exists at "
@@ -481,7 +513,7 @@ class Eq:
 
         n = int(ndiag.value)
         # Fortran push_diag increments nlocal past diag_cap but skips the
-        # write (eq_api.f90:651-652), so ndiag_out can exceed cap. Clamp
+        # write (eq_api.f90:679-680), so ndiag_out can exceed cap. Clamp
         # and warn so the caller knows results are truncated instead of
         # IndexError-ing off the end of the ctypes buffer.
         if n > cap:
