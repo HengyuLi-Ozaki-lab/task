@@ -31,10 +31,11 @@
 !     The fusion switches of the moment against the prepare, before
 !     anything is computed.  The ported path is armed at prepare
 !     (nf_multi_ready, for the model_pnf of that prepare), and two callers
-!     change a switch on a prepared case: tot's dispatch sets TR parameters
-!     without clearing tr_api's prepared flag (tot/tot_param_registry.f90,
-!     dispatch_tr), and trmenu's C handler goes on with the case as
-!     prepared.  With the flag alone, measured through tot: model_pnf set
+!     changed a switch on a prepared case: tot's dispatch, which set TR
+!     parameters without clearing tr_api's prepared flag until upstream
+!     #259 (tot/tot_param_registry.f90, dispatch_tr; since then every set
+!     makes tr_run prepare again), and trmenu's C handler, which still goes
+!     on with the case as prepared.  With the flag alone, measured through tot: model_pnf set
 !     after a first run was ignored; MDLNF set after a model_pnf run ran
 !     both paths into SNF/PNF/TAUF, the state tr_prep refuses; and
 !     model_pnf set back to 0 went on publishing.

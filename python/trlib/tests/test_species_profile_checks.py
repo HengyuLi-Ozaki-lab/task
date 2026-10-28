@@ -22,6 +22,7 @@ One test per case, no ``subTest``.
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import math
 import os
 import sys
@@ -208,7 +209,21 @@ class TestSpeciesProfileChecks(unittest.TestCase):
             self.assertEqual(by_param[name].code, TrDiagCode.OUT_OF_RANGE, name)
 
     def test_validate_non_finite_values(self):
-        diags = self._validate({**self.SPECIES_3, "PNS[3]": float("-inf")})
+        # On the product line tr_set_param refuses a value that is not
+        # finite before it assigns (value_refused, group J), so the value
+        # is written into the module array to reach validate's own check.
+        from trlib.tests.fixtures import tr_tst2_params as base
+        with _pushd(FIXTURES_DIR):
+            with Trlib() as tr:
+                base.apply(tr)
+                for name, value in self.SPECIES_3.items():
+                    tr.set_param(name, float(value))
+                with self.assertRaises(TrlibParamError):
+                    tr.set_param("PNS[3]", float("-inf"))
+                self.assertEqual(tr.validate(), [])
+                pns = (ctypes.c_double * 3).in_dll(tr._lib, "__trcomm_param_MOD_pns")
+                pns[2] = float("-inf")
+                diags = tr.validate()
         self.assertEqual([d.param for d in diags], ["PN[3]"], diags)
         self.assertEqual(diags[0].code, TrDiagCode.OUT_OF_RANGE)
         self.assertIn("non-finite", diags[0].message)

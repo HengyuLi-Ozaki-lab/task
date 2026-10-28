@@ -252,7 +252,7 @@ CONTAINS
   ! that was given is gone, and no later check can tell a count that
   ! was asked for from what the conversion left.
   !
-  ! The names are the integer parameters of tr_param_set above: a new
+  ! The names are the integer parameters of tr_param_set_impl above: a new
   ! integer CASE there goes into this list too
   ! (python/trlib/tests/test_param_values.py holds the list to the
   ! integer CASEs of the setter, read from this file, and to the names

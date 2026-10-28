@@ -118,9 +118,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   5 keV; HengyuLi-Ozaki-lab/task-web-client#58). A run that sets both
   switches is refused, since it would count the same alphas twice: by
   `tr_prep`, and by `TRCALC`, before it computes anything, when a switch is
-  changed on a prepared case (through `tot`, which does not prepare again).
-  There a nonzero `MODEL_PNF` the case was not prepared for is refused as
-  well, and `MODEL_PNF = 0` turns the model off at once.
+  changed on a prepared case that is not prepared again (the standalone
+  `tr2`'s `L` then `C`; through `tot` too before upstream #259, since which
+  every set makes the next run prepare again). There a nonzero `MODEL_PNF`
+  the case was not prepared for is refused as well, and `MODEL_PNF = 0`
+  turns the model off at once.
   With more than one reaction the rates are evaluated and nothing reaches
   the solve: TR has one fusion fast-ion slot (`NFM = 2`). The D-He3 and
   T-He3 rates of the sets 3, 4 and 14 are negative at a few keV
