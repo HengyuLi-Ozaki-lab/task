@@ -24,8 +24,9 @@ Design notes
 * ``set_param_str`` — string parameters such as ``KNAMEQ`` (the
   equilibrium-data file name) routed through
   :py:meth:`fplib.Fplib.set_param_str`. This is what unlocks the
-  ``MODELG=3`` + ``KNAMEQ=<file>`` path, i.e. loading an equilibrium
-  produced by ``eq_mcp``'s ``save`` tool (EQ→FP coupling).
+  ``MODELG=3`` + ``KNAMEQ=<file>`` path, i.e. loading a TASK/EQ-format
+  equilibrium file (e.g. one written by ``EQSAVE`` / the ``eq``
+  program, or by ``eq_mcp``'s ``save`` tool).
 * **Error mapping.** :class:`fplib.FplibError` subclasses are re-raised
   as :class:`ToolError` with a human-readable message. The LLM sees
   the error string and can often recover (e.g. by calling ``init``
@@ -45,65 +46,18 @@ each junk line, and in the worst case the session drops with
 "Connection closed".
 
 FP is a heavy offender: ``FPWRTPRF`` prints the whole radial profile
-table to unit 6 on every time step, so the damage grows linearly with
-NTMAX (measured client-side: 150 parse errors at NTMAX=1, 211 at
-NTMAX=2, i.e. ~61 junk lines per extra step).
+table to unit 6 once at preparation and then every NTG2STEP steps (every
+step by default), so the damage grows with NTMAX (measured client-side on
+the fp_iter01 fixture: 150 parse errors at NTMAX=1, 211 at NTMAX=2).
 
-Fix (same as eq_mcp/tr_mcp): main() installs it immediately before the stdio
-server starts (not at import time):
-  1. dup fd 1 (JSON-RPC write pipe) to a fresh fd; redirect fd 1 → stderr
-     so Fortran WRITE(6,...) goes to the subprocess stderr (backend log).
-  2. Rebuild sys.stdout around the saved fd so the MCP framework's stdio
-     transport still writes to the correct pipe.
-
-After this:
-  - Fortran WRITE(6,...) → fd 1 → stderr (harmless backend log)
-  - MCP sys.stdout.write → saved fd → original JSON-RPC write pipe
-
-NOTE: We do NOT redirect fd 0 (stdin) to /dev/null because the Fortran
-library uses stdin internally; redirecting it increases crash rates.
+main() therefore calls ``_fd_isolation.install()`` (the module shared by
+the stdio servers, ``python/_fd_isolation.py``) immediately before the
+stdio server is built -- NOT at import time, see #227 item 1.
+It moves the pipe to a descriptor of its own, rebuilds ``sys.stdout`` on
+it and gives fd 1 to stderr, so that Fortran WRITE(6,...) lands in the
+server's log.
 """
 from __future__ import annotations
-
-import os as _os
-import sys as _sys
-
-# Installed by main(), never at import time (k-yoshimi/task#227 item 1): importing
-# this module must not redirect the host process's fd 1 or replace sys.stdout.
-_FD_ISOLATION_INSTALLED = False
-_mcp_pipe_fd = None
-
-def _install_fd_isolation() -> None:
-    """Redirect fd 1 to stderr and rebuild sys.stdout on the saved pipe fd.
-
-    Called from main() immediately before the stdio server starts; never at
-    import time (#227 item 1). Idempotent, and once per PROCESS: the flag
-    lives on ``sys`` because a second dup(1) -- another server module of the
-    same process -- would save the already-redirected stderr as the
-    "JSON-RPC pipe", and every response would then go to stderr.
-    """
-    global _FD_ISOLATION_INSTALLED, _mcp_pipe_fd
-    if _FD_ISOLATION_INSTALLED or getattr(_sys, "_task_mcp_stdout_isolated", False):
-        _FD_ISOLATION_INSTALLED = True
-        return
-    _mcp_pipe_fd = _os.dup(1)
-    _os.dup2(2, 1)
-    _sys.stdout = _os.fdopen(_mcp_pipe_fd, "w", buffering=1, encoding="utf-8")
-    if _sys.platform == "win32":
-        # Windows serialises every operation on a synchronous pipe: while
-        # the MCP reader thread waits in ReadFile on stdin, the gfortran
-        # runtime's start-up fstat()/isatty() of fd 0 -- run when the DLL
-        # loads, inside the first tool call -- blocks forever. The MCP
-        # reader keeps the pipe on a fresh fd; fd 0 becomes NUL. (The
-        # POSIX note above about stdin does not apply: this is Windows only.)
-        _mcp_in_fd = _os.dup(0)
-        _null_fd = _os.open(_os.devnull, _os.O_RDONLY)
-        _os.dup2(_null_fd, 0)
-        _os.close(_null_fd)
-        _sys.stdin = _os.fdopen(_mcp_in_fd, "r", encoding="utf-8")
-    _sys._task_mcp_stdout_isolated = True
-    _FD_ISOLATION_INSTALLED = True
-# ----------------------------------------------------------------------
 
 import math
 import os
@@ -157,6 +111,11 @@ from fplib import (  # noqa: E402
     FplibCalcFailedError,
     FplibNotImplementedError,
 )
+from fplib.state import SCALAR_FIELDS  # noqa: E402
+
+# The fd isolation shared by the stdio servers; it lives beside the wrapper,
+# in ``<repo>/python/``.
+import _fd_isolation  # noqa: E402
 
 
 # =====================================================================
@@ -170,7 +129,8 @@ from fplib import (  # noqa: E402
 # Source of truth: fp/fp_param_registry.f90 (~40 unique base names).
 # =====================================================================
 # Includes `str` for string-valued parameters like KNAMEQ (set via
-# fplib.Fplib.set_param_str -> fp_set_param_str on libfpapi.so).
+# fplib.Fplib.set_param_str -> fp_set_param_str on libfpapi.so), which
+# this server exposes as the `set_param_str` tool.
 SupportedValue = Union[float, int, str, List[float], Dict[int, float]]
 
 
@@ -224,7 +184,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "PABS_WM": {"type": "float", "group": "wave", "description": "WM full-wave absorbed power [MW]"},
     "RF_WM":   {"type": "float", "group": "wave", "description": "WM wave frequency [Hz]"},
     # --- model switches (scalar int) -------------------------------
-    "MODELG": {"type": "int", "group": "models", "description": "geometry / equilibrium model (3 = typical for iter01 fixture)"},
+    "MODELG": {"type": "int", "group": "models", "description": "geometry / equilibrium model (pl_init default 2; 3 = load the TASK/EQ file named by KNAMEQ)"},
     "MODELE": {"type": "int", "group": "models", "description": "equilibrium coupling model"},
     "MODELR": {"type": "int", "group": "models", "description": "relativistic model switch"},
     "MODELS": {"type": "int", "group": "models", "description": "source-term model switch"},
@@ -282,7 +242,8 @@ STATE_SCHEMA: Dict[str, Any] = {
                 "per-unit-volume profile arrays these depend on the "
                 "equilibrium through the volume element, so they are what "
                 "makes an EQ->FP handoff (MODELG=3 + KNAMEQ) observable. "
-                "All zero before the first run."
+                "All zero before the first run, and again after a set_param "
+                "or set_param_str until the next run that is made."
             ),
             "properties": {
                 "TOTAL_IP":         {"type": "number", "description": "total plasma current [MA]"},
@@ -293,6 +254,7 @@ STATE_SCHEMA: Dict[str, Any] = {
                 "ABSORPTION_WM":    {"type": "number", "description": "full-wave (WM) share of the absorbed power [MW]"},
                 "PLASMA_VOLUME":    {"type": "number", "description": "plasma volume TVOLR [m^3]"},
             },
+            "required": list(SCALAR_FIELDS),
             "additionalProperties": {"type": "number"},
         },
         "profile": {
@@ -522,11 +484,21 @@ def handle_set_param_str(name: str, value: str) -> str:
     rebuild hint, which :func:`_wrap_fplib_error` turns into a
     human-readable ToolError.
 
-    This is the entry point for the ``MODELG=3`` equilibrium-load path:
-    without a valid ``KNAMEQ`` the ``pl_init`` default ``'eqdata'`` is
-    missing in cwd, ``eq_load`` fails, and ``BESEKNX`` trips with
-    ``NCALC=-2`` (see the comment block in
-    ``fp/fp_param_registry.f90``).
+    This is the entry point for the ``MODELG=3`` equilibrium-load path.
+    The file is read by the next ``run``, not by this call. With
+    ``MODELG=3`` and a ``KNAMEQ`` that names a file that does not exist
+    or cannot be opened (the ``pl_init`` default is ``'eqdata'`` in
+    cwd), ``eq_load`` fails, ``fp_mesh`` returns its error
+    (``fp/fpprep.f90``) and ``fp_run`` returns ``FP_ERR_CALC_FAILED``
+    (``fp/fp_api.f90``): fplib raises :class:`FplibCalcFailedError`,
+    which ``run`` turns into a "calculation failed" ToolError. The
+    ``BESEKNX`` / ``NCALC=-2`` failure that the comment block in
+    ``fp/fp_param_registry.f90`` describes predates that propagation.
+
+    A file that opens but is not a TASK/EQ file is another matter:
+    ``eq/eqfile.f90`` reads its leading records without ``IOSTAT``, and
+    a Fortran runtime error there ends the server process (measured
+    with an empty file and with a text file).
     """
     try:
         fp = STATE.ensure_open()
@@ -631,7 +603,7 @@ def build_server() -> Any:
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
-            "Install it with: pip install 'mcp>=0.9,<2'"
+            "Install it with: pip install 'mcp>=1.2,<2'"
         )
 
     mcp = FastMCP(  # type: ignore[misc]
@@ -682,14 +654,22 @@ def build_server() -> Any:
         (``make -C fp libfpapi.so``); older builds raise a clear
         "rebuild the shared library" error.
 
-        Typical use — load an equilibrium written by ``eq_mcp``'s
-        ``save`` tool::
+        Typical use — load a TASK/EQ-format equilibrium file (e.g.
+        one written by ``EQSAVE`` / the ``eq`` program, or by
+        ``eq_mcp``'s ``save`` tool)::
 
             set_param("MODELG", 3)
             set_param_str("KNAMEQ", "eq.bin")
             run(...)
 
-        Paths are resolved relative to the server process's cwd.
+        Paths are resolved relative to the server process's cwd, and
+        ``KNAMEQ`` holds 80 characters: keep the path within 80 bytes
+        (one of 81 to 128 bytes is cut to its first 80 without an
+        error; a longer one is refused). A file that does not exist
+        or cannot be opened makes the next ``run`` fail with
+        "calculation failed". A file that opens but is not a TASK/EQ
+        file can end the server process with a Fortran runtime error
+        (an empty file and a text file do): name TASK/EQ files only.
         """
         return handle_set_param_str(name, value)
 
@@ -728,8 +708,10 @@ def build_server() -> Any:
         """Return the current simulation state.
 
         Returns a dict with ``NRMAX``, ``NSAMAX``, ``NPMAX``, ``NTHMAX``,
-        ``NTG2``, ``TIMEFP``, and ``profile`` (per-species list of 6
-        radial arrays: RNT, RWT, RTT, RJT, RPCT, RPWT). Schema also
+        ``NTG2``, ``TIMEFP``, ``profile`` (per-species list of 6
+        radial arrays: RNT, RWT, RTT, RJT, RPCT, RPWT) and ``scalars``
+        (7 global plasma scalars: zero before the first run, and again
+        after a successful set until the next run). Schema also
         available via `describe_state_schema`.
         """
         return handle_get_state()
@@ -826,15 +808,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not MCP_AVAILABLE:
         sys.stderr.write(
             "error: Python MCP SDK (`mcp`) is not installed.\n"
-            "       pip install 'mcp>=0.9,<2'\n"
+            "       pip install 'mcp>=1.2,<2'\n"
         )
         return 2
 
-    # Not at import time: --help, --print-tools and the MCP-missing path return above.
-    _install_fd_isolation()
+    # Install the fd isolation now -- NOT at import time (#227 item 1).
+    # Everything above this point (--help, --print-tools, the MCP-missing
+    # error path) returns before we touch the host process's fds.
+    _fd_isolation.install()
 
     server = build_server()
-    # FastMCP >=0.9 exposes .run() for stdio transport by default.
+    # FastMCP >=1.2 exposes .run() for stdio transport by default.
     server.run()
     return 0
 

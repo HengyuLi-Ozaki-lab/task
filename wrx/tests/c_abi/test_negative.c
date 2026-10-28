@@ -51,6 +51,22 @@
 } while (0)
 
 int main(void) {
+    /* ---- 0: layout query must match this header (#246) ---------- */
+    {
+        int    v = wrx_state_abi_version();
+        size_t n = wrx_state_size();
+        if (v != WRX_STATE_ABI_VERSION) {
+            fprintf(stderr, "FAIL abi-version: library reports %d, wrx_api.h says %d\n",
+                    v, WRX_STATE_ABI_VERSION);
+            return (__LINE__);
+        }
+        if (n != sizeof(wrx_state_t)) {
+            fprintf(stderr, "FAIL state-size: library reports %lu, sizeof(wrx_state_t) is %lu\n",
+                    (unsigned long) n, (unsigned long) sizeof(wrx_state_t));
+            return (__LINE__);
+        }
+    }
+
     int rc;
     /* wrx_state_t is ~70KB; stack-allocating risks overflow on threads
      * or under valgrind's main-stack tracker. BSS (static) is pre-zeroed

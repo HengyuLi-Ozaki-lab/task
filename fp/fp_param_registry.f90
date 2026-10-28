@@ -38,13 +38,47 @@ MODULE fp_param_registry
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: fp_param_set
+  PUBLIC :: fp_param_generation
   PUBLIC :: fp_param_set_str
   PUBLIC :: fp_param_check
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
+  INTEGER, SAVE :: g_generation = 0
+
 CONTAINS
 
+  !-------------------------------------------------------------------
+  ! Mutation counter (#253).
+  !
+  ! Every successful set through this registry, whoever calls it
+  ! (fp_api_set_param, tot's "fp:" dispatcher, a future caller),
+  ! advances g_generation. fp_api compares the value it saw when it
+  ! last ran fp_prep with the current one and re-preps on a change,
+  ! so the "prepared" state cannot go stale behind the C ABI's back.
+  ! A set that fails leaves the counter alone: nothing changed.
+  !-------------------------------------------------------------------
+  FUNCTION fp_param_generation() RESULT(gen)
+    INTEGER :: gen
+    gen = g_generation
+  END FUNCTION fp_param_generation
+
   FUNCTION fp_param_set(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    REAL(rkind),      INTENT(IN) :: value
+    INTEGER :: ierr
+    ierr = fp_param_set_impl(name, value)
+    IF (ierr == 0) g_generation = g_generation + 1
+  END FUNCTION fp_param_set
+
+  FUNCTION fp_param_set_str(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    CHARACTER(LEN=*), INTENT(IN) :: value
+    INTEGER :: ierr
+    ierr = fp_param_set_str_impl(name, value)
+    IF (ierr == 0) g_generation = g_generation + 1
+  END FUNCTION fp_param_set_str
+
+  FUNCTION fp_param_set_impl(name, value) RESULT(ierr)
     CHARACTER(LEN=*), INTENT(IN) :: name
     REAL(rkind),      INTENT(IN) :: value
     INTEGER :: ierr
@@ -164,7 +198,7 @@ CONTAINS
     CASE DEFAULT
        ierr = 1   ! unknown name
     END SELECT
-  END FUNCTION fp_param_set
+  END FUNCTION fp_param_set_impl
 
   !-------------------------------------------------------------------
   ! value_refused : .TRUE. for a value that the setter does not take.
@@ -300,7 +334,7 @@ CONTAINS
   ! KNAMEQ='eqdata' (from pl_init) is missing in cwd, so eq_load
   ! fails silently and downstream BESEKNX trips with NCALC=-2.
   !-------------------------------------------------------------------
-  FUNCTION fp_param_set_str(name, value) RESULT(ierr)
+  FUNCTION fp_param_set_str_impl(name, value) RESULT(ierr)
     CHARACTER(LEN=*), INTENT(IN) :: name
     CHARACTER(LEN=*), INTENT(IN) :: value
     INTEGER :: ierr
@@ -318,7 +352,7 @@ CONTAINS
     CASE DEFAULT
        ierr = 1   ! unknown string-valued name
     END SELECT
-  END FUNCTION fp_param_set_str
+  END FUNCTION fp_param_set_str_impl
 
   !-------------------------------------------------------------------
   ! Split "NAME" or "NAME[N]" into (base, idx).

@@ -21,6 +21,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from _abi_check import AbiMismatchError, check_state_layout
+
+from .errors import WrlibAbiError
+
 # Optional numpy (we never require it; state.py uses lists).
 try:
     import numpy as _np  # noqa: F401
@@ -36,6 +40,12 @@ WR_MAX_NRAYMAX = 100
 WR_MAX_NRSMAX = 200
 WR_MAX_NRLMAX = 400
 WR_MAX_NRAY_EQ = 9
+
+# wr_state_t layout version; mirrors WR_STATE_ABI_VERSION in wr/wr_api.h
+# and wr/wr_state.f90. load_library() refuses a library whose
+# wr_state_abi_version() / wr_state_size() differ from this and from
+# ctypes.sizeof(WrStateC) (#246).
+WR_STATE_ABI_VERSION = 1
 
 
 # ---------------------------------------------------------------------
@@ -159,6 +169,15 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
     lib = ctypes.CDLL(str(p), mode=mode)
+    # #246: refuse a library whose wr_state_t layout is not WrStateC's,
+    # before any struct is passed. A library built before #246 has no
+    # query symbols and is refused too (it may or may not match).
+    try:
+        check_state_layout(lib, prefix="wr", struct=WrStateC,
+                           expected_version=WR_STATE_ABI_VERSION,
+                           lib_name=os.path.basename(str(p)))
+    except AbiMismatchError as exc:
+        raise WrlibAbiError(str(exc)) from exc
     return _apply_prototypes(lib)
 
 

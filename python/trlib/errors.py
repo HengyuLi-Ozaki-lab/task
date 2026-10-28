@@ -60,3 +60,13 @@ def raise_for_ierr(func: str, ierr: int) -> None:
         return
     cls = _CODE_MAP.get(int(ierr), TrlibError)
     raise cls(f"{func}: ierr={ierr}")
+
+class TrlibAbiError(TrlibError):
+    """libtrapi.so's tr_state_t layout is not the one this wrapper has (#246).
+
+    Raised by :func:`trlib._ffi.load_library` before any struct is passed:
+    the library does not export ``tr_state_abi_version`` / ``tr_state_size``
+    (built before the layout check), or its version or sizeof differs from
+    ``trlib._ffi.TrStateC``. The message names the fix (rebuild the
+    library, or update the wrapper).
+    """

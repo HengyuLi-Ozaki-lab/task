@@ -1,0 +1,55 @@
+name: Provision TASK build environment (per-system files)
+description: >-
+  Writes the two gitignored per-system files every TASK Makefile needs on a
+  Linux gfortran runner: make.header (no graphics, no MPI, no LAPACK) and
+  mtxp/make.mtxp (from the nompi template). Used by the pytest, mono-build
+  and clean-tree-build jobs so that all three build with byte-identical
+  compiler flags; before this action each job carried its own copy of the
+  heredoc with a KEEP-IN-SYNC comment.
+
+runs:
+  using: composite
+  steps:
+    - name: Provision mtxp/make.mtxp from nompi template
+      # mtxp/make.mtxp is gitignored (per-system config). The nompi
+      # template builds bnd/pcg backends without MPI / MUMPS / PETSc,
+      # which is what every libXapi.so PIC build path uses.
+      shell: bash
+      run: |
+        cp mtxp/make.mtxp.nompi mtxp/make.mtxp
+        head -5 mtxp/make.mtxp
+
+    - name: Provision make.header for Linux gfortran (no graphics)
+      # make.header is gitignored (per-system config). This is the
+      # "linux gfortran (64bit) lib" block of make.header.org with GFLIBS
+      # left empty: libXapi.so excludes graphics (the `make X` binaries
+      # would need GFLIBS, but CI does not build them). Use Ubuntu 24.04's
+      # default gfortran; PR #138 found gfortran-14 trips on the BPSD
+      # species_kid OOB write that the patched k-yoshimi/bpsd fork fixes.
+      shell: bash
+      run: |
+        cat > make.header <<'HEADER_EOF'
+        ### CI-generated make.header (Linux gfortran, no graphics, no MPI)
+        LAPACK = nolapack.f
+        LIBLA =
+        MODLA95 =
+        MDSPLUS = nomdsplus.f
+        MDSLIB =
+        MF77 = mpif77
+        MF90 = mpif90
+        MF95 = mpif90
+        MFC  = $(MF90)
+
+        ## linux gfortran (64bit), no graphics linkage (libXapi.so path)
+        GFLIBS=
+        OFLAGS = -g -O3 -m64 -std=legacy
+        DFLAGS = -g -m64 -fbounds-check -ffpe-trap=invalid,zero,overflow -fbacktrace -fcheck=all -std=legacy
+        FCFIXED = gfortran -ffixed-form
+        FCFREE = gfortran -ffree-form
+        MOD = mod
+        MODDIR = -Jmod
+        LD=ld
+        LDFLAGS=-r -o
+        FPP=
+        HEADER_EOF
+        head -10 make.header

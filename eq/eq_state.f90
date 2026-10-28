@@ -21,6 +21,7 @@ MODULE eq_state
   USE, INTRINSIC :: ISO_C_BINDING
   IMPLICIT NONE
   PRIVATE
+  PUBLIC :: EQ_STATE_ABI_VERSION
   PUBLIC :: eq_state_c, &
             EQ_MAX_NRGM, EQ_MAX_NZGM, EQ_MAX_NPSM, &
             EQ_MAX_NRM,  EQ_MAX_NTHM, EQ_MAX_NSUM, &
@@ -40,6 +41,13 @@ MODULE eq_state
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NRM  = 1001
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NTHM = 2049
   INTEGER(C_INT), PARAMETER :: EQ_MAX_NSUM = 1343
+
+  ! Layout version of eq_state_c / eq_state_t (#246). Bump it together
+  ! with EQ_STATE_ABI_VERSION in eq_api.h whenever a field is added,
+  ! removed or reordered; eq_state_abi_version() exports it and the C-ABI
+  ! driver fails when the two drift. eq_state_size() exports the
+  ! BIND(C) size, so the library, not the header, is authoritative.
+  INTEGER(C_INT), PARAMETER :: EQ_STATE_ABI_VERSION = 1
 
   TYPE, BIND(C) :: eq_state_c
      ! Grid dimensions (mirrors NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX

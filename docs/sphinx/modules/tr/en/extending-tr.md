@@ -129,11 +129,20 @@ consumers may need to be rebuilt or version-checked.
    - **Per-radius / per-species profile loops** at
      `:345-354` — for a new array field, follow the
      `RN` / `RT` / `AJ` / `QP` loop pattern.
-5. **Bump `TR_STATE_ABI_VERSION`** at `tr/tr_api.h:38`.
-   The current value is `2`; bump to the next integer
-   (currently `3`).
+5. **Bump `TR_STATE_ABI_VERSION` in both places**: the
+   `#define` in `tr/tr_api.h` and the `PARAMETER` in
+   `tr/tr_state.f90` (#246). The current value is `2`;
+   bump to the next integer (currently `3`). The library
+   exports the PARAMETER through `tr_state_abi_version()`
+   and its `sizeof` through `tr_state_size()`;
+   `tr/tests/c_abi/test_negative.c` fails when the two
+   values drift from the header, and `python/trlib/_ffi.py`
+   refuses a `libtrapi.so` whose version or size differs
+   from `TrStateC` (`TrlibAbiError`), so a forgotten bump
+   or a stale build surfaces at load time instead of as
+   silent zeros.
 6. **Mirror in the ctypes side** at
-   `python/trlib/_ffi.py:94-120` — append a tuple to
+   `python/trlib/_ffi.py` (`TrStateC._fields_`) — append a tuple to
    `TrStateC._fields_`. Use the same field order as the
    BIND-C struct so the two layouts stay byte-compatible.
 7. **Surface in the Python `TrState` dataclass** at

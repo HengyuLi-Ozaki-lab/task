@@ -29,25 +29,35 @@ No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
 
 ## Installation
 
-Build the shared library once:
+Per-system files first (all gitignored; once per checkout):
+
+```bash
+cd /path/to/task
+cp make.header.org make.header            # edit compiler / flags for your system
+cp mtxp/make.mtxp.nompi mtxp/make.mtxp    # or another mtxp/make.mtxp.* template
+git clone --branch develop https://github.com/k-yoshimi/bpsd.git ../bpsd   # patched fork, see docs/external-patches/bpsd-fork.md
+make -C ../bpsd libbpsd.a                 # populates ../bpsd/mod/*.mod, which pl's PIC build reads
+```
+
+The TASK checkout must be named `task`: `../bpsd/Makefile` includes
+`../task/make.header`.
+
+Then build the shared library once:
 
 ```bash
 cd /path/to/task
 make -C ti libtiapi.so
 ```
 
+The target builds the dependent PIC archives (`../lib`, `../mtxp`, `../pl`, `../eq`, `../adpost`, `../open-adas/adf11`) and the in-tree
+PIC copy of bpsd (`make -C ti bpsd_pic`) in dependency order before
+compiling the ti objects, so this one command works from a clean
+tree (#230). Build serially: `make -jN` is not supported by the
+per-directory Makefiles (no intra-directory object dependencies).
+
 This is intended to produce `ti/libtiapi.so` with 5 exported symbols
 (`ti_init`, `ti_run`, `ti_set_param`, `ti_get_state`, `ti_finalize`)
 plus PIC variants of the dependent libraries (`lib*_pic.a`).
-
-> **Known gap (2026-04-18):** the `libtiapi.so` target is not yet
-> merged into the `ti/Makefile` on `develop`. Phase L-4 lives on
-> `feature/ti-library-L4-shared-lib` and will provide the rule in a
-> follow-up PR. Until that lands, obtain `libtiapi.so` by building
-> from that branch and copying the artefact into place, or point
-> `TILIB_PATH` at a library built elsewhere. The Python wrapper,
-> test suite, and examples tolerate a missing `libtiapi.so` —
-> FFI-level tests are skipped until the library is available.
 
 Put the wrapper on `PYTHONPATH`:
 
@@ -86,6 +96,18 @@ See `examples/` for runnable scripts:
 - `examples/quickstart.py` — smallest complete run (mirrors `ti_min`)
 - `examples/parameter_sweep.py` — 3×3 NRMAX × BB grid
 - `examples/state_dump.py` — single run, full `TiState.to_dict()` as JSON
+
+## Library layout check (#246)
+
+`load_library()` asks `libtiapi.so` for its `ti_state_t` layout
+(`ti_state_abi_version()`, `ti_state_size()`) and refuses it with
+`TilibAbiError` when the version or the size differs from this wrapper's
+`TiStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C ti libtiapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
 
 ## API reference
 

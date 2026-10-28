@@ -59,12 +59,46 @@ MODULE tr_param_registry
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: tr_param_set
+  PUBLIC :: tr_param_generation
   PUBLIC :: tr_param_set_str
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
+  INTEGER, SAVE :: g_generation = 0
+
 CONTAINS
 
+  !-------------------------------------------------------------------
+  ! Mutation counter (#253).
+  !
+  ! Every successful set through this registry, whoever calls it
+  ! (tr_api_set_param, tot's "tr:" dispatcher, a future caller),
+  ! advances g_generation. tr_api compares the value it saw when it
+  ! last ran tr_prep with the current one and re-preps on a change,
+  ! so the "prepared" state cannot go stale behind the C ABI's back.
+  ! A set that fails leaves the counter alone: nothing changed.
+  !-------------------------------------------------------------------
+  FUNCTION tr_param_generation() RESULT(gen)
+    INTEGER :: gen
+    gen = g_generation
+  END FUNCTION tr_param_generation
+
   FUNCTION tr_param_set(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    REAL(rkind),      INTENT(IN) :: value
+    INTEGER :: ierr
+    ierr = tr_param_set_impl(name, value)
+    IF (ierr == 0) g_generation = g_generation + 1
+  END FUNCTION tr_param_set
+
+  FUNCTION tr_param_set_str(name, value) RESULT(ierr)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    CHARACTER(LEN=*), INTENT(IN) :: value
+    INTEGER :: ierr
+    ierr = tr_param_set_str_impl(name, value)
+    IF (ierr == 0) g_generation = g_generation + 1
+  END FUNCTION tr_param_set_str
+
+  FUNCTION tr_param_set_impl(name, value) RESULT(ierr)
     CHARACTER(LEN=*), INTENT(IN) :: name
     REAL(rkind),      INTENT(IN) :: value
     INTEGER :: ierr
@@ -199,7 +233,7 @@ CONTAINS
     CASE DEFAULT
        ierr = 1   ! unknown name
     END SELECT
-  END FUNCTION tr_param_set
+  END FUNCTION tr_param_set_impl
 
   !-------------------------------------------------------------------
   ! value_refused : .TRUE. for a value that the setter does not take.
@@ -255,7 +289,7 @@ CONTAINS
   ! KFNCVS, KUFDIR, KUFDEV, KUFDCG) can be added by extending the
   ! SELECT CASE below without touching the C ABI (only the name list).
   !-------------------------------------------------------------------
-  FUNCTION tr_param_set_str(name, value) RESULT(ierr)
+  FUNCTION tr_param_set_str_impl(name, value) RESULT(ierr)
     CHARACTER(LEN=*), INTENT(IN) :: name
     CHARACTER(LEN=*), INTENT(IN) :: value
     INTEGER :: ierr
@@ -273,7 +307,7 @@ CONTAINS
     CASE DEFAULT
        ierr = 1   ! unknown string-valued name
     END SELECT
-  END FUNCTION tr_param_set_str
+  END FUNCTION tr_param_set_str_impl
 
   !-------------------------------------------------------------------
   ! Split "NAME" or "NAME[N]" into (base, idx).
