@@ -308,7 +308,7 @@ fp.set_param_str(name="KNAMEQ", value="eq.bin")
 fp.run(ntmax=2)
 ```
 
-パスはサーバプロセスの cwd 基準で解決されます。`KNAMEQ` は `CHARACTER(LEN=80)` なので、パスは 80 バイト以内にしてください (81〜128 バイトのパスはエラーなしで先頭 80 文字に切り詰められ、128 バイトを超えると `invalid parameter` で拒否されます)。`MODELG=3` を指定しつつ `KNAMEQ` が存在しないファイルを指していると、`eq_load` が失敗し、`fp_mesh` がそのエラーを返して (`fp/fpprep.f90`)、`fp_api_run` が `FP_ERR_CALC_FAILED` を返します (`fp/fp_api.f90`)。fplib の `FplibCalcFailedError` が MCP では `calculation failed` を含む `ToolError` に変換され、`run` のエラーとしてクライアントに届きます (開けないファイルやディレクトリを指した場合も同じです)。一方、開けるが TASK/EQ 形式でないファイルを指すと、`eq/eqfile.f90` は先頭のレコードを `IOSTAT` なしで読むため、Fortran ランタイムエラーでサーバプロセスごと終了することがあります (空ファイルやテキストファイルで確認)。`KNAMEQ` には TASK/EQ 形式のファイルだけを指定してください。`fp_param_registry.f90` のコメントにある `BESEKNX` の `NCALC=-2` は、`FP_ERR_CALC_FAILED` へのエラー伝播が入る前の挙動です。`MODELG` を設定しない場合は `pl_init` 既定の `MODELG=2` (解析的平衡) で動くので、`KNAMEQ` は不要です。
+パスはサーバプロセスの cwd 基準で解決されます。`KNAMEQ` は `CHARACTER(LEN=80)` なので、パスは 80 バイト以内にしてください (それより長いパスは切り詰められず、`invalid parameter` で拒否されます)。`MODELG=3` を指定しつつ `KNAMEQ` が存在しないファイルを指していると、`eq_load` が失敗し、`fp_mesh` がそのエラーを返して (`fp/fpprep.f90`)、`fp_api_run` が `FP_ERR_CALC_FAILED` を返します (`fp/fp_api.f90`)。fplib の `FplibCalcFailedError` が MCP では `calculation failed` を含む `ToolError` に変換され、`run` のエラーとしてクライアントに届きます (開けないファイルやディレクトリを指した場合も同じです)。一方、開けるが TASK/EQ 形式でないファイルを指すと、`eq/eqfile.f90` は先頭のレコードを `IOSTAT` なしで読むため、Fortran ランタイムエラーでサーバプロセスごと終了することがあります (空ファイルやテキストファイルで確認)。`KNAMEQ` には TASK/EQ 形式のファイルだけを指定してください。`fp_param_registry.f90` のコメントにある `BESEKNX` の `NCALC=-2` は、`FP_ERR_CALC_FAILED` へのエラー伝播が入る前の挙動です。`MODELG` を設定しない場合は `pl_init` 既定の `MODELG=2` (解析的平衡) で動くので、`KNAMEQ` は不要です。
 
 なお `KNAMFP` など他の文字列パラメータはまだレジストリに CASE エントリがなく、`invalid parameter` になります。
 

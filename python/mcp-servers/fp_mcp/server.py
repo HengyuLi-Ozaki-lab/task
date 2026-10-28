@@ -663,9 +663,8 @@ def build_server() -> Any:
             run(...)
 
         Paths are resolved relative to the server process's cwd, and
-        ``KNAMEQ`` holds 80 characters: keep the path within 80 bytes
-        (one of 81 to 128 bytes is cut to its first 80 without an
-        error; a longer one is refused). A file that does not exist
+        ``KNAMEQ`` holds 80 characters: a longer path is refused
+        ("invalid parameter"), not cut. A file that does not exist
         or cannot be opened makes the next ``run`` fail with
         "calculation failed". A file that opens but is not a TASK/EQ
         file can end the server process with a Fortran runtime error

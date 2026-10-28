@@ -194,7 +194,7 @@ int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
 
 /* Write the equilibrium of the last eq_run to the TASK/EQ binary file
    named by KNAMEQ (set it with eq_set_param_str first; KNAMEQ holds 80
-   characters and eq_set_param_str cuts a longer value).
+   characters and eq_set_param_str refuses a longer value).
    EQ_ERR_NOT_INIT    before eq_init.
    EQ_ERR_INVALID     nothing is touched: no successful eq_run since
                       eq_init, since a later solve or load that failed, or
