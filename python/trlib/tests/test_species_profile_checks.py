@@ -125,13 +125,29 @@ class TestSpeciesProfileChecks(unittest.TestCase):
         with self.assertRaises(TrlibParamError):
             self._run({**self.SPECIES_3, "PT[3]": -0.001})
 
+    def _run_with_non_finite(self, name: str, ns: int, value: float):
+        # On the product line tr_set_param refuses a value that is not
+        # finite (value_refused, group J): checked here, then the value is
+        # written into the module array, so that it is run() that meets it.
+        from trlib.tests.fixtures import tr_tst2_params as base
+        with _pushd(FIXTURES_DIR):
+            with Trlib() as tr:
+                base.apply(tr)
+                for key, val in self.SPECIES_3.items():
+                    tr.set_param(key, float(val))
+                with self.assertRaises(TrlibParamError):
+                    tr.set_param(f"{name}[{ns}]", value)
+                array = (ctypes.c_double * ns).in_dll(tr._lib, f"__trcomm_param_MOD_{name.lower()}")
+                array[ns - 1] = value
+                tr.run(NTMAX)
+
     def test_nan_density_is_refused(self):
         with self.assertRaises(TrlibParamError):
-            self._run({**self.SPECIES_3, "PN[3]": float("nan")})
+            self._run_with_non_finite("PN", 3, float("nan"))
 
     def test_infinite_temperature_is_refused(self):
         with self.assertRaises(TrlibParamError):
-            self._run({**self.SPECIES_3, "PT[3]": float("inf")})
+            self._run_with_non_finite("PT", 3, float("inf"))
 
     def test_nsmax_above_compile_time_maximum_is_refused_at_run(self):
         # The registry accepts NSMAX up to 8 (C ABI capacity); the solver

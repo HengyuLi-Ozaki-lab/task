@@ -22,7 +22,7 @@ task-web's `scripts/build_fortran.sh <this checkout> <the bpsd beside it>`.
    from `origin/kyoshimi-develop` instead).
 2. Tests, with the libraries built: `PYTHONPATH=python:python/mcp-servers python -m pytest python/ --forked
    --timeout=120 --timeout-method=signal` (`pip install pytest pytest-forked pytest-timeout pytest-mock
-   pytest-subtests numpy 'mcp>=0.9,<2'`, in an environment of your own).
+   pytest-subtests numpy 'mcp>=1.2,<2'`, in an environment of your own).
 3. A pull request into `kyoshimi-develop` of this repository (`gh pr create -R HengyuLi-Ozaki-lab/task --base
    kyoshimi-develop`). The same branch also goes to `k-yoshimi/task` `develop` as a pull request, but the author opens
    that one or gives the go-ahead (`AGENTS.md`): do not open it yourself without that go-ahead. A branch that carries

@@ -221,8 +221,9 @@
 !
 !        nf_summary_logged is re-armed by nf_reset_log, which tr_prep calls
 !        -- so once per PREPARE, not per process: trmenu's R handler
-!        re-preps on every interactive run, and on the library side
-!        set_param invalidates g_prepared so a reconfigured run re-arms too.
+!        re-preps on every interactive run, and on the library side a set
+!        advances the registry's count (upstream #259), so the next tr_run
+!        prepares again and a reconfigured run re-arms too.
 !        Successive tr_run calls on one prepared handle are a continuation and
 !        share the one message.
          IF(nf_ierr.NE.0 .AND. .NOT.nf_summary_logged) THEN

@@ -629,8 +629,8 @@ def test_each_prepare_gets_a_fresh_voice():
     this branch found by hand: trmenu's R handler re-preps without ever
     returning through tr_init, so the second interactive run went silent.
 
-    Here set_param clears g_prepared, so the second run() re-preps, and the
-    over-range message must appear once per prepare.
+    Here the set advances the registry's count (upstream #259), so the second
+    run() re-preps, and the over-range message must appear once per prepare.
     """
     out = _run_hot_in_subprocess(
         """
@@ -638,7 +638,7 @@ def test_each_prepare_gets_a_fresh_voice():
             hot(tr)
             tr.set_param("NTMAX", 1)
             tr.run(1)
-            tr.set_param("NTMAX", 1)   # clears g_prepared -> next run re-preps
+            tr.set_param("NTMAX", 1)   # a set -> the next run re-preps (#259)
             tr.run(1)
         """
     )

@@ -513,7 +513,7 @@ class Eq:
 
         n = int(ndiag.value)
         # Fortran push_diag increments nlocal past diag_cap but skips the
-        # write (eq_api.f90:651-652), so ndiag_out can exceed cap. Clamp
+        # write (eq_api.f90:679-680), so ndiag_out can exceed cap. Clamp
         # and warn so the caller knows results are truncated instead of
         # IndexError-ing off the end of the ctypes buffer.
         if n > cap:
