@@ -18,6 +18,7 @@ MODULE tr_state
   USE, INTRINSIC :: ISO_C_BINDING
   IMPLICIT NONE
   PRIVATE
+  PUBLIC :: TR_STATE_ABI_VERSION
   PUBLIC :: tr_state_c, TR_MAX_NRMAX, TR_MAX_NSMAX, &
             tr_diag_entry_c, &
             TR_DIAG_PARAM_LEN, TR_DIAG_MSG_LEN, &
@@ -39,6 +40,13 @@ MODULE tr_state
   INTEGER(C_INT), PARAMETER :: TR_DIAG_OUT_OF_RANGE_AFTER_DEP = 3
   INTEGER(C_INT), PARAMETER :: TR_DIAG_FILE_MISSING           = 4
   INTEGER(C_INT), PARAMETER :: TR_DIAG_MISSING_REQUIRED       = 5
+
+  ! Layout version of tr_state_c / tr_state_t (#246). Bump it together
+  ! with TR_STATE_ABI_VERSION in tr_api.h whenever a field is added,
+  ! removed or reordered; tr_state_abi_version() exports it and the C-ABI
+  ! driver fails when the two drift. tr_state_size() exports the
+  ! BIND(C) size, so the library, not the header, is authoritative.
+  INTEGER(C_INT), PARAMETER :: TR_STATE_ABI_VERSION = 2
 
   TYPE, BIND(C) :: tr_state_c
      INTEGER(C_INT)  :: nt

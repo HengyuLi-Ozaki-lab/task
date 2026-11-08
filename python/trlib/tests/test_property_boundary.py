@@ -25,7 +25,6 @@ import sys
 import unittest
 from pathlib import Path
 
-import pytest
 
 HERE = Path(__file__).resolve()
 REPO = HERE.parents[3]
@@ -123,40 +122,18 @@ class TestTrlibBoundaryValues(unittest.TestCase):
             )
 
     # --- sweeps -----------------------------------------------------------
-    @pytest.mark.xfail(
-        # CLAUDE.md narrow exception: failure is environment-dependent
-        # (CI passes, local libtrapi.so build fails on NSMAX=3,4 with
-        # WPT=NaN). strict=True would XPASS-fail CI; strict=False
-        # tolerates both outcomes. Removal trigger: grep
-        # XFAIL_REMOVE_WITH_#189 in this file when #189 lands.
-        strict=False,
-        reason=(
-            "#189: tst2 equilibrium import copies RNU/RTU(...,3..NSMAX) "
-            "into RN/RT, but eqdata.TST-2 was built for NSMAX=2 so "
-            "species 3+ are NaN; NaN propagates to WPT/BETA*/TAUE*. "
-            "Fix lands in a separate PR; environment-dependent failure "
-            "so strict=False per CLAUDE.md narrow exception."
-        ),
-    )
     def test_NSMAX_in_range(self):
         """NSMAX in {1..4} should either run cleanly or raise TrlibError.
 
-        The tst2 fixture is configured for NSMAX=2; mutating to other
-        values may leave PA/PZ/PN/PT slots empty (relying on
-        tr_init/pl_init defaults). When the run succeeds we assert
-        round-trip + finite state; controlled failures are tolerated
-        because the property under test is "no crash, no NaN", not
-        "always converges".
-
-        XFAIL_REMOVE_WITH_#189: under MODELG=3 + MDLUF=case(3), the tst2
-        equilibrium-import path (tr/trprof.f90:202-208) copies
-        RNU/RTU(...,3..NSMAX) into RN/RT, but eqdata.TST-2 was generated
-        for NSMAX=2, so RNU/RTU species 3+ are NaN. NaN propagates to
-        WPT/BETA*/TAUE* via tr/trrslt_globals.f90:69,117,126,315-341.
-        Fix lands in a separate PR that validates active species against
-        profile-data extent (or zero-fills species > NSU). When that PR
-        lands, the failure mode disappears; remove this decorator (grep
-        XFAIL_REMOVE_WITH_#189 to locate).
+        The tst2 fixture is configured for NSMAX=2 and sets PN/PNS/PT/PTS
+        for two species only. Mutating NSMAX alone leaves species 3/4 at
+        the tr_init defaults PN=PNS=0, i.e. a species whose density is
+        identically zero; the transport step divided by it and the whole
+        state went NaN after one step (#189; the issue's RNU/RTU reading
+        was wrong, the tst2 path is MDLUF=0). tr_run now refuses that
+        before tr_prep (TrlibParamError), which the "controlled failure"
+        branch below tolerates. The property under test is "no crash, no
+        NaN", not "always converges".
         """
         from trlib import Trlib
         from trlib.errors import TrlibError
@@ -172,6 +149,26 @@ class TestTrlibBoundaryValues(unittest.TestCase):
                             continue
                         self.assertEqual(state.nsmax, nsmax)
                         self._assert_finite_state(state)
+
+    def test_NSMAX_3_and_4_run_finite_when_species_profiles_are_set(self):
+        """The positive side of #189: NSMAX=3/4 run finite once every
+        active species has a density and temperature profile."""
+        from trlib import Trlib
+        extra = {3: (0.005, 0.0005), 4: (0.001, 0.0001)}
+        for nsmax in (3, 4):
+            with self.subTest(NSMAX=nsmax):
+                mutations = {"NSMAX": nsmax}
+                for ns in range(3, nsmax + 1):
+                    pn, pns = extra[ns]
+                    mutations[f"PN[{ns}]"] = pn
+                    mutations[f"PNS[{ns}]"] = pns
+                    mutations[f"PT[{ns}]"] = 0.001
+                    mutations[f"PTS[{ns}]"] = 0.0001
+                with _pushd(self.WORKDIR):
+                    with Trlib() as tr:
+                        state = self._apply_and_run(tr, mutations, BOUNDARY_NTMAX)
+                self.assertEqual(state.nsmax, nsmax)
+                self._assert_finite_state(state)
 
     def test_NSMAX_above_TR_MAX_get_state_raises(self):
         """NSMAX > TR_MAX_NSMAX (=8) must raise TrlibError.

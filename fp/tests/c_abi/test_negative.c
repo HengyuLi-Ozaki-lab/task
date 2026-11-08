@@ -45,6 +45,22 @@
 } while (0)
 
 int main(void) {
+    /* ---- 0: layout query must match this header (#246) ---------- */
+    {
+        int    v = fp_state_abi_version();
+        size_t n = fp_state_size();
+        if (v != FP_STATE_ABI_VERSION) {
+            fprintf(stderr, "FAIL abi-version: library reports %d, fp_api.h says %d\n",
+                    v, FP_STATE_ABI_VERSION);
+            return (__LINE__);
+        }
+        if (n != sizeof(fp_state_t)) {
+            fprintf(stderr, "FAIL state-size: library reports %lu, sizeof(fp_state_t) is %lu\n",
+                    (unsigned long) n, (unsigned long) sizeof(fp_state_t));
+            return (__LINE__);
+        }
+    }
+
     int rc;
     fp_state_t s;
 

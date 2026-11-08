@@ -69,6 +69,7 @@ __all__ = [
     "TilibStateError",
     "TilibRunError",
     "TilibNotImplementedError",
+    "TilibAbiError",
     "TiLibError",
     "TiLibInvalidParam",
     "TiLibNotInitialized",
@@ -76,3 +77,13 @@ __all__ = [
     "TiLibNotImplemented",
     "raise_for_ierr",
 ]
+
+class TilibAbiError(TilibError):
+    """libtiapi.so's ti_state_t layout is not the one this wrapper has (#246).
+
+    Raised by :func:`tilib._ffi.load_library` before any struct is passed:
+    the library does not export ``ti_state_abi_version`` / ``ti_state_size``
+    (built before the layout check), or its version or sizeof differs from
+    ``tilib._ffi.TiStateC``. The message names the fix (rebuild the
+    library, or update the wrapper).
+    """

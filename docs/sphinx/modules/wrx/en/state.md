@@ -60,7 +60,11 @@ state.to_dict()   # JSON-ready dict (baseline-compatible)
 ```
 
 The `to_dict()` output has a three-tier structure (`arrays`, `arrays2`,
-`scalars`) and can be passed straight to `compare_metrics.py`.
+`scalars`) and can be passed straight to `compare_metrics.py`. In
+`arrays2` the `*_nsa_nray` blocks are species-major (`[nsamax][nraymax]`,
+the shape the Fortran baseline writes), i.e. the transpose of the
+`state.pwr_nsa_nray[nray][nsa]` attribute; `pwr_nrs_nsa` / `pwr_nrl_nsa`
+keep rows = radial bin.
 
 ## Differences from `wr`'s `WrState`
 

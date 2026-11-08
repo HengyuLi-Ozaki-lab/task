@@ -23,6 +23,7 @@ from .errors import (
     FplibNotInitError,
     FplibCalcFailedError,
     FplibNotImplementedError,
+    FplibAbiError,
     FplibOverflowError,
     # Aliases kept for spec-style naming.
     FpLibError,
@@ -43,6 +44,7 @@ __all__ = [
     "FplibNotInitError",
     "FplibCalcFailedError",
     "FplibNotImplementedError",
+    "FplibAbiError",
     "FplibOverflowError",
     "FpLibError",
     "FpLibInvalidParam",

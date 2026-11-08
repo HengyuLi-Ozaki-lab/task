@@ -16,6 +16,8 @@
  *   1..8 = step that failed (same numbering as test_run.c)
  *   90 = dlopen failed
  *   91 = dlsym failed (one of the 5 entry points missing)
+ *   92 = wrx_state_abi_version / wrx_state_size missing (library predates #246)
+ *   93 = layout version or size differs from wrx_api.h (#246)
  *
  * NOTE: Mirrors wrx/tests/c_abi/test_run.c (not wr/tests/c_abi/
  * test_run_so.c). Like the static test_run.c, we deliberately skip
@@ -87,6 +89,28 @@ int main(void) {
                 (void*)f_get_state, (void*)f_finalize);
         dlclose(h);
         return 91;
+    }
+
+    /* #246: the layout query must agree with this header before any
+     * wrx_state_t is passed. 92 = symbols missing (library predates
+     * #246), 93 = version or size differs (library and header from
+     * different commits). */
+    typedef int    (*wrx_abi_version_fn)(void);
+    typedef size_t (*wrx_state_size_fn)(void);
+    wrx_abi_version_fn f_abi  = (wrx_abi_version_fn) dlsym(h, "wrx_state_abi_version");
+    wrx_state_size_fn  f_size = (wrx_state_size_fn)  dlsym(h, "wrx_state_size");
+    if (!f_abi || !f_size) {
+        fprintf(stderr, "dlsym missing wrx_state_abi_version / wrx_state_size (#246)\n");
+        dlclose(h);
+        return 92;
+    }
+    if (f_abi() != WRX_STATE_ABI_VERSION || f_size() != sizeof(wrx_state_t)) {
+        fprintf(stderr,
+                "layout mismatch: library v%d / %lu bytes, wrx_api.h v%d / %lu bytes\n",
+                f_abi(), (unsigned long) f_size(),
+                WRX_STATE_ABI_VERSION, (unsigned long) sizeof(wrx_state_t));
+        dlclose(h);
+        return 93;
     }
 
     int rc;

@@ -37,13 +37,13 @@
   文字列パラメータ用. `tr` も最近対応しましたが eq では設計初期から必須.
 - **`validate`** ツールが独立 — 事前検証 (PR #164) を専用エンドポイントで
   公開. LLM が EQDSK ファイル不在などを `run` 前に検出できる.
-- ツール総数 **11 個** (tr は 9 個).
+- ツール総数 **13 個** (tr は 10 個).
 
 ## 前提条件
 
 1. **Python 3.10 以上**
 2. **`libeqapi.so` がビルド済み** (`make -C eq libeqapi.so`)
-3. **`mcp` パッケージ** (`pip install 'mcp>=0.9,<2'`)
+3. **`mcp` パッケージ** (`pip install 'mcp>=1.2,<2'`)
 
 ## インストール
 
@@ -68,7 +68,7 @@ python -m eq_mcp.server --help
 python -m eq_mcp.server --print-tools
 ```
 
-11 ツールが並びます (詳細は下記の「提供ツール一覧」参照).
+13 ツールが並びます (詳細は下記の「提供ツール一覧」参照).
 
 ### 環境ヘルスチェック
 
@@ -141,7 +141,7 @@ eq-mcp install --client cursor --scope user
 
 ## 提供ツール一覧
 
-`eq_mcp` は **11 個** のツールを公開します.
+`eq_mcp` は **13 個** のツールを公開します.
 
 | ツール | 目的 | 主な引数 |
 |---|---|---|
@@ -151,7 +151,9 @@ eq-mcp install --client cursor --scope user
 | `set_params` | まとめて設定 (dict) | `params` |
 | `run` | 平衡計算実行 (`eq_run`) | `mode` (default=1) |
 | `get_state` | 現在の状態取得 (`eq_get_state`) | なし |
+| `get_psi_rz` | 2 次元 PSI(R,Z) 分布と RG/ZG 格子を取得 (EQ 独自, numpy が必要) | なし |
 | `validate` | **事前検証 (EQ 強み)** | なし |
+| `save` | 直前の `run` の平衡を TASK/EQ 形式のバイナリファイルに保存 (`eq_save`). 既存ファイルは `overwrite=true` のときだけ置き換える. ファイルを開けない, または書いた長さより短い場合はエラー | `path`, `overwrite` (既定 `false`) |
 | `finalize` | リソース解放 (`eq_finalize`) | なし |
 | `describe_parameters` | パラメータ一覧・型・グループ | なし |
 | `describe_state_schema` | `get_state` 戻り値の JSON schema | なし |
@@ -220,7 +222,7 @@ EQ も `tr` 同様 1 プロセス 1 インスタンスです ({doc}`faq` Q6). �
 |---|---|
 | `libeqapi.so not found` | `make -C eq libeqapi.so` 後, `EQLIB_PATH` を絶対パスで設定 |
 | `ModuleNotFoundError: eqlib` | `PYTHONPATH` にリポジトリ `python/` を追加 |
-| `ModuleNotFoundError: mcp` | `pip install 'mcp>=0.9,<2'`. 仮想環境を確認 |
+| `ModuleNotFoundError: mcp` | `pip install 'mcp>=1.2,<2'`. 仮想環境を確認 |
 | `EQDSK file missing` | `KNAMEQ` のファイルがカレントディレクトリにあるか確認 |
 | `EqlibCalculationFailedError: ierr=3` | 入力パラメータの物理整合性, EPSEQ や NLPMAX を緩める |
 

@@ -239,5 +239,64 @@ class TestRawAbiContracts(unittest.TestCase):
             lib.wr_finalize()
 
 
+class TestLibraryLayout(unittest.TestCase):
+    """#246: the library's wr_state_t layout must be WrStateC's.
+
+    ``load_library`` compares ``wr_state_abi_version()`` / ``wr_state_size()``
+    with ``WR_STATE_ABI_VERSION`` / ``ctypes.sizeof(WrStateC)`` and raises
+    ``WrlibAbiError`` on any difference. The guards run in ``setUp``: the
+    ``.so`` is a mutable precondition.
+    """
+
+    def setUp(self):
+        if not _ffi._default_lib_path().exists():
+            self.skipTest(f"libwrapi.so not built at {_ffi._default_lib_path()}")
+        self.lib = _ffi.load_library()
+
+    def test_library_layout_matches_wrapper(self):
+        self.assertEqual(self.lib.wr_state_abi_version(), _ffi.WR_STATE_ABI_VERSION)
+        self.assertEqual(self.lib.wr_state_size(), ctypes.sizeof(_ffi.WrStateC))
+
+    def test_stale_wrapper_layout_is_refused(self):
+        """Old wrapper, new library: one field short, the library would
+        write past the allocation. Refused before any struct is passed."""
+        from _abi_check import AbiMismatchError, check_state_layout
+
+        class Stale(ctypes.Structure):
+            _fields_ = _ffi.WrStateC._fields_[:-1]
+
+        with self.assertRaises(AbiMismatchError) as ctx:
+            check_state_layout(self.lib, prefix="wr", struct=Stale,
+                               expected_version=_ffi.WR_STATE_ABI_VERSION,
+                               lib_name="libwrapi.so")
+        self.assertEqual(ctx.exception.library_size, ctypes.sizeof(_ffi.WrStateC))
+        self.assertEqual(ctx.exception.wrapper_size, ctypes.sizeof(Stale))
+
+    def test_version_drift_is_refused_through_load_library(self):
+        """A reorder keeps the size; the version tells. Exercised through
+        load_library so the wrapper's own error class is what callers see."""
+        from unittest import mock
+        from wrlib.errors import WrlibAbiError
+
+        with mock.patch.object(_ffi, "WR_STATE_ABI_VERSION",
+                               _ffi.WR_STATE_ABI_VERSION + 1):
+            with self.assertRaises(WrlibAbiError) as ctx:
+                _ffi.load_library()
+        self.assertIn("different commits", str(ctx.exception))
+
+    def test_library_without_the_query_is_refused(self):
+        """A library built before #246 exports neither symbol."""
+        from _abi_check import AbiMismatchError, check_state_layout
+
+        class _NoQuery:
+            pass
+
+        with self.assertRaises(AbiMismatchError) as ctx:
+            check_state_layout(_NoQuery(), prefix="wr", struct=_ffi.WrStateC,
+                               expected_version=_ffi.WR_STATE_ABI_VERSION,
+                               lib_name="libwrapi.so")
+        self.assertIn("before the layout check", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

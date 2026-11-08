@@ -29,13 +29,31 @@ No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
 
 ## Installation
 
-Build the shared library once:
+Per-system files first (all gitignored; once per checkout):
 
 ```bash
 cd /path/to/task
-make -C fp libs_pic
+cp make.header.org make.header            # edit compiler / flags for your system
+cp mtxp/make.mtxp.nompi mtxp/make.mtxp    # or another mtxp/make.mtxp.* template
+git clone --branch develop https://github.com/k-yoshimi/bpsd.git ../bpsd   # patched fork, see docs/external-patches/bpsd-fork.md
+make -C ../bpsd libbpsd.a                 # populates ../bpsd/mod/*.mod, which pl's PIC build reads
+```
+
+The TASK checkout must be named `task`: `../bpsd/Makefile` includes
+`../task/make.header`.
+
+Then build the shared library once:
+
+```bash
+cd /path/to/task
 make -C fp libfpapi.so
 ```
+
+The target builds the dependent PIC archives (`../lib`, `../mtxp`, `../pl`, `../eq`, `../dp`, `../ob`) and the in-tree
+PIC copy of bpsd (`make -C fp bpsd_pic`) in dependency order before
+compiling the fp objects, so this one command works from a clean
+tree (#230). Build serially: `make -jN` is not supported by the
+per-directory Makefiles (no intra-directory object dependencies).
 
 This produces `fp/libfpapi.so` with 5 exported symbols (`fp_init`,
 `fp_run`, `fp_set_param`, `fp_get_state`, `fp_finalize`) plus PIC
@@ -95,6 +113,18 @@ See `examples/` for runnable scripts:
 - `examples/quickstart.py` — smallest complete run (mirrors `fp_iter01`)
 - `examples/parameter_sweep.py` — 3×3 RR × BB grid
 - `examples/state_dump.py` — single run, full `FpState.to_dict()` as JSON
+
+## Library layout check (#246)
+
+`load_library()` asks `libfpapi.so` for its `fp_state_t` layout
+(`fp_state_abi_version()`, `fp_state_size()`) and refuses it with
+`FplibAbiError` when the version or the size differs from this wrapper's
+`FpStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C fp libfpapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
 
 ## API reference
 
@@ -179,6 +209,29 @@ via `state.to_dict()` (JSON-serialisable, layout compatible with
 | `RJT` | list[list[float]] | `[nsamax][nrmax]` current density profile |
 | `RPCT` | list[list[float]] | `[nsamax][nrmax]` collisional power profile |
 | `RPWT` | list[list[float]] | `[nsamax][nrmax]` wave-absorbed power profile |
+| `scalars` | dict[str, float] | the seven volume-integrated globals below |
+
+`scalars` holds the seven doubles that `fp_state_t` carries after the
+profile arrays: the first six are summed over the kinetic species at the
+latest global-diagnostic sample (`NTG1`), and `PLASMA_VOLUME` is `TVOLR`,
+the sum of the radial cell volumes. All seven are zero until the first
+`run()`, and again after a `set_param` or `set_param_str` until the next
+`run()` that is made, while the profiles are still those of the last run:
+
+| Key | Unit | Meaning |
+|---|---|---|
+| `TOTAL_IP` | MA | total plasma current |
+| `STORED_ENERGY` | MJ | stored energy |
+| `COLLISION_POWER` | MW | total collisional power |
+| `ABSORPTION_POWER` | MW | total absorbed wave power |
+| `ABSORPTION_WR` | MW | ray-tracing (WR) part of the absorbed power |
+| `ABSORPTION_WM` | MW | full-wave (WM) part of the absorbed power |
+| `PLASMA_VOLUME` | m^3 | plasma volume (`TVOLR`) |
+
+`state.to_dict()` puts them under a top-level `"scalars"` key.
+`fp_state_t` grows at its end only: a `libfpapi.so` built before these
+members existed must be rebuilt (`make -C fp libfpapi.so`) together with
+this wrapper.
 
 Memory-layout note: C declares `RNT[NSAMAX][NRMAX]` (row-major); the
 Fortran backend declares `RNT(NRMAX, NSAMAX)` (column-major). Both lay
@@ -228,9 +281,9 @@ menu — those live in `fp/fp` only.
   between `fp_allocate` and `fp_deallocate`). A single
   `fp_init` / `fp_run` / `fp_finalize` cycle per process is the
   supported lifecycle at Phase L-3.
-- **String parameters not yet wired** (e.g. `KNAMFP`). File-name
-  namelist keys must be left at their defaults; the float-only C ABI
-  cannot carry strings.
+- **One string parameter.** `set_param_str` sets `KNAMEQ`, the
+  equilibrium file of `MODELG=3`; `KNAMFP` and the other string keys of
+  the namelist stay at their defaults.
 - **Unregistered namelist keys** — any name missing from
   `fp_param_registry.f90` returns `FplibInvalidParamError`. The
   current registry covers ~55 settable variables across geometry,

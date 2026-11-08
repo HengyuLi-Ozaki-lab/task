@@ -74,13 +74,13 @@ limitation that gates `wrx_run` behind `WRX_RUN_OK=1`.
 |---|---|---|
 | 0. Regression baseline | `test_run/baselines/wrx_*/metrics.json` | Phase 0 ground truth (tol `1e-10`) |
 | 1. Fortran backend | `wrx/wrx_api.f90`, `wrx_param_registry.f90`, `wr_setup`, `wr_exec`, ... | Numerics, shared with `wrx` binary |
-| 2. C ABI | `wrx/wrx_api.h` + BIND(C) exports in `wrx_api.f90` | 5 functions, stable contract |
+| 2. C ABI | `wrx/wrx_api.h` + BIND(C) exports in `wrx_api.f90` | 5 functions + 2 layout queries (#246), stable contract |
 | 3. Shared library | `wrx/libwrxapi.so` | `make -C wrx libwrxapi.so`, links `lib*_pic.a` (no `libgrf`) |
 | 4. Python FFI | `python/wrxlib/_ffi.py` | `ctypes` layout mirror of `wrx_state_t` |
 | 5. High-level wrapper | `python/wrxlib/wrxlib.py`, `state.py`, `errors.py` | Context manager + dataclass |
 | 6. User scripts | `python/wrxlib/examples/*.py`, user notebooks | |
 
-### 5 C ABI entry points
+### 5 C ABI entry points (+ 2 layout queries, #246)
 
 From `wrx/wrx_api.h`:
 
@@ -268,6 +268,29 @@ Mirrors the tr spec's §12.2 for the WRX module:
 - **String parameters not yet wired** — no character-valued
   namelist keys are currently registered (design spec §4.3
   deferral).
+
+## State struct layout rule (#246)
+
+`wrx_state_t` (`wrx/wrx_api.h`) and `wrx_state_c` (`wrx/wrx_state.f90`) are
+one fixed layout, filled by `wrx_get_state`. Changing it:
+
+1. append the field at the end of both (never reorder, never remove);
+2. bump `WRX_STATE_ABI_VERSION` **in both files** (the `#define` and the
+   `PARAMETER`; currently `1`);
+3. mirror the field in `python/wrxlib/_ffi.py` (`WrxStateC._fields_`) and
+   `state.py`;
+4. rebuild `libwrxapi.so` in the same commit.
+
+The library exports its own view: `wrx_state_abi_version()` returns the
+PARAMETER and `wrx_state_size()` the `sizeof` of the BIND(C) type, both
+callable before `wrx_init`. `wrx/tests/c_abi/test_negative.c` and
+`test_run_so.c` fail when either differs from the header, and
+`python/wrxlib/_ffi.py::load_library` refuses a library whose version or
+size differs from `WrxStateC`, or that exports neither symbol (built
+before #246), with `WrxlibAbiError` naming the fix. Both silent
+failure modes of a stale pair are therefore caught at load time: a longer
+library struct would have written past the wrapper's allocation, a
+shorter one would have left the appended fields as plausible zeros.
 
 ## References
 

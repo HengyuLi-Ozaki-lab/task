@@ -67,3 +67,13 @@ def raise_for_rc(func: str, rc: int) -> None:
 
 # Also export under the plan-draft name for parity with older docs.
 raise_for_code = raise_for_rc
+
+class FplibAbiError(FplibError):
+    """libfpapi.so's fp_state_t layout is not the one this wrapper has (#246).
+
+    Raised by :func:`fplib._ffi.load_library` before any struct is passed:
+    the library does not export ``fp_state_abi_version`` / ``fp_state_size``
+    (built before the layout check), or its version or sizeof differs from
+    ``fplib._ffi.FpStateC``. The message names the fix (rebuild the
+    library, or update the wrapper).
+    """

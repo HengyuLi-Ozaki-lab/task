@@ -24,7 +24,7 @@ pip install -e python/mcp-servers/eq_mcp
 
 ```bash
 python -m eq_mcp.server --help
-python -m eq_mcp.server --print-tools   # 11 tool names, sorted
+python -m eq_mcp.server --print-tools   # 13 tool names, sorted
 ```
 
 ## Use from Claude
@@ -46,6 +46,20 @@ Register in `claude_desktop_config.json` (or `claude mcp add task-eq …`):
 }
 ```
 
+## Logs
+
+The server's stderr is what the client shows (Claude Desktop's log viewer,
+or the terminal under Claude Code). The library's `WRITE(6,...)` (unit 6,
+fd 1) goes there too: fd 1 is the JSON-RPC pipe of a stdio server, so
+`main()` hands fd 1 to stderr through the shared `python/_fd_isolation.py`
+right before the server is built (#227 / #257 / #263). When stdout and
+stderr are the same file (a server started by hand in a terminal, or
+`2>&1`), unit 6 output is discarded and one warning line says so on
+stderr; give the server a stderr of its own to keep it
+(`python -m eq_mcp.server 2>server.log`). The same-file test uses the
+`fstat` inode, so on Windows, where a pipe or console has none, a merged
+stream is not recognised and fd 1 goes to stderr as usual.
+
 ## Tools
 
 | Tool | Purpose |
@@ -56,7 +70,9 @@ Register in `claude_desktop_config.json` (or `claude mcp add task-eq …`):
 | `set_params`        | bulk dispatch (scalar / list / dict / str) |
 | `run`               | `eq_run(mode)`; `mode=1` real EQDSK load (default), `mode=0` analytic Grad-Shafranov solve (with `MODELG=2`) |
 | `get_state`         | grid counters, 12 scalars, profile arrays |
+| `get_psi_rz`        | the 2-D PSI(R,Z) field with the RG/ZG grid, after `run` (needs numpy) |
 | `validate`          | pre-run diagnostics (Issue #143) |
+| `save`              | write the equilibrium of the last `run` to a TASK/EQ binary file (`eq_save`); an existing file is replaced only with `overwrite=true`; an error when the file was not opened or is shorter than what was written |
 | `describe_parameters` / `describe_state_schema` | discovery / schema |
 | `run_and_get_state` | one-shot `init + set + run + get_state` |
 

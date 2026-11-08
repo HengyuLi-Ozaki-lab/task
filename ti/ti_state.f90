@@ -18,10 +18,18 @@ MODULE ti_state
   USE, INTRINSIC :: ISO_C_BINDING
   IMPLICIT NONE
   PRIVATE
+  PUBLIC :: TI_STATE_ABI_VERSION
   PUBLIC :: ti_state_c, TI_MAX_NRMAX, TI_MAX_NSA_MAX
 
   INTEGER(C_INT), PARAMETER :: TI_MAX_NRMAX   = 200
   INTEGER(C_INT), PARAMETER :: TI_MAX_NSA_MAX = 20
+
+  ! Layout version of ti_state_c / ti_state_t (#246). Bump it together
+  ! with TI_STATE_ABI_VERSION in ti_api.h whenever a field is added,
+  ! removed or reordered; ti_state_abi_version() exports it and the C-ABI
+  ! driver fails when the two drift. ti_state_size() exports the
+  ! BIND(C) size, so the library, not the header, is authoritative.
+  INTEGER(C_INT), PARAMETER :: TI_STATE_ABI_VERSION = 1
 
   TYPE, BIND(C) :: ti_state_c
      INTEGER(C_INT)  :: nt

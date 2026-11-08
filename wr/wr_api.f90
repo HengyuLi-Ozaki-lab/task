@@ -34,6 +34,7 @@
 
 MODULE wr_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE wr_state, ONLY: WR_STATE_ABI_VERSION
   USE wr_state, ONLY: wr_state_c, &
                       WR_MAX_NRAYMAX, WR_MAX_NRSMAX, WR_MAX_NRLMAX, &
                       WR_MAX_NRAY_EQ
@@ -74,6 +75,9 @@ MODULE wr_api
   LOGICAL, SAVE :: g_allocated   = .FALSE.
 
   EXTERNAL :: EQINIT, EQCHEK
+
+  ! #246: layout query, callable before wr_init.
+  PUBLIC :: wr_api_state_abi_version, wr_api_state_size
 
 CONTAINS
 
@@ -395,5 +399,24 @@ CONTAINS
     ! wins" behaviour where each call overwrites the shared IERR).
     ierr = ic_ierr
   END SUBROUTINE wr_apply_namelist_checks
+
+  !-------------------------------------------------------------------
+  ! wr_state_abi_version / wr_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before wr_init.
+  ! A caller compares both with its own sizeof(wr_state_t) and its copy
+  ! of WR_STATE_ABI_VERSION before passing a struct to wr_get_state;
+  ! python/wrlib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION wr_api_state_abi_version() RESULT(v) BIND(C, NAME="wr_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = WR_STATE_ABI_VERSION
+  END FUNCTION wr_api_state_abi_version
+
+  FUNCTION wr_api_state_size() RESULT(n) BIND(C, NAME="wr_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(wr_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION wr_api_state_size
 
 END MODULE wr_api

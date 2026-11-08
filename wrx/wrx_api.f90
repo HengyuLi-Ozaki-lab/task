@@ -33,6 +33,7 @@
 
 MODULE wrx_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE wrx_state, ONLY: WRX_STATE_ABI_VERSION
   USE wrx_state, ONLY: wrx_state_c, WRX_MAX_NRAYMAX, WRX_MAX_NSAMAX, &
                        WRX_MAX_NRSMAX, WRX_MAX_NRLMAX
   USE wrcomm,    ONLY: rkind, &
@@ -75,6 +76,9 @@ MODULE wrx_api
   LOGICAL, SAVE :: g_run_called  = .FALSE.
 
   EXTERNAL EQINIT, EQCHEK, EQFINI, GSOPEN, GSCLOS
+
+  ! #246: layout query, callable before wrx_init.
+  PUBLIC :: wrx_api_state_abi_version, wrx_api_state_size
 
 CONTAINS
 
@@ -451,5 +455,24 @@ CONTAINS
     CALL dp_chek(ic_ierr)
     ierr = ic_ierr
   END SUBROUTINE wrx_apply_namelist_checks
+
+  !-------------------------------------------------------------------
+  ! wrx_state_abi_version / wrx_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before wrx_init.
+  ! A caller compares both with its own sizeof(wrx_state_t) and its copy
+  ! of WRX_STATE_ABI_VERSION before passing a struct to wrx_get_state;
+  ! python/wrxlib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION wrx_api_state_abi_version() RESULT(v) BIND(C, NAME="wrx_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = WRX_STATE_ABI_VERSION
+  END FUNCTION wrx_api_state_abi_version
+
+  FUNCTION wrx_api_state_size() RESULT(n) BIND(C, NAME="wrx_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(wrx_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION wrx_api_state_size
 
 END MODULE wrx_api

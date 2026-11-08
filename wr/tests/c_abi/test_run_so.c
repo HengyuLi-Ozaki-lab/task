@@ -16,6 +16,8 @@
  *   1..8 = step that failed (same numbering as test_run.c)
  *   90 = dlopen failed
  *   91 = dlsym failed (one of the 5 entry points missing)
+ *   92 = wr_state_abi_version / wr_state_size missing (library predates #246)
+ *   93 = layout version or size differs from wr_api.h (#246)
  *
  * Mirrors tr/tests/c_abi/test_run_so.c (Phase L-4, PR #35).
  */
@@ -72,6 +74,28 @@ int main(void) {
                 (void*)f_get_state, (void*)f_finalize);
         dlclose(h);
         return 91;
+    }
+
+    /* #246: the layout query must agree with this header before any
+     * wr_state_t is passed. 92 = symbols missing (library predates
+     * #246), 93 = version or size differs (library and header from
+     * different commits). */
+    typedef int    (*wr_abi_version_fn)(void);
+    typedef size_t (*wr_state_size_fn)(void);
+    wr_abi_version_fn f_abi  = (wr_abi_version_fn) dlsym(h, "wr_state_abi_version");
+    wr_state_size_fn  f_size = (wr_state_size_fn)  dlsym(h, "wr_state_size");
+    if (!f_abi || !f_size) {
+        fprintf(stderr, "dlsym missing wr_state_abi_version / wr_state_size (#246)\n");
+        dlclose(h);
+        return 92;
+    }
+    if (f_abi() != WR_STATE_ABI_VERSION || f_size() != sizeof(wr_state_t)) {
+        fprintf(stderr,
+                "layout mismatch: library v%d / %lu bytes, wr_api.h v%d / %lu bytes\n",
+                f_abi(), (unsigned long) f_size(),
+                WR_STATE_ABI_VERSION, (unsigned long) sizeof(wr_state_t));
+        dlclose(h);
+        return 93;
     }
 
     /* Mirror the test_run.c cycle so the .so is proven to be a drop-in

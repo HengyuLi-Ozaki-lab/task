@@ -1,6 +1,8 @@
 #ifndef EQ_API_H
 #define EQ_API_H
 
+#include <stddef.h>  /* size_t for eq_state_size (#246) */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,11 +17,14 @@ extern "C" {
  *                    + RIPFC/RPFC/ZPFC/WPFC[1..10]).
  *   - eq_set_param_str : NEW in L-3. Covers KNAMEQ/KNAMWR/KNAMWM/
  *                    KNAMFP/KNAMFO/KNAMPF/KNAMEQ2 (CHARACTER(LEN=80)).
- *   - eq_run(1) : real EQDSK load via equnit::eq_load using the current
- *                 MODELG + KNAMEQ. eq_run(0) and other modes still
- *                 return EQ_ERR_NOT_IMPL pending L-4.
- *   - eq_save   : NEW in Task 1.1. Writes TASK-internal binary to KNAMEQ.
- *                 Fails (see eq_save below) when no file was written.
+ *   - eq_run(1) : load of an equilibrium file via equnit::eq_load using
+ *                 the current MODELG + KNAMEQ. eq_run(0) solves the
+ *                 analytic equilibrium (EQCALC, then EQCALQ). A mode
+ *                 above 1 returns EQ_ERR_NOT_IMPL, a negative one
+ *                 EQ_ERR_INVALID.
+ *   - eq_save   : writes the TASK/EQ binary file named by KNAMEQ (EQSAVE).
+ *                 Fails (see eq_save below) when the file was not opened
+ *                 or is shorter than what was written.
  *   - eq_last_error : why the most recent eq_run failed (see below).
  *
  * Memory note: every array in eq_state_t is fixed-size (max-capacity).
@@ -37,6 +42,20 @@ extern "C" {
 #define EQ_MAX_NRM  1001
 #define EQ_MAX_NTHM 2049
 #define EQ_MAX_NSUM 1343
+
+/*
+ * eq_state_t ABI version. Bumped whenever a field is added/removed/reordered
+ * in eq_state_t (i.e. whenever sizeof(eq_state_t) changes), together with
+ * the EQ_STATE_ABI_VERSION PARAMETER in eq_state.f90 that the library
+ * exports through eq_state_abi_version(); tests/c_abi/test_negative.c
+ * fails when the two drift. In-tree consumers (the C-ABI drivers,
+ * python/eqlib/_ffi.py) rebuild from this header and check the library's
+ * version and sizeof at load time (#246).
+ *
+ * History:
+ *   1 -> initial layout
+ */
+#define EQ_STATE_ABI_VERSION 1
 
 /* Error codes returned by every eq_* entry point. */
 enum eq_error {
@@ -116,6 +135,13 @@ int eq_set_param_str(const char* name, const char* value);
 int eq_get_state(eq_state_t* state);
 int eq_finalize(void);
 
+/* Layout query (#246): the library's EQ_STATE_ABI_VERSION and
+   sizeof(eq_state_t), callable before eq_init. Compare both with this
+   header's values before passing a struct to eq_get_state; a mismatch
+   means the library and this header come from different commits. */
+int    eq_state_abi_version(void);
+size_t eq_state_size(void);
+
 /*
  * Issue #143: pre-run parameter validation API. Pilot module = eq.
  *
@@ -166,9 +192,31 @@ typedef struct {
  */
 int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
 
-/* Write current EQ state to KNAMEQ binary. EQ_ERR_INVALID: blank KNAMEQ;
-   EQ_ERR_CALC_FAILED: the file could not be opened or no non-empty file
-   was written; EQ_OK otherwise. */
+/* Write the equilibrium of the last eq_run to the TASK/EQ binary file
+   named by KNAMEQ (set it with eq_set_param_str first; KNAMEQ holds 80
+   characters and eq_set_param_str refuses a longer value).
+   EQ_ERR_NOT_INIT    before eq_init.
+   EQ_ERR_INVALID     nothing is touched: no successful eq_run since
+                      eq_init, since a later solve or load that failed, or
+                      since eq_set_param of anything but MODEFR and MODEFW; a
+                      blank KNAMEQ; MODEFW other than 0 (overwrite an
+                      existing file) or 3 (refuse one): with 1, 2 and 4 to
+                      7 FWOPEN can read unit 5.
+   EQ_ERR_CALC_FAILED the file could not be opened (a directory that is
+                      missing or not writable; MODEFW=3 and an existing
+                      file), a write failed (an existing file without write
+                      permission), the file is shorter than what was
+                      written (a write the system refused, as under a size
+                      limit; a device), or no non-empty file exists
+                      afterwards. What is then at the path (usually a short
+                      file) is left in place and must not be loaded: the
+                      loader does not guard its READs.
+   EQ_OK              otherwise.
+   "Successful eq_run" is what this API's own entry points saw. In the mono
+   image (libtotapi_mono.so) the sibling modules change the equilibrium
+   without passing through them (for example tot's eq: parameters, eq_init
+   or EQINIT from the other modules' init, eq_load and eq_calc from the tr,
+   fp and wrx run paths), and eq_save then writes what the fields hold. */
 int eq_save(void);
 
 /*

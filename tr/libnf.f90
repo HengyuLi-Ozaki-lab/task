@@ -229,8 +229,9 @@ CONTAINS
   
   ! Re-arm the one-line-per-site logging without touching the tables.
   ! Called by tr_prep, so the unit of silence is one PREPARE, not one
-  ! process: trmenu's R handler re-preps every interactive run, and
-  ! set_param invalidates g_prepared on the library side.  Two paths
+  ! process: trmenu's R handler re-preps every interactive run, and on the
+  ! library side a set advances the registry's count, so the next tr_run
+  ! prepares again (upstream #259; tot's sets too).  Two paths
   ! deliberately do NOT re-arm, being continuations of the same prepared
   ! run: trmenu's C/CONT handler, and successive tr_run calls on one
   ! handle.  tr_init and nf_finalize also call this.

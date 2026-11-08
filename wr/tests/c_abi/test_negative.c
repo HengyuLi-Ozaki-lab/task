@@ -63,6 +63,22 @@
 } while (0)
 
 int main(void) {
+    /* ---- 0: layout query must match this header (#246) ---------- */
+    {
+        int    v = wr_state_abi_version();
+        size_t n = wr_state_size();
+        if (v != WR_STATE_ABI_VERSION) {
+            fprintf(stderr, "FAIL abi-version: library reports %d, wr_api.h says %d\n",
+                    v, WR_STATE_ABI_VERSION);
+            return (__LINE__);
+        }
+        if (n != sizeof(wr_state_t)) {
+            fprintf(stderr, "FAIL state-size: library reports %lu, sizeof(wr_state_t) is %lu\n",
+                    (unsigned long) n, (unsigned long) sizeof(wr_state_t));
+            return (__LINE__);
+        }
+    }
+
     int rc;
     wr_state_t s;
 

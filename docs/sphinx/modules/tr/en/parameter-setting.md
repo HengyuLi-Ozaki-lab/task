@@ -67,3 +67,17 @@ Diagnostic codes:
 | `OUT_OF_RANGE_AFTER_DEP` | out of range after dependent parameters are evaluated |
 | `FILE_MISSING`           | a referenced file does not exist (e.g. `KNAMEQ`) |
 | `MISSING_REQUIRED`       | a required parameter is unset |
+
+Checks currently performed: `NSMAX` above the compile-time maximum
+(`OUT_OF_RANGE`); `MODELG` 3/5/7/8 with a blank `KNAMEQ`
+(`FILE_MISSING`); `EXTERNAL_DRIVEN_I != 0` with `EXTERNAL_DRIVEN_RW <= 0`
+(`OUT_OF_RANGE`); and, outside the UFILE modes (`MDLUF` not in 1/2/3),
+the namelist profile of every active species `1..NSMAX`: `PN`/`PNS`
+negative, both zero, non-finite, or `PT`/`PTS` non-positive are reported
+as `PN[ns]` / `PT[ns]` / `PTS[ns]` (`OUT_OF_RANGE_AFTER_DEP` for the
+both-zero case, `OUT_OF_RANGE` otherwise), because the transport step
+divides by them and the run would turn NaN (#189). `run()` refuses the
+same findings before `tr_prep` (`TrlibParamError`), and also `NSMAX`
+above the compile-time maximum, so raising `NSMAX` beyond a fixture's
+species count needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the
+added species.

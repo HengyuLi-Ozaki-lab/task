@@ -45,7 +45,7 @@ Key points:
 
 1. **Python 3.10 or later**
 2. **`libtrapi.so` already built** (`make -C tr libtrapi.so`)
-3. **The `mcp` package** (`pip install 'mcp>=0.9,<2'`)
+3. **The `mcp` package** (`pip install 'mcp>=1.2,<2'`)
 
 ## Installation
 
@@ -328,9 +328,10 @@ with `tr-mcp doctor`.
 |---|---|
 | `libtrapi.so not found` | Run `make -C tr libtrapi.so`, then set `TRLIB_PATH` to its absolute path |
 | `ModuleNotFoundError: trlib` | Add the repository's `python/` to `PYTHONPATH` |
-| `ModuleNotFoundError: mcp` | `pip install 'mcp>=0.9,<2'`. Check the virtual environment |
+| `ModuleNotFoundError: mcp` | `pip install 'mcp>=1.2,<2'`. Check the virtual environment |
 | `invalid parameter` | Use `describe_parameters` to confirm the name (case-sensitive, 1-origin) |
-| `calculation failed` | Check the consistency of `NSMAX`, `PN`, `PT`, `DT`. Reset via `finalize` → `init` |
+| `invalid parameter` (from `run`) | An active species with an unevolvable profile (`PN`/`PNS` negative, both zero, or non-finite; `PT`/`PTS` non-positive, #189) or `NSMAX` above the compile-time maximum; `validate` lists the offending `PN[ns]` / `PT[ns]` / `PTS[ns]` |
+| `calculation failed` | Check the consistency of `DT` and the equilibrium input. Reset via `finalize` → `init` |
 
 For details, see §8 FAQ of `python/mcp-servers/tr_mcp/README.md`.
 

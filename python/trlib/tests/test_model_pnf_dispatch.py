@@ -629,8 +629,8 @@ def test_each_prepare_gets_a_fresh_voice():
     this branch found by hand: trmenu's R handler re-preps without ever
     returning through tr_init, so the second interactive run went silent.
 
-    Here set_param clears g_prepared, so the second run() re-preps, and the
-    over-range message must appear once per prepare.
+    Here the set advances the registry's count (upstream #259), so the second
+    run() re-preps, and the over-range message must appear once per prepare.
     """
     out = _run_hot_in_subprocess(
         """
@@ -638,7 +638,7 @@ def test_each_prepare_gets_a_fresh_voice():
             hot(tr)
             tr.set_param("NTMAX", 1)
             tr.run(1)
-            tr.set_param("NTMAX", 1)   # clears g_prepared -> next run re-preps
+            tr.set_param("NTMAX", 1)   # a set -> the next run re-preps (#259)
             tr.run(1)
         """
     )
@@ -1239,10 +1239,11 @@ def test_mdlnf_and_model_pnf_together_are_refused(monkeypatch):
 # --- a switch changed on a prepared case -----------------------------------
 #
 # Trlib prepares again after every set_param, so through it the switches
-# TRCALC sees are always the ones tr_prep saw.  Two callers are not like that:
-# tot's dispatch (tot/tot_param_registry.f90, dispatch_tr) sets a TR
-# parameter without clearing tr_api's prepared flag, and trmenu's C handler
-# goes on with the case as prepared.  The tests below put the library in that
+# TRCALC sees are always the ones tr_prep saw.  Two callers were not like that:
+# tot's dispatch (tot/tot_param_registry.f90, dispatch_tr) set a TR parameter
+# without clearing tr_api's prepared flag until upstream #259 (since then the
+# registry counts every set and tr_run prepares again), and trmenu's C handler
+# still goes on with the case as prepared.  The tests below put the library in that
 # state the only way this wrapper can: they write the module variable itself
 # between two run() calls, which is what tr_param_set does for tot.  Measured
 # through libtotapi.so before the gate in TRCALC read the switches: a

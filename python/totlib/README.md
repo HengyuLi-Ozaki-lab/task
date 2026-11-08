@@ -35,7 +35,20 @@ present, never required).
 
 ## Installation
 
-Build the shared library once:
+Per-system files first (all gitignored; once per checkout):
+
+```bash
+cd /path/to/task
+cp make.header.org make.header            # edit compiler / flags for your system
+cp mtxp/make.mtxp.nompi mtxp/make.mtxp    # or another mtxp/make.mtxp.* template
+git clone --branch develop https://github.com/k-yoshimi/bpsd.git ../bpsd   # patched fork, see docs/external-patches/bpsd-fork.md
+make -C ../bpsd libbpsd.a                 # populates ../bpsd/mod/*.mod, which pl's PIC build reads
+```
+
+The TASK checkout must be named `task`: `../bpsd/Makefile` includes
+`../task/make.header`.
+
+Then build the shared library once:
 
 ```bash
 cd /path/to/task
@@ -93,6 +106,18 @@ See `examples/` for runnable scripts (all support `--dry-run`):
 - `examples/parameter_sweep.py` — `eq:RR` × `eq:BB` grid
 - `examples/state_dump.py` — single run, `TotState.to_dict()` as JSON
 
+## Library layout check (#246)
+
+`load_library()` asks `libtotapi.so` for its `tot_state_t` layout
+(`tot_state_abi_version()`, `tot_state_size()`) and refuses it with
+`TotlibAbiError` when the version or the size differs from this wrapper's
+`TotStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C tot libtotapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
+
 ## API reference
 
 ### `Tot(lib_path: str | None = None)`
@@ -102,16 +127,38 @@ calls `tot_finalize`. Only one live instance per process is meaningful
 (TOT backend holds global COMMON-block plus per-module module-variable
 state).
 
-> **L-6 fan-out wired:** `tot_init` brings up tr + ti + fp + wr (with
-> rollback on per-module init failure); `tot_finalize` tears them down
-> in reverse order. The wrapper accepts both `OK` and `NOT_IMPL` returns
-> for forward compatibility, but the live path is `OK` end-to-end.
+> **L-6 fan-out wired:** `tot_init` brings up eq + tr + ti + fp + wr
+> (eq since #209; with rollback on per-module init failure);
+> `tot_finalize` tears them down in reverse order. The wrapper still
+> accepts `NOT_IMPL` from `tot_init` and `tot_finalize`, a leftover of
+> the pre-L-6 stubs; the live path is `OK` end-to-end.
 
 ### `Tot.set_param(name, value) -> None`
 
 Set one numeric parameter. `name` MUST be `"<ns>:<bare>"`. Validation
 runs Python-side first, so missing/unknown prefixes raise
 `TotlibInvalidParamError` before any FFI call.
+
+A set after a run restarts the module it addresses on that module's
+next run: `tr:` / `fp:` / `ti:` parameters reach the module's registry,
+which counts every successful set, and `tr_run` / `fp_run` / `ti_run`
+re-run their `*_prep` (initial profiles, metric, BPSD state; `NT` and `T`
+back to 0) when the count moved since their last prep. `Tot.run` drives
+`tr_run` only (L-6), so for `tr:` that is the next `Tot.run`; for `fp:` /
+`ti:` it is the next `fp_run` / `ti_run`, reached through `Fplib` /
+`Tilib` on the mono image or through the C ABI. This is the same
+semantics as `Trlib.set_param` / `TotPipeline.set_param` (#253). A set the
+registry refuses (unknown name, bad index) changes nothing and the next
+run continues. There is no "live" update of a running module through
+`set_param`; a coupling input that should not restart the module is a
+registry-level classification still to be designed.
+
+The count is per registry. On the mono image several modules read the
+same `plcomm` variables (`ti:RR` and `eq:RR` are one `RR`), and a set
+through one module's registry does not move another module's count:
+after `Tot.set_param("ti:RR", ...)`, `fp_run` does not re-prep. That is
+the pre-existing shared-storage property of the mono image, not something
+`set_param` can see; set each module's own parameters.
 
 ### `Tot.set_param_str(name, value) -> None`
 
@@ -226,7 +273,7 @@ Every `tot_*` return code maps to a concrete subclass of `TotlibError`:
 | 1 | `TotlibInvalidParamError` | invalid name (missing prefix / unknown namespace / unknown bare name) |
 | 2 | `TotlibNotInitializedError` | API call before `tot_init` |
 | 3 | `TotlibCalculationFailedError` | `tot_run` / `tot_get_state` failed |
-| 4 | `TotlibNotImplementedError` | stub return (L-3/L-4 `init` / `run` / `get_state` / `finalize`) |
+| 4 | `TotlibNotImplementedError` | stub return (L-3/L-4 `init` / `run` / `get_state` / `finalize`; none returns it since L-6) |
 
 Spec-style aliases (`TotLibError`, `TotLibInvalidParam`,
 `TotLibNotInitialized`, `TotLibCalculationFailed`,
@@ -348,9 +395,10 @@ debugging without losing earlier scalars.
 ## Known limitations
 
 - **Single instance per process.** TOT backend uses COMMON blocks plus
-  per-module module variables. Two concurrent `Tot()` handles share
-  state; the second `tot_init` resets globals. Use `multiprocessing`
-  for parallel sweeps — each worker loads its own `libtotapi.so`.
+  per-module module variables, so a second live `Tot()` in the same
+  process is refused (`TotlibNotInitializedError`). Use
+  `multiprocessing` for parallel sweeps — each worker loads its own
+  `libtotapi.so`.
 - **Cross-module coupling lives outside the orchestrator.**
   `tot_run(ntmax)` advances `tr_api_run` only — `fp/wr/ti` are init'd
   but their `*_run` is not invoked from the Fortran orchestrator.
@@ -383,8 +431,8 @@ library is absent. Pure-Python tests (ctypes layout, error wiring,
 namespace guard, `TotState.from_c` / `to_dict` shape) always run.
 
 The Phase L-6 4-layer regression suite (`totlib_equivalence`,
-`totlib_c_abi`, `totlib_ffi`, `totlib_wrapper`, `totlib_sweep`) is
-staged on the L-6 feature branch and will land via its own PR.
+`totlib_c_abi`, `totlib_ffi`, `totlib_wrapper`, `totlib_sweep`) is in
+`test_run/test_definitions.conf` (#96).
 
 ## License / contributions
 

@@ -20,6 +20,7 @@ MODULE wr_state
   USE, INTRINSIC :: ISO_C_BINDING
   IMPLICIT NONE
   PRIVATE
+  PUBLIC :: WR_STATE_ABI_VERSION
   PUBLIC :: wr_state_c, &
             WR_MAX_NRAYMAX, WR_MAX_NRSMAX, WR_MAX_NRLMAX, WR_MAX_NRAY_EQ
 
@@ -30,6 +31,13 @@ MODULE wr_state
   INTEGER(C_INT), PARAMETER :: WR_MAX_NRSMAX  = 200
   INTEGER(C_INT), PARAMETER :: WR_MAX_NRLMAX  = 400
   INTEGER(C_INT), PARAMETER :: WR_MAX_NRAY_EQ = 9
+
+  ! Layout version of wr_state_c / wr_state_t (#246). Bump it together
+  ! with WR_STATE_ABI_VERSION in wr_api.h whenever a field is added,
+  ! removed or reordered; wr_state_abi_version() exports it and the C-ABI
+  ! driver fails when the two drift. wr_state_size() exports the
+  ! BIND(C) size, so the library, not the header, is authoritative.
+  INTEGER(C_INT), PARAMETER :: WR_STATE_ABI_VERSION = 1
 
   TYPE, BIND(C) :: wr_state_c
      ! Runtime dimensions (<= WR_MAX_*).

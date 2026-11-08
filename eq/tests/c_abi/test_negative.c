@@ -51,6 +51,22 @@
 } while (0)
 
 int main(void) {
+    /* ---- 0: layout query must match this header (#246) ---------- */
+    {
+        int    v = eq_state_abi_version();
+        size_t n = eq_state_size();
+        if (v != EQ_STATE_ABI_VERSION) {
+            fprintf(stderr, "FAIL abi-version: library reports %d, eq_api.h says %d\n",
+                    v, EQ_STATE_ABI_VERSION);
+            return (__LINE__);
+        }
+        if (n != sizeof(eq_state_t)) {
+            fprintf(stderr, "FAIL state-size: library reports %lu, sizeof(eq_state_t) is %lu\n",
+                    (unsigned long) n, (unsigned long) sizeof(eq_state_t));
+            return (__LINE__);
+        }
+    }
+
     int rc;
     eq_state_t s;
 
@@ -61,6 +77,7 @@ int main(void) {
     EXPECT_EQ(eq_set_param_str("KNAMEQ", "x"),
                                         EQ_ERR_NOT_INIT, "set_param_str-before-init");
     EXPECT_EQ(eq_run(1),                EQ_ERR_NOT_INIT, "run-before-init");
+    EXPECT_EQ(eq_save(),                EQ_ERR_NOT_INIT, "save-before-init");
     /* eq_finalize is intentionally idempotent (returns EQ_OK when not
      * initialized) -- this matches the tr_api / fp_api / wr_api / etc.
      * convention so callers can wrap finalize in unconditional cleanup

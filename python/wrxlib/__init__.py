@@ -25,6 +25,7 @@ from .errors import (
     WrxlibStateError,
     WrxlibRunError,
     WrxlibNotImplementedError,
+    WrxlibAbiError,
     # Aliases kept for spec-style naming.
     WrxLibError,
     WrxLibInvalidParam,
@@ -44,6 +45,7 @@ __all__ = [
     "WrxlibStateError",
     "WrxlibRunError",
     "WrxlibNotImplementedError",
+    "WrxlibAbiError",
     "WrxLibError",
     "WrxLibInvalidParam",
     "WrxLibNotInitialized",

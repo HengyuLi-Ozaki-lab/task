@@ -25,19 +25,23 @@
 
 MODULE tr_api
   USE, INTRINSIC :: ISO_C_BINDING
+  USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
+  USE tr_state, ONLY: TR_STATE_ABI_VERSION
   USE tr_state, ONLY: tr_state_c, TR_MAX_NRMAX, TR_MAX_NSMAX, &
                       tr_diag_entry_c, &
                       TR_DIAG_PARAM_LEN, TR_DIAG_MSG_LEN, &
-                      TR_DIAG_OUT_OF_RANGE, TR_DIAG_FILE_MISSING
+                      TR_DIAG_OUT_OF_RANGE, TR_DIAG_FILE_MISSING, &
+                      TR_DIAG_OUT_OF_RANGE_AFTER_DEP
   USE TRCOM0,   ONLY: NSM
   USE trcomm,   ONLY: rkind, &
        NRMAX, NSMAX, NT, T, NTMAX, MODELG, KNAMEQ, &
+       MDLUF, PN, PNS, PT, PTS, &
        WPT, AJT, Q0, BETA0, BETAP0, BETAA, BETAN, &
        TAUE1, TAUE2, ZEFF0, ALI, RQ1, RN, RT, AJ, QP, &
        AJRFT, &
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_RW, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
-  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str
+  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation
   USE libnf,             ONLY: nf_finalize
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
@@ -63,8 +67,18 @@ MODULE tr_api
   INTEGER(C_INT), PARAMETER :: TR_ERR_CALC_FAILED = 3
 
   ! Lifecycle flags (module-scope state, single instance only at L-3).
+  ! #189: at most 3 findings per active species (density sign / zero
+  ! density / temperature), species bounded by TR_MAX_NSMAX.
+  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX
+
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
+  ! Registry mutation counter seen by the last successful prep (#253).
+  ! -1 = never prepared. See tr_param_generation in the registry.
+  INTEGER, SAVE :: g_prep_generation = -1
+
+  ! #246: layout query, callable before tr_init.
+  PUBLIC :: tr_api_state_abi_version, tr_api_state_size
 
 CONTAINS
 
@@ -157,10 +171,10 @@ CONTAINS
     IF (tr_param_set(TRIM(fname), value) /= 0) THEN
        ierr = TR_ERR_INVALID
     ELSE
-       ! A user who changes a profile-shape-altering variable needs to
-       ! re-run tr_prep; invalidate g_prepared so the next tr_run picks
-       ! up the new parameters.
-       g_prepared = .FALSE.
+       ! A successful set advances the registry's mutation counter;
+       ! tr_run compares it with g_prep_generation and re-runs tr_prep
+       ! (#253: the same holds for sets that reach the registry without
+       ! passing through here, such as tot's "tr:" dispatcher).
        ierr = TR_OK
     END IF
   END FUNCTION tr_api_set_param
@@ -217,8 +231,8 @@ CONTAINS
        ierr = TR_ERR_INVALID
     ELSE
        ! Changing KNAMEQ (equilibrium data file) alters the tr_prep
-       ! inputs; invalidate g_prepared so the next tr_run rebuilds.
-       g_prepared = .FALSE.
+       ! inputs; the registry's mutation counter makes the next tr_run
+       ! rebuild (see tr_api_set_param).
        ierr = TR_OK
     END IF
   END FUNCTION tr_api_set_param_str
@@ -234,6 +248,10 @@ CONTAINS
     INTEGER(C_INT), VALUE, INTENT(IN) :: ntmax_in
     INTEGER(C_INT) :: ierr
     INTEGER :: ntmax_save, calc_ierr, prep_ierr
+    INTEGER :: nviol, i
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
+    INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
 
     IF (.NOT. g_initialized) THEN
        ierr = TR_ERR_NOT_INIT
@@ -245,16 +263,39 @@ CONTAINS
     END IF
 
     ! tr_prep builds the initial profile, metric and bpsd state. It must
-    ! run before the first tr_loop call and any time the caller updated
-    ! a profile-shape-altering namelist variable (tr_api_set_param
-    ! clears g_prepared).
-    IF (.NOT. g_prepared) THEN
+    ! run before the first tr_loop call and any time a parameter was set
+    ! since the last prep: the registry counts every successful set
+    ! (tr_param_generation), from tr_api_set_param or from tot's "tr:"
+    ! dispatcher alike (#253), and a changed count means re-prep.
+    IF (.NOT. g_prepared .OR. g_prep_generation /= tr_param_generation()) THEN
+       ! NSMAX above the solver's compile-time NSM: tr_api_validate
+       ! reports it, but a caller that skips validate must not reach
+       ! tr_prep with it (the registry accepts up to TR_MAX_NSMAX=8).
+       IF (NSMAX > NSM) THEN
+          WRITE(6, '(A,I0,A,I0)') 'XX tr_run: NSMAX=', NSMAX, &
+               ' exceeds the compile-time maximum NSM=', NSM
+          ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+       ! #189: refuse, before any work, an active species whose namelist
+       ! profile the solver cannot evolve (see species_profile_violations).
+       ! Same contract as fp_run (#242): one line per violation on unit 6,
+       ! TR_ERR_INVALID returned, handle stays usable.
+       CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+       IF (nviol > 0) THEN
+          DO i = 1, nviol
+             WRITE(6, '(A)') 'XX tr_run: '//TRIM(vnames(i))//': '//TRIM(vmsgs(i))
+          END DO
+          ierr = TR_ERR_INVALID
+          RETURN
+       END IF
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           ierr = TR_ERR_CALC_FAILED
           RETURN
        END IF
        g_prepared = .TRUE.
+       g_prep_generation = tr_param_generation()
     END IF
 
     ! Override NTMAX for this call so tr_loop steps exactly ntmax_in
@@ -403,8 +444,12 @@ CONTAINS
   !                 it, tr_run -> pl_prof_init -> equnit::eq_load opens
   !                 "" silently and fills the post-load grid with garbage.
   !
-  ! Future categories (follow-up PRs): INCONSISTENT_PAIR,
-  ! OUT_OF_RANGE_AFTER_DEP, MISSING_REQUIRED.
+  !   OUT_OF_RANGE / OUT_OF_RANGE_AFTER_DEP (#189): per-species namelist
+  !                 profile (PN/PNS/PT/PTS) that the solver cannot evolve;
+  !                 see species_profile_violations. tr_run refuses the
+  !                 same findings.
+  !
+  ! Future categories (follow-up PRs): INCONSISTENT_PAIR, MISSING_REQUIRED.
   !
   ! Note: NRMAX / NSZMAX / NSNMAX are NOT currently settable via
   ! tr_set_param (the registry does not expose them), so runtime values
@@ -419,6 +464,10 @@ CONTAINS
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
+    INTEGER :: nviol, i
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
+    INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
 
     IF (.NOT. g_initialized) THEN
        ndiag = 0
@@ -444,6 +493,14 @@ CONTAINS
                "MODELG=3/5/7/8 requires non-blank KNAMEQ (eq/VMEC file)")
        END IF
     END IF
+
+    ! ---- #189: per-species namelist profile sanity (every MDLUF outside
+    !      the UFILE modes 1/2/3). Same
+    !      findings that make tr_run refuse; here they are diagnostics.
+    CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+    DO i = 1, nviol
+       CALL push_diag(TRIM(vnames(i)), vcodes(i), TRIM(vmsgs(i)))
+    END DO
 
     ! ---- L-7b-i: OUT_OF_RANGE: EXTERNAL_DRIVEN_I requires positive width.
     !      Non-zero I with non-positive RW would silently normalize to zero
@@ -566,5 +623,98 @@ CONTAINS
        IF (s(j) /= ' ') RETURN
     END DO
   END FUNCTION c_str_overflows
+
+  ! ----- #189: namelist profile sanity per active species -----------
+  ! With MDLUF=0 (no UFILE data; every fixture and sample input in the
+  ! repo) tr_prof builds RN/RT for ns = 1..NSMAX from the namelist pairs
+  ! PN/PNS (centre / edge density) and PT/PTS (centre / edge
+  ! temperature). The transport step then divides by the density and
+  ! temperature of every active species, so a species whose profile is
+  ! identically zero or negative turns the whole state into NaN after
+  ! the first step (reproduced with the tst2 fixture: NSMAX=3 leaves
+  ! species 3 at the tr_init defaults PN(3)=PNS(3)=0 -> WPT/BETA*/TAUE*
+  ! = NaN; the same with PT(3)=0, PTS(3)=0 or PN(3)<0). PN(ns)=0 with
+  ! PNS(ns)>0 runs finite and stays allowed. Non-finite values (the C
+  ! setter accepts any double) are reported too.
+  !
+  ! Scope: tr_prof's `case default` branch, i.e. every MDLUF outside
+  ! {1,2,3}, builds all species from the namelist and is checked in
+  ! full. The UFILE modes MDLUF=1/2/3 take most profiles from the
+  ! RNU/RTU arrays but still read PN/PNS (and PT/PTS) for some species,
+  ! selected by MDNI / MODEP / RHOA inside tr_prof; that subset is not
+  ! mirrored here (no UFILE fixture in the repo to verify it against) and
+  ! is tracked as a follow-up.
+  !
+  ! Returns one (param, code, message) triple per finding; param uses
+  ! the registry's "PN[ns]" spelling so a caller can set it directly.
+  ! Species are bounded by the array extents: NSMAX above NSM is
+  ! reported separately by tr_api_validate's OUT_OF_RANGE check.
+  SUBROUTINE species_profile_violations(nviol, vnames, vcodes, vmsgs)
+    INTEGER,                          INTENT(OUT) :: nviol
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN), INTENT(OUT) :: vnames(SPC_MAX_VIOL)
+    INTEGER(C_INT),                   INTENT(OUT) :: vcodes(SPC_MAX_VIOL)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN),   INTENT(OUT) :: vmsgs(SPC_MAX_VIOL)
+    INTEGER :: ns, nsa
+
+    nviol = 0
+    IF (MDLUF == 1 .OR. MDLUF == 2 .OR. MDLUF == 3) RETURN
+    nsa = MIN(NSMAX, SIZE(PN), SIZE(PNS), SIZE(PT), SIZE(PTS), TR_MAX_NSMAX)
+    DO ns = 1, nsa
+       IF (.NOT. (IEEE_IS_FINITE(PN(ns)) .AND. IEEE_IS_FINITE(PNS(ns)) &
+            .AND. IEEE_IS_FINITE(PT(ns)) .AND. IEEE_IS_FINITE(PTS(ns)))) THEN
+          CALL add("PN", ns, TR_DIAG_OUT_OF_RANGE, &
+               "non-finite PN, PNS, PT or PTS for active species: the run produces NaN")
+          CYCLE
+       END IF
+       IF (PN(ns) < 0.D0 .OR. PNS(ns) < 0.D0) THEN
+          CALL add("PN", ns, TR_DIAG_OUT_OF_RANGE, &
+               "negative density (PN or PNS) for active species: the run produces NaN")
+       ELSE IF (PN(ns) == 0.D0 .AND. PNS(ns) == 0.D0) THEN
+          CALL add("PN", ns, TR_DIAG_OUT_OF_RANGE_AFTER_DEP, &
+               "PN and PNS both 0 for a species <= NSMAX: zero density everywhere, NaN after one step; set PN/PNS or lower NSMAX")
+       END IF
+       IF (PT(ns) <= 0.D0) THEN
+          CALL add("PT", ns, TR_DIAG_OUT_OF_RANGE, &
+               "non-positive centre temperature for active species: the run produces NaN")
+       END IF
+       IF (PTS(ns) <= 0.D0) THEN
+          CALL add("PTS", ns, TR_DIAG_OUT_OF_RANGE, &
+               "non-positive edge temperature for active species: the run produces NaN")
+       END IF
+    END DO
+
+  CONTAINS
+
+    SUBROUTINE add(base, idx, code_in, msg_in)
+      CHARACTER(LEN=*), INTENT(IN) :: base, msg_in
+      INTEGER,          INTENT(IN) :: idx
+      INTEGER(C_INT),   INTENT(IN) :: code_in
+      IF (nviol >= SPC_MAX_VIOL) RETURN
+      nviol = nviol + 1
+      WRITE(vnames(nviol), '(A,"[",I0,"]")') base, idx
+      vcodes(nviol) = code_in
+      vmsgs(nviol)  = msg_in
+    END SUBROUTINE add
+
+  END SUBROUTINE species_profile_violations
+
+  !-------------------------------------------------------------------
+  ! tr_state_abi_version / tr_state_size : layout query (#246).
+  !
+  ! No lifecycle check and no side effect; callable before tr_init.
+  ! A caller compares both with its own sizeof(tr_state_t) and its copy
+  ! of TR_STATE_ABI_VERSION before passing a struct to tr_get_state;
+  ! python/trlib/_ffi.py refuses the library when either differs.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_state_abi_version() RESULT(v) BIND(C, NAME="tr_state_abi_version")
+    INTEGER(C_INT) :: v
+    v = TR_STATE_ABI_VERSION
+  END FUNCTION tr_api_state_abi_version
+
+  FUNCTION tr_api_state_size() RESULT(n) BIND(C, NAME="tr_state_size")
+    INTEGER(C_SIZE_T) :: n
+    TYPE(tr_state_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION tr_api_state_size
 
 END MODULE tr_api

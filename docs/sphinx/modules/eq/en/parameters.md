@@ -219,8 +219,8 @@ These are checked against the compile-time maxima by `validate()`.
 | `MDLEQV` | int switch | 3 | $\psi$-extrapolation order in vacuum |
 | `NPRINT` | int switch | 0 | output verbosity |
 | `IDEBUG` | int switch | 0 | debug output flag |
-| `MODEFR` | int switch | 0 | (internal) |
-| `MODEFW` | int switch | 0 | (internal) |
+| `MODEFR` | int switch | 0 | file-read mode of `FROPEN`: 0 reads the file named by `KNAMEQ`; 1 asks for a file name on unit 5 |
+| `MODEFW` | int switch | 0 | file-write mode of `FWOPEN`: 0 overwrites an existing file, 3 refuses one; 1, 2 and 4 to 7 can read unit 5, and `eq_save` takes 0 and 3 only |
 
 Allowed values of `MODELG`:
 

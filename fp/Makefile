@@ -71,7 +71,7 @@ all: libs fp
 
 
 ../../bpsd/libbpsd.a:
-	(cd ../../bpsd; make libbpsd.a)
+	(cd ../../bpsd; $(MAKE) libbpsd.a)
 ../lib/libtask.a:
 	(cd ../lib; make libtask.a)
 ../lib/libgrf.a:
@@ -291,30 +291,57 @@ LIBS_PIC = ../ob/libob_pic.a ../dp/libdp_pic.a \
            ../lib/libtask_pic.a
 LIBMTX_PIC = ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o
 
-# Build dependent PIC libs on demand. Note pl/Makefile splits PIC build
-# into two phony targets so we can interleave the eq build to break the
-# pl <-> eq circular dependency (mirrors the non-PIC libpl.a recipe).
+# Build dependent PIC libs on demand. pl/Makefile splits the PIC build
+# into two phases (libpl_noeq_pic, then libpl_pic.a) so the eq build can
+# be interleaved (mirrors the non-PIC libpl.a recipe); pl's eq-phase
+# sources (plprof*) USE no eq module, so the pl -> eq edge is order-only.
 ../eq/libeq_pic.a:
-	(cd ../pl; make libpl_noeq_pic)
-	(cd ../eq; make libeq_pic.a)
-../pl/libpl_pic.a: ../eq/libeq_pic.a
-	(cd ../pl; make libpl_pic.a)
+	(cd ../pl; $(MAKE) libpl_noeq_pic)
+	(cd ../eq; $(MAKE) libeq_pic.a)
+../pl/libpl_pic.a: | ../eq/libeq_pic.a
+	(cd ../pl; $(MAKE) libpl_pic.a)
 ../lib/libtask_pic.a:
-	(cd ../lib; make libtask_pic.a)
+	(cd ../lib; $(MAKE) libtask_pic.a)
+# libgrf_pic.a is a compile-time prerequisite only: pl/plload.f90 and
+# fp's own fpcalc / fpcalcn USE libgrf, so its .mod must be in
+# ../lib/mod_pic; the archive is not linked into libfpapi.so.
+../lib/libgrf_pic.a:
+	(cd ../lib; $(MAKE) libgrf_pic.a)
 ../dp/libdp_pic.a: ../pl/libpl_pic.a ../eq/libeq_pic.a
-	(cd ../dp; make libdp_pic.a)
+	(cd ../dp; $(MAKE) libdp_pic.a)
 ../ob/libob_pic.a: ../pl/libpl_pic.a ../eq/libeq_pic.a
-	(cd ../ob; make libob_pic.a)
+	(cd ../ob; $(MAKE) libob_pic.a)
 ../mtxp/libmtxnompi_pic.o:
-	(cd ../mtxp; make libmtxnompi_pic.o)
+	(cd ../mtxp; $(MAKE) libmtxnompi_pic.o)
 ../mtxp/libmtxbnd_pic.o:
-	(cd ../mtxp; make libmtxbnd_pic.o)
+	(cd ../mtxp; $(MAKE) libmtxbnd_pic.o)
 
 .PHONY: libs_pic
-libs_pic: ../lib/libtask_pic.a ../mtxp/libmtxnompi_pic.o \
-          ../mtxp/libmtxbnd_pic.o $(OBJBPSD_PIC) \
+libs_pic: ../../bpsd/libbpsd.a ../lib/libtask_pic.a ../lib/libgrf_pic.a \
+          ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o $(OBJBPSD_PIC) \
           ../eq/libeq_pic.a ../pl/libpl_pic.a \
           ../dp/libdp_pic.a ../ob/libob_pic.a
+
+# Serialize the sibling chain top-down (lib -> mtxp -> bpsd -> pl -> eq).
+# NOTE: `make -jN` is still unsupported — the leaf Makefiles (lib, mtxp,
+# this module's PIC objects) carry no intra-directory .o dependencies,
+# so parallel builds fail on missing .mod files. Build serially.
+../lib/libgrf_pic.a: ../lib/libtask_pic.a
+../mtxp/libmtxnompi_pic.o: ../lib/libtask_pic.a
+../mtxp/libmtxbnd_pic.o: ../mtxp/libmtxnompi_pic.o
+# pl's PIC build reads ../../bpsd/mod/*.mod (populated by the sibling's
+# static `make libbpsd.a`) plus lib / mtxp .mod files; eq needs pl.
+# Order-only upstream edges so the chain is explicit regardless of the
+# order make visits the prerequisite list.
+../eq/libeq_pic.a: | ../../bpsd/libbpsd.a ../lib/libtask_pic.a \
+                     ../lib/libgrf_pic.a ../mtxp/libmtxbnd_pic.o
+
+# Order-only prerequisites (#230): every fp PIC object USEs modules from
+# bpsd / lib / mtxp / pl / eq / dp / ob, so `make -C fp libfpapi.so` on a
+# clean tree must build them first (previously the README asked for a
+# separate `make -C fp libs_pic` step). Same pattern as wr / wrx / eq.
+$(OBJBPSD_PIC): | ../lib/libtask_pic.a
+$(OBJ_LIBFPAPI): | libs_pic
 
 # The shared library itself. gfortran drives the link so libgfortran is
 # pulled in automatically. --start-group/--end-group resolves the cyclic

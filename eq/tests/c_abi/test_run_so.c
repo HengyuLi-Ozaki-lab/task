@@ -19,6 +19,8 @@
  *   1..8   = step that failed
  *   90     = dlopen failed
  *   91     = dlsym failed (one of the 6 entry points missing)
+ *   92 = eq_state_abi_version / eq_state_size missing (library predates #246)
+ *   93 = layout version or size differs from eq_api.h (#246)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,6 +68,28 @@ int main(void) {
                 (void*)f_set_param_str, (void*)f_get_state, (void*)f_finalize);
         dlclose(h);
         return 91;
+    }
+
+    /* #246: the layout query must agree with this header before any
+     * eq_state_t is passed. 92 = symbols missing (library predates
+     * #246), 93 = version or size differs (library and header from
+     * different commits). */
+    typedef int    (*eq_abi_version_fn)(void);
+    typedef size_t (*eq_state_size_fn)(void);
+    eq_abi_version_fn f_abi  = (eq_abi_version_fn) dlsym(h, "eq_state_abi_version");
+    eq_state_size_fn  f_size = (eq_state_size_fn)  dlsym(h, "eq_state_size");
+    if (!f_abi || !f_size) {
+        fprintf(stderr, "dlsym missing eq_state_abi_version / eq_state_size (#246)\n");
+        dlclose(h);
+        return 92;
+    }
+    if (f_abi() != EQ_STATE_ABI_VERSION || f_size() != sizeof(eq_state_t)) {
+        fprintf(stderr,
+                "layout mismatch: library v%d / %lu bytes, eq_api.h v%d / %lu bytes\n",
+                f_abi(), (unsigned long) f_size(),
+                EQ_STATE_ABI_VERSION, (unsigned long) sizeof(eq_state_t));
+        dlclose(h);
+        return 93;
     }
 
     int rc;

@@ -22,6 +22,15 @@ baselines, in two unrelated classes:
 This record covers **only** the `tot_ht6m_short` failure. The wrx failures are
 a distinct gf-version-sensitivity issue handled separately.
 
+> **Note (2026-10-21).** The wrx failures in the table were `pwr_tot`
+> differences and were compiler drift, as said here (on the CI compiler
+> `pwr_tot` before and after the bpsi change agrees to about 6e-16). What this
+> record could not see: the comparator of that time compared only `pwr_tot`
+> for wrx, and the same merge changed the rl arrays (the bpsi base re-bins the
+> rl deposition of `wrx/wrcalpwr.f90` with narrower, cell-centred bins). Once
+> #249 compared the arrays, that change showed. See
+> `2026-10-21-wrx-rl-binning-baseline.md`.
+
 The merge did **not** touch `tot/` or `fp/` Fortran. `eq_iter01`, `tr_iter01`,
 `tot_demo2014_short`, and `fp_iter01` all PASS on CI — so the change is not a
 broad regression. Only the HT6M coupled run shifted.
@@ -119,6 +128,10 @@ references this file. It does NOT loosen the 1e-10 tolerance — it updates the
 reference to the physically-correct post-fix values.
 
 ## 5. Out of scope — the wrx failures (tracked separately)
+
+> **Note (2026-10-21):** the `pwr_tot` drift described here is compiler
+> drift, as stated; the rl-array change it did not see is in the note in §1
+> and `2026-10-21-wrx-rl-binning-baseline.md`.
 
 `wrxlib::test_demo` / `test_iter01` fail by ~5e-10..1.5e-9 — **compiler-version**
 FP reordering, not a physics change: the committed wrx baselines were generated

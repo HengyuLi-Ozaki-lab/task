@@ -34,12 +34,31 @@ No third-party dependencies — Python 3.8+ stdlib only (`ctypes`,
 
 ## Installation
 
-Build the shared library once:
+Per-system files first (all gitignored; once per checkout):
+
+```bash
+cd /path/to/task
+cp make.header.org make.header            # edit compiler / flags for your system
+cp mtxp/make.mtxp.nompi mtxp/make.mtxp    # or another mtxp/make.mtxp.* template
+git clone --branch develop https://github.com/k-yoshimi/bpsd.git ../bpsd   # patched fork, see docs/external-patches/bpsd-fork.md
+make -C ../bpsd libbpsd.a                 # populates ../bpsd/mod/*.mod, which pl's PIC build reads
+```
+
+The TASK checkout must be named `task`: `../bpsd/Makefile` includes
+`../task/make.header`.
+
+Then build the shared library once:
 
 ```bash
 cd /path/to/task
 make -C wrx libwrxapi.so
 ```
+
+The target builds the dependent PIC archives (`../lib`, `../mtxp`, `../pl`, `../eq`, `../dp`) and the in-tree
+PIC copy of bpsd (`make -C wrx bpsd_pic`) in dependency order before
+compiling the wrx objects, so this one command works from a clean
+tree (#230). Build serially: `make -jN` is not supported by the
+per-directory Makefiles (no intra-directory object dependencies).
 
 This produces `wrx/libwrxapi.so` with 5 exported symbols (`wrx_init`,
 `wrx_run`, `wrx_set_param`, `wrx_get_state`, `wrx_finalize`) plus PIC
@@ -132,6 +151,18 @@ See `examples/` for runnable scripts:
 All three accept `--dry-run` to validate argument parsing and import
 wiring without invoking the FFI (useful for smoke runs without the
 shared library present).
+
+## Library layout check (#246)
+
+`load_library()` asks `libwrxapi.so` for its `wrx_state_t` layout
+(`wrx_state_abi_version()`, `wrx_state_size()`) and refuses it with
+`WrxlibAbiError` when the version or the size differs from this wrapper's
+`WrxStateC`, or when the library exports neither symbol (built before
+#246). The message names the fix: rebuild the library
+(`make -C wrx libwrxapi.so`) or update the wrapper. A library and a
+wrapper from different commits used to fail silently (fields written
+past the struct, or appended fields read as `0.0`). A wrapper older
+than #246 does not ask, so keep the two from the same commit.
 
 ## API reference
 
@@ -227,6 +258,13 @@ output for cases where both apply).
 
 The 2-D `pwr_nsa_nray` matrix is sliced to the active `[0:nraymax]
 [0:nsamax]` corner; zero-padded struct tails are dropped.
+
+`to_dict()` groups these into the baseline's `{arrays, arrays2, scalars}`
+layout. In `arrays2` the `*_nsa_nray` blocks are emitted **species-major**
+(`[nsamax][nraymax]`, the Fortran index order in the name and the shape
+`wrx/wrxregress.f90` writes), so they are the transpose of the attributes
+above; `pwr_nrs_nsa` / `pwr_nrl_nsa` are `[nrsmax][nsamax]` /
+`[nrlmax][nsamax]` on both sides.
 
 ## Exceptions
 

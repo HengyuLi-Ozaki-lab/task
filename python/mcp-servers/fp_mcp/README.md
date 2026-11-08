@@ -61,11 +61,11 @@ MCP (Model Context Protocol) は、Anthropic が策定した **「LLM と外部�
    make -C fp libfpapi.so
    ```
 
-   成功すると `fp/libfpapi.so` が生成されます (Phase L-4 で整備済みです)。エクスポートされる C ABI シンボルは 6 つ (`fp_init`, `fp_run`, `fp_set_param`, `fp_set_param_str`, `fp_get_state`, `fp_finalize`) です。
+   成功すると `fp/libfpapi.so` が生成されます (Phase L-4 で整備済みです)。エクスポートされる C ABI シンボルは 8 つ: エントリポイント 6 つ (`fp_init`, `fp_run`, `fp_set_param`, `fp_set_param_str`, `fp_get_state`, `fp_finalize`) と、`fplib` が読み込み時に `fp_state_t` のレイアウトを照合するための 2 つ (`fp_state_abi_version`, `fp_state_size`) です。
 
 3. **`mcp` パッケージ (Python MCP SDK)**
 
-   `pip install 'mcp>=0.9,<2'` で入ります。後述の「インストール」手順に同梱しています。
+   `pip install 'mcp>=1.2,<2'` で入ります。後述の「インストール」手順に同梱しています。
 
 ## 3. インストール
 
@@ -212,7 +212,7 @@ LLM は `init → run(1) → get_state` の順にツールを呼び、`TIMEFP` �
 ### 6.2. iter01 相当のパラメータ設定
 
 ```
-FP を MODELG=3、NSMAX=3、NRMAX=40、NPMAX=50、NTHMAX=50、DELT=1.0e-3
+FP を NSMAX=3、NRMAX=40、NPMAX=50、NTHMAX=50、DELT=1.0e-3
 で初期化して 2 ステップ走らせて、NSA=1 の RTT プロファイルを教えて。
 ```
 
@@ -221,7 +221,7 @@ LLM は内部で
 ```python
 run_and_get_state(
     params={
-        "MODELG": 3, "NSMAX": 3,
+        "NSMAX": 3,
         "NRMAX": 40, "NPMAX": 50, "NTHMAX": 50,
         "DELT": 1.0e-3,
     },
@@ -229,7 +229,7 @@ run_and_get_state(
 )
 ```
 
-のような呼び出しに変換し、`profile[0]["RTT"]` を読み取って返してくれます。
+のような呼び出しに変換し、`profile[0]["RTT"]` を読み取って返してくれます。`MODELG` は指定しません: `fp_iter01.in` も設定しておらず、`pl_init` 既定の `MODELG=2` (解析的平衡) で動きます (8.3 参照)。
 
 ### 6.3. 種族ごとのパラメータ設定 (配列)
 
@@ -289,9 +289,9 @@ FP バックエンドには `fp_allocate` / `fp_deallocate` 非対称があり�
 
 これは `python/fplib/README.md` にも「Known limitations」として記載されている制限事項です。
 
-### 8.3. `MODELG=3` は iter01 fixture の典型値
+### 8.3. `MODELG=3` は平衡ファイルを読み込むときの選択
 
-`test_run/inputs/fp_iter01.in` で使われている設定を踏襲する場合、`MODELG=3` が既定的な選択になります。ただし `MODELG=3` は**解析的平衡ではなく、平衡データファイルを読み込むパス**です。必ず `set_param_str("KNAMEQ", <file>)` で実在するファイルを指してください (8.4 参照)。`MODELG` を設定しなければ `pl_init` 既定の `MODELG=2` (解析的平衡) で動き、外部ファイルは不要です。他のモデル (`MODELG=0, 1, 5, 8, ...`) を選ぶと `fp_init` / `fp_prep` が `FP_ERR_CALC_FAILED` を返すこともあるので、`libfpapi.so` 側の対応状況を確認してください。
+`MODELG=3` は**解析的平衡ではなく、平衡データファイルを読み込むパス**で、平衡ファイルを読み込みたいときに選ぶ値です。必ず `set_param_str("KNAMEQ", <file>)` で実在するファイルを指してください (8.4 参照)。iter01 の既定値ではありません: `test_run/inputs/fp_iter01.in` は `MODELG` を設定しておらず、`pl_init` 既定の `MODELG=2` (解析的平衡) で動きます。`MODELG` を設定しなければ同じく `MODELG=2` で動き、外部ファイルは不要です。他のモデル (`MODELG=0, 1, 5, 8, ...`) を選ぶと `fp_init` / `fp_prep` が `FP_ERR_CALC_FAILED` を返すこともあるので、`libfpapi.so` 側の対応状況を確認してください。
 
 ### 8.4. 文字列パラメータ (`KNAMEQ`) と EQ→FP 連携
 
@@ -299,17 +299,16 @@ FP バックエンドには `fp_allocate` / `fp_deallocate` 非対称があり�
 
 現在レジストリ (`fp/fp_param_registry.f90::fp_param_set_str`) が受け付ける名前は `KNAMEQ` のみです。これは `MODELG=3` のときに `eq_load` が読む平衡データファイル名で、EQ が書き出したファイルを FP に食わせる (EQ→FP 連携) ための入口になります。
 
-```python
-# eq_mcp 側で平衡を保存
-eq.save(path="eq.bin")
+読み込むのは TASK/EQ 形式の平衡ファイルです (例: `EQSAVE` / `eq` プログラムが書き出したもの。`eq_mcp` の `save` ツールでも書き出せます)。
 
-# 同じ作業ディレクトリで fp_mcp を起動して読み込む
+```python
+# eq.bin: TASK/EQ 形式の平衡ファイル。これがある作業ディレクトリで fp_mcp を起動して読み込む
 fp.set_param(name="MODELG", value=3)
 fp.set_param_str(name="KNAMEQ", value="eq.bin")
 fp.run(ntmax=2)
 ```
 
-パスはサーバプロセスの cwd 基準で解決されます。`MODELG=3` を指定しつつ `KNAMEQ` が存在しないファイルを指していると、`eq_load` が失敗し、下流の `BESEKNX` が `NCALC=-2` を出して NaN が伝播します (`fp_param_registry.f90` のコメント参照)。`MODELG` を設定しない場合は `pl_init` 既定の `MODELG=2` (解析的平衡) で動くので、`KNAMEQ` は不要です。
+パスはサーバプロセスの cwd 基準で解決されます。`KNAMEQ` は `CHARACTER(LEN=80)` なので、パスは 80 バイト以内にしてください (それより長いパスは切り詰められず、`invalid parameter` で拒否されます)。`MODELG=3` を指定しつつ `KNAMEQ` が存在しないファイルを指していると、`eq_load` が失敗し、`fp_mesh` がそのエラーを返して (`fp/fpprep.f90`)、`fp_api_run` が `FP_ERR_CALC_FAILED` を返します (`fp/fp_api.f90`)。fplib の `FplibCalcFailedError` が MCP では `calculation failed` を含む `ToolError` に変換され、`run` のエラーとしてクライアントに届きます (開けないファイルやディレクトリを指した場合も同じです)。一方、開けるが TASK/EQ 形式でないファイルを指すと、`eq/eqfile.f90` は先頭のレコードを `IOSTAT` なしで読むため、Fortran ランタイムエラーでサーバプロセスごと終了することがあります (空ファイルやテキストファイルで確認)。`KNAMEQ` には TASK/EQ 形式のファイルだけを指定してください。`fp_param_registry.f90` のコメントにある `BESEKNX` の `NCALC=-2` は、`FP_ERR_CALC_FAILED` へのエラー伝播が入る前の挙動です。`MODELG` を設定しない場合は `pl_init` 既定の `MODELG=2` (解析的平衡) で動くので、`KNAMEQ` は不要です。
 
 なお `KNAMFP` など他の文字列パラメータはまだレジストリに CASE エントリがなく、`invalid parameter` になります。
 
@@ -345,7 +344,7 @@ export PYTHONPATH=/absolute/path/to/task/python:$PYTHONPATH
 
 ### Q3. `ModuleNotFoundError: No module named 'mcp'` と言われます
 
-- MCP SDK が入っていません。`pip install 'mcp>=0.9,<2'` を実行してください。
+- MCP SDK が入っていません。`pip install 'mcp>=1.2,<2'` を実行してください。
 - 仮想環境を使っている場合は、その環境の Python が LLM クライアント側から使われているかも確認してください。
 
 ### Q4. `invalid parameter: ...` が返ってきました
@@ -371,6 +370,8 @@ FP の Fortran 側は FPCOMM 単一状態なので、1 プロセス = 1 イン�
 ### Q8. ログはどこで確認できますか
 
 MCP サーバの標準エラー出力が LLM クライアントに渡ります。Claude Desktop なら「開発者ツール」相当のログビューア、Claude Code なら実行ターミナルで確認できます。
+
+Fortran 側の `WRITE(6,...)`（unit 6 = fd 1）も同じ標準エラー出力に流れます。stdio サーバでは fd 1 が JSON-RPC の送信パイプなので、`main()` がサーバ構築の直前に共有モジュール `python/_fd_isolation.py` で fd 1 を stderr に付け替えています（#227 / #232 / #257）。FP は半径プロファイルの表を unit 6 に書きます（準備時に 1 回、その後は `NTG2STEP` ステップごと、既定では毎ステップ）。この付け替えが無いと、その出力がステップ数とともに増え、パイプを壊します。端末で手動起動したときや `2>&1` で stdout と stderr が同じファイルになっているときは、unit 6 の出力は捨てられ、その旨の警告が stderr に 1 行出ます（同一ファイルの判定は `fstat` の inode によるので、パイプやコンソールに inode が無い Windows では判定されず、fd 1 は通常どおり stderr に向きます）。ライブラリの出力を残したい場合は stderr を別に渡してください（例: `python -m fp_mcp.server 2>server.log`）。
 
 ## 10. 参考資料
 

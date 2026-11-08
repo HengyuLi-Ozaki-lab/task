@@ -23,6 +23,7 @@ from .errors import (
     TilibStateError,
     TilibRunError,
     TilibNotImplementedError,
+    TilibAbiError,
     # Aliases kept for spec-style naming.
     TiLibError,
     TiLibInvalidParam,
@@ -42,6 +43,7 @@ __all__ = [
     "TilibStateError",
     "TilibRunError",
     "TilibNotImplementedError",
+    "TilibAbiError",
     "TiLibError",
     "TiLibInvalidParam",
     "TiLibNotInitialized",

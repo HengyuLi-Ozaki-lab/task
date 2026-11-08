@@ -23,7 +23,10 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
+from _abi_check import AbiMismatchError, check_state_layout
 from _runtime_mode import mono_lib_path
+
+from .errors import WrxlibAbiError
 
 # Optional numpy (we never require it; state.py uses lists).
 try:
@@ -40,6 +43,12 @@ WRX_MAX_NRAYMAX = 100
 WRX_MAX_NSAMAX = 8
 WRX_MAX_NRSMAX = 256
 WRX_MAX_NRLMAX = 256
+
+# wrx_state_t layout version; mirrors WRX_STATE_ABI_VERSION in wrx/wrx_api.h
+# and wrx/wrx_state.f90. load_library() refuses a library whose
+# wrx_state_abi_version() / wrx_state_size() differ from this and from
+# ctypes.sizeof(WrxStateC) (#246).
+WRX_STATE_ABI_VERSION = 1
 
 
 # ---------------------------------------------------------------------
@@ -184,6 +193,15 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     # back to the numeric constant 1 which matches glibc dlfcn.h.
     mode = getattr(ctypes, "RTLD_LAZY", _RTLD_LAZY)
     lib = ctypes.CDLL(str(p), mode=mode)
+    # #246: refuse a library whose wrx_state_t layout is not WrxStateC's,
+    # before any struct is passed. A library built before #246 has no
+    # query symbols and is refused too (it may or may not match).
+    try:
+        check_state_layout(lib, prefix="wrx", struct=WrxStateC,
+                           expected_version=WRX_STATE_ABI_VERSION,
+                           lib_name=os.path.basename(str(p)))
+    except AbiMismatchError as exc:
+        raise WrxlibAbiError(str(exc)) from exc
     return _apply_prototypes(lib)
 
 
