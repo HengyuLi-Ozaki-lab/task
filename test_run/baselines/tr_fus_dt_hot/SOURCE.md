@@ -6,7 +6,7 @@ by kyoshimi `tr` with `model_pnf=1`. It is the primary P1 Task 7 oracle; the
 
 | Item | Value |
 |---|---|
-| Source tree | `task-trx-ref`, branch `ref/trx-regress-capture` |
+| Source tree | `task-trx-ref`, branch `ref/trx-regress-capture` (`c4a75b58`); `metrics.json` since 2026-11-14 from branch `ref/trx-regress-capture-58` (`921454ec`, correction 7 below) |
 | Input | `trx/in/trx_fus_dt_hot.in` (physically equivalent to `test_run/inputs/tr_fus_dt_hot.in`, but not byte-identical -- see Deck caveat) |
 | Dumper | `trx/trregress.f90`, env-guarded by `TR_REGRESS_DUMP=1` |
 | Extractor | `test_run/scripts/extract_tr_metrics.py` |
@@ -23,7 +23,8 @@ that are unambiguous where they are cited -- and each carries a
 `ref/trx-regress-capture ONLY` comment at its site. 1-4 are on the fusion path and are reported upstream as k-yoshimi/task#235
 (defects 2-4) and #236 (defect 1); 5 is a diagnostic-only unit slip spanning
 four subsystems
-and is reported separately.
+and is reported separately. A seventh (item 7) mirrors a fix of the product
+line's own `tr`, so that the two sides keep one fit.
 
 1. **Reaction rate 1e6 too large.** The `svnf_*` tables in `trx/libnf.f90` are
    in cm^3/s, and `sigmav_nf` returned them unconverted, while its consumer
@@ -120,6 +121,49 @@ and is reported separately.
    four lines later use `SNFNN_NNFNR`/`PNFNN_NNFNR`. The two are
    inconsistent, but which is intended is an upstream question and no oracle
    channel reads them.
+
+7. **The reactivity fit, corrected in the product line and mirrored here
+   (2026-11-14).** Both `libnf`s fitted a cubic spline of `<sigma v>` over
+   `log10(T)` through the table's ten knots. Below 5 keV, where the tables
+   climb by up to 3.3 decades from one knot to the next, it went below zero
+   for D-He3 and T-He3
+   and put D-T at 12.2 and 0.10 times tr's `SIGMAM` at 1.2 and 2.5 keV
+   (task-web-client#58). kyoshimi's `tr/libnf.f90` now fits `log10(<sigma v>)`
+   and returns 10 to its power; branch `ref/trx-regress-capture-58`
+   (`921454ec`, on `c4a75b58`) makes the same change in `trx/libnf.f90`, so
+   that the comparison stays one of fidelity (item 1 of "What these numbers
+   are not thresholds for"). Before the change, the shipped reference binary
+   (`task-trx-ref`'s `trx/tr2`) reproduces the committed `metrics.json`,
+   `metrics_model_pnf_0.json` and `../tr_fus_dt/metrics.json` byte for byte,
+   and the branch's own build the first of them. After it
+   `metrics_model_pnf_0.json` is unchanged (the fusion-off path does not
+   evaluate the fit), and `metrics.json` was captured again. Measured on the
+   new pair and, the same day and the same way, on the old one (whose figures
+   are those in the rest of this file, which predate correction 7):
+
+   | | before | after |
+   |---|---|---|
+   | zero-error control, worst of 209 | 0.2942x (`TAUE2`) | **0.5813x** (`RT[NR=28][s=1]`) |
+   | `RT`, worst agreement | 5.1e-3 at `RT[NR=28][s=2]` | 1.16e-2 at `RT[NR=28][s=1]` |
+   | reference differential of `RT[NR=28][s=2]` | +5.8e-6 keV | -2.9e-5 keV |
+   | `WPT` fusion signal of the reference | 1.1128e-3 | 1.1460e-3 |
+   | `ALI` agreement | 1.1e-4 | 6.2e-4 |
+   | `Q0` agreement | 8.0e-5 | 1.05e-4 |
+   | `WPT`, `BETAA`, `BETAN` agreement | 6.8e-4 | 6.9e-4 |
+   | `TAUE1`, `TAUE2` agreement | 1.6e-3, 3.5e-3 | 1.5e-3, 3.6e-3 |
+   | absolute worst, every field | 6.7e-4 at `AJ[48]` | 6.7e-4 at `AJ[48]` |
+
+   The zero of the reference's `RT` differential is still between NR 27 and
+   29, but `RT[28]` sits further from it: its four reference signals are 59x
+   to 75x `FUSION_SIGNAL_FLOOR`, against 13.0x to 27.2x before, and `ALI`'s
+   31x is now the weakest. The shape statements rest on `RT[28]`, and by
+   "Known open gap" ("if it drifts away, shape detection degrades") the
+   ~0.1 % shape figure has likely coarsened toward the ~0.9 % found without
+   `RT[28]`. No injection threshold was measured again. The reference's
+   `WPT` fusion signal is now 1.1460e-3 and its `TAUE1` goes 55.44 ->
+   43.92 s (44.59 s before). `tr_fus_dt` (1 keV) was not captured again: with the
+   fit changed in both, its scalars move by at most 4.1e-7 relative
+   (`BETAP0`) and its `RT` by 2.6e-9, and nothing gating reads it.
 
 ## What this oracle does NOT exercise
 
@@ -250,6 +294,9 @@ cosmetic, and the run is indistinguishable from the scalar form. The reverse
 
 ## Why 10 keV, and why the 1 keV case was not enough
 
+*Measured on the capture before correction 7 (item 7 of the list above), with
+the binary that produced the baselines then.*
+
 `tr_fus_dt` (1 keV) was originally chosen because a 10 keV variant appeared to
 run away thermally. That runaway was an artefact of defect 1: with the alpha
 source 1e6 too large, self-heating with no loss balance diverges. With the
@@ -299,6 +346,8 @@ kyoshimi, the `model_pnf` differentials agreeing to 1.6e-3, and `TAUE2` to
 3.5e-3.
 
 ## What these numbers are not thresholds for
+
+*Measured on the capture before correction 7 (item 7 of the list above).*
 
 Every figure above is the threshold of **one injected perturbation** —
 port-side, uniform over the whole reactivity table, full radial support,
@@ -381,6 +430,9 @@ diverge are `AEE`/`AME`/`AMP`; `AMP` by 1.714e-7, about 1700x the 1e-10 gate.
 
 ## Known open gap
 
+*Measured on the capture before correction 7 (item 7 of the list above); the
+absolute figures are the same on the capture after it.*
+
 The whole-solve comparison does **not** reach 1e-10, and the reason is now
 narrow and locatable. Comparing a kyoshimi `model_pnf=1` run against this
 baseline over every scalar and every profile field of `metrics.json` -- 564
@@ -416,7 +468,8 @@ because it is still the `T=0` value, not because a step changed nothing. Use
 
 Against that floor, the fusion differentials -- `model_pnf=1` minus
 `model_pnf=0`, taken separately in each code and then compared -- agree as
-follows:
+follows (on the capture before correction 7; the figures after it are in
+item 7 of the list at the top):
 
 | scalar channel | signal, rel. to `model_pnf=0` | differential agreement |
 |---|---|---|
@@ -486,6 +539,10 @@ env TR_REGRESS_DUMP=1 ./tr2 < in/trx_fus_dt_hot.in > /tmp/trx_hot.log
 python3 ../../task-p1-libnf/test_run/scripts/extract_tr_metrics.py tr_regress.dat \
   > ../../task-p1-libnf/test_run/baselines/tr_fus_dt_hot/metrics.json
 ```
+
+Since correction 7, `metrics.json` is from branch `ref/trx-regress-capture-58`
+(`921454ec`): a work tree of it with `task-trx-ref`'s `make.header` and
+`mtxp/make.mtxp`, `make -C trx`, then the commands above in its `trx`.
 
 `run_tests.sh` cannot drive this on macOS — it needs `declare -A`, and the
 system bash is 3.2. Drive the binary directly as above. Every comparison

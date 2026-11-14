@@ -989,8 +989,22 @@ HOT_PNS = (0.01, 0.0045, 0.0045, 0.0005)
 # can silently measure the previous .so under Make's 1-second mtime
 # granularity (rm the .o and the .so instead), and any harness that does not
 # chdir into the fixtures directory does not reproduce the deck and reports
-# nonsense at zero error.  A run without a 0.2942x control is not a
-# measurement.
+# nonsense at zero error.  A run without a control (0.2942x on the capture
+# before 2026-11-14, 0.5813x since) is not a measurement.
+#
+# THE FIGURES ABOVE ARE OF THE CAPTURE BEFORE 2026-11-14.  That day both
+# sides took the log fit of HengyuLi-Ozaki-lab/task-web-client#58 (tr in
+# tr/libnf.f90, the reference as its correction 7) and metrics.json was
+# captured again; SOURCE.md, correction 7, has the before and after.  Of the
+# figures above only these were measured again: the control is 0.5813x,
+# 0/209, at RT[NR=28][s=1], where the reference's own differential is
+# -2.33e-5 keV (before: 0.2942x at TAUE2, and +5.8e-6 at RT[NR=28][s=2]);
+# the fusion signal is 1.1460e-3; the absolute worst is still 6.7e-4 at
+# AJ[48].  No injection threshold was measured again.  The shape statements
+# rest on RT[28] sitting near its node: the zero of the reference differential
+# is still between NR 27 and 29, but RT[28]'s four reference signals are 59x
+# to 75x FUSION_SIGNAL_FLOOR now, 13x to 27x before, and by SOURCE.md's own
+# reasoning ("Known open gap") the ~0.1% shape figure has likely coarsened.
 FUSION_DIFFERENTIAL_TOL_SCALAR = 1.2e-2
 FUSION_DIFFERENTIAL_TOL_PROFILE = 2e-2
 FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",
@@ -999,8 +1013,10 @@ FUSION_CHANNELS = ("WPT", "BETA0", "BETAP0", "BETAA", "BETAN",
 # Every compared entry must show a reference signal at least this large,
 # relative to its model_pnf=0 value.  Guards against comparing noise: an exact
 # `d_ref != 0` passes on a last-bit difference.  Measured smallest real
-# signals are ALI at 4.4e-6 and RT's quietest point at 1.3e-6, so this sits
-# an order below the physics and eight above double-precision rounding.
+# signals, on the capture of 2026-11-14, are ALI at 3.1e-6 and RT's quietest
+# point at 5.9e-6 (RT[NR=28][s=1]); before it 4.4e-6 and 1.3e-6.  So this sits
+# more than an order below the physics and eight above double-precision
+# rounding.
 FUSION_SIGNAL_FLOOR = 1e-7
 
 
@@ -1187,7 +1203,7 @@ def test_fusion_differential_matches_the_trx_reference(monkeypatch):
         / abs(ref_off["scalars"]["WPT"])
     assert ref_signal > 1e-4, (
         f"the committed reference's own WPT fusion signal is {ref_signal:.3e}, "
-        f"below the 1.11e-3 it was captured at -- the baselines have been "
+        f"below the 1.15e-3 it was captured at -- the baselines have been "
         f"regenerated from a build that is not running fusion"
     )
     assert signal > 1e-4, (

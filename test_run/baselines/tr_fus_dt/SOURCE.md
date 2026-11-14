@@ -23,6 +23,11 @@
 > the conditioning is "what actually makes the file usable as an oracle" --
 > predates the corrections.
 >
+> Not captured again for correction 7 (2026-11-14, the reactivity fit;
+> `tr_fus_dt_hot/SOURCE.md`, item 7): this capture is of the old fit. With the
+> fit changed in both codes this deck's scalars move by at most 4.1e-7
+> relative (`BETAP0`) and its `RT` by 2.6e-9.
+>
 > That list is maintained by hand and has already been wrong twice.  If any
 > number below disagrees with `tr_fus_dt_hot/SOURCE.md`, that file wins.
 > Specifically:
@@ -53,7 +58,8 @@
 > port landed and does not match. See the heading note below.
 >
 > This deck is retained as a near-threshold companion.  Its fusion signal is
-> 6.2e-9, five orders below the hot deck's 1.11e-3, so it is a weak test of
+> 6.2e-9, five orders below the hot deck's 1.11e-3 (1.15e-3 since its
+> correction 7), so it is a weak test of
 > fusion -- which is itself the finding: most of what looked like fusion in the
 > original capture was the unit error.
 
@@ -64,7 +70,7 @@
 > (308 of 514 value fields exceed it), for reasons outside fusion that
 > `tr_fus_dt_hot/SOURCE.md`'s "Known open gap" sets out. It is retained as
 > the weak companion to that deck -- fusion signal rel `WPT` 6.2e-9 against
-> the hot deck's 1.11e-3.
+> the hot deck's 1.11e-3 (1.15e-3 since its correction 7).
 
 Generated for **P1 Task 2** of the TRX↔TR consolidation plan
 (`docs/superpowers/plans/2026-06-15-trx-tr-consolidation.md`, Task 2).
