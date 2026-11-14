@@ -112,10 +112,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   steps the electron temperature on axis is 10.717 keV, against 10.727 with
   fusion off and 11.237 with `MDLNF = 1`. The reactants are read from
   species 2 and 3 and the alpha goes to species 4, as with `MDLNF`, and
-  nothing checks that those are D, T and He4. Between the table's knots
-  below 5 keV the D-T rate is far from the legacy `SIGMAM`: 12 times it at
-  1.2 keV, a tenth of it at 2.5 keV (the table has knots at 1, 2 and
-  5 keV; HengyuLi-Ozaki-lab/task-web-client#58). A run that sets both
+  nothing checks that those are D, T and He4. From 1 to 5 keV the D-T rate
+  is within 5 % of the legacy `SIGMAM` since its fit was changed (under
+  Fixed; HengyuLi-Ozaki-lab/task-web-client#58). A run that sets both
   switches is refused, since it would count the same alphas twice: by
   `tr_prep`, and by `TRCALC`, before it computes anything, when a switch is
   changed on a prepared case that is not prepared again (the standalone
@@ -124,9 +123,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the case was not prepared for is refused as well, and `MODEL_PNF = 0`
   turns the model off at once.
   With more than one reaction the rates are evaluated and nothing reaches
-  the solve: TR has one fusion fast-ion slot (`NFM = 2`). The D-He3 and
-  T-He3 rates of the sets 3, 4 and 14 are negative at a few keV
-  (HengyuLi-Ozaki-lab/task-web-client#58).
+  the solve: TR has one fusion fast-ion slot (`NFM = 2`).
   What was checked is agreement with `trx`, not with a measurement: on a
   10 keV D-T case the change that `MODEL_PNF = 1` makes to nine global
   quantities and to the temperature profiles is the change it makes in
@@ -137,12 +134,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   point. The reference is `trx` with five corrections, listed in
   `test_run/baselines/tr_fus_dt_hot/SOURCE.md` and reported upstream
   (k-yoshimi/task#235, #236, #238); the four that are on the fusion path
-  are not in the port either. `python/trlib/tests/test_libnf.py` holds the
-  D-T reactivity to the legacy `SIGMAM` at the table's points from 1 to
-  500 keV (6 %; at 1000 keV the table is 1.46 times `SIGMAM`) and at nine
-  points from 5 to 100 keV (2 %; 2.2 % anywhere in that range), and holds
-  that every reaction's rate is finite and that
-  none is negative (strict `xfail` for D-He3 and T-He3).
+  are not in the port either. Since the fit was changed (under Fixed) the
+  reference has tr's fit too, its correction 7.
+  `python/trlib/tests/test_libnf.py` holds the D-T reactivity to the legacy
+  `SIGMAM` at the table's points from 1 to 500 keV (6 %; at 1000 keV the
+  table is 1.46 times `SIGMAM`), from 1 to 5 keV (5 %) and at nine points
+  from 5 to 100 keV (1.3 %), and holds that every reaction's rate is
+  finite, not negative and rising from 1 to 50 keV.
 
 ### Changed
 
@@ -205,6 +203,26 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   changed).
 
 ### Fixed
+
+- **TR library: `libnf`'s reaction rates between the low points of its
+  table** (HengyuLi-Ozaki-lab/task-web-client#58). The rates were a cubic
+  spline of `<sigma v>` over `log10(T)` through the table's ten points (1,
+  2, 5, 10, ... 1000 keV). Below 5 keV, where the tables climb by up to 3.3
+  decades from one point to the next, the spline swung: D-T, which `MODEL_PNF = 1`
+  passes to the solve, was 12.2 times the legacy `SIGMAM` at 1.2 keV and
+  0.10 of it at 2.5 keV, and D-He3 (2.05-4.70 keV) and T-He3 (1.05-1.95 and
+  5.10-8.55 keV) were negative. The spline is now of `log10(<sigma v>)`, and
+  `sigmav_nf` returns 10 to its power: no rate is negative, the table's
+  points keep their values (to 3.4e-14), and D-T is within 5 % of `SIGMAM`
+  from 1 to 5 keV and within 1.3 % from 5 to 100 keV. A run with
+  `MODEL_PNF = 1` gets another D-T rate off the table's points: from 0.078
+  times the old one (at 1.15 keV) to 10.04 times it (at 2.45 keV) under
+  5 keV, within 1.82 % of it from 5 to 100 keV.
+  `MODEL_PNF = 0`, the default, is unchanged. The `trx` reference of
+  `test_run/baselines/tr_fus_dt_hot` takes the same fit (its correction 7,
+  branch `ref/trx-regress-capture-58`), and its `metrics.json` was captured
+  again: the comparison's worst entry is 0.58 of its tolerance with both on
+  the new fit, 0.29 with both on the old one (`SOURCE.md` there, item 7).
 
 - **MCP servers: the `mcp` dependency is pinned to `>=1.2,<2`** in the
   seven server `pyproject.toml` files, the CI workflow, the servers' own

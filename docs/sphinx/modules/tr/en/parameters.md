@@ -352,14 +352,14 @@ It does not replace `MDLNF` yet:
   run is not heated by its alphas as it is with `MDLNF = 1`.
 - It reads the reactants from species 2 and 3 and gives the alpha to species 4, as `MDLNF` does, and does not check
   that they are D, T and He⁴.
-- Below 5 keV its D-T rate is far from `MDLNF`'s between the points of its table (1, 2 and 5 keV): 12 times it at
-  1.2 keV, a tenth of it at 2.5 keV. At the table's points from 1 to 500 keV, and from 5 to 100 keV, the two agree
-  within 6 % and 2.2 % (at the last point, 1000 keV, the table is 1.46 times `MDLNF`'s rate).
-- With more than one reaction nothing reaches the solve, because TR has one fusion fast-ion slot; and the D-He³
-  and T-He³ rates (in 3, 4 and 14) are negative at a few keV.
+- Its rates are cubic splines of the logarithm of a table (points at 1, 2, 5, 10, … 1000 keV) over the logarithm
+  of the temperature. Its D-T rate agrees with `MDLNF`'s within 5 % from 1 to 5 keV, 1.3 % from 5 to 100 keV, and
+  6 % at the table's points from 1 to 500 keV (at the last point, 1000 keV, the table is 1.46 times `MDLNF`'s rate).
+- With more than one reaction nothing reaches the solve, because TR has one fusion fast-ion slot.
 
 What was checked: on a 10 keV D-T case the change `MODEL_PNF = 1` makes agrees within 2 % with the change it makes
-in `trx`, once five defects of `trx` are corrected (`test_run/baselines/tr_fus_dt_hot/SOURCE.md`). It has not been
+in `trx`, once five defects of `trx` are corrected and its rate fit is made TR's
+(`test_run/baselines/tr_fus_dt_hot/SOURCE.md`). It has not been
 compared with a measurement.
 
 `MDLST`: 0 (OFF, default) / 1 (ON).
