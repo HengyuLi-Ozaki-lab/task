@@ -69,7 +69,7 @@ MODULE tr_api
   ! Lifecycle flags (module-scope state, single instance only at L-3).
   ! #189: at most 3 findings per active species (density sign / zero
   ! density / temperature), species bounded by TR_MAX_NSMAX.
-  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX
+  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2   ! + RIPS, RIPE (current_for_eq)
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
@@ -658,6 +658,11 @@ CONTAINS
 
     nviol = 0
     IF (MDLUF == 1 .OR. MDLUF == 2 .OR. MDLUF == 3) RETURN
+    ! With MODELG 9 TR has EQ solve the equilibrium with TR's own current (equnit's eq_calc, from
+    ! tr_set_metric and every NTEQIT steps), and EQ's analytic solve does not treat the sign of the
+    ! current (eq_run refuses a negative one: eq_api.f90): refuse it here, before the run. After the
+    ! UFILE modes' return above: there the current comes from the UFILE, not from RIPS and RIPE.
+    CALL current_for_eq
     nsa = MIN(NSMAX, SIZE(PN), SIZE(PNS), SIZE(PT), SIZE(PTS), TR_MAX_NSMAX)
     DO ns = 1, nsa
        IF (.NOT. (IEEE_IS_FINITE(PN(ns)) .AND. IEEE_IS_FINITE(PNS(ns)) &
@@ -684,6 +689,23 @@ CONTAINS
     END DO
 
   CONTAINS
+
+    SUBROUTINE current_for_eq
+      USE TRCOMM, ONLY : RIPE, RIPS          ! MODELG comes with the module's own USE
+      IF (MODELG /= 9) RETURN
+      IF (RIPS < 0.D0) CALL scalar("RIPS")
+      IF (RIPE < 0.D0) CALL scalar("RIPE")
+    END SUBROUTINE current_for_eq
+
+    SUBROUTINE scalar(name)
+      CHARACTER(LEN=*), INTENT(IN) :: name
+      IF (nviol >= SPC_MAX_VIOL) RETURN
+      nviol = nviol + 1
+      vnames(nviol) = name
+      vcodes(nviol) = TR_DIAG_OUT_OF_RANGE
+      vmsgs(nviol)  = "negative plasma current with MODELG 9: EQ's analytic solve, which MODELG 9 runs, " // &
+           "does not treat its sign"
+    END SUBROUTINE scalar
 
     SUBROUTINE add(base, idx, code_in, msg_in)
       CHARACTER(LEN=*), INTENT(IN) :: base, msg_in
