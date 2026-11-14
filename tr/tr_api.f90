@@ -617,6 +617,12 @@ CONTAINS
        ELSE IF (PN(ns) == 0.D0 .AND. PNS(ns) == 0.D0) THEN
           CALL add("PN", ns, TR_DIAG_OUT_OF_RANGE_AFTER_DEP, &
                "PN and PNS both 0 for a species <= NSMAX: zero density everywhere, NaN after one step; set PN/PNS or lower NSMAX")
+       ELSE IF (ns <= 2 .AND. PNS(ns) == 0.D0) THEN
+          ! The edge terms of the transport divide by the edge density of the electrons and of the
+          ! bulk ions (PNSS(1), PNSS(2) in trcalc.f90): the run ends with WPT, the betas and TAUE NaN.
+          CALL add("PNS", ns, TR_DIAG_OUT_OF_RANGE, &
+               "zero edge density of species 1 or 2 (the electrons, the bulk ions), which the edge " // &
+               "transport divides by: the run produces NaN")
        END IF
        IF (PT(ns) <= 0.D0) THEN
           CALL add("PT", ns, TR_DIAG_OUT_OF_RANGE, &
