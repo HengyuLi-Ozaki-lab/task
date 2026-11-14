@@ -329,23 +329,33 @@ CONTAINS
     DO ntemp=1,10
        tempa_log(ntemp)=LOG10(tempa(ntemp))
     END DO
-    
-    CALL SPL1D(tempa_log,svnf_dt,  dsvnf,usvnf_dt,  10,0,ierr)
+
+!   ref/trx-regress-capture ONLY (oracle correction #7, the reactivity fit):
+!   each spline is of log10(<sigma v>) over log10(T), and sigmav_nf returns
+!   10 to the power of its value, as kyoshimi's tr/libnf.f90 does since its
+!   fix of the fit.  Below 5 keV the tables climb by up to 3.3 decades from
+!   one knot to the next, and a cubic spline of <sigma v> itself swings
+!   there: below zero for D-He3 (2.05-4.70 keV) and T-He3 (1.05-1.95 and
+!   5.10-8.55 keV), and D-T at 12.2 and 0.10 times tr's analytic SIGMAM at
+!   1.2 and 2.5 keV.
+!   Mirrored here so that the oracle and the port share the fit, as they
+!   share the tables.
+    CALL SPL1D(tempa_log,LOG10(svnf_dt),  dsvnf,usvnf_dt,  10,0,ierr)
     id=1
     IF(ierr.EQ.0) THEN
-       CALL SPL1D(tempa_log,svnf_dd,  dsvnf,usvnf_dd,  10,0,ierr)
+       CALL SPL1D(tempa_log,LOG10(svnf_dd),  dsvnf,usvnf_dd,  10,0,ierr)
        id=2
     ENDIF
     IF(ierr.EQ.0) THEN
-       CALL SPL1D(tempa_log,svnf_dhe3,dsvnf,usvnf_dhe3,10,0,ierr)
+       CALL SPL1D(tempa_log,LOG10(svnf_dhe3),dsvnf,usvnf_dhe3,10,0,ierr)
        id=3
     END IF
     IF(ierr.EQ.0) THEN
-       CALL SPL1D(tempa_log,svnf_tt,  dsvnf,usvnf_tt,  10,0,ierr)
+       CALL SPL1D(tempa_log,LOG10(svnf_tt),  dsvnf,usvnf_tt,  10,0,ierr)
        id=4
     END IF
     IF(ierr.EQ.0) THEN
-       CALL SPL1D(tempa_log,svnf_the3,dsvnf,usvnf_the3,10,0,ierr)
+       CALL SPL1D(tempa_log,LOG10(svnf_the3),dsvnf,usvnf_the3,10,0,ierr)
        id=5
     END IF
     IF(ierr.NE.0) THEN
@@ -433,6 +443,7 @@ CONTAINS
        WRITE(6,'(A,ES12.4)') '       temperature=',temperature
        STOP
     END IF
+    sigmav_nf=10.D0**sigmav_nf  ! ref/trx-regress-capture ONLY (correction #7)
 
 !   ref/trx-regress-capture ONLY (oracle correction #1): the svnf_* tables
 !   above are in cm^3/s, but every consumer of sigmav_nf needs m^3/s --
