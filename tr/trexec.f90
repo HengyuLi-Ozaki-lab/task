@@ -396,12 +396,13 @@ CONTAINS
 
       SUBROUTINE tr_eval(NT,IERR)
 
-      USE TRCOMM, ONLY : NGRSTP, NGTSTP, NTSTEP
+      USE TRCOMM, ONLY : NGRSTP, NGTSTP, NTMAX, NTSTEP, TPRE, WPPRE, rkind
       USE trrslt_files, ONLY : TRSNAP
       IMPLICIT NONE
       INTEGER,INTENT(IN) :: NT
       INTEGER,INTENT(OUT) :: IERR
       integer:: IDGLOB
+      REAL(rkind):: TPRE_KEEP, WPPRE_KEEP
 
       CALL TRCALC(IERR)
       IF(IERR.ne.0) RETURN
@@ -422,6 +423,19 @@ CONTAINS
          IF(IDGLOB.EQ.0) CALL TRGLOB
          IDGLOB=1
          CALL TRATOG
+      ENDIF
+!     The last step of a run that no output step above computed the global results (TRGLOB: WPT,
+!     AJT, the betas, TAUE1, TAUE2, ZEFF0, ALI, RQ1) on: compute them here, so that the state the run
+!     leaves holds this step's, not an earlier step's (step 0's when NTSTEP, NGTSTP and NGRSTP all
+!     exceed NTMAX). TRGLOB takes WPDOT (TAUE2) from the previous call's WPT and T and keeps this
+!     call's for the next; this call is no output step, so the previous reference is put back and a
+!     run made in several calls (NTMAX is NT plus each call's count) goes on as one run would.
+      IF(IDGLOB.EQ.0 .AND. NT.GE.NTMAX) THEN
+         WPPRE_KEEP=WPPRE
+         TPRE_KEEP=TPRE
+         CALL TRGLOB
+         WPPRE=WPPRE_KEEP
+         TPRE=TPRE_KEEP
       ENDIF
       IERR=0
       RETURN
