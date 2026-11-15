@@ -439,15 +439,15 @@ CONTAINS
   !                 overflow the TRCOM0::NSM compile-time maximum used
   !                 by several pl/ak imports, so trip this check
   !                 before tr_run lets the mesh hit the mismatch.
-  !   FILE_MISSING: MODELG in {3,5,8} requires non-blank KNAMEQ. This
+  !   FILE_MISSING: MODELG in {3,5,7,8} requires non-blank KNAMEQ. This
   !                 mirrors the eq_api::eq_api_validate guard — without
   !                 it, tr_run -> pl_prof_init -> equnit::eq_load opens
   !                 "" silently and fills the post-load grid with garbage.
   !
   !   OUT_OF_RANGE / OUT_OF_RANGE_AFTER_DEP (#189): per-species namelist
-  !                 profile (PN/PNS/PT/PTS) that the solver cannot evolve;
-  !                 see species_profile_violations. tr_run refuses the
-  !                 same findings.
+  !                 profile (PN/PNS/PT/PTS) that the solver cannot evolve,
+  !                 and RIPS or RIPE < 0 with MODELG 9; tr_run refuses the
+  !                 same findings (see species_profile_violations).
   !
   ! Future categories (follow-up PRs): INCONSISTENT_PAIR, MISSING_REQUIRED.
   !
@@ -634,8 +634,11 @@ CONTAINS
   ! the first step (reproduced with the tst2 fixture: NSMAX=3 leaves
   ! species 3 at the tr_init defaults PN(3)=PNS(3)=0 -> WPT/BETA*/TAUE*
   ! = NaN; the same with PT(3)=0, PTS(3)=0 or PN(3)<0). PN(ns)=0 with
-  ! PNS(ns)>0 runs finite and stays allowed. Non-finite values (the C
-  ! setter accepts any double) are reported too.
+  ! PNS(ns)>0 runs finite and stays allowed. A zero edge density of
+  ! species 1 or 2 is refused: the edge transport divides by it (PNSS(1),
+  ! PNSS(2), trcalc.f90). Non-finite values (the C setter accepts any
+  ! double) are reported too. With MODELG 9, RIPS or RIPE < 0 is
+  ! reported as well (current_for_eq, below).
   !
   ! Scope: tr_prof's `case default` branch, i.e. every MDLUF outside
   ! {1,2,3}, builds all species from the namelist and is checked in

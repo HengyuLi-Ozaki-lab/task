@@ -247,6 +247,40 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   branch `ref/trx-regress-capture-58`), and its `metrics.json` was captured
   again: the comparison's worst entry is 0.58 of its tolerance with both on
   the new fit, 0.29 with both on the old one (`SOURCE.md` there, item 7).
+- **TR library: a run returns the global results of its last step**
+  (HengyuLi-Ozaki-lab/task-web-client#118). `tr_eval` computed them
+  (`TRGLOB`: `WPT`, `AJT`, the betas, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`,
+  `RQ1`) only on a step that `NTSTEP`, `NGTSTP` or `NGRSTP` divides, so a run
+  whose last step none of the three divides returned an earlier step's: on
+  the TST-2 fixture, `NTMAX = 10` with all three at 1000 returned step 0's
+  `WPT` 5.39e-7 against 2.98e-6. `tr_eval` now computes them on the last
+  step when no output step did, and puts back `TRGLOB`'s reference for
+  `WPDOT`, so a run made in several `tr_run` calls ends as one run does, to
+  1e-4 (without putting it back, `run(5)` then `run(5)` gave `TAUE2` 1.24e-4
+  against 2.84e-4 for `run(10)`). No regression case moves: each ends on an
+  output step.
+- **TR library: `tr_run` refuses a species without an equation, a species 1
+  that is not the electron, and a zero edge density of species 1 or 2**
+  (HengyuLi-Ozaki-lab/task-web-client#86 and
+  HengyuLi-Ozaki-lab/task-web-client#131). TR places each species by
+  its mass alone (`TR_TABLE`): a species that matched no class wrote `NEA`
+  with index -1, two in one place or one above `NSMAX` left a species
+  without equations (with run-time checks the process stopped in
+  `trexec.f90`), and the electron as species 2 ended the run with `WPT` NaN.
+  `tr_run` now returns an error and the process lives. With `PN > 0`, a
+  zero `PNS` of species 1 or 2 ended the run non-finite, the edge transport
+  dividing by it: `tr_run` and `validate()` refuse it; species 3 and above
+  stay allowed.
+- **EQ and TR libraries: a negative plasma current is refused before the
+  run** (HengyuLi-Ozaki-lab/task-web-client#126). EQ's analytic solve does
+  not treat the sign of the current: on the ITER geometry `RIP = -15`
+  converged with `QAXIS = QSURF = 4.611` (the wall's q) against 0.618 and
+  3.201, `BETAT` and `BETAP` 0, `PVOL` -1915 against 798 m^3 and `RAAVE`
+  NaN, with no message. `eq_run(0)` now returns `EQ_ERR_INVALID`, the reason
+  in `eq_last_error`, and `validate()` reports it; with `MODELG = 9`, where
+  TR has EQ solve with TR's own current, `tr_run` and `validate()` refuse
+  `RIPS` or `RIPE` < 0. Not covered: the EQ menu's C command, TR's menu, a
+  UFILE current.
 
 - **MCP servers: the `mcp` dependency is pinned to `>=1.2,<2`** in the
   seven server `pyproject.toml` files, the CI workflow, the servers' own
@@ -372,6 +406,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   which `DEALLOCATE_TRCOMM` no longer does (`tr/trcomm.f90`). The
   libraries are now finalized on the way out: 20 stdio sessions of each
   server, every one exited with 0.
+- **CI: the four required jobs and clean-tree-build run on `ubuntu-24.04`**
+  (HengyuLi-Ozaki-lab/task#17, and the module build after it), where they
+  said `ubuntu-latest`. Between 2026-10-28 and 2026-11-08 `ubuntu-latest`
+  became `ubuntu-26.04`, whose gfortran 15.2 moves six of the 1e-10
+  equivalence cases (`eq_tst2`, FP `dt1` and `iter01`, WRX `demo`, `iter01`
+  and `jt60`) by 1e-10 to 1e-9 from baselines that pass on gfortran 13.3,
+  so every run failed on the same tree that had passed.
+  `regen-baselines.yml` already pinned `ubuntu-24.04`; moving to a newer
+  image is a regeneration of the baselines with it.
 
 ## TR Phase L — library-ization (2026-04-18)
 

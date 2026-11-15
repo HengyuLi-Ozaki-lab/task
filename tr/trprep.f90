@@ -615,8 +615,8 @@ CONTAINS
 !     ***********************************************************
 
 !     TR_TABLE places a species by its mass alone: the electron is PA = AME/AMM to 1e-10 (place 1),
-!     hydrogen PA = 1 or deuterium 1.5 < PA < 2.5 (2; deuterium beside hydrogen 3), tritium
-!     2.5 < PA < 3.5 (3; beside hydrogen and deuterium 4), helium 3.5 < PA < 4.5 (4), carbon
+!     hydrogen PA = 1 or deuterium 1.5 < PA < 2.5 (2; deuterium after a hydrogen 3), tritium
+!     2.5 < PA < 3.5 (3; after hydrogen and deuterium 4), helium 3.5 < PA < 4.5 (4), carbon
 !     9 < PA < 15 with NSMAX = 3 (3). Species 1..NSMAX must take these places once each, and the
 !     electron must be species 1 (the solve takes species 1 for the electrons, trcalc.f90's PNSS(1) for
 !     one). The places are given in the order of the species, so deuterium takes 3 only after a

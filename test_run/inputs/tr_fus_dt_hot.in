@@ -19,7 +19,8 @@ c
 ! thermally -- but that runaway was an artefact of a 1e6 unit error in the
 ! reference's reaction rate (svnf_* tables are cm^3/s, consumed as m^3/s).
 ! With that corrected the hot case is stable and carries ~1.8e5x more fusion
-! signal (rel. WPT 1.11e-3 against 6.2e-9).  It is somewhat WORSE conditioned
+! signal (rel. WPT 1.11e-3 against 6.2e-9; 1.15e-3 since the reference's
+! correction 7, the reactivity fit).  It is somewhat WORSE conditioned
 ! (1e-12 perturbation amplified 2.32 against 1.00), which does not matter at
 ! this distance from the tolerance -- it still leaves ~4.3e5x of margin.
 !
