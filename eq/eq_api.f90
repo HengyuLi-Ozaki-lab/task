@@ -132,6 +132,7 @@ CONTAINS
   !   other     : EQ_ERR_NOT_IMPL (reserved for future modes).
   !-------------------------------------------------------------------
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
+    USE plcomm, ONLY: RIP
     INTEGER(C_INT), VALUE, INTENT(IN) :: mode
     INTEGER(C_INT) :: ierr
     INTEGER :: calc_ierr, load_ierr, ios
@@ -154,6 +155,17 @@ CONTAINS
 
     SELECT CASE (mode)
     CASE (0)
+       ! A negative plasma current: the solve converges, but QAXIS and QSURF come out as the wall's q
+       ! (FNPSIP, eqsplf.f90, clamps PSIT as if it grew outward), BETAT and BETAP 0, PVOL negative and
+       ! RAAVE NaN, without a message; clamping both ways leaves most of it wrong, so the solve does not
+       ! treat the sign. Refused here, before any work. EQCALC itself, and the coupled path (equnit's
+       ! eq_calc, TR's MODELG 9, which TR refuses itself), are left as they are.
+       IF (RIP < 0.D0) THEN
+          WRITE(EQ_ERRMSG, '(A,1PE11.4,A)', IOSTAT=ios) 'eq_run: RIP =', RIP, &
+               ' MA is negative; the analytic solve does not treat the sign of the current: give its magnitude'
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
        ! Analytic Grad-Shafranov solve via EQCALC, then post-process
        ! via EQCALQ to populate the ψ-surface profile + scalar
        ! diagnostics (qaxis/qsurf/betat/betap/pvol). EQCALC alone
@@ -525,7 +537,7 @@ CONTAINS
     USE eqcom1_mod, ONLY: NSGMAX, NTGMAX, NUGMAX, NRGMAX, NZGMAX, &
                           NPSMAX, NRMAX, NTHMAX, NSUMAX, NRVMAX, &
                           RGMIN, RGMAX, ZGMIN, ZGMAX, MDLEQF
-    USE plcomm, ONLY: rkind, RR, RA, RB, RKAP
+    USE plcomm, ONLY: rkind, RR, RA, RB, RKAP, RIP
     TYPE(eq_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
@@ -640,6 +652,14 @@ CONTAINS
                "plasma Z-extent outside Z-grid ZGMIN..ZGMAX (solver box for MDLEQF >= 10; values unprintable)"
           CALL push_diag("RKAP", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
        END IF
+    END IF
+
+    ! ---- OUT_OF_RANGE: a negative plasma current, which eq_run(0) refuses (see there).
+    IF (MODELG == 2 .AND. RIP < 0.D0) THEN
+       WRITE(msgbuf, '(A,1PE11.4,A)', IOSTAT=ios) "plasma current RIP=", RIP, &
+            " MA is negative: the analytic solve does not treat its sign; give its magnitude"
+       IF (ios /= 0) msgbuf = "plasma current RIP is negative: the analytic solve does not treat its sign"
+       CALL push_diag("RIP", EQ_DIAG_OUT_OF_RANGE, msgbuf)
     END IF
 
     ndiag = nlocal
