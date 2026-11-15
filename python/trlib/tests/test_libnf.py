@@ -1,4 +1,4 @@
-"""libnf's D-T reactivity spline, pinned against tr's legacy SIGMAM.
+"""libnf's D-T reactivity fit, pinned against tr's legacy SIGMAM.
 
 P1 Task 5 ports trx's multi-reaction fusion module into `tr` as an ADDITIVE
 path: `model_pnf` defaults to 0, nothing dispatches to libnf yet (Task 6), and
@@ -12,52 +12,47 @@ libtrapi.so, not from a specification. The measured ratio
 stood in this formula moved into sigmav_nf in Task 7):
 
       T[keV]     ratio          T[keV]     ratio
-           1    1.0021              30    0.9823
+           1    1.0021              30    0.9895
            2    0.9997              50    1.0068
-           3    0.4012  <--         70    1.0086
+           3    1.0214              70    1.0092
            5    1.0054             100    0.9958
-           7    0.9900             200    0.9622
-          10    1.0118             300    0.9716
-          15    1.0126             500    1.0579
+           7    1.0079             200    0.9622
+          10    1.0118             300    0.9679
+          15    0.9985             500    1.0579
           20    0.9895            1000    1.4573  <--
 
-Two things that measurement settled, both contrary to what the project report
-says:
+Two things that measurement settled:
 
 * **Units.** `svnf_*` is tabulated in cm^3/s and `SIGMAM` returns m^3/s.
   sigmav_nf now applies the conversion itself, so no factor belongs here.
   Confirmed by the ratio landing on 1.0 at
   every table point rather than by reading a comment.
-* **Where they disagree.** The report describes a low-temperature overshoot
-  below ~3 keV with good behaviour above. At the table's points that is not
-  what the sweep shows: T=1 and T=2 agree to 0.2%.  Between them it is, and
-  worse than the report says -- the fit is 12.2 times SIGMAM at 1.2 keV and
-  0.10 of it at 2.5 keV (pinned below with the 3 keV point; 1.2 keV is
-  between the 1 and 2 keV knots, the other two between 2 and 5 keV,
-  task-web-client#58).  The two large deviations
-  at the sweep's own points are T=3 keV (-60%) and T=1000 keV (+46%), and
-  they have different causes:
-
-  - **3 keV** sits in the sparse 2->5 keV gap, where a spline through raw
-    sigma-v against log10(T) undershoots. That one is the interpolant.
-  - **1000 keV is a table point**, so the interpolant is not implicated. The
-    table says 2.7e-22 m^3/s and SIGMAM says 1.85e-22; published D-T
-    reactivity at 1000 keV is nearer the former, so this is SIGMAM's analytic
-    fit degrading far outside the range it was built for -- not a port defect
-    and not something a tolerance should paper over.
+* **Where they disagree.** Since HengyuLi-Ozaki-lab/task-web-client#58 the
+  fit is a cubic spline of log10(<sigma v>) over log10(T) through the table's
+  ten knots (1, 2, 5, 10, ... 1000 keV).  The spline of <sigma v> itself that
+  stood there before swung between the low knots, where the D-T table climbs
+  by 3.4 decades from 1 to 5 keV: 12.2 times SIGMAM at 1.2 keV, 0.10 of it at
+  2.5 keV and 0.40 at 3 keV.  On 1-5 keV the ratio is now 0.952-1.022 (every
+  0.05 keV; the worst at 1.3 keV).  The one large deviation left is T=1000 keV (+46%),
+  and **1000 keV is a table point**, so the interpolant is not implicated. The
+  table says 2.7e-22 m^3/s and SIGMAM says 1.85e-22; published D-T
+  reactivity at 1000 keV is nearer the former, so this is SIGMAM's analytic
+  fit degrading far outside the range it was built for -- not a port defect
+  and not something a tolerance should paper over.
 
   That is one reaction and one curve; enough to set tolerances, not enough to
   generalise about either function, so nothing here claims more.
 
 A 1e-10 gate would be meaningless against a two-significant-figure table.
 `test_matches_sigmam_at_table_points` uses 6% against a measured worst of
-5.79%, and `test_matches_sigmam_in_fusion_band` uses 2% against 1.77% -- so
-the headroom is 1.04x and 1.13x, not the "roughly 3x" an earlier draft
-claimed.  That is deliberate and it is not a flakiness risk: the table, the
-spline and SIGMAM are all deterministic, so the cross-platform spread is
+5.79%, `test_matches_sigmam_in_fusion_band` 1.3% against 1.18%, and
+`test_matches_sigmam_below_5_kev` 5% against 4.82% -- so the headroom is
+1.04x, 1.10x and 1.04x, not the "roughly 3x" an earlier draft claimed.
+That is deliberate and it is not a flakiness risk: the table, the spline and
+SIGMAM are all deterministic, so the cross-platform spread is
 ~1e-15 relative rather than tenths of a percent.  Tight bounds here mean a
 real change in any of the three shows up as a failure instead of being
-absorbed.  T=3 keV and 1000 keV are pinned separately rather than tolerated.
+absorbed.  T=1000 keV is pinned separately rather than tolerated.
 """
 from __future__ import annotations
 
@@ -77,9 +72,9 @@ SYM_SIGMAM = "sigmam_"
 
 ID_NF_DT = 1  # tr/libnf.f90: id_nf_DT = 1
 
-# Table temperatures, from `tempa` in tr/libnf.f90. The spline is exact-ish
-# here by construction; between them it interpolates raw sigma-v against
-# log10(T) and can wander badly.
+# Table temperatures, from `tempa` in tr/libnf.f90. The fit passes through the
+# table here (test_fit_returns_the_table_at_its_knots); between them it
+# interpolates log10(sigma-v) against log10(T).
 # 1000.0 is a table point but is deliberately absent: SIGMAM, not the spline,
 # is the outlier there (see the module docstring), so including it would force
 # a tolerance loose enough to hide real spline regressions at every other
@@ -91,15 +86,20 @@ TABLE_POINTS = (1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0)
 # not notice a broken interpolant.
 FUSION_BAND = (5.0, 7.0, 10.0, 15.0, 20.0, 30.0, 50.0, 70.0, 100.0)
 
-TOL_TABLE = 0.06  # measured worst |ratio-1| over TABLE_POINTS: 0.0579 at 500 keV
-TOL_BAND = 0.02   # measured worst over FUSION_BAND: 0.0177 at 30 keV
+# Between the knots at 1, 2 and 5 keV, every 0.05 keV: where the D-T table
+# climbs by 3.4 decades, the range HengyuLi-Ozaki-lab/task-web-client#58 was
+# about.  RISE_GRID: 1 ... 50 keV, where every table rises.
+LOW_GRID = tuple(1.0 + 0.05 * k for k in range(81))   # 1 ... 5 keV
+RISE_GRID = tuple(1.0 + 0.05 * k for k in range(981))  # 1 ... 50 keV
 
-# Every reaction of tr/libnf.f90 (id_nf_DT = 1 ... id_nf_THe36 = 13), and the
-# ones whose fitted <sigma v> goes below zero between the first knots:
-# D-He3 (5, 6) on 2.05-4.70 keV, T-He3 (8-13) on 1.05-1.95 and 5.10-8.55 keV, measured on
-# 1-1000 keV in steps of 0.05 keV.  HengyuLi-Ozaki-lab/task-web-client#58.
+TOL_TABLE = 0.06  # measured worst |ratio-1| over TABLE_POINTS: 0.0579 at 500 keV
+TOL_BAND = 0.013  # measured worst over FUSION_BAND: 0.0118 at 10 keV (every 0.05 keV: 0.0126, 24.5 keV)
+TOL_LOW = 0.05    # measured worst over LOW_GRID: 0.0482 at 1.3 keV
+
+# Every reaction of tr/libnf.f90 (id_nf_DT = 1 ... id_nf_THe36 = 13), and
+# its five tables with one reaction that reads each (sigmav_nf's SELECT CASE).
 ALL_REACTIONS = tuple(range(1, 14))
-NEGATIVE_BETWEEN_KNOTS = frozenset({5, 6, 8, 9, 10, 11, 12, 13})
+TABLES = (("dt", 1), ("dd", 2), ("dhe3", 5), ("tt", 7), ("the3", 8))
 
 
 def _parses_as_float(stdout: str) -> bool:
@@ -363,12 +363,12 @@ def test_matches_sigmam_at_table_points(nf, t_kev):
 
 @pytest.mark.parametrize("t_kev", FUSION_BAND)
 def test_matches_sigmam_in_fusion_band(nf, t_kev):
-    """5-100 keV, including off-table points, at the tighter 2%.
+    """5-100 keV, including off-table points, at the tighter 1.3%.
 
-    This is the range a burning plasma actually occupies, and the one where
-    the interpolant behaves. Measured worst case 1.77% at 30 keV. The
-    off-table entries are the point: they are what would catch a broken
-    interpolant that still happens to pass through every knot.
+    This is the range a burning plasma actually occupies. Measured worst
+    case 1.18% at 10 keV. The off-table entries are the point: they are what
+    would catch a broken interpolant that still happens to pass through every
+    knot.
     """
     r = nf.ratio(t_kev)
     assert abs(r - 1.0) < TOL_BAND, (
@@ -377,33 +377,84 @@ def test_matches_sigmam_in_fusion_band(nf, t_kev):
     )
 
 
-def test_known_large_deviations(nf):
-    """Pin the known-bad points instead of tolerating them silently.
+def test_matches_sigmam_below_5_kev(nf):
+    """1-5 keV, between the knots at 1, 2 and 5 keV, every 0.05 keV, at 5%.
 
-T=3 keV reads 40% of SIGMAM (sparse 2->5 keV interval, the interpolant);
-    T=1000 keV reads 146% (a table point, so SIGMAM's fit rather than the
-    spline). Neither is introduced here, but leaving them unasserted would let
-    a real change hide behind "it was always rough there". Wide brackets: the
-    intent is to notice movement, not to fix these digits.
+    The D-T table climbs by 3.4 decades over this range.  The cubic
+    spline of <sigma v> itself that fitted it before
+    HengyuLi-Ozaki-lab/task-web-client#58 swung to 12.2 times SIGMAM at
+    1.2 keV and 0.10 of it at 2.5 keV; the spline of log10(<sigma v>) keeps
+    within 4.82% (0.952 at 1.3 keV).
     """
-    r3 = nf.ratio(3.0)
+    # `not ... <`: a NaN ratio fails `<` and is reported, where `>=` would drop it.
+    off = [(t, r) for t in LOW_GRID if not abs((r := nf.ratio(t)) - 1.0) < TOL_LOW]
+    assert not off, (
+        f"sigmav_nf(DT) / SIGMAM is off by {TOL_LOW * 100:.0f}% or more at "
+        f"{len(off)} of {len(LOW_GRID)} temperatures on 1-5 keV, first "
+        f"{off[0][0]:.2f} keV ({off[0][1]:.4f}), worst "
+        f"{max(off, key=lambda x: abs(x[1] - 1.0))[1]:.4f}: the fit between "
+        "the low knots changed"
+    )
+
+
+@pytest.mark.parametrize("table,id_nf", TABLES)
+def test_fit_returns_the_table_at_its_knots(nf, table, id_nf):
+    """At each temperature of `tempa` the fit gives the table's own value.
+
+    The table and its temperatures are read from the library, so this checks,
+    for each of the five tables and not against a copy of their numbers, that
+    the fit passes through the table's points and that the cm^3/s -> m^3/s
+    conversion is applied.  Any interpolating fit passes through them; what
+    the tolerance adds is precision: measured worst 3.4e-14 relative (the old
+    fit, 1.8e-12, fails it at T-He3, 2 keV).
+    """
+    tempa = list((ctypes.c_double * 10).in_dll(nf.lib, "__libnf_MOD_tempa"))
+    table_cm3 = list((ctypes.c_double * 10).in_dll(nf.lib, f"__libnf_MOD_svnf_{table}"))
+    for t_kev, cm3 in zip(tempa, table_cm3):
+        got = nf.sigmav(id_nf, t_kev)
+        # abs=0: approx's default abs of 1e-12 m^3/s would pass any value here (~1e-22)
+        assert got == pytest.approx(cm3 * 1e-6, rel=1e-12, abs=0.0), (
+            f"sigmav_nf(id_nf={id_nf}, {t_kev} keV) = {got!r} m^3/s; the "
+            f"table svnf_{table} says {cm3!r} cm^3/s there"
+        )
+
+
+@pytest.mark.parametrize("table,id_nf", TABLES)
+def test_rates_rise_from_1_to_50_kev(nf, table, id_nf):
+    """Every table's rate rises with T from 1 to 50 keV, every 0.05 keV.
+
+    The tables rise there (the first to fall is D-T's, between 50 and
+    100 keV).  This holds the fit's shape between the points, which the sign
+    test below no longer can: 10 to a power is never negative.  The cubic
+    spline of <sigma v> itself that stood before
+    HengyuLi-Ozaki-lab/task-web-client#58 fell between points for D-T,
+    D-He3 and T-He3; with the log fit no table falls before 66.65 keV
+    (D-T).
+    """
+    values = [nf.sigmav(id_nf, t) for t in RISE_GRID]
+    # `not v1 > v0`: a NaN fails `>` and is reported.
+    falls = [(t, v0, v1) for t, v0, v1 in zip(RISE_GRID[1:], values, values[1:])
+             if not v1 > v0]
+    assert not falls, (
+        f"sigmav_nf(id_nf={id_nf}) does not rise at {len(falls)} of "
+        f"{len(RISE_GRID) - 1} steps on 1-50 keV, first at {falls[0][0]:.2f} keV "
+        f"({falls[0][1]:.3e} -> {falls[0][2]:.3e} m^3/s), where svnf_{table} rises"
+    )
+
+
+def test_known_large_deviations(nf):
+    """Pin the known-bad point instead of tolerating it silently.
+
+    T=1000 keV reads 146% of SIGMAM (a table point, so SIGMAM's fit rather
+    than the spline). It is not introduced here, but leaving it unasserted
+    would let a real change hide behind "it was always rough there". A wide
+    bracket: the intent is to notice movement, not to fix these digits.  The
+    deviations between the low knots that stood here too (12.2 times at
+    1.2 keV, 0.10 at 2.5 keV, 0.40 at 3 keV) went with
+    HengyuLi-Ozaki-lab/task-web-client#58; test_matches_sigmam_below_5_kev
+    holds that range.
+    """
     r1000 = nf.ratio(1000.0)
-    # Off the sweep's points, between the low knots (1-2 keV and 2-5 keV): what
-    # the CHANGELOG and the parameter reference quote.  Measured 12.211 and 0.102.
-    r1p2, r2p5 = nf.ratio(1.2), nf.ratio(2.5)
-    assert 11.0 < r1p2 < 13.5, (
-        f"ratio at 1.2 keV is {r1p2:.3f}, measured 12.211: between the 1 and "
-        "2 keV knots the fit overshoots SIGMAM by an order of magnitude"
-    )
-    assert 0.08 < r2p5 < 0.13, (
-        f"ratio at 2.5 keV is {r2p5:.3f}, measured 0.102: between the 2 and "
-        "5 keV knots the fit undershoots SIGMAM by an order of magnitude"
-    )
-    assert 0.35 < r3 < 0.45, (
-        f"ratio at 3 keV is {r3:.4f}, measured 0.4012 when the port landed. "
-        "This point is in the sparse 2->5 keV interval; a move here means the "
-        "spline construction changed."
-    )
     assert 1.40 < r1000 < 1.52, (
         f"ratio at 1000 keV is {r1000:.4f}, measured 1.4573 when the port "
         "landed. This is a TABLE point, so a move here implicates SIGMAM or "
@@ -411,27 +462,19 @@ T=3 keV reads 40% of SIGMAM (sparse 2->5 keV interval, the interpolant);
     )
 
 
-@pytest.mark.parametrize("id_nf", [
-    pytest.param(i, marks=pytest.mark.xfail(
-        strict=True, raises=AssertionError,
-        reason="HengyuLi-Ozaki-lab/task-web-client#58: the cubic spline of "
-               "<sigma v> over log10(T) undershoots below zero between the "
-               "first knots for D-He3 and T-He3"))
-    if i in NEGATIVE_BETWEEN_KNOTS else i
-    for i in ALL_REACTIONS])
+@pytest.mark.parametrize("id_nf", ALL_REACTIONS)
 def test_reactivity_is_never_negative(nf, id_nf):
     """A reaction rate is not negative, anywhere on the table, for any reaction.
 
     The other tests here look at D-T only.  Every reaction shares the fit (ten
-    knots at 1, 2, 5, 10, ... keV, a cubic spline of <sigma v> itself over
-    log10(T)), and a spline of a function that climbs by decades between two
-    knots can dip below zero there.  It does for the eight reactions marked
-    above; SPL1DF succeeds, so libnf reports nothing.  Those reactions are in
-    the sets model_pnf = 3, 4 and 14, which evaluate and publish nothing, so
-    today this is a wrong diagnostic and not a wrong run.
-
-    strict: when the fit is replaced by one that cannot change sign, these
-    eight go XPASS, the run is red, and the marker has to go with the fix.
+    knots at 1, 2, 5, 10, ... keV), and a cubic spline of a function that
+    climbs by decades between two knots can dip below zero there.  Before
+    HengyuLi-Ozaki-lab/task-web-client#58 the spline of <sigma v> itself did,
+    for D-He3 (5, 6) on 2.05-4.70 keV and T-He3 (8-13) on 1.05-1.95 and
+    5.10-8.55 keV, and SPL1DF succeeded, so libnf reported nothing.  A spline
+    of log10(<sigma v>) has no sign to lose, so this now holds against a
+    return to a fit of <sigma v> itself; test_rates_rise_from_1_to_50_kev
+    holds the shape.
     """
     grid = [1.0 + 0.05 * k for k in range(19981)]      # 1 ... 1000 keV
     negative = [(t, v) for t in grid if (v := nf.sigmav(id_nf, t)) < 0.0]
@@ -449,8 +492,7 @@ def test_reactivity_is_evaluated_and_finite(nf, id_nf):
 
     The sign test above cannot see a NaN or an infinity (`v < 0` is False for
     both), nor an evaluation that failed: sigmav_nf returns 0 when SPL1DF
-    reports an error, and counts it in nf_error_count.  No xfail here -- the
-    eight reactions whose sign is wrong are still evaluated and finite.
+    reports an error, and counts it in nf_error_count.
     """
     errors = ctypes.c_int.in_dll(nf.lib, "__libnf_MOD_nf_error_count")
     before = errors.value

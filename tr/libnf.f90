@@ -299,23 +299,29 @@ CONTAINS
     DO ntemp=1,10
        tempa_log(ntemp)=LOG10(tempa(ntemp))
     END DO
-    
-    CALL SPL1D(tempa_log,svnf_dt,  dsvnf,usvnf_dt,  10,0,ierr)
+
+    ! Each spline is of log10(<sigma v>) over log10(T), and sigmav_nf returns 10 to the
+    ! power of its value.  Below 5 keV the tables climb by up to 3.3 decades from one
+    ! knot to the next, and the cubic spline of <sigma v> itself that stood here swung
+    ! there: below zero for D-He3 (2.05-4.70 keV) and T-He3 (1.05-1.95 and 5.10-8.55
+    ! keV), and D-T at 12.2 and 0.10 times the analytic fit SIGMAM at 1.2 and 2.5 keV.
+    ! The log of a positive table has no sign to lose, and the knots keep their values.
+    CALL SPL1D(tempa_log,LOG10(svnf_dt),  dsvnf,usvnf_dt,  10,0,ierr)
     id=1
     IF(ierr.EQ.0) THEN
-       CALL SPL1D(tempa_log,svnf_dd,  dsvnf,usvnf_dd,  10,0,ierr)
+       CALL SPL1D(tempa_log,LOG10(svnf_dd),  dsvnf,usvnf_dd,  10,0,ierr)
        id=2
     ENDIF
     IF(ierr.EQ.0) THEN
-       CALL SPL1D(tempa_log,svnf_dhe3,dsvnf,usvnf_dhe3,10,0,ierr)
+       CALL SPL1D(tempa_log,LOG10(svnf_dhe3),dsvnf,usvnf_dhe3,10,0,ierr)
        id=3
     END IF
     IF(ierr.EQ.0) THEN
-       CALL SPL1D(tempa_log,svnf_tt,  dsvnf,usvnf_tt,  10,0,ierr)
+       CALL SPL1D(tempa_log,LOG10(svnf_tt),  dsvnf,usvnf_tt,  10,0,ierr)
        id=4
     END IF
     IF(ierr.EQ.0) THEN
-       CALL SPL1D(tempa_log,svnf_the3,dsvnf,usvnf_the3,10,0,ierr)
+       CALL SPL1D(tempa_log,LOG10(svnf_the3),dsvnf,usvnf_the3,10,0,ierr)
        id=5
     END IF
     IF(ierr.NE.0) THEN
@@ -692,6 +698,7 @@ CONTAINS
             nf_error_count=nf_error_count+1
        RETURN
     END IF
+    sigmav_nf=10.D0**sigmav_nf      ! the splines are of log10(<sigma v>): set_usigmav_nf
 
 !     UPSTREAM DEFECT, corrected here and in the reference oracle.
 !

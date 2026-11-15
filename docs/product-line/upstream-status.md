@@ -91,8 +91,8 @@ author decides.
 ## Open items in the product line
 
 The fork has issues disabled, so they are listed here. The five from "`MODEL_PNF = 1` (group K) does not replace
-`MDLNF = 1`" to "`tr_validate` does not know the two refusals" came with group K and say what its switch leaves
-out. The two after them (`tot` not preparing again; `tr` and `trx` with fusion off) were found with it and are
+`MDLNF = 1`" to "`tr_validate` does not know the two refusals" came with group K; four say what its switch leaves
+out, and one, the reactivity fit, is fixed. The two after them (`tot` not preparing again; `tr` and `trx` with fusion off) were found with it and are
 about older code. All the others are older than the alignment of the product line with upstream or are wording
 left over from it. None is a regression of the merges.
 
@@ -149,13 +149,17 @@ left over from it. None is a regression of the merges.
   lines). Measured on `tr_iter01` at 10 keV, 20 steps: Te on axis 10.717 keV, against 10.727 with fusion off and
   11.237 with `MDLNF = 1`. Supplying the transfer on this side only would make the port its own reference; it
   belongs with a question to the authors of `trx`.
-- **The reactivity fit of `tr/libnf.f90` between its low knots** (task-web-client#58; the tables and the cubic spline
-  over `log10(T)` are `trx`'s). D-T, which `MODEL_PNF = 1` passes to the solve, is 12.2 times the legacy `SIGMAM` at
-  1.2 keV and 0.10 of it at 2.5 keV, and within 0.6 % at the knots 1, 2 and 5 keV; from 5 to 100 keV within 2.2 %
-  (worst 2.18 % at 12.23 keV; 1.8 % at the nine points the test holds).
-  D-He3 is negative from 2.05 to 4.70 keV and T-He3 from 1.05 to 1.95 and from 5.10 to 8.55 keV
-  (`test_reactivity_is_never_negative`, strict `xfail`): those are in the sets 3, 4 and 14, which pass nothing to
-  the solve.
+- **The reactivity fit of `tr/libnf.f90` between its low knots: fixed by `a4e675cb`** (task-web-client#58,
+  2026-11-14; product-only, like group K, whose code it changes; its row in the table follows group L's, once that
+  pull request is merged, since both add a row at the same place). The fit was `trx`'s, a cubic spline of
+  `<sigma v>` over `log10(T)` through the table's ten points: D-T, which `MODEL_PNF = 1` passes to the solve, was
+  12.2 times the legacy `SIGMAM` at 1.2 keV and 0.10 of it at 2.5 keV, and from 5 to 100 keV within 2.2 % (worst
+  2.18 % at 12.23 keV); D-He3 was negative from 2.05 to 4.70 keV and T-He3 from 1.05 to 1.95 and from 5.10 to
+  8.55 keV. The spline is now of `log10(<sigma v>)`: no rate is negative, the table's points come back to 3.4e-14,
+  D-T is within 4.82 % of `SIGMAM` from 1 to 5 keV and 1.26 % from 5 to 100 keV (every 0.05 keV). The `trx`
+  reference of `test_run/baselines/tr_fus_dt_hot` takes the same fit (its correction 7, branch
+  `ref/trx-regress-capture-58`, `921454ec`) and was captured again. **For upstream:** `trx/libnf.f90` on `develop`
+  (`a180d39e`) has the same fit, and with it the same negative rates; the author decides whether to report it.
 - **`MODEL_PNF = 1` reads the reactants from species 2 and 3 and gives the alpha to species 4**, as `MDLNF` does,
   and checks nothing: with hydrogen in slot 2 (`PA(2) = 1`) both publish a fusion power. `libnf`'s own presence
   check cannot fire, because the species numbers it tests are `plinit`'s constants.
