@@ -29,7 +29,7 @@ These are determined without solving the equilibrium.
 | `NZGMAX` | `state.nzgmax` | = | number of Z-grid points |
 | `NPSMAX` | `state.npsmax` | = | number of ψ-surface samples |
 | `NRMAX`, `NTHMAX` | `state.nrmax`, `state.nthmax` | = | resolution of the ψ mesh |
-| `MODELG ∈ {3, 5, 8}` | required input | the file referenced by `KNAMEQ` must exist | `validate` returns `FILE_MISSING` |
+| `MODELG ∈ {3, 5, 8}` | required input | the file referenced by `KNAMEQ` must exist | `validate` returns `FILE_MISSING` for a blank `KNAMEQ`; a missing file fails in `run` |
 | `MODELG = 2` | `KNAMEQ` ignored | — | analytic toroidal path does not use it |
 
 ## 2. Trends known as physical scaling

@@ -585,7 +585,8 @@ class TestIntegration(unittest.TestCase):
         self,
     ) -> None:
         """The same input with MDLEQF=10 (the solver reads the box) also
-        names the R-grid box (OUT_OF_RANGE_AFTER_DEP, code 3)."""
+        names the box: RR=6.2 lies outside RGMIN..RGMAX (OUT_OF_RANGE_AFTER_DEP,
+        code 3)."""
         srv.handle_init()
         srv.handle_set_params({"MODELG": 2, "MDLEQF": 10, "RR": 6.2, "RA": 2.0})
         diags = srv.handle_validate()
@@ -593,15 +594,15 @@ class TestIntegration(unittest.TestCase):
         self.assertIn(2, codes, f"expected INCONSISTENT_PAIR (code 2) in {diags}")
         self.assertIn(3, codes, f"expected OUT_OF_RANGE_AFTER_DEP (code 3) in {diags}")
         messages = " ".join(d["message"] for d in diags)
-        self.assertIn("R-grid", messages)
+        self.assertIn("RR=6.200 outside RGMIN..RGMAX", messages)
         self.assertIn("MDLEQF >= 10", messages)
 
     def test_validate_modelg3_iter_geometry_skips_grid_extent_check(self) -> None:
-        """SCOPING REGRESSION: the R/Z-extent check (OUT_OF_RANGE_AFTER_
-        DEP) is MODELG==2 only. The ITER01 fixture geometry used by
-        test_init_set_run_get_state_cycle_iter01 below (RR=6.2, RA=2.0,
-        RB=2.1, MODELG=3) sits far outside the default R-grid box under
-        the RA basis (RR+RA=8.2 >> RGMAX=4.5) yet is a clean,
+        """SCOPING REGRESSION: the box check (OUT_OF_RANGE_AFTER_DEP) is
+        not made for a file format (MODELG 3, 5, 8, 9, 15, 25). The ITER01
+        fixture geometry used by test_init_set_run_get_state_cycle_iter01
+        below (RR=6.2, RA=2.0, RB=2.1, MODELG=3) sits far outside the
+        default box (RR=6.2 > RGMAX=4.5) yet is a clean,
         currently-tested TASK-native-load configuration at the default
         MDLEQF (MODELG=3 -> EQRTSK per eq/eqfile.f90's EQ_READ dispatch;
         the EQDSK reader serves MODELG=5/25). A file load sets the
@@ -619,7 +620,7 @@ class TestIntegration(unittest.TestCase):
         extent_diags = [d for d in diags if d["code"] == 3]
         self.assertEqual(
             extent_diags, [],
-            f"grid-extent check (code 3) must not fire for MODELG=3: {diags}")
+            f"box check (code 3) must not fire for MODELG=3: {diags}")
 
     @unittest.skipUnless(
         (EQDATA_FIXTURE_DIR / "eqdata.ITER01").exists(),

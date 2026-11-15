@@ -478,14 +478,20 @@ class Eq:
         (rebuild via ``make -C eq libeqapi.so``). The method does not
         modify any eq state.
 
-        Geometry-diagnostic caveat: the RB/RA/RR/RKAP checks reflect
-        the PRE-RUN values you have set. For file-load MODELG
-        (3/5/8/9/25) the loader may overwrite them during ``run``
-        (EQRTSK reads RA/RKAP/RDLT/RB from the TASK-native file;
-        EQDSKR reconstructs RB = 1.1*RA), and EQCALQ's RB=RA clamp
-        remains the runtime backstop for a wall inside the plasma —
-        so a pre-run wall diagnostic for a file-load configuration is
-        advisory rather than a guaranteed run failure.
+        The geometry checks (the wall ``RB`` against ``RA``, the box
+        ``RGMIN``..``ZGMAX`` with ``MDLEQF >= 10``, a negative ``RIP``)
+        are made for the analytic solve only (``run(0)``), going by
+        ``MODELG``: a file format (``MODELG`` 3/5/8/9/15/25) is taken to
+        be loaded with ``run(1)``, which brings its own geometry (EQRTSK
+        reads RA/RKAP/RDLT/RB from the TASK-native file; EQDSKR
+        reconstructs RB = 1.1*RA), so the pre-run values say nothing
+        about it; every other ``MODELG`` is the analytic solve. The box
+        is flagged where the solver fails or cuts the plasma
+        (``eq_validate``'s comment in ``eq/eq_api.f90`` has the
+        measurements); a box that leaves out part of the plasma
+        elsewhere runs as the default one, but for an axis that leaves
+        the box as it moves during the solve (with triangularity it ends
+        inward of ``RR``), which only the run shows.
         """
         if self._closed:
             raise EqlibError("validate on closed Eq")
@@ -513,7 +519,7 @@ class Eq:
 
         n = int(ndiag.value)
         # Fortran push_diag increments nlocal past diag_cap but skips the
-        # write (eq_api.f90:679-680), so ndiag_out can exceed cap. Clamp
+        # write (push_diag in eq/eq_api.f90), so ndiag_out can exceed cap. Clamp
         # and warn so the caller knows results are truncated instead of
         # IndexError-ing off the end of the ctypes buffer.
         if n > cap:

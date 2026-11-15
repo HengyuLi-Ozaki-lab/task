@@ -158,7 +158,7 @@ is required — the wrapper forwards names verbatim.
 | Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR` | int-typed coerced |
 | Transport switches | `MDLKAI`, `MDLETA`, `MDLAD`, `MDLAVK`, `CHP`, `CK0`, `CK1` | |
 | Transport arrays | `CDW[i]` | |
-| Transport weights | `CDH`, `CNH` | the weights of `chi_s = CDH*chi_turb + CNH*chi_NCLASS`; default 1 (neutral) |
+| Transport weights | `CDH`, `CNH` | the weights of `chi_s = CDH*chi_turb + CNH*chi_NC` (`chi_NC` the neoclassical chi, `AKNC`); default 1 (neutral) |
 | Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF` | |
 | Fusion model of `trx` | `MODEL_PNF` | 0 (default) leaves `MDLNF` in charge; 1 is D-T; 2, 3, 4, 12, 14 evaluate more reactions and pass nothing to the solve. Not together with `MDLNF`; see `docs/sphinx/modules/tr/en/parameters.md` for what it does not do yet |
 | Heating / current drive | `PNBTOT`, `PNBR0`, `PNBRW`, `PNBENG`, `PNBRTG`; `PICTOT`, `PICR0`, `PICRW`, `PICNPR`, `PICCD`; `PECTOT`, `PECR0`, `PECRW`, `PECNPR`, `PECCD`; `PLHTOT`, `PLHR0`, `PLHRW`, `PLHNPR`, `PLHCD` | NBI, ICRF, ECRF and LH; the `*TOT` names are total input power in MW (default 0) |

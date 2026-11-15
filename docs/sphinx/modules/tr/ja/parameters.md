@@ -209,7 +209,7 @@ $$X(\rho) = (X_0 - X_S)\,(1 - \rho^{\text{PROFN1}})^{\text{PROFN2}} + X_S$$
 | `CHP`    | double     | 0.0 | 半経験補正係数 |
 | `CK0`    | double     | 12.0 | 電子用 χ 係数 |
 | `CK1`    | double     | 12.0 | イオン用 χ 係数 |
-| `CDH`    | double     | 1.0 | 乱流 χ の重み (χ_s = CDH·χ_turb + CNH·χ_NCLASS) |
+| `CDH`    | double     | 1.0 | 乱流 χ の重み (χ_s = CDH·χ_turb + CNH·χ_NC, χ_NC は新古典 χ `AKNC`) |
 | `CNH`    | double     | 1.0 | 新古典 χ の重み (同じ和) |
 
 `MDLKAI` で選べる輸送モデル一覧 (代表値; 10 番台単位でファミリー構成):

@@ -56,6 +56,17 @@ def test_validate_reports_a_negative_current_on_an_analytic_run(params, rip):
         assert [d.param for d in e.validate() if d.param == "RIP"] == ["RIP"]
 
 
+@pytest.mark.parametrize("modelg", [0, 1, 4, 26])
+def test_every_modelg_but_a_file_format_is_refused_and_reported_like_modelg_2(modelg):
+    # The same analytic solve: run(0) refuses a negative current whatever MODELG, and validate() says so for every
+    # MODELG that run(1) cannot load.
+    with eqlib.Eq() as e:
+        e.set_params({"MODELG": modelg, "RIP": -3.0})
+        assert [d.param for d in e.validate() if d.param == "RIP"] == ["RIP"]
+        with pytest.raises(eqlib.EqlibInvalidParamError):
+            e.run(0)
+
+
 @pytest.mark.parametrize("rip", [15.0, 3.0])
 def test_a_positive_current_solves_as_before_and_is_not_reported(rip):
     with eqlib.Eq() as e:

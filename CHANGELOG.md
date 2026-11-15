@@ -204,6 +204,30 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **EQ library: `validate()` holds the input to what the solve does with it**
+  (HengyuLi-Ozaki-lab/task-web-client#37). With `MDLEQF >= 10` the box
+  `RGMIN`..`ZGMAX` is read only by `EQAXIS`: the magnetic axis, which starts
+  at `(RR, 0)`, must lie in it, and `RGMAX` bounds the plasma's outer edge
+  `RR + RA`. `validate()` compared the whole plasma with the box, so
+  `ZGMAX` below `RKAP*RA`, or `RGMIN` above `RR - RA`, was reported although
+  the run's every scalar is the default box's. It now reports `RR` outside
+  `RGMIN`..`RGMAX` and `RGMAX` below `RR + RA` (diagnostic `RR`), and a Z
+  range that leaves out `Z = 0`, `ZGMIN = 0` and `ZGMAX = 0` included
+  (diagnostic `ZGMIN` or `ZGMAX`, where it named `RKAP`): each of these fails
+  (`ierr=103`) or cuts the plasma at `RGMAX`. The geometry checks (this box,
+  `RB < RA`, a negative `RIP`) are made for the analytic solve, `run(0)`,
+  going by `MODELG`: a file format (3, 5, 8, 9, 15, 25) is taken to be
+  loaded with `run(1)`, which brings its own geometry, and every other
+  `MODELG` is solved, to the same equilibrium (`EQCALC` does not read
+  `MODELG`). So `MODELG` 0, 1 and the other values that `run(1)` cannot load
+  are checked like 2 (the box and `RIP` were checked for 2 only), and a file
+  format is no longer reported for `RB < RA`. Not seen before the run: an
+  axis that leaves the box as it moves (with `RDLT = 0.4` it ends inward of
+  `RR`), and a Z bound within rounding of 0. The EQ documentation now says
+  what `validate()` checks.
+- **TR documentation: `CDH` and `CNH` weigh `chi_NC`** (the neoclassical
+  `AKNC`), not `chi_NCLASS`: NCLASS needs `MDNCLS`, which the registry does
+  not take (HengyuLi-Ozaki-lab/task-web-client#43). Text and comments only.
 - **TR library: `libnf`'s reaction rates between the low points of its
   table** (HengyuLi-Ozaki-lab/task-web-client#58). The rates were a cubic
   spline of `<sigma v>` over `log10(T)` through the table's ten points (1,
