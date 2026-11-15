@@ -17,9 +17,18 @@ Tests cover:
 * OUT_OF_RANGE diagnostic fires for ``NRMAX`` above ``NRM=1001``;
 * FILE_MISSING diagnostic fires when ``MODELG=3`` and ``KNAMEQ`` is
   blank;
-* the plasma-extent check against the ``RGMIN..ZGMAX`` box fires only
-  when the solver reads that box (``MODELG=2`` and ``MDLEQF >= 10``),
-  each case checked against a real ``run(0)``.
+* the wall check (``RB < RA``) is made for the analytic solve only
+  (every ``MODELG`` but the file formats 3, 5, 8, 9, 15 and 25), not for
+  a file load, which brings its own wall;
+* the box check against ``RGMIN..ZGMAX`` is made only when the solver
+  reads that box (an analytic solve with ``MDLEQF >= 10``), and flags
+  only what fails or cuts the plasma there: ``RR`` outside
+  ``RGMIN..RGMAX``, ``RGMAX`` below ``RR+RA``, a Z range without Z=0.
+  The box and wall cases of ``TestEqValidateBoxGate`` and
+  ``TestEqValidateWallGate`` are checked against a real ``run``, but at
+  the exact bounds, where the run turns on rounding, for the message
+  texts, and for the six file formats, which are checked by
+  ``validate()`` alone.
 
 Skipped automatically when ``libeqapi.so`` has not been built.
 """
@@ -28,6 +37,7 @@ from __future__ import annotations
 import contextlib
 import math
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -127,8 +137,8 @@ class TestEqValidate(unittest.TestCase):
         """RB < RA (wall inside the plasma) is flagged: the solver can
         abort or return a wrong equilibrium (a large device, RR=6.2,
         RA=2.0, run with RB left at the small-tokamak default 1.2, aborts
-        the process in EQCALQP). MODELG-agnostic: fires under the
-        eq_init default MODELG=2 with no override."""
+        the process in EQCALQP). Fires under the eq_init default
+        MODELG=2 with no override."""
         with Eq() as eq:
             eq.set_params(RR=6.2, RA=2.0)      # RB left at default (1.2)
             diags = eq.validate()
@@ -159,33 +169,35 @@ class TestEqValidate(unittest.TestCase):
             [("RB", EqDiagCode.INCONSISTENT_PAIR)],
             f"expected only the wall diagnostic, got {diags}")
 
-    def test_validate_wall_inside_plasma_with_mdleqf_10_adds_the_extent_diagnostics(
+    def test_validate_wall_inside_plasma_with_mdleqf_10_adds_the_box_diagnostic(
         self,
     ) -> None:
         """The same input with MDLEQF=10 (the solver reads the box) trips
-        the wall check and both extent checks."""
+        the wall check and the box check: RR=6.2 lies outside
+        RGMIN..RGMAX = [1.5, 4.5]."""
         with Eq() as eq:
             eq.set_params(MODELG=2.0, MDLEQF=10.0, RR=6.2, RA=2.0)
             diags = eq.validate()
 
         self.assertTrue(diags, "expected non-empty diagnostics")
         messages = " ".join(d.message for d in diags)
-        self.assertIn("R-grid", messages)
+        self.assertIn("RR=6.200 outside RGMIN..RGMAX", messages)
         codes = {d.code for d in diags}
         self.assertIn(int(EqDiagCode.OUT_OF_RANGE_AFTER_DEP), codes)
         self.assertIn(int(EqDiagCode.INCONSISTENT_PAIR), codes)
 
-    def test_validate_r_extent_uses_ra_not_rb(self) -> None:
-        """R-extent basis is RA (plasma minor radius), NOT RB (wall).
-        MDLEQF=10 throughout: only then does the box RGMIN..ZGMAX matter.
+    def test_validate_outer_edge_uses_ra_not_rb(self) -> None:
+        """The outer edge RR+RA (plasma minor radius), NOT RR+RB (wall),
+        is held against RGMAX. MDLEQF=10 throughout: only then does the
+        box RGMIN..ZGMAX matter.
 
         Discriminating case (RR=4.0/RA=1.0/RB=1.9 fires under BOTH bases,
         so it cannot catch an RB-basis regression): RR=4.0, RA=0.4,
-        RB=0.6 is CLEAN under the RA basis (extent [3.6, 4.4] inside
-        [1.5, 4.5]) but an RB-basis implementation would fire ([3.4, 4.6]
-        -> 4.6 > RGMAX=4.5). Cleanness here is what pins the RA basis.
-        Wall is healthy (RB=0.6 >= RA=0.4) and Z-extent 1.0*0.4 is tiny,
-        so the whole diagnostics list must be empty."""
+        RB=0.6 is CLEAN under the RA basis (edge 4.4 inside RGMAX=4.5)
+        but an RB-basis implementation would fire (4.6 > 4.5).
+        Cleanness here is what pins the RA basis. Wall is healthy
+        (RB=0.6 >= RA=0.4), so the whole diagnostics list must be
+        empty."""
         with Eq() as eq:
             eq.set_params(MODELG=2.0, MDLEQF=10.0, RR=4.0, RA=0.4, RB=0.6)
             diags = eq.validate()
@@ -205,11 +217,11 @@ class TestEqValidate(unittest.TestCase):
         extent_diags = [d for d in diags if d.code == EqDiagCode.OUT_OF_RANGE_AFTER_DEP]
         self.assertEqual(len(extent_diags), 1)
         self.assertEqual(extent_diags[0].param, "RR")
-        self.assertIn("R-grid", extent_diags[0].message)
+        self.assertIn("outer edge RR+RA=5.000 lies 5.000E-01 beyond RGMAX=4.500", extent_diags[0].message)
 
     def test_validate_survives_unprintable_extreme_geometry(self) -> None:
         """IOSTAT hardening pin (review follow-up): RR=1e30 makes the
-        R-extent diagnostic's F0.3 rendering exceed the CHARACTER(128)
+        RR diagnostic's F0.3 rendering exceed the CHARACTER(127)
         msgbuf — an unguarded internal WRITE hits gfortran's "End of
         record" and ABORTS the whole process (library-reachable abort
         inside the function whose purpose is returning diagnostics
@@ -224,31 +236,12 @@ class TestEqValidate(unittest.TestCase):
         rr_diags = [d for d in diags if d.param == "RR"]
         self.assertEqual(len(rr_diags), 1)
         self.assertEqual(rr_diags[0].code, EqDiagCode.OUT_OF_RANGE_AFTER_DEP)
-        self.assertIn("R-grid", rr_diags[0].message)
-
-    def test_validate_z_extent_uses_kappa_times_ra(self) -> None:
-        """Z-extent = RKAP*RA (RA basis) must fit ZGMIN/ZGMAX (MDLEQF=10:
-        the solver reads the box). RKAP=1.9, RA=1.0 -> 1.9 < 2.0 is clean
-        under the RA basis; the wall basis (RKAP*RB=1.9*1.2=2.28 > 2.0)
-        would falsely reject it."""
-        with Eq() as eq:
-            eq.set_params(MODELG=2.0, MDLEQF=10.0, RR=3.0, RA=1.0, RKAP=1.9, RB=1.2)
-            diags = eq.validate()
-        self.assertEqual(
-            diags, [], "RKAP*RA inside the Z box must validate cleanly (RA basis)")
-
-        with Eq() as eq:
-            # RKAP*RA = 1.5*1.4 = 2.1 > ZGMAX=2.0; RB=2.0 >= RA=1.4 (healthy wall);
-            # R-extent [1.6, 4.4] stays inside [1.5, 4.5] (extent-clean on R).
-            eq.set_params(MODELG=2.0, MDLEQF=10.0, RR=3.0, RA=1.4, RKAP=1.5, RB=2.0)
-            diags = eq.validate()
-        extent_diags = [d for d in diags if d.code == EqDiagCode.OUT_OF_RANGE_AFTER_DEP]
-        self.assertEqual(len(extent_diags), 1)
-        self.assertEqual(extent_diags[0].param, "RKAP")
-        self.assertIn("Z-extent", extent_diags[0].message)
+        self.assertIn("RR outside RGMIN..RGMAX", rr_diags[0].message)
+        self.assertIn("values unprintable", rr_diags[0].message)
 
     def test_validate_modelg3_skips_grid_extent_check(self) -> None:
-        """SCOPING REGRESSION: the R/Z-extent check is MODELG==2 only.
+        """SCOPING REGRESSION: the box check is for the analytic solve
+        only (every MODELG but the file formats 3, 5, 8, 9, 15, 25).
         The ITER01 fixture geometry (RR=6.2, RA=2.0) sits far outside the
         default box under the RA basis (RR+RA=8.2 >> RGMAX=4.5) yet is a
         clean MODELG=3 (TASK-native EQRTSK load — eq/eqfile.f90's EQ_READ
@@ -258,7 +251,7 @@ class TestEqValidate(unittest.TestCase):
         exercises this exact geometry end-to-end via eq_run(1). A file
         load sets the geometry itself, so the pre-run RR/RA say nothing
         about the loaded plasma and the check must stay gated to
-        MODELG==2. MDLEQF=10 is set here so that the MODELG gate, not the
+        the analytic MODELG. MDLEQF=10 is set here so that the MODELG gate, not the
         MDLEQF gate, is what keeps this case clean. (A load with
         MDLEQF >= 10 still reads the box in EQAXIS: ITER01 then fails with
         the default box, ierr=103, and validate() cannot see it.)"""
@@ -269,7 +262,7 @@ class TestEqValidate(unittest.TestCase):
         extent_diags = [d for d in diags if d.code == EqDiagCode.OUT_OF_RANGE_AFTER_DEP]
         self.assertEqual(
             extent_diags, [],
-            "grid-extent check must not fire for MODELG=3 (EQDSK load)")
+            "box check must not fire for MODELG=3 (a TASK-native load)")
 
 
 @contextlib.contextmanager
@@ -295,18 +288,25 @@ LARGE_DEVICE = dict(MODELG=2.0, RR=6.2, RA=2.0, RKAP=1.7, RB=2.1)
     f"libeqapi.so not built at {DEFAULT_SO}; run `make -C eq libeqapi.so`",
 )
 class TestEqValidateBoxGate(unittest.TestCase):
-    """validate() compares the plasma extent with RGMIN..ZGMAX only when
-    the solver reads that box: MODELG=2 and MDLEQF >= 10.
+    """validate() holds the box RGMIN..ZGMAX against the plasma only when
+    the solver reads that box (an analytic solve, every MODELG but the
+    file formats, with MDLEQF >= 10), and flags only what fails or cuts
+    the plasma there.
 
     The solver reads the box in one place, EQAXIS (eq/eqsub.f90): with
     MDLEQF < 10 the window the axis must lie in, and the bound of the
     outer-edge search, is RR +/- RB, +/- RKAP*RB (the same box EQTORZ
     tabulates psi on, eq/eqcalc.f90); with MDLEQF >= 10 it is RGMIN,
-    RGMAX, ZGMIN, ZGMAX. EQCALQP overwrites the four with the traced
+    RGMAX, ZGMIN, ZGMAX. The axis starts at (RR, 0), and the outer edge
+    at Z=0 is RR+RA, so the run fails when RR or Z=0 is outside the box
+    and is cut at RGMAX when RGMAX < RR+RA; any other part of the plasma
+    may lie outside the box. EQCALQP overwrites the four with the traced
     plasma extent after the solve for any MDLEQF, so below 10 they are
-    outputs only. Every test pairs validate() with a real run(0) (except
-    MDLEQF=9, whose run aborts), so a diagnostic is tied to what the
-    solver does with the same input.
+    outputs only. A test pairs validate() with a real run, so a
+    diagnostic is tied to what the solver does with the same input,
+    except at the exact bounds (RGMIN=RR, ZGMIN=0, ZGMAX=0: the run turns
+    on rounding), for the message texts, and for MDLEQF=9, whose run
+    aborts.
     """
 
     @staticmethod
@@ -348,20 +348,17 @@ class TestEqValidateBoxGate(unittest.TestCase):
         self.assertIsNone(err, f"run(0) failed: {err}")
         self._assert_clean_run(state)
 
-    def test_large_device_with_mdleqf_10_flags_both_extents_and_run_fails(self) -> None:
-        """(b) MDLEQF=10 makes the default box the axis window: the same
-        input gets both extent diagnostics and the run fails (EQAXIS:
-        axis out of plasma, ierr=103)."""
+    def test_large_device_with_mdleqf_10_flags_rr_and_run_fails(self) -> None:
+        """(b) MDLEQF=10 makes the default box the axis window: RR=6.2 is
+        outside it, the same input gets that diagnostic, and the run fails
+        (EQAXIS: axis out of plasma, ierr=103). The Z range [-2, 2] holds
+        Z=0, so the plasma's half-height 3.4 beyond it is no finding."""
         diags, err, state = self._validate_then_run(MDLEQF=10.0, **LARGE_DEVICE)
         extent = self._extent(diags)
-        self.assertEqual(sorted(d.param for d in extent), ["RKAP", "RR"], str(diags))
-        by_param = {d.param: d.message for d in extent}
-        self.assertIn("R-extent [4.200, 8.200]", by_param["RR"])
-        self.assertIn("RGMIN..RGMAX [1.500, 4.500]", by_param["RR"])
-        self.assertIn("Z-extent +/-3.400", by_param["RKAP"])
-        self.assertIn("ZGMIN..ZGMAX [-2.000, 2.000]", by_param["RKAP"])
-        for message in by_param.values():
-            self.assertIn("MDLEQF >= 10", message)
+        self.assertEqual([d.param for d in extent], ["RR"], str(diags))
+        self.assertIn("RR=6.200 outside RGMIN..RGMAX [1.500, 4.500]", extent[0].message)
+        self.assertIn("magnetic axis starts at RR", extent[0].message)
+        self.assertIn("MDLEQF >= 10", extent[0].message)
         self.assertIsNotNone(err, "run(0) should fail with the default box")
         self.assertIn("ierr=103", str(err))
         self.assertIsNone(state)
@@ -369,7 +366,7 @@ class TestEqValidateBoxGate(unittest.TestCase):
     def test_large_device_with_mdleqf_11_is_gated_like_10(self) -> None:
         """The gate is `>= 10`, not `== 10`."""
         diags, err, _ = self._validate_then_run(MDLEQF=11.0, **LARGE_DEVICE)
-        self.assertEqual(sorted(d.param for d in self._extent(diags)), ["RKAP", "RR"])
+        self.assertEqual([d.param for d in self._extent(diags)], ["RR"])
         self.assertIsNotNone(err, "run(0) should fail with the default box")
         self.assertIn("ierr=103", str(err))
 
@@ -402,21 +399,25 @@ class TestEqValidateBoxGate(unittest.TestCase):
         self.assertEqual(diags, [], str(diags))
 
     def test_longest_printable_extent_messages_keep_their_ending(self) -> None:
-        """RR=1e12 gives a 126-character R-extent message that prints in
-        full. RR=1e13 gives one of exactly 128 characters, which the
-        127-character C field cut (the closing parenthesis was lost): it
-        now takes the fallback text. Both end with the closing
-        parenthesis."""
+        """RR=1e11 gives an RR message of exactly 127 characters, the C
+        field's, which prints in full. RR=1e12 gives one of 128, which
+        the field would cut: it takes the fallback text. Both end with
+        the closing parenthesis."""
         messages = {}
-        for rr in (1.0e12, 1.0e13):
+        for rr in (1.0e11, 1.0e12):
             with Eq() as eq:
                 eq.set_params(MODELG=2.0, MDLEQF=10.0, RR=rr, RA=1.0)
                 diags = eq.validate()
             messages[rr] = [d.message for d in diags if d.param == "RR"]
         self.assertEqual([len(m) for m in messages.values()], [1, 1], str(messages))
-        self.assertTrue(messages[1.0e12][0].endswith("(solver box for MDLEQF >= 10)"),
+        self.assertEqual(len(messages[1.0e11][0]), 127, messages[1.0e11][0])
+        self.assertTrue(messages[1.0e11][0].startswith("RR=100000000000.000 outside"),
+                        messages[1.0e11][0])
+        self.assertTrue(messages[1.0e11][0].endswith("(MDLEQF >= 10)"), messages[1.0e11][0])
+        self.assertTrue(messages[1.0e12][0].startswith("RR outside RGMIN..RGMAX"),
                         messages[1.0e12][0])
-        self.assertTrue(messages[1.0e13][0].endswith(")"), messages[1.0e13][0])
+        self.assertTrue(messages[1.0e12][0].endswith("(MDLEQF >= 10; values unprintable)"),
+                        messages[1.0e12][0])
 
     def test_state_grid_is_rr_pm_rb_whatever_the_box(self) -> None:
         """The box is not the grid psi is tabulated on: with MDLEQF=10 and
@@ -430,6 +431,206 @@ class TestEqValidateBoxGate(unittest.TestCase):
         self.assertAlmostEqual(state.rg[state.nrgmax - 1], 6.2 + 2.1, places=9)
         self.assertAlmostEqual(state.zg[0], -1.7 * 2.1, places=9)
         self.assertAlmostEqual(state.zg[state.nzgmax - 1], 1.7 * 2.1, places=9)
+
+    # --- what the box is held to: the defaults (RR=3, RA=1, RKAP=1) with
+    # MDLEQF=10, against the default box [1.5, 4.5] x [-2, 2] -------------
+
+    def _assert_runs_as(self, state, ref, rel=0.0) -> None:
+        """Every scalar of ``state`` as in ``ref``, to ``rel`` (0: bit for
+        bit), but zaxis, which lies within rounding of 0 (1e-12 to 1e-9
+        either side) and is held to 1e-8."""
+        self.assertIsNotNone(state)
+        for key, value in ref.scalars.items():
+            if key == "zaxis":
+                self.assertLessEqual(abs(state.scalars[key]), 1.0e-8, f"zaxis: {state.scalars[key]!r}")
+                continue
+            self.assertLessEqual(abs(state.scalars[key] - value), rel * abs(value),
+                                 f"{key}: {state.scalars[key]!r} against {value!r}")
+
+    def _reference(self, **params):
+        diags, err, state = self._validate_then_run(MODELG=2.0, MDLEQF=10.0, **params)
+        self.assertEqual(diags, [])
+        self.assertIsNone(err)
+        return state
+
+    def _assert_flagged_and_fails(self, param, **params):
+        diags, err, _ = self._validate_then_run(**params)
+        extent = self._extent(diags)
+        self.assertEqual([d.param for d in extent], [param], str(diags))
+        self.assertIsNotNone(err, "run(0) should fail")
+        self.assertIn("ierr=103", str(err))
+        return extent[0].message
+
+    def test_a_z_range_short_of_the_plasma_is_clean_and_runs_as_the_default_box(self) -> None:
+        """ZGMAX=0.01 leaves the upper half of the plasma (up to Z=1.0)
+        out of the box: no finding, and the run is the default box's."""
+        ref = self._reference()
+        diags, err, state = self._validate_then_run(MODELG=2.0, MDLEQF=10.0, ZGMAX=0.01)
+        self.assertEqual(diags, [])
+        self.assertIsNone(err)
+        self._assert_runs_as(state, ref)
+
+    def test_a_z_range_short_of_a_taller_plasma_is_clean_and_runs_as_the_default_box(self) -> None:
+        """RKAP=1.8 (the plasma up to Z=1.8) with ZGMAX=0.3."""
+        ref = self._reference(RKAP=1.8)
+        diags, err, state = self._validate_then_run(
+            MODELG=2.0, MDLEQF=10.0, RKAP=1.8, ZGMAX=0.3)
+        self.assertEqual(diags, [])
+        self.assertIsNone(err)
+        self._assert_runs_as(state, ref)
+
+    def test_rgmin_just_below_rr_is_clean_and_runs_as_the_default_box(self) -> None:
+        """RGMIN=2.999 leaves the inner half of the plasma (from R=2.0) out
+        of the box: no finding, and the run is the default box's."""
+        ref = self._reference()
+        diags, err, state = self._validate_then_run(MODELG=2.0, MDLEQF=10.0, RGMIN=2.999)
+        self.assertEqual(diags, [])
+        self.assertIsNone(err)
+        self._assert_runs_as(state, ref)
+
+    def test_rgmin_at_rr_is_clean(self) -> None:
+        """RGMIN=RR exactly holds the axis's start; whether the run then
+        keeps it in the box turns on rounding (it runs on macOS arm64 at
+        -O0), so only validate()'s verdict is tested."""
+        with Eq() as eq:
+            eq.set_params(MODELG=2.0, MDLEQF=10.0, RGMIN=3.0)
+            self.assertEqual(eq.validate(), [])
+
+    def test_rgmin_just_above_rr_is_flagged_and_the_run_fails(self) -> None:
+        """The axis starts at RR=3.0: RGMIN=3.001 fails, though the axis
+        ends at RAXIS=3.070, inside the box."""
+        message = self._assert_flagged_and_fails("RR", MODELG=2.0, MDLEQF=10.0, RGMIN=3.001)
+        self.assertIn("RR=3.000 outside RGMIN..RGMAX [3.001, 4.500]", message)
+
+    def test_rgmax_at_the_outer_edge_is_clean_and_runs_as_the_default_box(self) -> None:
+        """RGMAX=4.0=RR+RA: no finding; the run is the default box's within
+        the outer-edge search's tolerance (1e-8; 3.9e-9 measured)."""
+        ref = self._reference()
+        diags, err, state = self._validate_then_run(MODELG=2.0, MDLEQF=10.0, RGMAX=4.0)
+        self.assertEqual(diags, [])
+        self.assertIsNone(err)
+        self._assert_runs_as(state, ref, rel=1.0e-8)
+
+    def test_rgmax_just_inside_the_outer_edge_is_flagged_and_cuts_the_plasma(self) -> None:
+        """RGMAX=3.999: the run succeeds with the plasma cut at RGMAX (PVOL
+        59.07 against 59.16)."""
+        ref = self._reference()
+        diags, err, state = self._validate_then_run(MODELG=2.0, MDLEQF=10.0, RGMAX=3.999)
+        extent = self._extent(diags)
+        self.assertEqual([d.param for d in extent], ["RR"], str(diags))
+        self.assertIn("outer edge RR+RA=4.000 lies 1.000E-03 beyond RGMAX=3.999", extent[0].message)
+        self.assertIn("cuts the plasma", extent[0].message)
+        self.assertIsNone(err)
+        self.assertLess(state.scalars["pvol"], ref.scalars["pvol"] * (1.0 - 1.0e-3))
+
+    def _assert_flagged_only(self, param, **params):
+        with Eq() as eq:
+            eq.set_params(**params)
+            extent = self._extent(eq.validate())
+        self.assertEqual([d.param for d in extent], [param], str(extent))
+        return extent[0].message
+
+    def test_zgmin_at_zero_is_flagged(self) -> None:
+        """The axis's Z starts at exactly 0 and ends 1e-12 to one side, so
+        at ZGMIN=0 the run turns on rounding (it fails on macOS arm64 at
+        -O0): the box must hold Z=0 strictly, and only validate()'s verdict
+        is tested."""
+        message = self._assert_flagged_only("ZGMIN", MODELG=2.0, MDLEQF=10.0, ZGMIN=0.0)
+        self.assertIn("leaves out Z=0", message)
+
+    def test_zgmax_at_zero_is_flagged(self) -> None:
+        message = self._assert_flagged_only("ZGMAX", MODELG=2.0, MDLEQF=10.0, ZGMAX=0.0)
+        self.assertIn("leaves out Z=0", message)
+
+    def test_a_z_range_below_zero_is_flagged_and_the_run_fails(self) -> None:
+        message = self._assert_flagged_and_fails("ZGMAX", MODELG=2.0, MDLEQF=10.0, ZGMAX=-0.5)
+        self.assertIn("ZGMIN..ZGMAX [-2.000, -.500] leaves out Z=0", message)
+
+    def test_a_z_range_above_zero_is_flagged_and_the_run_fails(self) -> None:
+        message = self._assert_flagged_and_fails("ZGMIN", MODELG=2.0, MDLEQF=10.0, ZGMIN=0.5)
+        self.assertIn("ZGMIN..ZGMAX [.500, 2.000] leaves out Z=0", message)
+
+    def test_every_modelg_but_a_file_format_gives_the_equilibrium_of_modelg_2(self) -> None:
+        """EQCALC does not read MODELG: run(0) is one analytic solve for
+        every MODELG that run(1) cannot load (the gate's premise)."""
+        ref = self._reference()
+        for modelg in (0.0, 1.0, 4.0, 6.0, 7.0, 26.0, -1.0):
+            diags, err, state = self._validate_then_run(MODELG=modelg, MDLEQF=10.0)
+            self.assertEqual(diags, [], f"MODELG={modelg}")
+            self.assertIsNone(err, f"MODELG={modelg}")
+            self._assert_runs_as(state, ref)
+
+    def test_modelg_0_is_checked_like_modelg_2(self) -> None:
+        self._assert_flagged_and_fails("RR", MODELG=0.0, MDLEQF=10.0, RGMIN=3.5)
+
+    def test_modelg_4_is_checked_like_modelg_2(self) -> None:
+        """MODELG=4 (VMEC output geometry) is no file format run(1) reads."""
+        self._assert_flagged_and_fails("RR", MODELG=4.0, MDLEQF=10.0, RGMIN=3.5)
+
+    def test_modelg_1_is_checked_like_modelg_2(self) -> None:
+        """RGMAX=3.5 cuts the plasma (PVOL 11.7 against 59.2)."""
+        ref = self._reference()
+        diags, err, state = self._validate_then_run(MODELG=1.0, MDLEQF=10.0, RGMAX=3.5)
+        self.assertEqual([d.param for d in self._extent(diags)], ["RR"], str(diags))
+        self.assertIsNone(err)
+        self.assertLess(state.scalars["pvol"], 0.5 * ref.scalars["pvol"])
+
+
+FIXTURE_TST2 = HERE.parent / "fixtures" / "eqdata.TST-2"
+
+
+@unittest.skipUnless(
+    DEFAULT_SO.exists(),
+    f"libeqapi.so not built at {DEFAULT_SO}; run `make -C eq libeqapi.so`",
+)
+class TestEqValidateWallGate(unittest.TestCase):
+    """The wall check (RB < RA) is for the analytic solve, every MODELG but
+    the file formats, where the solve and its grid use RB; a file load
+    brings its own."""
+
+    def test_an_analytic_solve_with_rb_below_ra_is_flagged_for_any_modelg_solved(self) -> None:
+        """RB=0.8 with RA=1.0 runs, but to another equilibrium (PVOL 57.97
+        against 59.16), for MODELG 0, 1, 4 and 26 as for 2."""
+        _, _, ref = TestEqValidateBoxGate._validate_then_run(MODELG=2.0)
+        for modelg in (0.0, 1.0, 4.0, 26.0):
+            diags, err, state = TestEqValidateBoxGate._validate_then_run(MODELG=modelg, RB=0.8)
+            self.assertEqual([(d.param, d.code) for d in diags],
+                             [("RB", EqDiagCode.INCONSISTENT_PAIR)], f"MODELG={modelg}")
+            self.assertIsNone(err, f"MODELG={modelg}")
+            self.assertLess(state.scalars["pvol"], ref.scalars["pvol"] * (1.0 - 1.0e-2),
+                            f"MODELG={modelg}")
+
+    @staticmethod
+    def _validate_then_load(**params):
+        """(diagnostics, state) of a MODELG=3 load of the TST-2 fixture."""
+        with Eq() as eq:
+            eq.set_params(MODELG=3.0, **params)
+            with _in_tempdir() as tmp:
+                shutil.copy(FIXTURE_TST2, Path(tmp) / "eqdata.TST-2")
+                eq.set_param_str("KNAMEQ", "eqdata.TST-2")
+                diags = eq.validate()
+                eq.run(1)
+                return diags, eq.get_state()
+
+    def test_no_file_format_gets_a_geometry_check(self) -> None:
+        """The six formats run(1) reads are taken to be loaded: a wall
+        inside the plasma, a box without RR and a negative current are
+        not reported for any of them (validate only: no file is read)."""
+        for modelg in (3.0, 5.0, 8.0, 9.0, 15.0, 25.0):
+            with Eq() as eq:
+                eq.set_params(MODELG=modelg, RB=0.8, MDLEQF=10.0, RGMIN=3.5, RIP=-3.0)
+                params = [d.param for d in eq.validate()]
+            for name in ("RB", "RR", "RIP"):
+                self.assertNotIn(name, params, f"MODELG={modelg}: {params}")
+
+    def test_a_file_load_with_rb_below_ra_is_not_flagged_and_loads_the_same(self) -> None:
+        """The file brings its own RA and RB: RA=2.0 > RB=1.2 before the
+        load gives the equilibrium of RA=0.2."""
+        diags, state = self._validate_then_load(RA=2.0, RB=1.2)
+        self.assertEqual(diags, [], str(diags))
+        _, ref = self._validate_then_load(RA=0.2, RB=1.2)
+        for key, value in ref.scalars.items():
+            self.assertEqual(state.scalars[key], value, key)
 
 
 class TestFFIBindings(unittest.TestCase):

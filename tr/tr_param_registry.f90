@@ -173,8 +173,8 @@ CONTAINS
     CASE ("CHP");    CHP   = value
     CASE ("CK0");    CK0   = value
     CASE ("CK1");    CK1   = value
-    ! chi_s = CDH*chi_turb + CNH*chi_NCLASS sum weights
-    ! (trcoef_neoclassical.f90:190-191, ENTRY TRCFDW_AKDW). Variables
+    ! chi_s = CDH*chi_turb + CNH*chi_NC (neoclassical, AKNC) sum weights
+    ! (trcoef_neoclassical.f90:192, ENTRY TRCFDW_AKDW). Variables
     ! already existed in trcomm_param/trinit with 1.0 (neutral) defaults;
     ! only the registry CASE entries were missing.
     CASE ("CDH");    CDH   = value

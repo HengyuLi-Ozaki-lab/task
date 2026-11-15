@@ -4,7 +4,7 @@
 
 * ``PECTOT`` / ``PICTOT``: total EC / IC input power [MW] (default 0);
 * ``CDH`` / ``CNH``: the weights of ``chi_s = CDH*chi_turb +
-  CNH*chi_NCLASS`` (default 1, the neutral value).
+  CNH*chi_NC`` (``AKNC``, neoclassical; default 1, the neutral value).
 
 Without its ``CASE`` entry a name is refused (``TrlibParamError``, ierr=1),
 so the first test catches a missing entry directly; the others read the

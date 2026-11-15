@@ -179,7 +179,7 @@ LLM は内部で `run_and_get_state(params={"RR": 6.5, "BB": 5.3, "RIP": 1.5}, m
 > beta_t と pvol を教えて.
 
 LLM は `MODELG=3` を `set_param`, `KNAMEQ="eqdata.ITER01"` を
-`set_param_str`, そして `validate` でファイル存在を確認してから `run`.
+`set_param_str`, そして `validate` で `KNAMEQ` が設定されていることを確認してから `run` (ファイルは `run` が開く).
 
 ### 例 3: 事前検証
 
@@ -211,9 +211,10 @@ EQ も `tr` 同様 1 プロセス 1 インスタンスです ({doc}`faq` Q6). �
 
 ### `validate` の積極利用
 
-`tr_mcp` にもありますが, `eq` では特に効果的です. EQDSK ファイルの存在,
-グリッド寸法 (`NRGMAX`, `NPSMAX` 等の 10 個) のコンパイル時最大値超過を
-**`run` を呼ばずに** 検出できます. パラメータを大量に振る LLM ワーク
+`tr_mcp` にもありますが, `eq` では特に効果的です. 空の `KNAMEQ`,
+グリッド寸法 (`NRGMAX`, `NPSMAX` 等の 10 個) のコンパイル時最大値超過,
+解析解では壁がプラズマの内側にあること, 負の電流, ソルバーが使えない箱を
+**`run` を呼ばずに** 検出できます (`parameter-setting`). パラメータを大量に振る LLM ワーク
 フローではトークンとリトライの節約に直結します.
 
 ## トラブルシューティング (要約)

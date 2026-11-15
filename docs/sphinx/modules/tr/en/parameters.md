@@ -218,7 +218,7 @@ family models.
 | `CHP`    | double     | 0.0 | semi-empirical correction coefficient |
 | `CK0`    | double     | 12.0 | electron χ coefficient |
 | `CK1`    | double     | 12.0 | ion χ coefficient |
-| `CDH`    | double     | 1.0 | turbulent χ sum weight (χ_s = CDH·χ_turb + CNH·χ_NCLASS) |
+| `CDH`    | double     | 1.0 | turbulent χ sum weight (χ_s = CDH·χ_turb + CNH·χ_NC, χ_NC the neoclassical χ `AKNC`) |
 | `CNH`    | double     | 1.0 | neoclassical χ sum weight (same sum) |
 
 Selectable transport models for `MDLKAI` (representative values;

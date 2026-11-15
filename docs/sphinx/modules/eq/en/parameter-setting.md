@@ -89,10 +89,31 @@ The diagnostic codes are the same five shared with `tr`:
 | `OUT_OF_RANGE`           | value outside the allowed range |
 | `INCONSISTENT_PAIR`      | inconsistency between related parameters |
 | `OUT_OF_RANGE_AFTER_DEP` | range violation after dependency resolution |
-| `FILE_MISSING`           | the specified file does not exist (`KNAMEQ`, etc.) |
+| `FILE_MISSING`           | a file name that is needed is blank (`KNAMEQ`) |
 | `MISSING_REQUIRED`       | a required parameter is unset |
 
 `eq_validate` checks **ten grid dimensions** (`NSGMAX`, `NTGMAX`,
 `NUGMAX`, `NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`,
-`NRVMAX`) and the existence of `KNAMEQ` / `KNAMPF` files for the
-geometry modes that need them.
+`NRVMAX`) against the compile-time maxima, and that `KNAMEQ` is not blank
+for `MODELG` 3, 5 and 8 (the file itself is opened by `run`). For the
+analytic solve (`run(mode=0)`, which every `MODELG` but the file formats
+needs) it also checks:
+
+- the wall encloses the plasma: `RB >= RA` (`INCONSISTENT_PAIR`);
+- the plasma current is not negative: `RIP >= 0` (`OUT_OF_RANGE`; `run(0)`
+  refuses a negative one);
+- with `MDLEQF >= 10`, where the solver reads the box `RGMIN`..`ZGMAX`
+  (`OUT_OF_RANGE_AFTER_DEP`): `RR` lies inside `RGMIN`..`RGMAX` (the magnetic
+  axis starts there and must stay in the box), `RGMAX` is not below the
+  outer edge `RR + RA` (the solve would cut the plasma there, or fail if `RGMAX` is below the axis), and
+  `ZGMIN < 0 < ZGMAX` (the axis lies at `Z = 0`). Other parts of the plasma
+  may lie outside the box: the run is the same. Two failures are not seen
+  before the run: the axis moves during the solve (outward with the
+  Shafranov shift, inward with triangularity: at `RDLT = 0.4` it ends inward
+  of `RR`, so `RGMIN = RR` fails), and a Z bound within rounding of 0
+  (`1e-14`) fails as if it were 0.
+
+`validate()` goes by `MODELG`: a file format (`MODELG` 3, 5, 8, 9, 15, 25)
+is taken to be loaded with `run(mode=1)`, which brings its own geometry, so
+these geometry checks are not made for it (nor for a file format solved
+with `run(mode=0)`).

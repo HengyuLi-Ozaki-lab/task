@@ -186,8 +186,8 @@ and returns `scalars.raxis` and `scalars.qaxis`. With `MODELG=2`
 > and tell me beta_t and pvol.
 
 The LLM uses `set_param` for `MODELG=3`, `set_param_str` for
-`KNAMEQ="eqdata.ITER01"`, then `validate` to confirm the file exists,
-and finally `run`.
+`KNAMEQ="eqdata.ITER01"`, then `validate` to confirm `KNAMEQ` is set,
+and finally `run` (which opens the file).
 
 ### Example 3: pre-run validation
 
@@ -222,9 +222,10 @@ absolute paths.
 ### Use `validate` aggressively
 
 It is also available in `tr_mcp` but is particularly effective in
-`eq`. It detects EQDSK file existence and compile-time-max overflow
-of grid sizes (`NRGMAX`, `NPSMAX`, … ten in total) **without
-calling `run`**. In an LLM workflow that varies many parameters,
+`eq`. It detects a blank `KNAMEQ`, compile-time-max overflow of grid
+sizes (`NRGMAX`, `NPSMAX`, … ten in total) and, for the analytic solve,
+a wall inside the plasma, a negative current and a box the solve cannot
+use **without calling `run`** (`parameter-setting`). In an LLM workflow that varies many parameters,
 this directly saves tokens and retries.
 
 ## Troubleshooting (summary)

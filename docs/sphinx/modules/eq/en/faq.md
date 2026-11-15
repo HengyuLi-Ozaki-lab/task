@@ -54,8 +54,10 @@ inconsistent. Common causes:
   default `100`
 - The EQDSK file format does not match (version mismatch)
 
-`validate()` only catches grid-dimension and file-existence issues
-up-front; physical consistency is only known after `run()`.
+`validate()` catches grid dimensions, a blank `KNAMEQ` and, for the
+analytic solve, a wall inside the plasma, a negative current and a box
+(`MDLEQF >= 10`) the solve cannot use up-front; physical consistency is
+only known after `run()`.
 
 ## Q6. Can I create two `Eq()` instances in the same process?
 

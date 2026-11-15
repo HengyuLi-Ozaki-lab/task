@@ -425,7 +425,7 @@ class TestIntegration(unittest.TestCase):
 
 # The names the server must describe: PECTOT/PICTOT (total EC/IC input
 # power, MW) and CDH/CNH (the weights of chi_s = CDH*chi_turb +
-# CNH*chi_NCLASS). The Fortran registry accepting them is tested in
+# CNH*chi_NC, the neoclassical AKNC). The Fortran registry accepting them is tested in
 # python/trlib/tests/test_registry_heating_and_diffusivity.py.
 HEATING_AND_DIFFUSIVITY_NAMES = ("PECTOT", "PICTOT", "CDH", "CNH")
 

@@ -87,9 +87,29 @@ with Eq() as eq:
 | `OUT_OF_RANGE`           | 値が許容範囲外 |
 | `INCONSISTENT_PAIR`      | 関連パラメータ対の不整合 |
 | `OUT_OF_RANGE_AFTER_DEP` | 依存パラメータ評価後の範囲逸脱 |
-| `FILE_MISSING`           | 指定されたファイルが存在しない (`KNAMEQ` など) |
+| `FILE_MISSING`           | 必要なファイル名が空 (`KNAMEQ`) |
 | `MISSING_REQUIRED`       | 必須パラメータが未設定 |
 
 `eq_validate` は **10 個のグリッド寸法** (`NSGMAX`, `NTGMAX`, `NUGMAX`,
-`NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`, `NRVMAX`) と,
-必要な幾何モードでの `KNAMEQ` / `KNAMPF` ファイル存在をチェックします.
+`NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`, `NRVMAX`) を
+コンパイル時の上限と比べ, `MODELG` 3, 5, 8 で `KNAMEQ` が空でないことを
+チェックします (ファイル自体は `run` が開きます). 解析解 (`run(mode=0)`.
+ファイル形式以外のすべての `MODELG` はこれで解く) ではさらに次をチェックします:
+
+- 壁がプラズマを囲む: `RB >= RA` (`INCONSISTENT_PAIR`);
+- プラズマ電流が負でない: `RIP >= 0` (`OUT_OF_RANGE`. 負の電流は `run(0)`
+  が拒否します);
+- `MDLEQF >= 10` でソルバーが箱 `RGMIN`..`ZGMAX` を読むとき
+  (`OUT_OF_RANGE_AFTER_DEP`): `RR` が `RGMIN`..`RGMAX` の中にある (磁気軸は
+  そこから出発し, 箱の中になければならない), `RGMAX` が外縁 `RR + RA` より
+  小さくない (小さいと解はそこでプラズマを切る. 磁気軸より小さければ失敗する), `ZGMIN < 0 < ZGMAX`
+  (磁気軸は `Z = 0` にある). プラズマのそれ以外の部分は箱の外にあっても
+  結果は同じです. 事前に見えない失敗が二つあります: 磁気軸は解く間に動く
+  (シャフラノフシフトで外へ, 三角度で内へ. `RDLT = 0.4` では `RR` より内側で
+  止まるので `RGMIN = RR` は失敗する) ことと, 丸め誤差の範囲 (`1e-14`) で
+  0 に近い Z の境界は 0 と同じく失敗することです.
+
+`validate()` は `MODELG` で判断します: ファイル形式 (`MODELG` 3, 5, 8, 9, 15,
+25) は `run(mode=1)` で読み込むものとみなし, 幾何はファイルから得るので,
+これらの幾何チェックは行いません (ファイル形式を `run(mode=0)` で解く場合も
+行いません).

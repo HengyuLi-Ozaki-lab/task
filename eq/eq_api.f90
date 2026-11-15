@@ -509,23 +509,29 @@ CONTAINS
   ! Categories covered:
   !   OUT_OF_RANGE  : 10 EQCHEK overflow guards (NSGMAX/NTGMAX/NUGMAX/
   !                   NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX/NRVMAX
-  !                   vs the eqcom0_mod compile-time maxima).
+  !                   vs the eqcom0_mod compile-time maxima), and a
+  !                   negative RIP for an analytic solve (see below).
   !   FILE_MISSING  : MODELG in {3,5,8} requires non-blank KNAMEQ.
-  !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA, any
-  !                   MODELG (the solver can abort or give a wrong
-  !                   equilibrium).
-  !   OUT_OF_RANGE_AFTER_DEP : plasma extents RR+/-RA, +/-RKAP*RA
-  !                   outside RGMIN/RGMAX x ZGMIN/ZGMAX. Checked for
-  !                   MODELG==2 and MDLEQF >= 10 only. MODELG 0/1 and the
-  !                   file loads also read the box when MDLEQF >= 10 and
-  !                   are not checked (see the long comment at the check).
+  !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA, for an
+  !                   analytic solve (the solver can abort or give a
+  !                   wrong equilibrium).
+  !   OUT_OF_RANGE_AFTER_DEP : the box RGMIN..ZGMAX leaves out RR or
+  !                   Z = 0, or RGMAX is below RR+RA: where the solver
+  !                   fails or cuts the plasma. Checked for an analytic
+  !                   solve with MDLEQF >= 10 only; the file loads also
+  !                   read the box then and are not checked (see the
+  !                   long comment at the check).
   !
-  ! Geometry-diagnostic caveat: the RB/RA/RR/RKAP checks reflect the
-  ! PRE-RUN values. For file-load MODELG (3/5/8/9/25) the loader may
-  ! overwrite them at run time (EQRTSK reads RA/RKAP/RDLT/RB from the
-  ! TASK-native file; EQDSKR reconstructs RB = 1.1*RA —
-  ! eq-eqdsk.f90:100), and EQCALQ's RB=RA clamp (eqcalq.f90:54-55)
-  ! remains the runtime backstop for a wall inside the plasma.
+  ! validate() does not know the mode of the run to come, and goes by
+  ! MODELG. The file formats (MODELG 3/5/8/9/15/25, what EQ_READ reads:
+  ! eq/eqfile.f90:178-195) are taken to be loaded, run(1): they bring
+  ! their own geometry (EQRTSK reads RA/RKAP/RDLT/RB from the TASK-native
+  ! file; EQDSKR reconstructs RB = 1.1*RA), so their pre-run
+  ! RR/RA/RB/RKAP say nothing about the run and are not checked. Any
+  ! other MODELG can only be solved, run(0), and is the analytic solve:
+  ! EQCALC does not read MODELG (0, 1, 2, 4, 6, 7, 26 and -1 give the
+  ! same equilibrium, bit for bit). A file format solved with run(0) is
+  ! the analytic solve too, and goes unchecked.
   !
   ! Future categories (left for follow-up PRs as the validation surface
   ! grows): MISSING_REQUIRED.
@@ -544,7 +550,7 @@ CONTAINS
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
     INTEGER :: ios
-    REAL(rkind) :: z_extent
+    LOGICAL :: analytic
     CHARACTER(LEN=EQ_DIAG_MSG_LEN - 1) :: msgbuf   ! the C field keeps 127 characters + NUL
 
     IF (.NOT. g_initialized) THEN
@@ -554,6 +560,9 @@ CONTAINS
     END IF
 
     nlocal = 0
+    ! The analytic solve: every MODELG but the file formats (see the header).
+    analytic = .NOT. (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8 .OR. &
+                      MODELG == 9 .OR. MODELG == 15 .OR. MODELG == 25)
 
     ! ---- OUT_OF_RANGE: grid-overflow guards (port from EQCHEK in
     !      eqinit.f90:509-548; same checks the binary path runs at
@@ -580,18 +589,18 @@ CONTAINS
     END IF
 
     ! ---- INCONSISTENT_PAIR: the wall must enclose the plasma (RB >=
-    !      RA). MODELG-agnostic: EQAXIS's default (MDLEQF<10) axis
-    !      search box is RR +/- RB / +/-RKAP*RB (eq/eqsub.f90:55-59),
-    !      used by EQCALQ/EQCALV regardless of MODELG, so RB<RA can
-    !      starve that box of the true axis either way. Measured: a
-    !      large device (RR=6.2, RA=2.0) run through MODELG=2 mode=0
-    !      with RB left at the small-tokamak default (1.2) aborts the
-    !      process (EQMAGS cannot trace a surface and a later zminmax
-    !      call reads YA(:,0)); RB=0.8 with RA=1.0 runs but gives a
-    !      different equilibrium than an enclosing wall, because the
-    !      solve and its R-Z grid use the smaller RB (EQCALQ's RB=RA
-    !      clamp comes after EQCALC in a mode-0 run).
-    IF (RB < RA) THEN
+    !      RA) in an analytic solve. Measured: a large device (RR=6.2,
+    !      RA=2.0) run through MODELG=2 mode=0 with RB left at the
+    !      small-tokamak default (1.2) aborts the process (EQMAGS cannot
+    !      trace a surface and a later zminmax call reads YA(:,0));
+    !      RB=0.8 with RA=1.0 runs but gives a different equilibrium
+    !      than an enclosing wall (PVOL 57.97 against 59.16, the same for
+    !      every MODELG solved), because the solve and its R-Z grid use the
+    !      smaller RB (EQCALQ's RB=RA clamp comes after EQCALC in a mode-0
+    !      run). Not for a file load, which brings its own RB: the TASK
+    !      file eqdata.TST-2 (MODELG=3) loads the same equilibrium with
+    !      RA=2.0 > RB=1.2 as with RA=0.2 (measured 2026-11-15).
+    IF (analytic .AND. RB < RA) THEN
        ! IOSTAT guard (all three diagnostic WRITEs): RR/RA/RB/RKAP are
        ! externally settable, and an extreme value (e.g. RR=1e30,
        ! live-reproduced) makes the F0.3 rendering overflow the
@@ -608,54 +617,96 @@ CONTAINS
        CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
     END IF
 
-    ! ---- OUT_OF_RANGE_AFTER_DEP: plasma extents (RA basis, NOT the
-    !      wall RB: the plasma must fit the box whatever the wall)
-    !      against the box RGMIN/RGMAX/ZGMIN/ZGMAX. SCOPED TO MODELG==2
-    !      AND MDLEQF >= 10, the cases where the solver reads the box:
-    !      EQAXIS (eq/eqsub.f90:55-65; from EQSETP and EQCALV) takes the
-    !      window the magnetic axis must lie in, and the bound of the
-    !      outer-edge search, from RGMIN..ZGMAX only for MDLEQF >= 10
-    !      (otherwise from RR +/- RB, +/- RKAP*RB). After the solve
-    !      EQCALQP overwrites the four with the traced plasma extent for
-    !      any MDLEQF (eqcalq.f90:603-613; EQCALQV again for MDLEQF < 10,
-    !      977-988), so for MDLEQF < 10 they are outputs and the plasma
-    !      may lie outside them. Even for MDLEQF >= 10 the box is not
-    !      the grid psi is tabulated on (EQTORZ: RR +/- RB). A file load
-    !      (EQ_READ dispatch, eq/eqfile.f90:122-138: MODELG=3/9 ->
-    !      EQRTSK, a TASK-native file carrying its own RG/ZG grids AND
-    !      RA/RKAP/RDLT/RB; MODELG=5/25 -> EQDSKR, grid rebuilt from the
-    !      file's rdim/zdim; MODELG=8 -> EQJAEAR; MODELG=15 -> equread::
-    !      eqdsk) sets the geometry itself (see the caveat above), so
-    !      the pre-run values say nothing about the loaded plasma. Not
-    !      checked, hence a false negative for MDLEQF >= 10, where they
-    !      read the box too (EQAXIS): every file load, and MODELG=0/1,
-    !      which share EQCALC's analytic path (run(0) fails, ierr=103).
-    !      The eq_mcp ITER01 fixture (RR=6.2, RA=2.0, MODELG=3,
+    ! ---- OUT_OF_RANGE_AFTER_DEP: the box RGMIN/RGMAX/ZGMIN/ZGMAX,
+    !      where the solver reads it: an analytic solve with MDLEQF >= 10.
+    !      It is read in one place, EQAXIS (eq/eqsub.f90:55-88, from
+    !      EQSETP and EQCALV; otherwise its window is RR +/- RB,
+    !      +/- RKAP*RB), which asks two things of it: the magnetic axis
+    !      must lie inside it (or the run fails, ierr=103), and RGMAX
+    !      bounds the search for the outer edge (beyond it the plasma is
+    !      cut at RGMAX). The axis starts at (RR, 0) (NEWTN steps from
+    !      there) and moves as the solve goes on (outward with the
+    !      Shafranov shift: RAXIS 3.070 for RR=3.0 at the defaults; inward
+    !      with triangularity: 2.976 at RDLT=0.4), and the outer edge at
+    !      Z=0 is RR+RA whatever RKAP and RDLT. So three things are flagged,
+    !      each failing or cutting the plasma whatever the shift (measured
+    !      2026-11-15, the defaults with MDLEQF=10, box [1.5, 4.5] x [-2, 2]):
+    !        RR outside RGMIN..RGMAX (RGMIN=3.001 fails, 2.999 runs);
+    !        RGMAX below RR+RA (3.999 cuts the plasma, PVOL 59.07 against
+    !        59.16; 3.5 gives 11.7; below the axis, 3.05, the run fails;
+    !        4.0 runs, every scalar within 4e-9 of the default box's, the
+    !        edge search's tolerance). The solve's own edge lies 3.3e-4
+    !        inside RR+RA (REDGE 3.99967 with the default box), so an RGMAX
+    !        between the two is flagged though the run is the default
+    !        box's (3.9998: PVOL within 1e-8);
+    !        a Z range that leaves out Z=0, the axis of the up-down
+    !        symmetric plasma (ZGMIN=0.5 and ZGMAX=-0.5 fail; ZGMAX=0.01
+    !        runs). At ZGMIN=0 or ZGMAX=0 exactly, flagged too, the run
+    !        turns on rounding: the axis's Z starts at exactly 0 and ends
+    !        1e-12 (1e-10 on an ITER-sized case) to one side; both fail
+    !        here (macOS arm64, -O0).
+    !      What else the box leaves out of the plasma changes nothing:
+    !      ZGMAX=0.01 (the plasma +/-1.0), RGMIN=2.999 (its inner edge at
+    !      2.0) and RKAP=1.8 with ZGMAX=0.3 run with every scalar as with
+    !      the default box. Not seen before the run: an axis that leaves
+    !      the box as it moves (RDLT=0.4 with RGMIN=RR fails, ierr=103),
+    !      and a Z bound inside the axis's rounding (ZGMIN=-1e-14 fails).
+    !      After the solve EQCALQP overwrites the four with the traced
+    !      plasma extent for any MDLEQF (eqcalq.f90:603-613; EQCALQV
+    !      again for MDLEQF < 10, 977-988), so for MDLEQF < 10 they are
+    !      outputs only. With MDLEQF >= 10 a validate() after a run reads
+    !      the traced RGMAX, 3e-4 below RR+RA at the defaults: the edge is
+    !      flagged, rightly once an input has changed, since the next
+    !      run(0) of the same instance reads that box too (RR=3.4 then:
+    !      PVOL 20.81 against 67.05 in a new instance), and needlessly for
+    !      a run of the same input again (PVOL equal to 1.4e-13, the other
+    !      scalars to 1e-11).
+    !      The box is not the grid psi is tabulated on (EQTORZ: RR +/- RB).
+    !      A file load (EQ_READ dispatch,
+    !      eq/eqfile.f90:178-195: MODELG=3/9 -> EQRTSK, a TASK-native file
+    !      carrying its own RG/ZG grids AND RA/RKAP/RDLT/RB; MODELG=5/25
+    !      -> EQDSKR, grid rebuilt from the file's rdim/zdim; MODELG=8 ->
+    !      EQJAEAR; MODELG=15 -> equread::eqdsk) sets the geometry itself,
+    !      so the pre-run values say nothing about the loaded plasma. Not
+    !      checked, hence a false negative for a load with MDLEQF >= 10,
+    !      which reads the box too (EQAXIS: run(1) fails, ierr=103). The
+    !      eq_mcp ITER01 fixture (RR=6.2, RA=2.0, MODELG=3,
     !      test_server.py::test_init_set_run_get_state_cycle_iter01) is far
     !      outside the default box yet clean: validate() must return [].
-    IF (MODELG == 2 .AND. MDLEQF >= 10) THEN
-       IF (RR - RA < RGMIN .OR. RR + RA > RGMAX) THEN
-          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A,F0.3,A)', IOSTAT=ios) &
-               "plasma R-extent [", RR - RA, ", ", RR + RA, &
-               "] outside R-grid RGMIN..RGMAX [", RGMIN, ", ", RGMAX, "] (solver box for MDLEQF >= 10)"
+    IF (analytic .AND. MDLEQF >= 10) THEN
+       IF (RR < RGMIN .OR. RR > RGMAX) THEN
+          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A)', IOSTAT=ios) &
+               "RR=", RR, " outside RGMIN..RGMAX [", RGMIN, ", ", RGMAX, &
+               "]: the magnetic axis starts at RR, and must lie in the box (MDLEQF >= 10)"
           IF (ios /= 0) msgbuf = &
-               "plasma R-extent outside R-grid RGMIN..RGMAX (solver box for MDLEQF >= 10; values unprintable)"
+               "RR outside RGMIN..RGMAX: the magnetic axis starts at RR, and must lie in the box (MDLEQF >= 10; values unprintable)"
+          CALL push_diag("RR", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+       ELSE IF (RR + RA > RGMAX) THEN
+          WRITE(msgbuf, '(A,F0.3,A,1PE9.3,A,0PF0.3,A)', IOSTAT=ios) &
+               "outer edge RR+RA=", RR + RA, " lies ", RR + RA - RGMAX, " beyond RGMAX=", RGMAX, &
+               ": the solve cuts the plasma at RGMAX, or fails (MDLEQF >= 10)"
+          IF (ios /= 0) msgbuf = &
+               "outer edge RR+RA beyond RGMAX: the solve cuts the plasma at RGMAX, or fails" // &
+               " (MDLEQF >= 10; values unprintable)"
           CALL push_diag("RR", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
        END IF
 
-       z_extent = RKAP * RA
-       IF (-z_extent < ZGMIN .OR. z_extent > ZGMAX) THEN
-          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A)', IOSTAT=ios) &
-               "plasma Z-extent +/-", z_extent, &
-               " outside Z-grid ZGMIN..ZGMAX [", ZGMIN, ", ", ZGMAX, "] (solver box for MDLEQF >= 10)"
+       IF (ZGMIN >= 0.D0 .OR. ZGMAX <= 0.D0) THEN
+          WRITE(msgbuf, '(A,F0.3,A,F0.3,A)', IOSTAT=ios) &
+               "ZGMIN..ZGMAX [", ZGMIN, ", ", ZGMAX, &
+               "] leaves out Z=0, where the magnetic axis lies (MDLEQF >= 10)"
           IF (ios /= 0) msgbuf = &
-               "plasma Z-extent outside Z-grid ZGMIN..ZGMAX (solver box for MDLEQF >= 10; values unprintable)"
-          CALL push_diag("RKAP", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+               "ZGMIN..ZGMAX leaves out Z=0, where the magnetic axis lies (MDLEQF >= 10; values unprintable)"
+          IF (ZGMIN >= 0.D0) THEN
+             CALL push_diag("ZGMIN", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+          ELSE
+             CALL push_diag("ZGMAX", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+          END IF
        END IF
     END IF
 
     ! ---- OUT_OF_RANGE: a negative plasma current, which eq_run(0) refuses (see there).
-    IF (MODELG == 2 .AND. RIP < 0.D0) THEN
+    IF (analytic .AND. RIP < 0.D0) THEN
        WRITE(msgbuf, '(A,1PE11.4,A)', IOSTAT=ios) "plasma current RIP=", RIP, &
             " MA is negative: the analytic solve does not treat its sign; give its magnitude"
        IF (ios /= 0) msgbuf = "plasma current RIP is negative: the analytic solve does not treat its sign"
