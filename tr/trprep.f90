@@ -229,12 +229,14 @@ CONTAINS
     USE TRCOM1, ONLY : INS
     IMPLICIT NONE
     INTEGER,INTENT(IN) :: INIT
-    INTEGER,INTENT(OUT),OPTIONAL :: IERR  ! #142: optional so existing
-                                ! callers without IERR (legacy main path)
-                                ! still compile. Library-reachable callers
-                                ! pass IERR and check it.
+    INTEGER,INTENT(OUT) :: IERR  ! #142. Not OPTIONAL: TR_EQS_SELECT is an
+                                ! external procedure, so an OPTIONAL dummy
+                                ! would need an explicit interface at its
+                                ! caller, which tr_prep (its only caller in
+                                ! tr/) does not have; tr_prep passes IERR.
     INTEGER:: IND, INDH, INDHD, MDANOM, MDSLCT, NEQ, NEQ1, NEQI
     INTEGER:: NEQRMAX, NEQS, NEQT, NNSC, NNSMAX, NNSN, NS, NSSN, NSVN
+    INTEGER:: NBAD
     INTEGER, SAVE :: NSSMAX
 
 
@@ -288,15 +290,11 @@ CONTAINS
          NEQMAX=MDLEQB+NSMAX+(MDLEQT+MDLEQU)*NSMAX+MDLEQ0*NSNMAX+MDLEQZ*NSZMAX
       ENDIF
 
-      IF(PRESENT(IERR)) IERR = 0
+      IERR = 0
       IF(MDLEQN.EQ.0.AND.(MDLEQE.EQ.1.OR.MDLEQE.EQ.2)) THEN
          WRITE(6,*)  'XX TR_EQS_SELECT : MDLEQE can be 1 or 2 when MDLEQN is 1.'
-         IF(PRESENT(IERR)) THEN
-            IERR = 1
-            RETURN
-         END IF
-         STOP   ! legacy fallback: callers without IERR keep abort
-                ! semantics; the trprep:27 caller now passes IERR.
+         IERR = 1
+         RETURN
       ENDIF
 
       NSS(1:NEQMAXM)=-1  ! 0: EM, particle species
@@ -409,6 +407,15 @@ CONTAINS
  600  FORMAT(' ',5(' ',A))
  610  FORMAT(' ',5I4)
 
+!     A species that matched no class, two that took one place, one placed above NSMAX, or a species 1
+!     that is not the electron would leave an equation without a species (NEA below is then written
+!     with index -1) or a species without its equations (the solve stops on it), or the electrons
+!     out of place: refuse the run, naming the species.
+      CALL tr_species_equations_check(NBAD)
+      IF(NBAD.NE.0) THEN
+         IERR = 1
+         RETURN
+      END IF
 !     *** EQUATION SELECTOR ***
 
 !     Format : NEA(species,equation) for all equations
@@ -604,3 +611,63 @@ CONTAINS
 
       RETURN
       END SUBROUTINE TR_TABLE
+
+!     ***********************************************************
+
+!     TR_TABLE places a species by its mass alone: the electron is PA = AME/AMM to 1e-10 (place 1),
+!     hydrogen PA = 1 or deuterium 1.5 < PA < 2.5 (2; deuterium beside hydrogen 3), tritium
+!     2.5 < PA < 3.5 (3; beside hydrogen and deuterium 4), helium 3.5 < PA < 4.5 (4), carbon
+!     9 < PA < 15 with NSMAX = 3 (3). Species 1..NSMAX must take these places once each, and the
+!     electron must be species 1 (the solve takes species 1 for the electrons, trcalc.f90's PNSS(1) for
+!     one). The places are given in the order of the species, so deuterium takes 3 only after a
+!     hydrogen and tritium 4 only after both (e/D/H gives two species place 2; e/T/H is fine). NBAD
+!     counts, each said on unit 6: a species 1 that is not the electron; a species
+!     1..NSMAX that gets no equation for a variable the run evolves (density with MDLEQN or MDLEQT,
+!     temperature with MDLEQT, toroidal flow with MDLEQU) -- a variable has at most NSMAX equations of
+!     species 1..NSMAX, one per species that matched a class, so a place taken twice or above NSMAX
+!     comes to this; and an equation left without a species (NSS = -1), which an impurity or neutral
+!     count above what the table fills (NSZMAX > 2, or NSNMAX > 2 with MDLEQ0) also leaves.
+
+      SUBROUTINE tr_species_equations_check(NBAD)
+
+      USE TRCOMM, ONLY : AME, AMM, MDLEQN, MDLEQT, MDLEQU, NEQMAX, NSMAX, NSS, NSV, PA
+      IMPLICIT NONE
+      INTEGER, INTENT(OUT) :: NBAD
+      CHARACTER(LEN=13), PARAMETER :: VARIABLE(3) = [CHARACTER(LEN=13) :: 'density', 'temperature', 'toroidal flow']
+      LOGICAL :: EVOLVED(3)
+      INTEGER :: NEQ, NS, NV, NFOUND
+
+      NBAD = 0
+      IF(NSMAX.GE.1 .AND. ABS(PA(1)-AME/AMM).GT.1.D-10) THEN
+         NBAD = NBAD + 1
+         WRITE(6,'(A,1PE13.6,A,1PE13.6,A)') 'XX TR_EQS_SELECT: species 1 (PA =', PA(1), &
+              ') is not the electron (AME/AMM =', AME/AMM, '), which the solve takes it for'
+      END IF
+      EVOLVED = [MDLEQN.EQ.1 .OR. MDLEQT.EQ.1, MDLEQT.EQ.1, MDLEQU.EQ.1]
+      DO NS = 1, NSMAX
+         DO NV = 1, 3
+            IF(.NOT.EVOLVED(NV)) CYCLE
+            NFOUND = 0
+            DO NEQ = 1, NEQMAX
+               IF(NSS(NEQ).EQ.NS .AND. NSV(NEQ).EQ.NV) NFOUND = NFOUND + 1
+            END DO
+            IF(NFOUND.EQ.0) THEN
+               NBAD = NBAD + 1
+               WRITE(6,'(A,I0,A,1PE13.6,3A)') 'XX TR_EQS_SELECT: species ', NS, ' (PA =', PA(NS), &
+                    ') gets no ', TRIM(VARIABLE(NV)), ' equation'
+            END IF
+         END DO
+      END DO
+      DO NEQ = 1, NEQMAX
+         IF(NSS(NEQ).LT.0 .OR. NSV(NEQ).LT.0) THEN
+            NBAD = NBAD + 1
+            WRITE(6,'(A,I0,A)') 'XX TR_EQS_SELECT: equation ', NEQ, ' has no species'
+         END IF
+      END DO
+      IF(NBAD.NE.0) WRITE(6,'(A)') &
+           'XX TR_EQS_SELECT: TR places a species by its mass PA: electron AME/AMM to 1e-10 (1), ' // &
+           'hydrogen 1 or deuterium 1.5-2.5 (2; 3 after a hydrogen), tritium 2.5-3.5 (3; 4 after H and D), ' // &
+           'helium 3.5-4.5 (4), carbon 9-15 with NSMAX = 3 (3); species 1..NSMAX take these places once each, ' // &
+           'the electron first'
+      RETURN
+      END SUBROUTINE tr_species_equations_check
