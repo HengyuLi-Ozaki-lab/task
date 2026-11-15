@@ -1,14 +1,15 @@
 """``tr_run`` returns an error, and the process lives, when a species gets no equation or the electron is not species 1.
 
-TR gives each species its equations by its mass alone (``TR_TABLE``, ``tr/trprep.f90``): the electron is
-PA = AME/AMM to 1e-10 (place 1), hydrogen PA = 1 or deuterium 1.5 < PA < 2.5 (place 2; deuterium after a hydrogen
-3), tritium 2.5 < PA < 3.5 (3; after hydrogen and deuterium 4), helium 3.5 < PA < 4.5 (4), carbon 9 < PA < 15
-with NSMAX = 3 (3). Species 1..NSMAX must take these places once each, the electron as species 1; the places
-follow the order of the species, so e/D/H gives two species place 2, while e/T/H is fine. When one matched no class, the table was left short and ``NEA(NSS(NEQ),NSV(NEQ))`` was written with index
--1 (trprep.f90); when two took one place, or one took a place above NSMAX, a species had no equation and the
-solve stopped at trexec.f90 ("Index 0 of dimension 2 of array 'b'"); with the electron as species 2 the run
-ended with WPT and TAUE1 NaN. Measured on the TST-2 fixture (NSMAX 2: e, H), each in its own process: each case
-below that is refused now stopped the process before (rc 2), or ended NaN, and each case that runs ran before.
+TR gives each species its equations by its mass alone (``TR_TABLE``, ``tr/trprep.f90``): the electron is PA =
+AME/AMM to 1e-10 (place 1), hydrogen PA = 1 or deuterium 1.5 < PA < 2.5 (place 2; deuterium after a hydrogen 3),
+tritium 2.5 < PA < 3.5 (3; after hydrogen and deuterium 4), helium 3.5 < PA < 4.5 (4), carbon 9 < PA < 15 with
+NSMAX = 3 (3). Species 1..NSMAX must take these places once each, the electron as species 1; the places follow the
+order of the species, so e/D/H gives two species place 2, while e/T/H is fine. When one matched no class, the
+table was left short and ``NEA(NSS(NEQ),NSV(NEQ))`` was written with index -1 (trprep.f90); when two took one
+place, or one took a place above NSMAX, a species had no equation and the solve stopped at trexec.f90 ("Index 0 of
+dimension 2 of array 'b'"); with the electron as species 2 the run ended with WPT and TAUE1 NaN. Measured on the
+TST-2 fixture (NSMAX 2: e, H), each in its own process: each case below that is refused now stopped the process
+before (rc 2), or ended NaN, and each case that runs ran before.
 One test per case (``parametrize``, never ``subTest``).
 """
 from __future__ import annotations

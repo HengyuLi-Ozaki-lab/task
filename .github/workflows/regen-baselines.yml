@@ -74,8 +74,8 @@ jobs:
     # Pinned to ubuntu-24.04 (NOT ubuntu-latest) — baseline reproducibility
     # depends on a stable gfortran version. Measured on run 30514856222:
     # gfortran 13.3.0 (an earlier version of this comment said 13.2.0).
-    # python-tests.yml's `ubuntu-latest` resolves to the same image and
-    # the same 13.3.0 today; the regen workflow pins explicitly because
+    # python-tests.yml's `ubuntu-latest` resolved to the same image and
+    # the same 13.3.0 then; the regen workflow pins explicitly because
     # baseline reproducibility cannot tolerate a silent image rotation.
     #
     # KNOWN DIVERGENCE RISK (Bugbot LOW, 2026-05-13): when GitHub rotates
@@ -88,8 +88,8 @@ jobs:
     # should match what python-tests.yml uses.
     #
     # That happened between 2026-10-28 and 2026-11-08: `ubuntu-latest` became
-    # ubuntu-26.04 (gfortran 15.2) and six cases failed at 1e-10. The pytest
-    # and mono-build jobs of python-tests.yml now pin ubuntu-24.04, where the
+    # ubuntu-26.04 (gfortran 15.2) and six cases failed at 1e-10. The jobs of
+    # python-tests.yml and clean-tree-build.yml now pin ubuntu-24.04, where the
     # existing baselines pass as they are, so none was regenerated.
     #
     # Re-pin to the next LTS

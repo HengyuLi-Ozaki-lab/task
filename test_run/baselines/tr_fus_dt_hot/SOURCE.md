@@ -158,12 +158,12 @@ line's own `tr`, so that the two sides keep one fit.
    to 75x `FUSION_SIGNAL_FLOOR`, against 13.0x to 27.2x before, and `ALI`'s
    31x is now the weakest. The shape statements rest on `RT[28]`, and by
    "Known open gap" ("if it drifts away, shape detection degrades") the
-   ~0.1 % shape figure has likely coarsened toward the ~0.9 % found without
-   `RT[28]`. No injection threshold was measured again. The reference's
-   `WPT` fusion signal is now 1.1460e-3 and its `TAUE1` goes 55.44 ->
-   43.92 s (44.59 s before). `tr_fus_dt` (1 keV) was not captured again: with the
-   fit changed in both, its scalars move by at most 4.1e-7 relative
-   (`BETAP0`) and its `RT` by 2.6e-9, and nothing gating reads it.
+   ~0.1 % shape figure has likely coarsened. No injection threshold was
+   measured again, so the shape figure after correction 7 is not known.
+   The reference's `WPT` fusion signal is now 1.1460e-3 and its `TAUE1` goes
+   55.44 -> 43.92 s (44.59 s before). `tr_fus_dt` (1 keV) was not captured
+   again: with the fit changed in both, its scalars move by at most 4.1e-7
+   relative (`BETAP0`) and its `RT` by 2.6e-9, and nothing gating reads it.
 
 ## What this oracle does NOT exercise
 
@@ -464,7 +464,9 @@ construction difference, and it has nothing to do with the fusion port.
 scalar diagnostics are evaluated only at initialisation, so a `NTMAX=1` dump
 pairs `T=0` scalars with post-step profile arrays -- its `WPT` reads 0.0
 because it is still the `T=0` value, not because a step changed nothing. Use
-`NTMAX=0` for a true initial-state comparison and `NTMAX>=2` for the growth.)
+`NTMAX=0` for a true initial-state comparison and `NTMAX>=2` for the growth.
+Since `ecf953f5` (task-web-client #118) `tr` computes the scalars on a run's
+last step too; `trx` does not, so the pairing above is still `trx`'s.)
 
 Against that floor, the fusion differentials -- `model_pnf=1` minus
 `model_pnf=0`, taken separately in each code and then compared -- agree as

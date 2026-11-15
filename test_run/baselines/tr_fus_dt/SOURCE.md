@@ -247,8 +247,8 @@ supersession table at the top.
   **6.2e-9**, i.e. 62x the 1e-10 tolerance. The largest single signal is
   `BETAP0` at rel 1.40e-6 (1.4e4x), with `BETA0` at 1.37e-6. That is a real
   signal and it is reproducible, but 62x is not a comfortable margin, and it
-  is why `tr_fus_dt_hot` (rel `WPT` 1.11e-3, 1.1e7x) replaced this deck as the
-  primary Task 7 oracle.
+  is why `tr_fus_dt_hot` (rel `WPT` 1.11e-3, 1.1e7x; 1.15e-3 since its
+  correction 7) replaced this deck as the primary Task 7 oracle.
 - **Profiles are physical:** positive densities decreasing outward
   (min `RN` 3.00e-3), temperatures cooling core→edge (species 1, 1.0218 →
   0.0418 keV; min `RT` over all species 4.02e-2), no NaN/Inf. D and T

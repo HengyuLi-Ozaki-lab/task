@@ -19,8 +19,8 @@ concurrency:
 jobs:
   pytest:
     name: pytest (Python ${{ matrix.python-version }})
-    # ubuntu-24.04, not ubuntu-latest: the 1e-10 equivalence baselines are
-    # gfortran 13's (see "Install Fortran/C build deps" below). Between
+    # ubuntu-24.04, not ubuntu-latest: the 1e-10 equivalence baselines pass
+    # on its gfortran 13.3 (see "Install Fortran/C build deps" below). Between
     # 2026-10-28 and 2026-11-08 ubuntu-latest became ubuntu-26.04, whose
     # gfortran 15.2 moves six of them (eq tst2, fp dt1 and iter01, wrx demo,
     # iter01 and jt60) by 1e-10 to 1e-9. regen-baselines.yml pins the same
@@ -835,7 +835,7 @@ jobs:
     #   dpseki — links only against the MPI mtxp variant
     # Add them here as they are fixed.
     name: build modules not covered by pytest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # the pytest job's image and gfortran (see there)
     timeout-minutes: 20
     steps:
       - name: Checkout
