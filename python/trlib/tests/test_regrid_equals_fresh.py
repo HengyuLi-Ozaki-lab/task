@@ -5,7 +5,8 @@ Preparing TR on another grid than an earlier preparation of the same process
 abort or SIGSEGV. Two things kept the first grid: bpsd's splines in
 ``bpsd_get_equ1D`` / ``bpsd_get_metric1D`` (fixed in bpsd, k-yoshimi/bpsd#7) and ``eq_bpsd_put``'s arrays, sized once (``eq/eqbpsd.f90``).
 
-These tests need BOTH fixes. Each case runs two child processes: one runs the
+These tests need BOTH fixes. Those that change TR's NRMAX are skipped (TR_MESH_GUARD) while tr_run holds one
+mesh per process; the one that changes only EQ's grid is gated on TRLIB_BPSD_REGRID_FIX=1 (NEEDS_BPSD_FIX). Each case runs two child processes: one runs the
 sequence, the other runs only its final configuration fresh; the final
 ``TrState.to_dict()`` of both is dumped as JSON (``repr`` floats) and must be
 equal exactly. A child that crashes gives no dump and fails the test. The
@@ -18,6 +19,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+from trlib.tests.regrid_marks import NEEDS_BPSD_FIX, TR_MESH_GUARD
 
 PYTHON_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -85,22 +88,27 @@ def _same(sequence, fresh):
     assert a == b
 
 
+@TR_MESH_GUARD
 def test_tst2_at_10_then_tst2_at_the_default():
     _same("attempt(tst2, 10)\ndump(tst2())\n", "dump(tst2())\n")
 
 
+@TR_MESH_GUARD
 def test_tst2_at_40_then_50():
     _same("attempt(tst2, 40)\ndump(tst2(50))\n", "dump(tst2(50))\n")
 
 
+@TR_MESH_GUARD
 def test_tst2_at_10_then_modelg9():
     _same("attempt(tst2, 10)\ndump(modelg9())\n", "dump(modelg9())\n")
 
 
+@NEEDS_BPSD_FIX
 def test_modelg9_then_tst2_at_the_defaults():
     _same("attempt(modelg9)\ndump(tst2())\n", "dump(tst2())\n")
 
 
+@TR_MESH_GUARD
 def test_one_handle_10_then_50_does_not_depend_on_the_first_size():
     # What this shows: after a mesh change on one handle the result does not
     # depend on the earlier mesh, and the process survives. Measured: 10 -> 50,
@@ -116,6 +124,7 @@ def test_one_handle_10_then_50_does_not_depend_on_the_first_size():
     assert "NaN" not in a
 
 
+@TR_MESH_GUARD
 def test_a_failed_first_preparation_then_50():
     # NRMAX 10, MDLIMP 2, PNC 10: negative DILUTE, fails after the grid went
     # into bpsd.

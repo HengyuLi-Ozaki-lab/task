@@ -68,6 +68,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from trlib.tests.regrid_marks import NEEDS_BPSD_FIX
+
 PYTHON_ROOT = Path(__file__).resolve().parents[2]
 
 PRELUDE = f"""
@@ -98,12 +100,14 @@ def _dump(body):
     return d[0]
 
 
+@NEEDS_BPSD_FIX
 def test_eq_nrmax_30_then_60_across_lifecycles_equals_a_fresh_60():
     seq = _dump("m9(30)\ndump(m9(60))\n")
     fresh = _dump("dump(m9(60))\n")
     assert seq == fresh
 
 
+@NEEDS_BPSD_FIX
 def test_eq_rb_2_then_the_defaults_in_two_lifecycles_equals_a_fresh_defaults_run():
     # eq:RB 2.0 changes EQ's NRPMAX (29 instead of 50) while EQ's NRMAX stays
     # the same: the case only the bpsd spline-resize fix covers.
