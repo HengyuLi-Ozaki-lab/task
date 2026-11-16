@@ -164,3 +164,30 @@ def test_tot_continue_before_init_is_not_initialized():
     tot.close()
     with pytest.raises(TotlibError):
         tot.continue_run(1)
+
+
+@pytest.mark.parametrize("bad", [2**31, 2**32 + 5, -1])
+def test_tot_continue_refuses_a_count_a_c_int_cannot_hold(bad):
+    with Tot() as tot:
+        _hot(tot)
+        tot.run(5)
+        with pytest.raises(TotlibInvalidParamError):
+            tot.continue_run(bad)
+        assert tot.get_state().nt == 5            # nothing ran: 2**32 + 5 used to wrap to 5 steps
+
+
+@pytest.mark.parametrize("bad", [2**31, 2**32 + 5, -1])
+def test_tot_run_refuses_a_count_a_c_int_cannot_hold(bad):
+    with Tot() as tot:
+        _hot(tot)
+        with pytest.raises(TotlibInvalidParamError):
+            tot.run(bad)
+
+
+def test_tot_continue_c_function_before_tot_init_returns_2():
+    """The C entry point itself (the Python closed-handle guard above never reaches it)."""
+    from totlib import _ffi
+    lib = _ffi.load_library()
+    assert lib.tot_continue(1) == 2
+    assert lib.tot_continue(-1) == 2          # not initialised comes first, as in tot_run
+    assert lib.tot_run(1) == 2

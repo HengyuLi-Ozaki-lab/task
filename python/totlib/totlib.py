@@ -47,6 +47,7 @@ from .state import TotState
 
 # Type alias for the items accepted by ``set_params``.
 ParamItem = Union[Mapping[str, Any], Iterable[Tuple[str, Any]]]
+_C_INT_MAX = 2**31 - 1               # tot_run and tot_continue take a C int
 _MAX_C_STRING_BYTES = 63              # intentional: tot_api_set_param name
                                        # buffer is CHARACTER(LEN=128), but
                                        # we share the 63-byte name cap with
@@ -312,7 +313,8 @@ class Tot:
         """
         if self._closed:
             raise TotlibError("run on closed Tot")
-        rc = self._lib.tot_run(int(ntmax))
+        count = self._step_count("tot_run", ntmax)
+        rc = self._lib.tot_run(count)
         raise_for_rc(f"tot_run({ntmax})", rc)
 
     def continue_run(self, nsteps: int) -> None:
@@ -337,10 +339,22 @@ class Tot:
             raise TotlibError(
                 "libtotapi.so does not export tot_continue; rebuild the shared library."
             ) from exc
-        rc = fn(int(nsteps))
+        count = self._step_count("tot_continue", nsteps)
+        rc = fn(count)
         if rc == 1:
             raise TotlibInvalidParamError(f"tot_continue({nsteps}): rc=1{self._tr_record_text()}")
         raise_for_rc(f"tot_continue({nsteps})", rc)
+
+    @staticmethod
+    def _step_count(func: str, n: Any) -> int:
+        """``n`` as a C int, or :class:`TotlibInvalidParamError` before the library is called: ctypes wraps modulo
+        2**32 (``2**32 + 5`` would run 5 steps, ``2**31`` read as negative)."""
+        count = int(n)
+        if not 0 <= count <= _C_INT_MAX:
+            raise TotlibInvalidParamError(
+                f"{func}({n}): the step count must be 0 to {_C_INT_MAX} ({func} takes a C int)"
+            )
+        return count
 
     def _tr_record_text(self) -> str:
         """TR's last failure record as ``": <text>"`` ('' when it cannot be read): tot has no record of its own, and

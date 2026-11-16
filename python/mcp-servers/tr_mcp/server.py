@@ -42,7 +42,7 @@ import math
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # ---------------------------------------------------------------------
 # Make ``trlib`` importable without a wheel install.
@@ -475,13 +475,15 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
     return applied
 
 
-def _failure_suffix(failure: Any) -> str:
-    """The library's record of what failed or was refused (tr_last_error), as one bracketed string."""
+def _failure_suffix(failure: Any, text: str = "") -> str:
+    """The library's record of what failed or was refused (tr_last_error), as one bracketed string. ``text`` is the
+    exception's own message: a detail it already carries (trlib puts a refusal's reason in it) is not repeated."""
     if failure is None or failure.kind == "NONE":
         return ""
+    detail = "" if failure.detail and failure.detail in text else f"; {failure.detail}"
     return (
         f" [failure: kind={failure.kind} code={failure.code} "
-        f"nt={failure.nt} time={failure.time:g} s; {failure.detail}]"
+        f"nt={failure.nt} time={failure.time:g} s{detail}]"
     )
 
 
@@ -493,12 +495,12 @@ def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
     """
     if isinstance(exc, TrlibParamError):
         msg = f"invalid parameter: {exc}"
-        msg += _failure_suffix(getattr(exc, "failure", None))     # a refusal of tr_continue carries its record
+        msg += _failure_suffix(getattr(exc, "failure", None), str(exc))     # a refusal of tr_continue carries its record
     elif isinstance(exc, TrlibStateError):
         msg = f"library not initialized (call init first): {exc}"
     elif isinstance(exc, TrlibRunError):
         msg = f"calculation failed: {exc}"
-        msg += _failure_suffix(getattr(exc, "failure", None))
+        msg += _failure_suffix(getattr(exc, "failure", None), str(exc))
     elif isinstance(exc, TrlibNotImplementedError):
         msg = f"not implemented in this libtrapi.so build: {exc}"
     elif isinstance(exc, TrlibInitError):
@@ -631,19 +633,23 @@ def handle_finalize() -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
-def _with_classes() -> Dict[str, Dict[str, Any]]:
+def _with_classes() -> Tuple[Dict[str, Dict[str, Any]], Optional[str]]:
     """The registry with each name's class from the library (``tr_param_class``: 1 control, 0 structural, -1 the
-    setter does not know it). The library is the one source of the list; when it cannot be opened the entries come
-    without a class."""
+    setter does not know it), and why there is none when the library cannot be loaded. ``tr_param_class`` needs no
+    ``tr_init``, so this loads the library without opening a lifecycle (``describe_parameters`` has no side effect on
+    the run state)."""
     try:
-        tr = STATE.ensure_open()
-        return {n: {**e, "class": tr.param_class(n)} for n, e in PARAMETER_REGISTRY.items()}
-    except Exception:
-        return PARAMETER_REGISTRY
+        from trlib import _ffi
+        from trlib.trlib import _encode_name
+        fn = _ffi.load_library().tr_param_class
+        return {n: {**e, "class": int(fn(_encode_name(n)))} for n, e in PARAMETER_REGISTRY.items()}, None
+    except Exception as exc:
+        return PARAMETER_REGISTRY, f"{type(exc).__name__}: {exc}"
 
 
 def handle_describe_parameters() -> Dict[str, Any]:
-    return {
+    parameters, classes_error = _with_classes()
+    out: Dict[str, Any] = {
         "module": "tr",
         "count": len(PARAMETER_REGISTRY),
         "array_syntax": "Use NAME[i] (1-origin) for array elements, e.g. PN[1].",
@@ -668,8 +674,13 @@ def handle_describe_parameters() -> Dict[str, Any]:
             "prepares again and continue_run refuses after the set, naming it), -1 unknown to the setter. Every "
             "'eq:' name is 0."
         ),
-        "parameters": _with_classes(),
+        "parameters": parameters,
     }
+    if classes_error is not None:
+        out["classes_unavailable"] = (
+            "the classes could not be read because the library did not load: " + classes_error
+        )
+    return out
 
 
 def handle_describe_state_schema() -> Dict[str, Any]:

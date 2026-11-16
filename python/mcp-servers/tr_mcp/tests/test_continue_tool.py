@@ -55,6 +55,24 @@ def test_a_refusal_carries_the_library_record_in_the_same_form_as_a_failed_run()
         assert part in msg, msg
 
 
+def test_a_refusal_says_its_detail_once():
+    f = TrFailure("REFUSED", 0, 10, 0.2, "structural parameter RR set since the preparation")
+    tr = mock.Mock()
+    tr.continue_run.side_effect = TrlibParamError("tr_continue(5) refused: " + f.detail, failure=f)
+    with mock.patch.object(srv.STATE, "ensure_open", return_value=tr):
+        msg = _message(lambda: srv.handle_continue_run(5))
+    assert msg.count(f.detail) == 1, msg
+
+
+def test_a_failed_run_says_its_detail_once_too():
+    f = TrFailure("EQ_FAILED", 110, 50, 1.0, "eq_calc in tr_loop (NTEQIT)")
+    tr = mock.Mock()
+    tr.run.side_effect = TrlibRunError("tr_run(10): ierr=3", failure=f)
+    with mock.patch.object(srv.STATE, "ensure_open", return_value=tr):
+        msg = _message(lambda: srv.handle_run(10))
+    assert msg.count(f.detail) == 1, msg
+
+
 def test_a_refusal_without_a_record_keeps_the_plain_message():
     tr = mock.Mock()
     tr.continue_run.side_effect = TrlibParamError("tr_continue: the step count must be 0 to 2147483647")
@@ -96,6 +114,21 @@ def test_describe_parameters_shows_each_names_class():
         assert "1 control" in text and "0 structural" in text and "-1 unknown" in text and "eq:" in text
     finally:
         srv.STATE.close()
+
+
+@needs_lib
+def test_describe_parameters_does_not_open_a_lifecycle():
+    srv.STATE.close()
+    with mock.patch.object(srv.STATE, "ensure_open", side_effect=AssertionError("opened a lifecycle")):
+        out = srv.handle_describe_parameters()
+    assert out["parameters"]["RIPE"]["class"] == 1 and "classes_unavailable" not in out
+
+
+def test_describe_parameters_says_when_the_classes_cannot_be_read():
+    with mock.patch("trlib._ffi.load_library", side_effect=FileNotFoundError("libtrapi.so not found at /nowhere")):
+        out = srv.handle_describe_parameters()
+    assert "class" not in out["parameters"]["RIPE"]
+    assert "libtrapi.so not found" in out["classes_unavailable"]
 
 
 @needs_lib

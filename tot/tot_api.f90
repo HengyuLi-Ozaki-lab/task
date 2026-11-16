@@ -645,7 +645,7 @@ CONTAINS
     INTEGER(C_INT) :: ierr
     INTEGER(C_INT) :: rc
 
-    IF (.NOT. g_initialized .OR. .NOT. g_tr_present) THEN
+    IF (.NOT. g_initialized) THEN      ! as tot_run: tot_init has made TR present whenever it succeeded
        ierr = TOT_ERR_NOT_INIT
        RETURN
     END IF
