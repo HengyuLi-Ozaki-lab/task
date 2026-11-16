@@ -692,7 +692,7 @@ def handle_describe_history_schema() -> Dict[str, Any]:
         "description": (
             "The columns get_history can return, each with its unit and meaning. One row is recorded every "
             "NGTSTP steps (default 2), the state at t = 0 first; a row is recorded at every step that is a multiple of NGTSTP, so a "
-            "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again; at most 10001 rows are kept "
+            "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again, a control set followed by continue_run does not; at most 10001 rows are kept "
             "('full' says when they are). Values are single precision (about 7 digits)."
         ),
         "columns": HISTORY_SCHEMA,
@@ -752,7 +752,7 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 12 tr tools."""
+    """Build and return a FastMCP server instance with the 13 tr tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -850,7 +850,8 @@ def build_server() -> Any:
         error carrying the record, kind REFUSED): before a ``run``; after a failed
         run until a ``run``; after a structural parameter (class 0, any ``eq:`` name
         too) was set since the preparation, naming the last one (``run`` prepares
-        again); for a negative count or a value ``run`` refuses. A run in several
+        again); for a value ``run`` refuses (a negative count is refused by trlib before the
+        call, without a record). A run in several
         calls is not bit for bit one call (each call begins with the loop's
         prologue). ``continue_run(0)`` only checks.
         """
@@ -963,6 +964,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "describe_state_schema",
                 "get_history",
                 "describe_history_schema",
+                "continue_run",
                 "run_and_get_state",
             ]
         ):

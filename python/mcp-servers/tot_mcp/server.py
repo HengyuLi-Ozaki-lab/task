@@ -828,7 +828,7 @@ def handle_run_pipeline(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 10 tot tools."""
+    """Build and return a FastMCP server instance with the 11 tot tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -1071,6 +1071,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "set_param",
                 "set_params",
                 "run",
+                "continue_run",
                 "get_state",
                 "finalize",
                 "describe_parameters",

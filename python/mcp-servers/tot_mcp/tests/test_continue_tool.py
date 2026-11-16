@@ -81,3 +81,18 @@ def test_continue_after_an_eq_set_is_refused_naming_it():
         srv.STATE.close()
         os.chdir(prev)
     assert msg.startswith("invalid parameter:") and "eq:RB" in msg, msg
+
+
+def test_continue_run_is_listed_by_print_tools(capsys):
+    assert srv.main(["--print-tools"]) == 0
+    assert "continue_run" in capsys.readouterr().out.split()
+
+
+def test_print_tools_lists_exactly_the_registered_tools(capsys):
+    if not srv.MCP_AVAILABLE:
+        pytest.skip("mcp not installed")
+    import asyncio
+    assert srv.main(["--print-tools"]) == 0
+    printed = capsys.readouterr().out.split()
+    registered = sorted(t.name for t in asyncio.run(srv.build_server().list_tools()))
+    assert printed == registered and len(printed) == 11

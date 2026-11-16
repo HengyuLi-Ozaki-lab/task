@@ -155,3 +155,18 @@ def test_continue_after_a_structural_set_returns_the_refusal_record():
         srv.STATE.close()
     assert msg.startswith("invalid parameter:"), msg
     assert "kind=REFUSED" in msg and "RR" in msg and "nt=10" in msg, msg
+
+
+def test_continue_run_is_listed_by_print_tools(capsys):
+    assert srv.main(["--print-tools"]) == 0
+    assert "continue_run" in capsys.readouterr().out.split()
+
+
+def test_print_tools_lists_exactly_the_registered_tools(capsys):
+    if not srv.MCP_AVAILABLE:
+        pytest.skip("mcp not installed")
+    import asyncio
+    assert srv.main(["--print-tools"]) == 0
+    printed = capsys.readouterr().out.split()
+    registered = sorted(t.name for t in asyncio.run(srv.build_server().list_tools()))
+    assert printed == registered and len(printed) == 13

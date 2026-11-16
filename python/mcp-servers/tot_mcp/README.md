@@ -124,6 +124,7 @@ python -m tot_mcp.server --print-tools
 以下の 11 ツールが並びます。
 
 ```
+continue_run
 describe_parameters
 describe_state_schema
 finalize
