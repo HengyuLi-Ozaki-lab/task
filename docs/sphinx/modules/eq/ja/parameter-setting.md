@@ -87,13 +87,16 @@ with Eq() as eq:
 | `OUT_OF_RANGE`           | 値が許容範囲外 |
 | `INCONSISTENT_PAIR`      | 関連パラメータ対の不整合 |
 | `OUT_OF_RANGE_AFTER_DEP` | 依存パラメータ評価後の範囲逸脱 |
-| `FILE_MISSING`           | 必要なファイル名が空 (`KNAMEQ`) |
+| `FILE_MISSING`           | 読み込みが読むファイルが無い, またはその名前 (`KNAMEQ`) が空 |
 | `MISSING_REQUIRED`       | 必須パラメータが未設定 |
 
 `eq_validate` は **10 個のグリッド寸法** (`NSGMAX`, `NTGMAX`, `NUGMAX`,
 `NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`, `NRVMAX`) を
-コンパイル時の上限と比べ, `MODELG` 3, 5, 8 で `KNAMEQ` が空でないことを
-チェックします (ファイル自体は `run` が開きます). 解析解 (`run(mode=0)`.
+コンパイル時の上限と比べ, 読み込み (`run(mode=1)`) が読むファイルがあることを
+チェックします: `MODELG` 3, 5, 8, 9, 25 では `KNAMEQ` が空でなくファイルを指す
+こと (2 つのファイルを読む 8 では `KNAMEQ2` も), `MODELG` 15 では `KNAMEQ` の代わりに読む固定ファイル `eqdb.dat` があること
+(`MODELG` として報告). 名前は読み込みと同じく, `validate()` の時点の作業
+ディレクトリから探します. 解析解 (`run(mode=0)`.
 ファイル形式以外のすべての `MODELG` はこれで解く) ではさらに次をチェックします:
 
 - 壁がプラズマを囲む: `RB >= RA` (`INCONSISTENT_PAIR`);
@@ -112,4 +115,6 @@ with Eq() as eq:
 `validate()` は `MODELG` で判断します: ファイル形式 (`MODELG` 3, 5, 8, 9, 15,
 25) は `run(mode=1)` で読み込むものとみなし, 幾何はファイルから得るので,
 これらの幾何チェックは行いません (ファイル形式を `run(mode=0)` で解く場合も
-行いません).
+行いません). `MDLEQF >= 10` の読み込みも, ファイルから求めた磁気軸を箱に
+収めようとします. 軸が箱の外にあると読み込みは失敗し, そのエラー
+(`Eq.last_error()`) が軸の探索の終点と箱を示します.

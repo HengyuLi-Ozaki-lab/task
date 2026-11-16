@@ -21,7 +21,7 @@ TASK/EQ (**MHD 平衡** ソルバ: EQDSK 形式の平衡データ, または解�
   $F(\psi)$ 係数 (`FF*`) を与えて解析的に解きます.
   `MODELG=2` (既定) で使用. ファイル不要.
 - **`run(mode=1)`** — EQDSK 形式 (G-EQDSK) の平衡データファイル読み込み
-  (`equnit::eq_load`). `MODELG ∈ {3, 5, 8}` + `KNAMEQ` ファイル名指定が必要.
+  (`equnit::eq_load`). `MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ` ファイル名指定が必要 (`MODELG = 15` は固定の `eqdb.dat`).
 
 両方とも出力としては磁気軸位置 (`raxis`, `zaxis`), 中心 q (`qaxis`),
 表面 q (`qsurf`), プラズマ $\beta$ (`betat`, `betap`), プラズマ体積
@@ -99,5 +99,5 @@ appendix-sensitivity
 | **時間発展** | あり (`run(ntmax)`) | なし (`run(mode)`) |
 | **C ABI 関数数** | 5 + `validate` | **6** + `validate` |
 | **`set_param_str`** | (PR #172 で追加) | 設計初期から必須 |
-| **必須パラメータ** | `KNAMEQ` (MODELG=3,5,7,8 のとき) | `KNAMEQ` (MODELG=3,5,8 のとき) |
+| **必須パラメータ** | `KNAMEQ` (MODELG=3,5,7,8 のとき) | `KNAMEQ` (MODELG=3,5,8,9,25 のとき. 8 では `KNAMEQ2` も) |
 | **代表的な出力** | `T`, `WPT`, `BETAN`, profiles[nrmax][nsmax] | `raxis`, `qaxis`, `betat`, profiles[npsmax] |

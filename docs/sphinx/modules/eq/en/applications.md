@@ -18,7 +18,7 @@ language, see {doc}`mcp`.
 `eq.run()` has two paths (see {doc}`hello-world`):
 
 - `mode=0`: analytic Grad-Shafranov solve (`MODELG=2`, no EQDSK needed)
-- `mode=1`: load an EQDSK file (`MODELG ∈ {3, 5, 8}` + `KNAMEQ`)
+- `mode=1`: load an equilibrium file (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`; `MODELG = 15` reads `eqdb.dat`)
 
 A wrapper that switches automatically depending on whether the user
 passed an EQDSK file path.
@@ -210,7 +210,7 @@ def auto_setup(
         # 2. If routed via EQDSK, set KNAMEQ as required.
         #    If eq_file is None, set KNAMEQ explicitly to the empty string
         #    so that validate's FILE_MISSING check picks it up.
-        if params.get("MODELG") in (3, 5, 8):
+        if params.get("MODELG") in (3, 5, 8, 9, 25):
             eq.set_param_str("KNAMEQ", eq_file or "")
 
         # 3. Check via validate
@@ -250,7 +250,7 @@ When `MODELG=3` is specified but `eq_file=None`:
 
 ```text
 Detected issues (1 item(s)):
-  [FILE_MISSING] KNAMEQ: MODELG=3/5/8 requires non-blank KNAMEQ (eqdata file)
+  [FILE_MISSING] KNAMEQ: MODELG=3 loads the file KNAMEQ names, and KNAMEQ is blank
 RuntimeError: 1 blocking issue(s) remain to be fixed
 ```
 

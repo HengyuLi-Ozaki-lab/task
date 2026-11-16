@@ -161,6 +161,7 @@
       SUBROUTINE EQ_READ(IERR)
 
       USE equread,ONLY: eqdsk
+      USE equ_params,ONLY: EQFILE
       USE plcomm
       USE eqcom0_mod
       USE eqcom1_mod
@@ -169,6 +170,7 @@
       INTEGER, INTENT(OUT) :: IERR
       INTEGER :: IOS
       LOGICAL :: LEX
+      CHARACTER(LEN=40) :: KREASON
 
 !     A load replaces the equilibrium: QQPS is no longer an earlier
 !     g-eqdsk file's q column (EQDSKR sets the flag again for a new one).
@@ -185,7 +187,26 @@
       ELSEIF(MODELG.EQ.8) THEN
          CALL EQJAEAR(IERR)
       ELSEIF(MODELG.EQ.15) THEN
-         CALL EQDSK
+!        EQDSK reads the fixed file EQFILE (eqdb.dat), not KNAMEQ, and
+!        returns an error where it used to STOP the process: name that
+!        file, not KNAMEQ, in the reason.
+         CALL EQDSK(IERR)
+         IF(IERR.NE.0) THEN
+            SELECT CASE(IERR)
+            CASE(1)
+               KREASON='not found'
+            CASE(2)
+               KREASON='could not be opened'
+            CASE(4)
+               KREASON='ends before the equilibrium does'
+            CASE DEFAULT
+               KREASON='could not be read'
+            END SELECT
+            WRITE(EQ_ERRMSG,'(6A)',IOSTAT=IOS) &
+                 'EQ_READ: MODELG=15 reads the fixed file ''', &
+                 TRIM(EQFILE),''', not KNAMEQ: ''',TRIM(EQFILE), &
+                 ''' ',TRIM(KREASON)
+         ENDIF
       ELSE
          WRITE(6,*) 'XX EQLOAD: UNKNOWN MODELG: MODELG=',MODELG
          WRITE(EQ_ERRMSG,'(A,I0,A)',IOSTAT=IOS) 'EQ_READ: MODELG=', &

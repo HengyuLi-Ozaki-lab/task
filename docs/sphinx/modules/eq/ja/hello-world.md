@@ -57,7 +57,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
 
 - **(1)–(3)**: 装置パラメータ.
 - **(4) `MODELG=3`**: 平衡データを EQDSK ファイルから読み込むモード.
-  `mode=1` を使うには `MODELG ∈ {3, 5, 8}` が必要.
+  `mode=1` を使うには `MODELG ∈ {3, 5, 8, 9, 25}` (または 15) が必要.
 - **(5) `set_param_str`**: 文字列パラメータは **専用 API** が必須
   ({doc}`parameter-setting` 方法 C 参照).
 - **(6) `eq.run()`**: 引数なしだと `mode=1` (EQDSK 読み込み). 元 `eqx2`
@@ -68,7 +68,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
 ```text
 解析プロファイルから解く?
   ├─ Yes → mode=0 (MODELG=2, デフォルト)
-  └─ No  → mode=1 (MODELG ∈ {3, 5, 8} + KNAMEQ 指定)
+  └─ No  → mode=1 (MODELG ∈ {3, 5, 8, 9, 25} + KNAMEQ 指定)
 ```
 
 完全な実行可能 notebook: {doc}`quickstart`.
