@@ -408,7 +408,13 @@ run_single_test() {
     # For TR/FP/TI/WR/WRX/EQ/TOT modules, enable regression dump (env-guarded inside the dumper).
     local mod_env=()
     case "$module" in
-        tr) mod_env=(env TR_REGRESS_DUMP=1) ;;
+        tr)
+            mod_env=(env TR_REGRESS_DUMP=1)
+            # EQ's namelist for the cases that need one (tr_iter01_m9: RB and NSGMAX of the ITER equilibrium that
+            # MODELG 9 solves). The file is removed first so that a case without one never reads another run's.
+            rm -f "$test_dir/eqparm"
+            cp "$SCRIPT_DIR/inputs/${test_name}.eqparm" "$test_dir/eqparm" 2>/dev/null || true
+            ;;
         fp) mod_env=(env FP_REGRESS_DUMP=1) ;;
         ti) mod_env=(env TI_REGRESS_DUMP=1) ;;
         wr) mod_env=(env WR_REGRESS_DUMP=1) ;;
