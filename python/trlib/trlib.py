@@ -300,7 +300,47 @@ class Trlib:
         c = _ffi.TrStateC()
         ierr = self._lib.tr_get_state(ctypes.byref(c))
         raise_for_ierr("tr_get_state", ierr)
-        return TrState.from_c(c)
+        state = TrState.from_c(c)
+        # All the named scalars (the 14 of the struct are among them, read from the same globals).
+        state.scalars = {n: self.get_scalar(n) for n in self.scalar_names()}
+        return state
+
+    # --- outputs by name (PR 2 of #96) ----------------------------------
+    def _scalar_fn(self, symbol: str):
+        try:
+            return getattr(self._lib, symbol)
+        except AttributeError as exc:
+            raise TrlibError(
+                f"libtrapi.so does not export {symbol}; rebuild the shared library."
+            ) from exc
+
+    def scalar_names(self) -> List[str]:
+        """The names :meth:`get_scalar` accepts, in the library's order (31)."""
+        if self._closed:
+            raise TrlibError("scalar_names on closed Trlib")
+        count = int(self._scalar_fn("tr_scalar_count")())
+        fn = self._scalar_fn("tr_scalar_name")
+        names = []
+        for i in range(1, count + 1):
+            buf = ctypes.create_string_buffer(64)
+            raise_for_ierr(f"tr_scalar_name({i})", fn(i, buf, 64))
+            names.append(buf.value.decode("ascii"))
+        return names
+
+    def get_scalar(self, name: str) -> float:
+        """One global result by name, as of the last step TR computed the globals on.
+
+        TRGLOB computes them on output steps and on the last step of a run, so they are current after
+        :meth:`run`. Units are those of ``tr/trrslt_globals.f90`` (``tr_mcp``'s state schema lists them).
+        An unknown name raises :class:`TrlibParamError`.
+        """
+        if self._closed:
+            raise TrlibError("get_scalar on closed Trlib")
+        fn = self._scalar_fn("tr_get_scalar")
+        value = ctypes.c_double(0.0)
+        ierr = fn(_encode_name(name), ctypes.byref(value))
+        raise_for_ierr(f"tr_get_scalar('{name}')", ierr)
+        return float(value.value)
 
     # --- validation (Issue #143) ---------------------------------------
     def validate(self) -> List[TrDiagEntryPy]:

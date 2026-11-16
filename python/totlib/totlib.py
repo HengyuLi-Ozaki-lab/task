@@ -329,5 +329,25 @@ class Tot:
         raise_for_rc("tot_get_state", rc)
         return TotState.from_c(c)
 
+    def get_scalar(self, name: str) -> float:
+        """One of TR's named global results, ``"tr:<NAME>"`` (``Trlib.scalar_names()`` lists them).
+
+        ``tot_get_scalar`` removes the prefix and asks TR (``tr_get_scalar``), so the value is the one
+        ``Trlib.get_scalar`` returns for the TR this ``Tot`` drives. A name without ``tr:`` or an unknown one
+        raises :class:`TotlibInvalidParamError`.
+        """
+        if self._closed:
+            raise TotlibError("get_scalar on closed Tot")
+        try:
+            fn = self._lib.tot_get_scalar
+        except AttributeError as exc:
+            raise TotlibError(
+                "libtotapi.so does not export tot_get_scalar; rebuild the shared library."
+            ) from exc
+        value = ctypes.c_double(0.0)
+        rc = fn(_encode_name(name), ctypes.byref(value))
+        raise_for_rc(f"tot_get_scalar('{name}')", rc)
+        return float(value.value)
+
 
 __all__ = ["Tot"]

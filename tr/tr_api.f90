@@ -64,7 +64,7 @@ MODULE tr_api
   PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, &
             tr_api_set_param, tr_api_set_param_str, tr_api_finalize, &
             tr_api_validate, &
-            tr_check_bpsd_pull, tr_api_last_error
+            tr_check_bpsd_pull, tr_api_last_error, tr_api_scalar_count, tr_api_scalar_name, tr_api_get_scalar
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -1123,5 +1123,164 @@ CONTAINS
     END SUBROUTINE check
 
   END SUBROUTINE eq_mesh_violation
+
+  !-------------------------------------------------------------------
+  ! Outputs by name (PR 2 of #96): the scalar table.
+  !
+  ! The names are TRCOMM's; each one is the value TRGLOB last computed
+  ! (tr/trrslt_globals.f90; TRGLOB runs on output steps and on a run's
+  ! last step, tr/trexec.f90 tr_eval), in the unit TRGLOB gives it:
+  !   T s; WPT, WPDOT MJ and MW; AJT, AJRFT, AJOHT, AJNBT, AJBST, RIP MA;
+  !   POHT, PNBT, PNFT (alpha power), PRFST, PEXST, PRLT, POUT MW;
+  !   PINT MW and includes PNFT (POHT+PNBT+PRFST+PNFT+PEXST);
+  !   VLOOP V; TAUE1, TAUE2, TAUE98 s; RQ1 m; the rest have no unit.
+  ! The order here is the order tr_scalar_name enumerates.
+  !-------------------------------------------------------------------
+  PURE FUNCTION scalar_table() RESULT(names)
+    CHARACTER(LEN=8) :: names(31)
+    names = [ CHARACTER(LEN=8) :: &
+         'T', 'WPT', 'AJT', 'Q0', 'BETA0', 'BETAP0', 'BETAA', 'BETAN', &
+         'TAUE1', 'TAUE2', 'ZEFF0', 'ALI', 'RQ1', 'AJRFT', &
+         'PNFT', 'QF', 'PINT', 'POHT', 'PNBT', 'PRFST', 'PEXST', 'PRLT', 'POUT', &
+         'AJOHT', 'AJNBT', 'AJBST', 'RIP', 'VLOOP', 'WPDOT', 'H98Y2', 'TAUE98' ]
+  END FUNCTION scalar_table
+
+  ! The value of the scalar NAME (exact, upper case); FOUND is .FALSE. for a name not in the table.
+  SUBROUTINE scalar_value(name, v, found)
+    USE trcomm, ONLY: AJOHT, AJNBT, AJBST, PNFT, QF, PINT, POHT, PNBT, PRFST, PEXST, &
+         PRLT, POUT, RIP, VLOOP, WPDOT, H98Y2, TAUE98
+    CHARACTER(LEN=*), INTENT(IN)  :: name
+    REAL(rkind),      INTENT(OUT) :: v
+    LOGICAL,          INTENT(OUT) :: found
+
+    found = .TRUE.
+    SELECT CASE (name)
+    CASE ('T');      v = T
+    CASE ('WPT');    v = WPT
+    CASE ('AJT');    v = AJT
+    CASE ('Q0');     v = Q0
+    CASE ('BETA0');  v = BETA0
+    CASE ('BETAP0'); v = BETAP0
+    CASE ('BETAA');  v = BETAA
+    CASE ('BETAN');  v = BETAN
+    CASE ('TAUE1');  v = TAUE1
+    CASE ('TAUE2');  v = TAUE2
+    CASE ('ZEFF0');  v = ZEFF0
+    CASE ('ALI');    v = ALI
+    CASE ('RQ1');    v = RQ1
+    CASE ('AJRFT');  v = AJRFT
+    CASE ('PNFT');   v = PNFT
+    CASE ('QF');     v = QF
+    CASE ('PINT');   v = PINT
+    CASE ('POHT');   v = POHT
+    CASE ('PNBT');   v = PNBT
+    CASE ('PRFST');  v = PRFST
+    CASE ('PEXST');  v = PEXST
+    CASE ('PRLT');   v = PRLT
+    CASE ('POUT');   v = POUT
+    CASE ('AJOHT');  v = AJOHT
+    CASE ('AJNBT');  v = AJNBT
+    CASE ('AJBST');  v = AJBST
+    CASE ('RIP');    v = RIP
+    CASE ('VLOOP');  v = VLOOP
+    CASE ('WPDOT');  v = WPDOT
+    CASE ('H98Y2');  v = H98Y2
+    CASE ('TAUE98'); v = TAUE98
+    CASE DEFAULT
+       v = 0.0_rkind
+       found = .FALSE.
+    END SELECT
+  END SUBROUTINE scalar_value
+
+  ! Copy the NUL-terminated C string S into FNAME (blank padded). OK is .FALSE. when it has no NUL within
+  ! LEN(FNAME) characters, or is empty, or holds a blank: no name of this API is that long, empty or has one.
+  SUBROUTINE c_name_to_fortran(s, fname, ok)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: s
+    CHARACTER(LEN=*),                     INTENT(OUT) :: fname
+    LOGICAL,                              INTENT(OUT) :: ok
+    INTEGER :: i
+
+    fname = ' '
+    ok = .FALSE.
+    DO i = 1, LEN(fname)
+       IF (s(i) == C_NULL_CHAR) THEN
+          ok = (i > 1)
+          RETURN
+       END IF
+       IF (s(i) == ' ' .OR. s(i) < ' ') RETURN
+       fname(i:i) = s(i)
+    END DO
+  END SUBROUTINE c_name_to_fortran
+
+  ! Copy NAME into the C buffer BUF of BUFLEN characters with its NUL: 0, or TR_ERR_INVALID when it does not fit.
+  FUNCTION name_to_c_buffer(name, buf, buflen) RESULT(ierr)
+    CHARACTER(LEN=*),                     INTENT(IN)    :: name
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT),                       INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    INTEGER :: i, n
+
+    n = LEN_TRIM(name)
+    IF (buflen < n + 1) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    DO i = 1, n
+       buf(i) = name(i:i)
+    END DO
+    buf(n + 1) = C_NULL_CHAR
+    ierr = TR_OK
+  END FUNCTION name_to_c_buffer
+
+  ! tr_scalar_count : the number of named scalars.
+  FUNCTION tr_api_scalar_count() RESULT(n) BIND(C, NAME="tr_scalar_count")
+    INTEGER(C_INT) :: n
+    n = INT(SIZE(scalar_table()), C_INT)
+  END FUNCTION tr_api_scalar_count
+
+  ! tr_scalar_name : the I-th name (1-based) as a NUL-terminated string in BUF of BUFLEN characters.
+  ! TR_ERR_INVALID past either end or when the name and its NUL do not fit.
+  FUNCTION tr_api_scalar_name(i, buf, buflen) RESULT(ierr) BIND(C, NAME="tr_scalar_name")
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: i
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=8) :: tab(31)
+
+    tab = scalar_table()
+    IF (i < 1 .OR. i > SIZE(tab)) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    ierr = name_to_c_buffer(tab(i), buf, buflen)
+  END FUNCTION tr_api_scalar_name
+
+  ! tr_get_scalar : the value of one named scalar, as of the last step TRGLOB ran on.
+  ! TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for a name not in the table (value is left alone).
+  FUNCTION tr_api_get_scalar(name, value) RESULT(ierr) BIND(C, NAME="tr_get_scalar")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(OUT) :: value
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=16) :: fname
+    REAL(rkind) :: v
+    LOGICAL :: ok, found
+
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_name_to_fortran(name, fname, ok)
+    IF (.NOT. ok) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL scalar_value(TRIM(fname), v, found)
+    IF (.NOT. found) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    value = v
+    ierr = TR_OK
+  END FUNCTION tr_api_get_scalar
 
 END MODULE tr_api

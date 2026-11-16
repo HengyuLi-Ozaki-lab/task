@@ -153,6 +153,13 @@ size_t tot_state_size(void);
  */
 int tot_is_mono(void);
 
+/*
+ * tot_get_scalar : one of TR's named global results by "tr:<NAME>" (PR 2 of #96); the names and units are
+ * tr_scalar_name's (tr/tr_api.h). Delegates to tr_get_scalar with the prefix removed.
+ * Returns 0, 1 (no "tr:" prefix or unknown name) or 2 (tot_init not called).
+ */
+int tot_get_scalar(const char* name, double* value);
+
 #ifdef __cplusplus
 }
 #endif

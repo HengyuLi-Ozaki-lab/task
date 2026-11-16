@@ -239,6 +239,18 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     except AttributeError:  # pragma: no cover - only on builds before tr_last_error
         pass
 
+    # Outputs by name (PR 2 of #96): the scalar table. Best-effort, as tr_last_error above: a library built
+    # before leaves the attribute missing and Trlib.get_scalar says so on first use.
+    try:
+        lib.tr_scalar_count.restype = ctypes.c_int
+        lib.tr_scalar_count.argtypes = []
+        lib.tr_scalar_name.restype = ctypes.c_int
+        lib.tr_scalar_name.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        lib.tr_get_scalar.restype = ctypes.c_int
+        lib.tr_get_scalar.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double)]
+    except AttributeError:  # pragma: no cover - only on builds before the scalar table
+        pass
+
     lib.tr_finalize.restype = ctypes.c_int
     lib.tr_finalize.argtypes = []
 

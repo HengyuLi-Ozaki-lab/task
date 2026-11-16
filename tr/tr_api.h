@@ -163,6 +163,17 @@ int tr_last_error(tr_diag_entry_t* e);
  * not change tr_state_t contents. */
 void tr_check_bpsd_pull(int *ok);
 
+/* Outputs by name (PR 2 of #96). The scalars are TR's global results as TRGLOB last computed them (output steps
+   and the last step of a run), in the units of tr/trrslt_globals.f90; the names are listed by tr_scalar_name.
+   tr_scalar_count: the number of names (31).
+   tr_scalar_name: the i-th name (1-based) as a NUL-terminated string in buf of buflen characters;
+     TR_ERR_INVALID past either end or when the name and its NUL do not fit.
+   tr_get_scalar: the value of one name (exact, upper case); TR_ERR_NOT_INIT before tr_init, TR_ERR_INVALID for a
+     name not listed (*value is left as it was). */
+int tr_scalar_count(void);
+int tr_scalar_name(int i, char* buf, int buflen);
+int tr_get_scalar(const char* name, double* value);
+
 #ifdef __cplusplus
 }
 #endif

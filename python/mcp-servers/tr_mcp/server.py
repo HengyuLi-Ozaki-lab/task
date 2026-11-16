@@ -208,17 +208,59 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
+# The global results the library names (``Trlib.scalar_names()``), with the unit each has in
+# tr/trrslt_globals.f90. tests/test_scalar_schema.py fails for a name the library lists and this table lacks.
+SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
+    "T":      {"unit": "s",   "description": "time"},
+    "WPT":    {"unit": "MJ",  "description": "stored energy of the bulk species and the fast ions"},
+    "AJT":    {"unit": "MA",  "description": "total plasma current"},
+    "Q0":     {"unit": "",    "description": "safety factor on axis"},
+    "BETA0":  {"unit": "",    "description": "central toroidal beta (fraction)"},
+    "BETAP0": {"unit": "",    "description": "central poloidal beta"},
+    "BETAA":  {"unit": "",    "description": "volume-averaged toroidal beta (fraction)"},
+    "BETAN":  {"unit": "% m T / MA", "description": "normalised toroidal beta (Troyon), 100 BETAA / (RIP / (RA BB))"},
+    "TAUE1":  {"unit": "s",   "description": "energy confinement time, steady state: WPT / PINT"},
+    "TAUE2":  {"unit": "s",   "description": "energy confinement time, transient: WPT / (PINT - WPDOT)"},
+    "ZEFF0":  {"unit": "",    "description": "effective charge number on axis"},
+    "ALI":    {"unit": "",    "description": "internal inductance"},
+    "RQ1":    {"unit": "m",   "description": "distance of the q = 1 surface from the axis (0 when q0 >= 1)"},
+    "AJRFT":  {"unit": "MA",  "description": "RF and external driven current"},
+    "PNFT":   {"unit": "MW",  "description": "fusion alpha power (P_fus = 5 PNFT for D-T)"},
+    "QF":     {"unit": "",    "description": "fusion gain: 5 PNFT / (POHT + PNBT + PRFST + PEXST)"},
+    "PINT":   {"unit": "MW",  "description": "total input power: POHT + PNBT + PRFST + PNFT + PEXST (alpha power included)"},
+    "POHT":   {"unit": "MW",  "description": "ohmic power"},
+    "PNBT":   {"unit": "MW",  "description": "neutral-beam power"},
+    "PRFST":  {"unit": "MW",  "description": "RF power, all species"},
+    "PEXST":  {"unit": "MW",  "description": "external power from experimental data, all species"},
+    "PRLT":   {"unit": "MW",  "description": "radiation loss (line)"},
+    "POUT":   {"unit": "MW",  "description": "total output power: conduction, charge exchange, ionisation, radiation"},
+    "AJOHT":  {"unit": "MA",  "description": "ohmic current"},
+    "AJNBT":  {"unit": "MA",  "description": "neutral-beam driven current"},
+    "AJBST":  {"unit": "MA",  "description": "bootstrap current"},
+    "RIP":    {"unit": "MA",  "description": "boundary (programmed) plasma current at this time"},
+    "VLOOP":  {"unit": "V",   "description": "one-turn voltage at the edge"},
+    "WPDOT":  {"unit": "MW",  "description": "rate of change of WPT between the last two global evaluations"},
+    "H98Y2":  {"unit": "",    "description": "H factor: TAUE2 / TAUE98"},
+    "TAUE98": {"unit": "s",   "description": "IPB98(y,2) confinement time scaling"},
+}
+
+
 STATE_SCHEMA: Dict[str, Any] = {
     "type": "object",
-    "title": "TrState (wire format of trlib.state.TrState.to_dict())",
+    "title": "TrState (trlib.state.TrState.to_dict() with all the named scalars)",
     "properties": {
         "NT":    {"type": "integer", "description": "current time-step index"},
         "NRMAX": {"type": "integer", "description": "radial points in use"},
         "NSMAX": {"type": "integer", "description": "species in use"},
         "scalars": {
             "type": "object",
-            "description": "14 plasma scalars (T, WPT, AJT, Q0, BETA0, BETAP0, BETAA, BETAN, TAUE1, TAUE2, ZEFF0, ALI, RQ1, AJRFT)",
-            "additionalProperties": {"type": "number"},
+            "description": (
+                "the library's named global results (31), each as of the last step TR computed them on; "
+                "units are in each entry"
+            ),
+            "properties": {
+                name: {"type": "number", **entry} for name, entry in SCALAR_SCHEMA.items()
+            },
         },
         "profile": {
             "type": "array",
@@ -479,10 +521,18 @@ def handle_run(ntmax: int = 1) -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _state_dict(tr: Trlib) -> Dict[str, Any]:
+    """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
+    compare) with ``scalars`` replaced by all the library's named global results."""
+    state = tr.get_state()
+    out = state.to_dict()
+    out["scalars"] = dict(state.scalars)
+    return out
+
+
 def handle_get_state() -> Dict[str, Any]:
     try:
-        tr = STATE.ensure_open()
-        return tr.get_state().to_dict()
+        return _state_dict(STATE.ensure_open())
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
@@ -566,7 +616,7 @@ def handle_run_and_get_state(
         if params:
             _apply_bulk_params(tr, params)
         tr.run(int(ntmax))
-        return tr.get_state().to_dict()
+        return _state_dict(tr)
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
@@ -664,7 +714,8 @@ def build_server() -> Any:
         """Return the current simulation state.
 
         Returns a dict with ``NT``, ``NRMAX``, ``NSMAX``, ``scalars``
-        (14 plasma scalars), and ``profile`` (radial profile array).
+        (the 31 named global results, units in `describe_state_schema`),
+        and ``profile`` (radial profile array).
         Schema also available via `describe_state_schema`.
         """
         return handle_get_state()

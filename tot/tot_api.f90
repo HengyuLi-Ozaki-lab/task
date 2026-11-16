@@ -70,7 +70,7 @@ MODULE tot_api
   ! flag for direct-ctypes callers (#209).
   USE eq_api, ONLY: eq_api_init,     eq_api_finalize
   USE tr_api, ONLY: tr_api_init,     tr_api_run,     tr_api_get_state, &
-                    tr_api_finalize
+                    tr_api_finalize, tr_api_get_scalar
   USE tr_state, ONLY: tr_state_c
   USE ti_api, ONLY: ti_api_init,     ti_api_run,     ti_api_finalize
   USE fp_api, ONLY: fp_api_init,     fp_api_run,     fp_api_finalize
@@ -488,6 +488,40 @@ CONTAINS
     TYPE(tot_state_c) :: probe
     n = C_SIZEOF(probe)
   END FUNCTION tot_api_state_size
+
+  !-------------------------------------------------------------------
+  ! tot_get_scalar : one of TR's named global results, "tr:<NAME>"
+  ! (PR 2 of #96). Delegates to tr_get_scalar with the prefix removed,
+  ! as tot_param_registry's dispatcher hands a "tr:" name to TR's
+  ! registry. Only the "tr:" namespace has outputs by name.
+  !
+  ! Returns 0 = success, 1 = invalid (no "tr:" prefix, unknown name),
+  ! 2 = not initialised (tot_init not called, or TR not present).
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_get_scalar(name, value) RESULT(ierr) BIND(C, NAME="tot_get_scalar")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(OUT) :: value
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=128) :: fname
+    CHARACTER(KIND=C_CHAR) :: cname(33)
+    INTEGER :: i, n
+
+    IF (.NOT. g_initialized .OR. .NOT. g_tr_present) THEN
+       ierr = TOT_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_string_to_fortran(name, fname)
+    n = LEN_TRIM(fname)
+    IF (n <= 3 .OR. n > 3 + 32 .OR. fname(1:3) /= 'tr:') THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
+    DO i = 1, n - 3
+       cname(i) = fname(3 + i:3 + i)
+    END DO
+    cname(n - 2) = C_NULL_CHAR
+    ierr = tr_api_get_scalar(cname, value)
+  END FUNCTION tot_api_get_scalar
 
 END MODULE tot_api
 

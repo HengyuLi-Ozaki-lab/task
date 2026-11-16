@@ -181,6 +181,13 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.tot_get_state.restype = ctypes.c_int
     lib.tot_get_state.argtypes = [ctypes.POINTER(TotStateC)]
 
+    # Outputs by name (PR 2 of #96); best-effort like the setter above.
+    try:
+        lib.tot_get_scalar.restype = ctypes.c_int
+        lib.tot_get_scalar.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double)]
+    except AttributeError:  # pragma: no cover - only on builds before tot_get_scalar
+        pass
+
     lib.tot_finalize.restype = ctypes.c_int
     lib.tot_finalize.argtypes = []
 
