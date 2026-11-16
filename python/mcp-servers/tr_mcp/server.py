@@ -182,6 +182,24 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "PLHRW":  {"type": "float", "group": "lh",   "description": "LH deposition width"},
     "PLHNPR": {"type": "float", "group": "lh",   "description": "LH parallel index"},
     "PLHTOT": {"type": "float", "group": "lh",   "description": "LH total power [MW]"},
+    # --- NCLASS, equations solved, current profile, particle transport
+    "MDNCLS": {"type": "int",   "group": "transport", "description": "neoclassical transport, resistivity and bootstrap current: 0 = the MDLAD/MDLETA/MDLJBS models, else NCLASS"},
+    "MDLEQB": {"type": "int",   "group": "modules",   "description": "B_theta (current) equation: 1 = evolved, 0 = held at the start profile (MODELG 3 reloads psi from EQ every step)"},
+    "MDLEQN": {"type": "int",   "group": "modules",   "description": "density equations: 0 = densities held, 1 = evolved"},
+    "MDLEQE": {"type": "int",   "group": "modules",   "description": "with MDLEQN 1: 0 = electrons from quasi-neutrality, 1 = both solved, 2 = bulk ions from quasi-neutrality (2 only with NSMAX 2, species 2 H or D, no impurity, no UFILE)"},
+    "PROFJ1": {"type": "float", "group": "current",   "description": "start current profile, MODELG 2 only: <= 0 j from the resistivity (j ~ 1/eta), > 0 j ~ (1 - rho^|PROFJ1|)^|PROFJ2|"},
+    "PROFJ2": {"type": "float", "group": "current",   "description": "start current profile exponent, with PROFJ1 > 0"},
+    "AD0":    {"type": "float", "group": "transport", "description": "particle diffusivity: a factor of chi_turb (MDLAD 2-4, NCLASS) or a constant D (MDLAD 1)"},
+    "AV0":    {"type": "float", "group": "transport", "description": "turbulent inward pinch factor (MDLAD 1, 2, 4)"},
+    "CDP":    {"type": "float", "group": "transport", "description": "turbulent particle-diffusivity sum weight"},
+    "CNP":    {"type": "float", "group": "transport", "description": "neoclassical particle-diffusivity sum weight"},
+    # --- particle source (gas puff), arrays 1..NPSCM = 10 -------------
+    "MDLPSC":  {"type": "int",          "group": "fueling", "description": "particle source: 0 = none, 1 = Gaussian sources"},
+    "NPSCMAX": {"type": "int",          "group": "fueling", "description": "number of particle sources (0..10)"},
+    "PSCTOT":  {"type": "float[NPSCM]", "group": "fueling", "description": "total rate of each source [10^20 /s]"},
+    "PSCR0":   {"type": "float[NPSCM]", "group": "fueling", "description": "centre of each source [m] (minor radius RA*rho, not rho)"},
+    "PSCRW":   {"type": "float[NPSCM]", "group": "fueling", "description": "width of each source [m], at least 1e-10"},
+    "NSPSC":   {"type": "int[NPSCM]",   "group": "fueling", "description": "ion species each source feeds (2..NSMAX; the electrons follow)"},
     # --- string parameter (set via set_param_str under the hood) ----
     "KNAMEQ": {"type": "str", "group": "io", "description": "equilibrium data file name"},
 }
@@ -465,7 +483,7 @@ def handle_finalize() -> str:
     #227 item 2: this used to mark the :class:`Trlib` handle closed *without*
     calling ``tr_finalize``, as a workaround for a SIGABRT (~40% of calls) in
     the Fortran cleanup path.  That left ``g_initialized`` set in
-    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (tr_api.f90:77 --
+    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (tr_api.f90:79 --
     "already initialized, just return OK") a subsequent ``init`` became a
     no-op that did **not** restore defaults.  It also disagreed with
     ``handle_run_and_get_state``, which needs a real finalize for its

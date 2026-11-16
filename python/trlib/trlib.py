@@ -308,6 +308,12 @@ class Trlib:
         buf = (_ffi.TrDiagEntry * cap)()
         ndiag = ctypes.c_int(0)
         ierr = fn(buf, cap, ctypes.byref(ndiag))
+        # tr_validate counts every finding, also those beyond the buffer, and
+        # changes no state: ask once more with room for all of them.
+        if ndiag.value > cap and ierr in (_ffi.TR_OK, _ffi.TR_ERR_INVALID):
+            cap = int(ndiag.value)
+            buf = (_ffi.TrDiagEntry * cap)()
+            ierr = fn(buf, cap, ctypes.byref(ndiag))
 
         # Contract: ierr==2 (NOT_INIT) is the only one that maps to an
         # exception; ierr==0 and ierr==1 both return the list (empty /

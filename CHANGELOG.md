@@ -10,6 +10,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **TR registry: NCLASS, the equations solved, the start current profile, particle transport and the particle
+  source.** `tr_set_param` takes `MDNCLS`, `MDLEQB`, `MDLEQN`, `MDLEQE`, `PROFJ1`, `PROFJ2`, `AD0`, `AV0`, `CDP`,
+  `CNP`, `MDLPSC`, `NPSCMAX` and `PSCTOT[i]`, `PSCR0[i]`, `PSCRW[i]`, `NSPSC[i]` (i = 1..10); the variables,
+  defaults and namelist entries existed, so nothing changes at the defaults. They make the PLATO case of Mochinaga
+  et al., Plasma Fusion Res. 16, 1403093 (2021) (NCLASS, a gas puff, the densities evolved) settable through the
+  library and `tr_mcp`. `tr_run` refuses before `tr_prep`, and `validate()` reports, what the solver cannot take:
+  `MDLEQB`, `MDLEQN`, `MDLPSC` outside {0, 1}; `MDLEQE` outside {0, 1, 2}, 1 or 2 with `MDLEQN` 0, and 2 unless
+  `NSMAX` is 2, species 2 is H or D of charge 1, there is no impurity density and no UFILE (`tr/trexec.f90` adds the
+  other species to the bulk-ion density instead of subtracting them); with `MDLPSC` 1, `NPSCMAX` outside 0..10,
+  `NSPSC[i]` outside 2..NSMAX (only 2 with a UFILE, where `tr_prep` may change NSMAX), `PSCRW[i]` <= 0 or below
+  1e-10 m and `|PSCR0[i]|` above 1e10 m (measured before: an array bound, NaN, another value run without a word, or
+  a stop inside `tr_prep`). `PSCR0` is in metres (RA*rho). `trlib`'s `validate()` asks again when the findings
+  outnumber its first buffer of 32.
+  The integer names join `value_refused`. The M0904 fixture sets `MDNCLS` as its input does.
 - **MCP server `fp_mcp`: a `set_param_str` tool** (#231) sets `KNAMEQ`,
   the equilibrium file that `MODELG=3` loads, so an EQ to FP handoff (an
   equilibrium written by `eq_mcp`'s `save` tool) can be driven through
@@ -204,6 +218,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **TR: a particle source far from every mesh point ended the run in NaN.** `TRPSCA` (`tr/trpsc.f90`) normalised the
+  Gaussian by its volume integral, which underflowed to 0 when the centre `PSCR0` lay many widths `PSCRW` from every
+  mesh point (outside the plasma, or narrower than the mesh spacing), so the source was infinite. The exponent is
+  now taken relative to its smallest value on the mesh: the source is unchanged where it was finite, and otherwise
+  the whole rate goes where the Gaussian is largest. No baseline case uses `MDLPSC` 1.
 - **EQ library: `validate()` holds the input to what the solve does with it**
   (HengyuLi-Ozaki-lab/task-web-client#37). With `MDLEQF >= 10` the box
   `RGMIN`..`ZGMAX` is read only by `EQAXIS`: the magnetic axis, which starts

@@ -69,7 +69,9 @@ MODULE tr_api
   ! Lifecycle flags (module-scope state, single instance only at L-3).
   ! #189: at most 3 findings per active species (density sign / zero
   ! density / temperature), species bounded by TR_MAX_NSMAX.
-  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2   ! + RIPS, RIPE (current_for_eq)
+  ! + RIPS, RIPE (current_for_eq); + the equation switches, NPSCMAX and three per particle source
+  ! (source_and_equation_violations; NPSCM = 10, tr/trcomm_const.f90)
+  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2 + 6 + 3 * 10
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
@@ -282,6 +284,7 @@ CONTAINS
        ! Same contract as fp_run (#242): one line per violation on unit 6,
        ! TR_ERR_INVALID returned, handle stays usable.
        CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+       CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
        IF (nviol > 0) THEN
           DO i = 1, nviol
              WRITE(6, '(A)') 'XX tr_run: '//TRIM(vnames(i))//': '//TRIM(vmsgs(i))
@@ -449,7 +452,10 @@ CONTAINS
   !                 and RIPS or RIPE < 0 with MODELG 9; tr_run refuses the
   !                 same findings (see species_profile_violations).
   !
-  ! Future categories (follow-up PRs): INCONSISTENT_PAIR, MISSING_REQUIRED.
+  !   OUT_OF_RANGE / INCONSISTENT_PAIR: the equation switches and the
+  !                 particle sources (see source_and_equation_violations).
+  !
+  ! Future category (a follow-up PR): MISSING_REQUIRED.
   !
   ! Note: NRMAX / NSZMAX / NSNMAX are NOT currently settable via
   ! tr_set_param (the registry does not expose them), so runtime values
@@ -498,6 +504,9 @@ CONTAINS
     !      the UFILE modes 1/2/3). Same
     !      findings that make tr_run refuse; here they are diagnostics.
     CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+    ! ---- The equation switches and the particle source (see
+    !      source_and_equation_violations), also refused by tr_run.
+    CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
     DO i = 1, nviol
        CALL push_diag(TRIM(vnames(i)), vcodes(i), TRIM(vmsgs(i)))
     END DO
@@ -728,6 +737,118 @@ CONTAINS
     END SUBROUTINE add
 
   END SUBROUTINE species_profile_violations
+
+  ! ----- The equation switches and the particle source ---------------
+  ! Appends to the findings already in vnames(1:nviol) (those of
+  ! species_profile_violations) the values of these names that the
+  ! solver cannot take; tr_run refuses them, tr_validate reports them.
+  ! The registry made them settable for the PLATO case (NCLASS, the
+  ! density equations, the gas puff); the namelist took them before.
+  !
+  !   - MDLEQB, MDLEQN, MDLPSC outside {0, 1}, MDLEQE outside {0, 1, 2}:
+  !     TR_EQS_SELECT (trprep.f90) and TRPSC (trpsc.f90) test for these
+  !     values only, and run any other as one of them without a word
+  !     (measured: MDLEQN 2 runs with the densities fixed, MDLPSC 2
+  !     with no source); MDLEQB 2 stopped inside tr_prep (equations
+  !     without a species).
+  !   - MDLEQE 1 or 2 with MDLEQN 0: TR_EQS_SELECT refuses it inside
+  !     tr_prep (#142); here it is refused before the run, as #143 asks.
+  !   - MDLEQE 2 (the bulk-ion density from quasi-neutrality) unless
+  !     NSMAX is 2, species 2 is hydrogen or deuterium of charge 1, there
+  !     is no impurity density (MDLIMP 0, or MDLIMP 1..4 with PNC and PNFE
+  !     0: trprof.f90 scales ANC and ANFE by them) and no UFILE (MDLUF 0, where
+  !     TR_EQS_SELECT may add a carbon species in tr_prep): trexec.f90
+  !     sets the density of species 2 to the sum of |PZ| n over every
+  !     other species and the impurities, which is quasi-neutrality only
+  !     for the electrons alone; it adds the other ions instead of
+  !     subtracting them, and a species 2 of another class (TR_TABLE's
+  !     NSS 3 or 4) is never filled.
+  !   - With MDLPSC 1, TRPSCA deposits NPSCMAX Gaussians in RA*rho,
+  !     S = S0 exp(-((RA*rho - PSCR0)/PSCRW)**2) with S0 = PSCTOT over
+  !     the volume integral of the exponential, into ion species NSPSC
+  !     and the electrons:
+  !       NPSCMAX outside 0..NPSCM: PSCTOT, PSCR0, PSCRW and NSPSC are
+  !         read beyond their NPSCM elements;
+  !       NSPSC[i] outside 2..NSMAX: SPSC(:, NSPSC) and PZ(NSPSC) are
+  !         indexed out of bounds (0, above NSM), or the source adds no
+  !         particle (1: the electrons, PZ(1) + 1 = 0; a species above
+  !         NSMAX is not evolved). With a UFILE (MDLUF /= 0) TR_EQS_SELECT
+  !         may change NSMAX in tr_prep, and only species 2 is sure to
+  !         be evolved: the bound is 2 there, a deliberate restriction
+  !         (the species TR_EQS_SELECT resolves are known only in tr_prep);
+  !       PSCRW[i] <= 0: the exponent divides by it (NaN at 0); a negative
+  !         width gives the same Gaussian as its absolute value and is
+  !         refused so that the sign means nothing;
+  !       PSCRW[i] below 1e-10 m or |PSCR0[i]| above 1e10 m: no device's
+  !         source, and ((RA*rho - PSCR0)/PSCRW)**2 could overflow.
+  !     A source many widths from every mesh point needs no check:
+  !     TRPSCA normalises the exponential by its largest value first.
+  ! Stops adding when the arrays are full: tr_run still refuses.
+  SUBROUTINE source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
+    USE tr_state, ONLY : TR_DIAG_INCONSISTENT_PAIR
+    USE trcomm, ONLY : MDLEQB, MDLEQN, MDLEQE, MDLPSC, NPSCMAX, &
+                       NPSCM, PSCR0, PSCRW, NSPSC, PA, PZ, MDLIMP, PNC, PNFE
+    INTEGER,                          INTENT(INOUT) :: nviol
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN), INTENT(INOUT) :: vnames(:)
+    INTEGER(C_INT),                   INTENT(INOUT) :: vcodes(:)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN),   INTENT(INOUT) :: vmsgs(:)
+    INTEGER :: i, nsup
+    LOGICAL :: hydrogenic, impurity
+
+    IF (MDLEQB /= 0 .AND. MDLEQB /= 1) CALL add("MDLEQB", 0, TR_DIAG_OUT_OF_RANGE, &
+         "MDLEQB takes 0 or 1 (B_theta fixed or evolved)")
+    IF (MDLEQN /= 0 .AND. MDLEQN /= 1) CALL add("MDLEQN", 0, TR_DIAG_OUT_OF_RANGE, &
+         "MDLEQN takes 0 or 1 (densities fixed or evolved); another value runs as 0")
+    IF (MDLEQE < 0 .OR. MDLEQE > 2) THEN
+       CALL add("MDLEQE", 0, TR_DIAG_OUT_OF_RANGE, &
+            "MDLEQE takes 0, 1 or 2 (electrons from quasi-neutrality, both solved, bulk ions from quasi-neutrality)")
+    ELSE IF (MDLEQE /= 0 .AND. MDLEQN == 0) THEN
+       CALL add("MDLEQE", 0, TR_DIAG_INCONSISTENT_PAIR, &
+            "MDLEQE 1 or 2 needs MDLEQN 1 (the densities evolved)")
+    ELSE IF (MDLEQE == 2) THEN
+       hydrogenic = PA(2) == 1.D0 .OR. ABS(PA(2) - 2.D0) < 0.5D0
+       ! MDLIMP 1..4 scale ANC and ANFE by PNC and PNFE; any other non-zero mode
+       ! assigns them nothing in tr_prof_impurity, so they keep an earlier run's.
+       impurity = MDLIMP /= 0 .AND. (MDLIMP < 1 .OR. MDLIMP > 4 .OR. PNC /= 0.D0 .OR. PNFE /= 0.D0)
+       IF (MDLUF /= 0 .OR. NSMAX /= 2 .OR. .NOT. hydrogenic .OR. PZ(2) /= 1.D0 .OR. impurity) &
+            CALL add("MDLEQE", 0, TR_DIAG_INCONSISTENT_PAIR, &
+            "MDLEQE 2 only with NSMAX 2, species 2 H or D of PZ 1, no impurity, no UFILE: its quasi-neutrality adds the others")
+    END IF
+    IF (MDLPSC /= 0 .AND. MDLPSC /= 1) CALL add("MDLPSC", 0, TR_DIAG_OUT_OF_RANGE, &
+         "MDLPSC takes 0 or 1 (no particle source, Gaussian sources); another value runs as 0")
+    IF (MDLPSC /= 1) RETURN
+    IF (NPSCMAX < 0 .OR. NPSCMAX > NPSCM) CALL add("NPSCMAX", 0, TR_DIAG_OUT_OF_RANGE, &
+         "NPSCMAX outside 0..10 (NPSCM, the size of the source arrays PSCTOT, PSCR0, PSCRW, NSPSC)")
+    nsup = NSMAX
+    IF (MDLUF /= 0) nsup = 2
+    DO i = 1, MIN(NPSCMAX, NPSCM)
+       IF (NSPSC(i) < 2 .OR. NSPSC(i) > nsup) CALL add("NSPSC", i, TR_DIAG_OUT_OF_RANGE, &
+            "NSPSC outside 2..NSMAX (only 2 with a UFILE): no evolved ion species takes the source (0 or above NSM: " // &
+            "out of the arrays)")
+       IF (PSCRW(i) < 1.D-10) CALL add("PSCRW", i, TR_DIAG_OUT_OF_RANGE, &
+            "PSCRW below 1e-10 m: 0 ends in NaN, a negative width means nothing, a narrower one can overflow the exponent")
+       IF (ABS(PSCR0(i)) > 1.D10) CALL add("PSCR0", i, TR_DIAG_OUT_OF_RANGE, &
+            "|PSCR0| above 1e10 m: no source sits there (PSCR0 is in metres), and the exponent can overflow")
+    END DO
+
+  CONTAINS
+
+    SUBROUTINE add(base, idx, code_in, msg_in)
+      CHARACTER(LEN=*), INTENT(IN) :: base, msg_in
+      INTEGER,          INTENT(IN) :: idx
+      INTEGER(C_INT),   INTENT(IN) :: code_in
+      IF (nviol >= MIN(SIZE(vnames), SIZE(vcodes), SIZE(vmsgs))) RETURN
+      nviol = nviol + 1
+      IF (idx > 0) THEN
+         WRITE(vnames(nviol), '(A,"[",I0,"]")') base, idx
+      ELSE
+         vnames(nviol) = base
+      END IF
+      vcodes(nviol) = code_in
+      vmsgs(nviol)  = msg_in
+    END SUBROUTINE add
+
+  END SUBROUTINE source_and_equation_violations
 
   !-------------------------------------------------------------------
   ! tr_state_abi_version / tr_state_size : layout query (#246).
