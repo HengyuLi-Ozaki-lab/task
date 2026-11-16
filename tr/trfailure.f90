@@ -24,6 +24,8 @@ MODULE trfailure
 CONTAINS
   SUBROUTINE tr_failure_clear()
     g_kind = TRF_NONE; g_code = 0; g_nt = 0; g_time = 0.0_rkind; g_detail = ''
+    ! EQ_ERRMSG lives in libtrapi for the whole process: without this an EQ_FAILED record can carry an earlier run's reason.
+    EQ_ERRMSG = ' '
   END SUBROUTINE tr_failure_clear
 
   ! The first failure of a run is kept.

@@ -108,6 +108,30 @@ def test_a_q_scaling_failure_carries_eq_s_message():
     assert "q-scaling" in msg and "EQCALQ" in msg, msg
 
 
+def test_a_later_lifecycle_does_not_carry_an_earlier_eq_reason():
+    # EQ_ERRMSG lives in libtrapi and was never cleared: a second lifecycle that fails for another reason (RIPS 100:
+    # code 103) reported the first one's EQMAGS text (RA 1.8: code 111).
+    p = _child('''
+        with Trlib() as t:
+            t.set_param("MODELG", 9); t.set_param("RA", 1.8)
+            try:
+                t.run(0)
+            except TrlibRunError as e:
+                print("FIRST", e.failure.code, "EQMAGS" in e.failure.detail)
+        with Trlib() as t:
+            t.set_param("MODELG", 9); t.set_param("RIPS", 100.0); t.set_param("RIPE", 100.0)
+            try:
+                t.run(0); print("SECOND RC 0")
+            except TrlibRunError as e:
+                print("SECOND", e.failure.code, "EQMAGS" in e.failure.detail)
+                print("MSG", e.failure.detail)
+    ''')
+    assert p.returncode == 0, p.stderr[-2000:]
+    assert "FIRST 111 True" in p.stdout, p.stdout[-1500:]
+    second = [l for l in p.stdout.splitlines() if l.startswith("SECOND ")]
+    assert second and second[0].endswith("False"), p.stdout[-1500:]
+
+
 def test_flat_9ma_with_nteqit_50_stops_before_25_s():
     # tr2 goes on after "XX EQAXIS: AXIS NOT FOUND" at 1 s and ends with a state that means nothing.
     # Slow (about 37 s): the failure is at nt 600, t 12 s, and no shorter case fails the same way.

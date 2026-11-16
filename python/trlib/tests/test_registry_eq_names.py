@@ -30,7 +30,18 @@ def test_an_eq_set_before_the_first_run_is_taken_and_the_run_follows():
         assert t.get_state().nt == 1
 
 
-def test_a_refused_eq_set_does_not_prepare_again():
+def test_a_refused_unknown_eq_set_does_not_prepare_again():
+    # Before the first run an unknown eq: name is refused by the registry (not by the one-process guard) and the
+    # refused set does not make the first run prepare twice: nt counts from the run's own start.
+    with Trlib() as t:
+        with pytest.raises(TrlibParamError):
+            t.set_param("eq:NOSUCHNAME", 1.0)
+        t.run(2)
+        t.run(1)
+        assert t.get_state().nt == 3
+
+
+def test_a_refused_eq_set_after_a_run_does_not_prepare_again():
     with Trlib() as t:
         t.run(2)
         with pytest.raises(TrlibParamError):

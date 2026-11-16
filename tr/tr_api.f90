@@ -1046,7 +1046,11 @@ CONTAINS
     END DO
     refused = .TRUE.
     SELECT CASE (TRIM(up))
-    CASE ('RR', 'RA', 'RKAP', 'RDLT', 'BB', 'RIP', 'KNAMEQ')
+    CASE ('RIP')
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//" is not settable through TR: set RIPS and RIPE (TR's), "// &
+            'which TR passes to EQ as RIP'
+       RETURN
+    CASE ('RR', 'RA', 'RKAP', 'RDLT', 'BB', 'KNAMEQ')
        WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' is not settable through TR: set '//TRIM(up)// &
             " (TR's), which TR passes to EQ"
        RETURN
