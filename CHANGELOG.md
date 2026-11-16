@@ -10,6 +10,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, #96 PR 1).
+  - `tr_set_param` and `tr_set_param_str` send a name that starts with `eq:` to EQ's registry (`eq:RB`, `eq:NRMAX`,
+    `eq:KNAMEQ`, ...); an unknown name returns `TR_ERR_INVALID`, and an accepted one makes the next `tr_run` prepare
+    again. Under `MODELG` 9 this sets EQ's wall and grid without `tot`. `libtrapi.so` now links EQ's registry object.
+    A mesh change of EQ between two preparations in one process needs the bpsd spline resize
+    (k-yoshimi/bpsd#7); the regrid tests that need it run with `TRLIB_BPSD_REGRID_FIX=1`.
+  - `tr_init` sets library mode (`tr/trfailure.f90`), `tr2` never does. In library mode the time loop returns the
+    first failure instead of going on, and records it: `tr_last_error(tr_diag_entry_t*)` gives the kind
+    (`EQ_FAILED` from the periodic `MODELG` 9 re-solve (`NTEQIT`) and from each exit of the q-scaling,
+    `TR_CHECK` from `TRCHCK`, `NONFINITE`, `PREP_FAILED`, `OTHER`), the Fortran code and
+    `nt=.. t=.. s: detail`. The first failure is kept; `tr_init` and every `tr_run` clear it. `tr2`'s output is
+    byte-identical (tr.ITER01 with `MODELG` 9, `NTEQIT` 50 and 0).
+  - `trlib`: `TrFailure`, `TrlibRunError.failure` (`None` when the `.so` predates `tr_last_error`) and
+    `Trlib.last_error()`. `tr_mcp`: the run error string carries the record, and `describe_parameters` has an
+    `eq_names` line. TOT and the mono build stop and record too, but `tot_api.h` and `totlib` have no accessor yet.
 - **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
   re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
   (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
@@ -179,6 +194,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   be made. Not refused: a centre density far below the edge's, which fails
   too (`PN(2)` = 1e-9, 1e-6 and 1e-4 end with `ierr=3` within 10 steps).
 
+- **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
+  `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
+  the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and
+  `RIPS` = 0, which returned RC 0 with about 10 non-finite scalars, fail with `NONFINITE` at nt 1 (task-web's
+  `non_finite` flag no longer sees them). On flat 9 MA ITER `MODELG` 9 with `NTEQIT` 50 and heating, the run stops
+  at t = 12 s (code 103, the axis leaves the plasma), where it printed `XX EQAXIS` lines to 37 s. `tr2` is
+  unchanged.
 - **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
   run re-preps the module, whoever set it (#253).** `tr_set_param` /
   `fp_set_param` / `ti_set_param` used to clear the module's private
@@ -239,6 +261,30 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
+  and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
+  `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first
+  q-scaling and nothing set it again: a second lifecycle in one process gave NaN for every q, a second preparation
+  inside one lifecycle a state that differed from the first by up to 57 %. It sets the flag at the start of every
+  preparation, `tr_init` and `tr_finalize` restore it. And the q-scaling went on after a failing `eq_calc`, a bad
+  `tr_bpsd_get`/`tr_bpsd_put` status, a zero or non-finite scale factor, or no agreement in 30 iterations; each now
+  ends `tr_set_metric` with `ierr` /= 0 and `tr_run` returns `TR_ERR_CALC_FAILED`. `eq_calc` (`eq/equnit.f90`) has an
+  optional `IERR` for it; called without it, as `trx` and `trm` do, it is unchanged. With `RIPS` = `RIPE` from 0.01
+  to 100 and the rest at the defaults, 0.81 and 0.84, which returned 0 after failed solves, and 11 to 100, which ended
+  the process at a run-time check, now fail; 0.83 and 0.85 to 10 give the same state.
+- **EQ library: `eq_bpsd_put` sizes its arrays again when EQ's grid changes.** It sized `equ1D%rho` and
+  `metric1D%rho` once, on its first call, and wrote `NRMAX` points: a later preparation on a bigger EQ grid in the
+  same process wrote past the end (a checked build stopped, e.g. tst2 at `NRMAX` 10, then `MODELG` 9). The
+  preparation on a changed grid needs the bpsd spline resize too (k-yoshimi/bpsd#7).
+- **EQ: a contour extremum at the edge of `YA`, and an `EQMAGS` that could not trace a surface, fail `EQCALQ`.**
+  `EQCALQP` and `EQCALQV` refine the top and bottom of each flux surface with `zminmax`, which read `YA` at index 0
+  when the extremum was the first or last point; a checked build stopped, others read garbage. `EQCALQ` now returns
+  `IERR` = 110 (extremum at the edge, with the reason in `eq_last_error`). `EQCALQP` did not test its two `EQMAGS`
+  calls: `RA` 1.8 or 2.0 with `MODELG` 9 (or `RR` 6.2, `RA` 2.0 and the default wall `RB` 1.2 through `eq_run`)
+  could not trace the surface ("NOT ENOUGH N", the usual cause being a wall smaller than the plasma) and went on to
+  the read. They return 111 (surface loop) and 112 (edge surface) with the reason. Callers of `eq_calc` without
+  `ierr` (`tr2`, `trx`, `trm`, `fp`, `wm`, `wmx`, `wr`, `wrx`) now go on after the early return where a checked
+  build stopped. Healthy results are bit-identical (58 configurations, base against head).
 - **TR: a sawtooth with q below 1 out to the edge read past the mesh.** `TRSAWT` (`tr/trcalc.f90`) printed its
   profiles to two points past the mixing radius, which is `NRMAX` when q stays below 1 to the edge: a bounds-checking
   build stopped the process ("Index '51' of dimension 1 of array 'rm' above upper bound of 50" on PLATO's shape at
