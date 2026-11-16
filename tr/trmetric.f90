@@ -79,11 +79,13 @@ CONTAINS
                write(6,'(A,I3,A,I6)') &
                     ' XX tr_set_metric: eq_calc: iteration',iter, &
                     ', ierr=',ierr
+               call tr_qscale_failure(ierr,iter,'eq_calc')
                return
             endif
             call tr_bpsd_get(ierr)
             if(ierr.ne.0) then
                write(6,*) 'XX tr_set_metric: tr_bpsd_get: ierr=',ierr
+               call tr_qscale_failure(ierr,iter,'tr_bpsd_get')
                return
             endif
             if(rips.le.0.d0) then               ! no current to scale to
@@ -96,6 +98,7 @@ CONTAINS
                     ' XX tr_set_metric: q-scaling: Ip of EQ, RIPS=', &
                     tr_rip_eq,rips
                ierr=-1
+               call tr_qscale_failure(ierr,iter,'scale factor zero or not finite')
                return
             endif
             if(abs(sfac-1.d0).lt.1.d-3) then
@@ -106,6 +109,7 @@ CONTAINS
             call tr_bpsd_put(ierr)              ! push scaled q to EQ
             if(ierr.ne.0) then
                write(6,*) 'XX tr_set_metric: tr_bpsd_put: ierr=',ierr
+               call tr_qscale_failure(ierr,iter,'tr_bpsd_put')
                return
             endif
          enddo
@@ -114,6 +118,7 @@ CONTAINS
                  ' XX tr_set_metric: q-scaling: no agreement after', &
                  niter_qscale,' iterations: Ip of EQ / RIPS=',sfac
             ierr=-2
+            call tr_qscale_failure(ierr,niter_qscale,'no agreement within 1e-3')
             return
          endif
 !        Init done: hand over the converged (Ip=RIPS) equilibrium. From here
@@ -280,3 +285,23 @@ CONTAINS
       END SUBROUTINE TRGFRG
 
     END MODULE trmetric
+
+!     ***********************************************************
+
+!           RECORD THE FAILURE OF THE INITIAL Q-SCALING
+
+!     ***********************************************************
+
+!     tr_set_metric (MODELG=9) calls this at each of its failure exits, so that
+!     tr_last_error can say what failed (library mode reads the record).
+
+      SUBROUTINE tr_qscale_failure(code,it,what)
+      USE trcomm, ONLY : t
+      USE trfailure, ONLY : tr_failure_record, TRF_EQ_FAILED
+      IMPLICIT NONE
+      INTEGER, INTENT(IN) :: code, it
+      CHARACTER(LEN=*), INTENT(IN) :: what
+      CHARACTER(LEN=96) :: detail
+      WRITE(detail,'(A,I0,A,A)') 'tr_set_metric q-scaling, iteration ',it,': ',what
+      CALL tr_failure_record(TRF_EQ_FAILED,code,0,t,detail)
+      END SUBROUTINE tr_qscale_failure

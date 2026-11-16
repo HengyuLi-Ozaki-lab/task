@@ -392,6 +392,13 @@ def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
         msg = f"library not initialized (call init first): {exc}"
     elif isinstance(exc, TrlibRunError):
         msg = f"calculation failed: {exc}"
+        failure = getattr(exc, "failure", None)
+        if failure is not None and failure.kind != "NONE":
+            # The library's record of what failed (tr_last_error), in the same string.
+            msg += (
+                f" [failure: kind={failure.kind} code={failure.code} "
+                f"nt={failure.nt} time={failure.time:g} s; {failure.detail}]"
+            )
     elif isinstance(exc, TrlibNotImplementedError):
         msg = f"not implemented in this libtrapi.so build: {exc}"
     elif isinstance(exc, TrlibInitError):

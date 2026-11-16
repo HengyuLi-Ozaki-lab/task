@@ -124,6 +124,12 @@ size_t tr_state_size(void);
  */
 int tr_validate(tr_diag_entry_t* diag, int diag_cap, int* ndiag_out);
 
+/* The first failure of the last tr_run, in the layout of a diagnostic entry.
+   param: NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED, REFUSED or OTHER;
+   code: the Fortran status; msg: "nt=<step> t=<time> s: <what failed>".
+   Cleared at the start of every tr_run. Returns 0 always. */
+int tr_last_error(tr_diag_entry_t* e);
+
 /* L-7b-ii: BPSD broker round-trip verification.
  * Returns *ok = 1 on successful pull of the 3 eq-pushed BPSD slots
  * (device, equ1D, metric1D); 0 otherwise. plasmaf is intentionally

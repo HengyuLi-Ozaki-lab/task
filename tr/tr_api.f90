@@ -51,12 +51,13 @@ MODULE tr_api
   USE trprep,            ONLY: tr_prep
   USE trloop,            ONLY: tr_loop
   USE trbpsd,            ONLY: tr_eq_init
+  USE trfailure
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, &
             tr_api_set_param, tr_api_set_param_str, tr_api_finalize, &
             tr_api_validate, &
-            tr_check_bpsd_pull
+            tr_check_bpsd_pull, tr_api_last_error
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -141,6 +142,10 @@ CONTAINS
     tr_eq_init    = .TRUE.
     g_initialized = .TRUE.
     g_prepared    = .FALSE.
+    ! Library mode: tr_loop, tr_set_metric and tr_exec record their failures and
+    ! tr_loop tests the periodic equilibrium solve. Only this entry sets it.
+    tr_library_mode = .TRUE.
+    CALL tr_failure_clear()      ! a new lifecycle starts with no failure on record
     ierr = TR_OK
   END FUNCTION tr_api_init
 
@@ -292,6 +297,7 @@ CONTAINS
     INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
     CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
 
+    CALL tr_failure_clear()      ! the record of the last failure belongs to one tr_run
     IF (.NOT. g_initialized) THEN
        ierr = TR_ERR_NOT_INIT
        RETURN
@@ -335,6 +341,7 @@ CONTAINS
        IF (g_first_nrmax == 0) g_first_nrmax = NRMAX
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
+          CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, T, 'tr_prep failed')
           ierr = TR_ERR_CALC_FAILED
           RETURN
        END IF
@@ -350,6 +357,8 @@ CONTAINS
     CALL tr_loop(calc_ierr)
     NTMAX      = ntmax_save
     IF (calc_ierr /= 0) THEN
+       ! A failure that tr_loop's callees did not record is kept as OTHER.
+       CALL tr_failure_record(TRF_OTHER, calc_ierr, NT, T, 'tr_loop returned a non-zero status')
        ierr = TR_ERR_CALC_FAILED
        RETURN
     END IF
@@ -950,5 +959,52 @@ CONTAINS
     TYPE(tr_state_c) :: probe
     n = C_SIZEOF(probe)
   END FUNCTION tr_api_state_size
+
+  !-------------------------------------------------------------------
+  ! tr_last_error : the first failure of the last tr_run.
+  !
+  ! param = the kind (NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED,
+  ! REFUSED, OTHER), code = the Fortran status, msg = "nt=<step> t=<time>
+  ! s: <what failed>". Cleared at the start of every tr_run. Always TR_OK.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_last_error(e) RESULT(ierr) BIND(C, NAME="tr_last_error")
+    TYPE(tr_diag_entry_c), INTENT(OUT) :: e
+    INTEGER(C_INT) :: ierr
+    INTEGER :: kind, code, nt_rec, i, n
+    REAL(rkind) :: time
+    CHARACTER(LEN=96) :: detail
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: pname
+    CHARACTER(LEN=TR_DIAG_MSG_LEN) :: msg
+    CALL tr_failure_get(kind, code, nt_rec, time, detail)
+    SELECT CASE (kind)
+    CASE (TRF_NONE);        pname = 'NONE'
+    CASE (TRF_EQ_FAILED);   pname = 'EQ_FAILED'
+    CASE (TRF_NONFINITE);   pname = 'NONFINITE'
+    CASE (TRF_TR_CHECK);    pname = 'TR_CHECK'
+    CASE (TRF_PREP_FAILED); pname = 'PREP_FAILED'
+    CASE (TRF_REFUSED);     pname = 'REFUSED'
+    CASE DEFAULT;           pname = 'OTHER'
+    END SELECT
+    msg = ''
+    IF (kind /= TRF_NONE) &
+         WRITE(msg, '(A,I0,A,ES14.7,A,A)') 'nt=', nt_rec, ' t=', time, ' s: ', TRIM(detail)
+    ! Zero-fill, then copy and NUL-terminate, as tr_validate's push_diag does.
+    DO i = 1, TR_DIAG_PARAM_LEN
+       e%param(i) = C_NULL_CHAR
+    END DO
+    n = MIN(LEN_TRIM(pname), TR_DIAG_PARAM_LEN - 1)
+    DO i = 1, n
+       e%param(i) = pname(i:i)
+    END DO
+    DO i = 1, TR_DIAG_MSG_LEN
+       e%msg(i) = C_NULL_CHAR
+    END DO
+    n = MIN(LEN_TRIM(msg), TR_DIAG_MSG_LEN - 1)
+    DO i = 1, n
+       e%msg(i) = msg(i:i)
+    END DO
+    e%code = INT(code, C_INT)
+    ierr = TR_OK
+  END FUNCTION tr_api_last_error
 
 END MODULE tr_api

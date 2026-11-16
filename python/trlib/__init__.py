@@ -22,6 +22,7 @@ from .errors import (
     TrlibParamError,
     TrlibStateError,
     TrlibRunError,
+    TrFailure,
     TrlibNotImplementedError,
     TrlibAbiError,
     # Aliases kept for spec-style naming.
@@ -43,6 +44,7 @@ __all__ = [
     "TrlibParamError",
     "TrlibStateError",
     "TrlibRunError",
+    "TrFailure",
     "TrlibNotImplementedError",
     "TrlibAbiError",
     "TrLibError",
