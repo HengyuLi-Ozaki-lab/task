@@ -122,22 +122,29 @@ first failure is kept; `tr_init` and every `tr_run` clear the record (`kind == "
 | `EQ_FAILED` | an equilibrium solve of `MODELG = 9` failed: the initial q-scaling (`tr_set_metric`) or the periodic re-solve (`NTEQIT`); `code` is EQ's (103 axis out of plasma, 110/111/112 below) |
 | `NONFINITE` | Q0, the stored energy or a central temperature is not finite (`code` -3) |
 | `TR_CHECK` | `TRCHCK`: a negative temperature |
-| `PREP_FAILED`, `REFUSED`, `OTHER` | the preparation failed; a refusal before the run; any other non-zero status of the loop |
+| `PREP_FAILED`, `OTHER` | the preparation failed; any other non-zero status of the loop |
+| `REFUSED` | reserved for `tr_continue` (PR 3 of the plan); nothing records it yet (`tr_run` refuses before the run by returning `TR_ERR_INVALID`, with no record) |
 
 EQ's own codes 110 (a flux-surface extremum at the edge of the contour array), 111 and 112 (`EQMAGS` could not trace
-the surface in the loop, or the edge surface) come with a reason in EQ's `eq_last_error`.
+the surface in the loop, or the edge surface) come with a reason in EQ's `EQ_ERRMSG` (`libtrapi.so` does not export
+`eq_last_error`): an `EQ_FAILED` record appends it to `detail` as `<where>: <EQ's reason>` when EQ set one (EQCALC's
+codes may leave it empty). The message of `tr_last_error` is cut at 127 characters, so a long reason is cut there.
 
 `tr_mcp` puts the record in the error string of a failed `run`: `... [failure: kind=EQ_FAILED code=103 nt=600
 time=12 s; <detail>]`.
 
-### Changes of behaviour (library mode only)
+### Changes of behaviour
 
-- `MODELG` 0, 4 or 25, and `RIPS = 0`, used to return RC 0 with about ten non-finite scalars; they now fail with
+- Library mode only: `MODELG` 0, 4 or 25, and `RIPS = 0`, used to return RC 0 with about ten non-finite scalars; they now fail with
   `NONFINITE` at nt 1. A client that tested for non-finite scalars after a successful `run` (task-web's `non_finite`
   flag) now gets the error instead.
-- A failing periodic re-solve (`NTEQIT`) or q-scaling ends the run with `EQ_FAILED`; the loop used to go on, and a
+- Library mode only: a failing periodic re-solve (`NTEQIT`) ends the run with `EQ_FAILED`; the loop used to go on, and a
   checked build used to stop the process at an array bound.
-- `tr2` is unchanged.
+- Not library mode only: the two #228 fixes (`0aa63152`, `c630aa11`, #226's own) apply to `tr2` too, because
+  `tr_set_metric` is shared. A failing `MODELG` 9 q-scaling now fails the preparation: where `tr2` used to go on
+  after a failed solve (for example `RIPS` 0.81 or 0.84), its `R` now stops at `trmenu.f90:74`; and a second `R` in
+  one `tr2` session under `MODELG` 9 adopts the equilibrium again, where it used to differ. `tr2`'s output is
+  unchanged on a single `R` that succeeds (`tr.ITER01` with `MODELG` 9, `NTEQIT` 50 and 0: byte-identical).
 
 ## API reference
 
@@ -180,9 +187,19 @@ Idempotent. The context manager calls this automatically.
 
 ## Supported parameters
 
-A name that starts with `eq:` (`eq:RB`, `eq:NRMAX`, `eq:KNAMEQ`, ...) goes to EQ's registry, so `MODELG` 9 sets EQ's wall
+A name that starts with `eq:` (`eq:RB`, `eq:NSGMAX`, `eq:NRMAX`, ...) goes to EQ's registry, so `MODELG` 9 sets EQ's wall
 and grid through `set_param` / `set_param_str`; an unknown name raises `TrlibParamError`, and an accepted one makes the
-next `run` prepare again.
+next `run` prepare again. Two kinds of `eq:` name are refused (`TrlibParamError`, one line on unit 6):
+
+- `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` do nothing through TR: under `MODELG` 9
+  EQ's copy is overwritten from TR's device, and TR passes its own `KNAMEQ` to EQ. Set `RR`, `RA`, ... (TR's) instead.
+  Under `MODELG` 3, 5 and 8 EQ's `NRMAX`, `NTHMAX` and `NSUMAX` come from TR's `NRMAX` (`tr_set_metric`).
+- every `eq:` name, once this process has made its first preparation attempt (failed or not; across `tr_finalize`
+  and `tr_init` too): until the pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change in one process corrupts memory
+  (`EQ_FAILED` 103 from a spline written past its end, measured with `eq:NRMAX` 30 then 60 and `eq:RB` 2.0 then 1.2),
+  so `eq:` names are set before the process's first run. This guard comes off with the `NRMAX` guard below. A
+  change of `MODELG` between lifecycles also changes the EQ grid (`MODELG` 9 then the `tst2` defaults: 50 to 51 points),
+  and no guard covers that: its test is gated on `TRLIB_BPSD_REGRID_FIX=1`.
 
 The registry below reflects `tr/tr_param_registry.f90` at Phase L-3.
 Add to it by extending that Fortran `SELECT CASE`; no Python change
@@ -192,7 +209,7 @@ is required — the wrapper forwards names verbatim.
 |---|---|---|
 | Geometry / device | `RR`, `RA`, `RKAP`, `RDLT`, `BB`, `PHIA` | scalar doubles |
 | Plasma (arrays, 1..NSMM) | `PA[i]`, `PZ[i]`, `PN[i]`, `PNS[i]`, `PT[i]`, `PTS[i]` | 1-origin index |
-| Plasma scalars | `NSMAX`, `NRMAX` | cast to INT. `NRMAX` is TR's radial mesh, 3 to 500 (1 and 2 abort the solver; 500 is `TR_MAX_NRMAX`). Changing the TR or EQ mesh between preparations in one process needs bpsd with the spline-resize fix (k-yoshimi/bpsd#7) and, for a change of the EQ grid, `eq_bpsd_put` sizing its arrays again when the grid changes (that second fix is in this tree, `eq/eqbpsd.f90`). The bpsd fix is not in every bpsd: without it a later preparation on another grid writes out of bounds, so `tr_run` refuses, and `validate()` reports, an `NRMAX` other than the one of the process's first preparation attempt (failed or not; across `tr_finalize` and `tr_init` too): one mesh per process, as a task-web job or a test under `--forked` is. The guard comes off once the pinned bpsd has the fix. A change of the EQ grid with TR's `NRMAX` unchanged (`eq:NRMAX`, `eq:RB`, `MODELG` 9 then another case) passes the guard but still needs the bpsd fix; its regrid tests are skipped unless `TRLIB_BPSD_REGRID_FIX=1` is set with such a bpsd, and the tests that change TR's `NRMAX` stay skipped while the guard is in place |
+| Plasma scalars | `NSMAX`, `NRMAX` | cast to INT. `NRMAX` is TR's radial mesh, 3 to 500 (1 and 2 abort the solver; 500 is `TR_MAX_NRMAX`). Changing the TR or EQ mesh between preparations in one process needs bpsd with the spline-resize fix (k-yoshimi/bpsd#7) and, for a change of the EQ grid, `eq_bpsd_put` sizing its arrays again when the grid changes (that second fix is in this tree, `eq/eqbpsd.f90`). The bpsd fix is not in every bpsd: without it a later preparation on another grid writes out of bounds, so `tr_run` refuses, and `validate()` reports, an `NRMAX` other than the one of the process's first preparation attempt (failed or not; across `tr_finalize` and `tr_init` too): one mesh per process, as a task-web job or a test under `--forked` is. The guard comes off once the pinned bpsd has the fix. A change of the EQ grid with TR's `NRMAX` unchanged by an `eq:` name is refused after the first preparation (above); one by a change of `MODELG` between lifecycles passes both guards but still needs the bpsd fix, and its regrid test is skipped unless `TRLIB_BPSD_REGRID_FIX=1` is set with such a bpsd. The tests that change TR's `NRMAX` or set an `eq:` name after a preparation stay skipped while the guards are in place |
 | Current | `RIPS`, `RIPE` | |
 | Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR`, `NTEQIT` | int-typed coerced. `NTEQIT` is the step interval of the EQ re-solve under `MODELG=9` (0 = never; negative refused) |
 | Transport switches | `MDLKAI`, `MDLETA`, `MDLAD`, `MDLAVK`, `CHP`, `CK0`, `CK1` | |

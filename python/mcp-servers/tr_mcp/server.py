@@ -493,7 +493,7 @@ def handle_finalize() -> str:
     #227 item 2: this used to mark the :class:`Trlib` handle closed *without*
     calling ``tr_finalize``, as a workaround for a SIGABRT (~40% of calls) in
     the Fortran cleanup path.  That left ``g_initialized`` set in
-    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (tr_api.f90:83 --
+    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (``tr_api_init`` in tr_api.f90 --
     "already initialized, just return OK") a subsequent ``init`` became a
     no-op that did **not** restore defaults.  It also disagreed with
     ``handle_run_and_get_state``, which needs a real finalize for its
@@ -523,7 +523,11 @@ def handle_describe_parameters() -> Dict[str, Any]:
             "A name 'eq:NAME' (e.g. eq:RB, eq:NSGMAX) is passed to the "
             "library as is and set in EQ's registry; it is not listed "
             "here, and the library refuses an unknown one. TR prepares "
-            "again before its next run."
+            "again before its next run. eq:RR, RA, RKAP, RDLT, BB, RIP and "
+            "KNAMEQ are refused (set TR's own), and so is every eq: name "
+            "after the process's first run (until the pinned bpsd has "
+            "k-yoshimi/bpsd#7). Under MODELG 3/5/8 EQ's NRMAX, NTHMAX and "
+            "NSUMAX come from TR's NRMAX."
         ),
         "parameters": PARAMETER_REGISTRY,
     }

@@ -335,9 +335,9 @@ with `tr-mcp doctor`.
 
 A failed `run` puts the library's failure record in the error string:
 `[failure: kind=EQ_FAILED code=103 nt=600 time=12 s; <detail>]` (`kind` is `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
-`PREP_FAILED`, `REFUSED` or `OTHER`; see `python/trlib/README.md`). `MODELG` 0, 4, 25 and `RIPS = 0` now fail this
+`PREP_FAILED` or `OTHER`; `REFUSED` is reserved for `tr_continue`, PR 3 of the plan, and not recorded yet; see `python/trlib/README.md`). `MODELG` 0, 4, 25 and `RIPS = 0` now fail this
 way (`NONFINITE`, nt 1) where they used to return a state with non-finite scalars. A name `eq:NAME` in `set_param`
-goes to EQ's registry (`describe_parameters` says so in its `eq_names` line).
+goes to EQ's registry (`describe_parameters` says so in its `eq_names` line); `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (set TR's own), and so is every `eq:` name after the process's first run (until the pinned bpsd has k-yoshimi/bpsd#7). Under `MODELG` 3, 5 and 8 EQ's `NRMAX`, `NTHMAX` and `NSUMAX` come from TR's `NRMAX`.
 
 For details, see §8 FAQ of `python/mcp-servers/tr_mcp/README.md`.
 

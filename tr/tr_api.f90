@@ -974,8 +974,9 @@ CONTAINS
   ! tr_last_error : the first failure of the last tr_run.
   !
   ! param = the kind (NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED,
-  ! REFUSED, OTHER), code = the Fortran status, msg = "nt=<step> t=<time>
-  ! s: <what failed>". Cleared at the start of every tr_run. Always TR_OK.
+  ! OTHER; REFUSED is reserved for tr_continue and not recorded yet), code =
+  ! the Fortran status, msg = "nt=<step> t=<time> s: <what failed>" (for
+  ! EQ_FAILED the text ends with EQ's EQ_ERRMSG). Cleared at the start of every tr_run. Always TR_OK.
   !-------------------------------------------------------------------
   FUNCTION tr_api_last_error(e) RESULT(ierr) BIND(C, NAME="tr_last_error")
     TYPE(tr_diag_entry_c), INTENT(OUT) :: e
