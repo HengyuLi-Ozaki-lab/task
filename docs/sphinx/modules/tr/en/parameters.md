@@ -202,6 +202,8 @@ Allowed values of `MDLIMP`:
 | `LMAXTR` | int    | 10    | — | maximum number of inner iterations |
 | `NGTSTP` | int    | 2     | — | save interval for time-evolution graphs |
 | `NGRSTP` | int    | 100   | — | save interval for radial-profile graphs |
+| `NRMAX`  | int    | 50    | — | TR's radial mesh, 3 to 500 (`TR_MAX_NRMAX`). One value per process: `tr_run` refuses an `NRMAX` other than the one of the process's first preparation, until bpsd resizes its splines (k-yoshimi/bpsd#7); a change of the EQ grid also needs `eq_bpsd_put` to size its arrays again |
+| `NTEQIT` | int    | 0     | — | step interval of the EQ re-solve under `MODELG = 9` (0 = never) |
 
 ## 7. Transport model
 
@@ -290,6 +292,7 @@ the bootstrap-current Sauter model (`MDLJBS=5`) are active.
 | `MDLPEL` | int switch | 1 | pellet-injection model |
 | `MDLJBS` | int switch | 5 | bootstrap-current model |
 | `MDLST`  | int switch | 0 | sawtooth model |
+| `TPRST`  | double | 0.1 | sawtooth period [s], > 0 |
 | `MDLNF`  | int switch | 0 | fusion-reaction model |
 | `MODEL_PNF` | int switch | 0 | multi-reaction fusion model ported from `trx` (see below) |
 | `MDLUF`  | int switch | 0 | UFILE (experimental data) reader model |

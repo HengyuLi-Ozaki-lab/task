@@ -194,6 +194,8 @@ $$X(\rho) = (X_0 - X_S)\,(1 - \rho^{\text{PROFN1}})^{\text{PROFN2}} + X_S$$
 | `LMAXTR` | int    | 10    | — | 内部反復の最大反復数 |
 | `NGTSTP` | int    | 2     | — | 時間発展グラフ保存間隔 |
 | `NGRSTP` | int    | 100   | — | 半径プロファイルグラフ保存間隔 |
+| `NRMAX`  | int    | 50    | — | TR の径方向メッシュ, 3 から 500 (`TR_MAX_NRMAX`). 1 プロセスに 1 つの値: bpsd がスプラインを再確保するまで (k-yoshimi/bpsd#7), `tr_run` はそのプロセスの最初の準備と異なる `NRMAX` を拒否します; EQ グリッドの変更には `eq_bpsd_put` の再確保も必要 |
+| `NTEQIT` | int    | 0     | — | `MODELG = 9` での EQ 再計算のステップ間隔 (0 = しない) |
 
 ## 7. 輸送モデル (Transport model)
 
@@ -279,6 +281,7 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | `MDLPEL` | int switch | 1 | ペレット注入モデル |
 | `MDLJBS` | int switch | 5 | ブートストラップ電流モデル |
 | `MDLST`  | int switch | 0 | のこぎり波 (sawtooth) モデル |
+| `TPRST`  | double | 0.1 | のこぎり波の周期 [s], > 0 |
 | `MDLNF`  | int switch | 0 | 核融合反応モデル |
 | `MODEL_PNF` | int switch | 0 | `trx` から移植した多反応核融合モデル (下記) |
 | `MDLUF`  | int switch | 0 | UFILE (実験データ) 読込モデル |
