@@ -140,6 +140,19 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! 軸上 Zeff
 `tr_set_param` / `tr_set_param_str` の名前 `eq:NAME` は EQ のレジストリ (`eq_param_set`) に渡されます. このため
 `libtrapi.so` は `eq_param_registry.o` をリンクし, 受理された設定の後の `tr_run` は再度準備を行います. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` は TR 経由では何もしないため拒否され, プロセスの最初の準備の試行の後は, 固定された bpsd が k-yoshimi/bpsd#7 を持つまで, すべての `eq:` 名が拒否されます. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です. このガードは bpsd#7 の溢れへの直接の経路だけを塞ぎます: `MODELG` 9 では EQ のプラズマ格子を動かす入力はすべてその bpsd を必要とします (`python/trlib/README.md` 参照). TOT の `eq:` ディスパッチャはガードされません.
 
+## 続きの計算 (`tr_continue`, `tr_api.f90`)
+
+`tr_continue(nsteps)` は準備済みの計算に対して `tr_loop` を `nsteps` ステップ進めます. 前処理は `tr2` の `C` と同じ
+(`tr_eval`, `RIP = RIPS`, `DIPDT`, `tr_bpsd_get`) で, `DIPDT` は `(RIPE - RIPS) / ((NTMAX - NT) * DT)`, つまりこの呼び出しの
+ステップ数でのランプです (`tr2` ではこの行は `NT` = 0 で通るため同じ値). `tr_param_class` は名前を **制御** (1: `RIPE`, `PNBTOT`,
+`PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`; ループが各ステップで読む) と **構造** (0: ほかすべてと `eq:` 名; 準備が読む) に
+分けます. `tr_param_registry` が構造パラメータの設定回数を数え, 準備以降に増えていれば `tr_continue` は拒否し,
+最後の名前を入れた `REFUSED` (code 0) を記録します. `NT` は呼び出しをまたいで続く (`tr2` の `C` は 0 に戻す) ので, `NT` で決まる
+ステップは準備からの数え方です. NCLASS では `tr2` の `C` は最初のステップが異なります (`trcoef_resistivity.f90:123`).
+`NTEQIT` の再計算で終わる呼び出しの履歴最終行の q(0) は再計算前の値で, 次の呼び出しの最初の `TRGLOB` が `WPPRE`/`TPRE` を
+置き直すため, 切れ目の次の行の `WPDOT`, `TAUE2`, `H98Y2` が動きます (状態は動きません). `tot_continue` が呼び,
+TOT の `eq:` 設定は `tr_param_note_external_set` を呼んで構造パラメータの設定として数えられます.
+
 ## 出力の名前引き (`tr_api.f90`)
 
 `tr_state_t` のスカラーは `TRGLOB` が計算する 31 個の全体量のうち 14 個です. `tr_scalar_count`, `tr_scalar_name`,

@@ -121,7 +121,7 @@ python -m tot_mcp.server --help
 python -m tot_mcp.server --print-tools
 ```
 
-以下の 10 ツールが並びます。
+以下の 11 ツールが並びます。
 
 ```
 describe_parameters
@@ -271,12 +271,15 @@ LLM は `describe_parameters` を呼び、`parameters["eq"]` を抽出して返�
 | `set_param` | 単一パラメータ設定 | `name` (必ず `<ns>:<bare>`), `value` |
 | `set_params` | まとめて設定 (scalar / list / dict / 文字列。文字列は `tr:` と `eq:` のみ) | `params` (キーは必ず namespaced) |
 | `run` | 時間ステップ進行 | `ntmax` (default=1) |
+| `continue_run` | 準備済みの計算を再準備せずに `nsteps` ステップ続ける (`tot_continue`) | `nsteps` |
 | `get_state` | 現在の状態取得 | なし |
 | `finalize` | リソース解放 | なし |
 | `describe_parameters` | 名前空間ごとのパラメータ一覧・型・説明 | なし |
 | `describe_state_schema` | `get_state` の JSON schema | なし |
 | `run_and_get_state` | init + set + run + get_state を一括 | `params`, `ntmax` |
 | `run_pipeline` | 複数モジュールを連結したスカラーカップリング実行 (L-7a) | `steps`, `params` |
+
+> `continue_run` は TR の `tr_continue` を呼びます: 前回の `run` / `continue_run` 以降に設定した制御パラメータ (`tr:RIPE`, `tr:PNBTOT`, `tr:PICTOT`, `tr:PECTOT`, `tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) は最初のステップから効き, `NT`・`T`・履歴は続きます. ほかの `tr:` 名と `eq:` 名は構造パラメータで, 準備後に設定すると拒否され (メッセージに TR の記録と名前が入ります), 次の `run` が再準備します. `run(0)` はステップを進めませんが `RIPS = RIPE` になり, 事前に設定した電流ランプが失われます (動作確認に使わないでください). `continue_run(0)` は検査だけです. 詳細は `python/trlib/README.md` の "Continuing a run".
 
 > L-6 以降、`init` / `finalize` は eq・tr・ti・fp・wr を立ち上げ / 終了し、`run` は TR の時間発展を進め、`get_state` は TR の値を返します (L-3〜L-5 ではスタブで `TOT_ERR_NOT_IMPL` を返していました)。モジュール間の結合は `run_pipeline` (7.1) が受け持ちます。
 

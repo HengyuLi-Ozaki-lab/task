@@ -189,6 +189,18 @@ power deposition, fp → tr current source, etc.) lives in
 `totlib.TotPipeline` (L-7a, Python-side) instead of inside
 `libtotapi.so`.
 
+### `Tot.continue_run(nsteps: int) -> None`
+
+`tot_continue`: TR's `tr_continue` through `tot` (TOT runs only TR, as `run` does). The control parameters
+(`tr:RIPE`, `tr:PNBTOT`, `tr:PICTOT`, `tr:PECTOT`, `tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) set since the last `run` or
+`continue_run` take effect at its first step; `nt`, `T` and the history go on. Every other `tr:` name and every `eq:` name is
+structural: set after a preparation it makes `continue_run` refuse (`TotlibInvalidParamError`, the message carries TR's
+record and names the last such name), and the next `run` prepares again. TOT's `eq:` setters tell TR for this; TR's
+refusal of most `eq:` names after the first preparation is not applied in `tot`. There is no `Tot.param_class`:
+`Trlib.param_class` answers for the same names (`eq:` names are 0). `continue_run(0)` only checks; `run(0)` takes no step
+but the loop's exit sets `RIPS = RIPE`, so a ramp set before it is lost. `run` and `continue_run` check the count (0 to
+2**31 - 1) before the call. See `python/trlib/README.md`, "Continuing a run", for what it equals.
+
 ### `Tot.get_state() -> TotState`
 
 Snapshot current TOT state into a `TotState` dataclass. Profile arrays

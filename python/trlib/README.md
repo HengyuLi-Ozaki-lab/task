@@ -174,6 +174,30 @@ one (`run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1);
 steps / `NGTSTP` stays below 10001 for a long run. `BETAN` and `PRFST` are computed from the row; `PEXST` has no column.
 `tot` has the same through `Tot.get_scalar("tr:NAME")` and `Tot.history(["tr:NAME", ...])`.
 
+## Continuing a run: `continue_run`, parameter classes, what it equals
+
+`Trlib.continue_run(n)` advances the prepared case `n` more steps without preparing again. `Trlib.param_class(name)` says
+what a set does to a prepared case: **1 control** (`RIPE`, `PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`: taken
+in at the first step of the next `continue_run`), **0 structural** (every other name `set_param` takes, and every `eq:` name:
+the next `run` prepares again and `continue_run` refuses, naming the last such name), **-1 unknown**. A refusal raises
+`TrlibParamError` with a `REFUSED` record as `.failure`: before a `run`, after a failed run (until a `run` prepares
+again), after a structural set, for a negative count, and for a value `run` refuses.
+
+- **`continue_run(0)`** makes these checks and does nothing else: the control sets stay pending for the next call. `run(0)`
+  does not: it takes no step but the loop's exit sets `RIPS = RIPE`, so a ramp set before it is lost.
+- **`NT` phase.** `nt`, `T` and the history go on across calls; `tr2`'s `C` starts `NT` at 0 again. The steps chosen by `NT`
+  (the `NTEQIT` re-solve, the globals every `NTSTEP`, `NGTSTP`, `NGRSTP` steps) are counted from the preparation, so
+  `continue_run` equals `tr2`'s `C` at the same cut when the steps before it are a multiple of those. With NCLASS
+  (`MDNCLS` 1) `tr2`'s `C` takes the classical resistivity on its first step and `continue_run` does not (it equals one call).
+- **Several calls are not one call**, bit for bit: each call begins with the loop's prologue (ITER, `MODELG` 9, `NTEQIT` 50,
+  calls of 100 steps: `WPT` 1e-12, the whole state 1.3e-10).
+- **q(0) at the end of a call.** The last history row holds the q(0) from before an `NTEQIT` re-solve on that step, as `tr2`
+  prints it; `get_scalar("Q0")` is the value after it (7.7e-5 to 4.9e-4 relative). Read q(0) at 35 s or 90 s from a history
+  row at that time (set `NGTSTP` for it), not from the scalar at a cut.
+- **`WPDOT`, `TAUE2`, `H98Y2` on the row after a cut** that falls on a re-solve differ from a one-call run (`WPDOT` 15 % to
+  36 %, `TAUE2` and `H98Y2` 2 % to 3 %): the call's first `TRGLOB` re-anchors `WPPRE`/`TPRE` on the re-solved `WPT`. The
+  state is not affected; take dW/dt from the `WPT` series.
+
 ## API reference
 
 ### `Trlib(lib_path: str | None = None)`
