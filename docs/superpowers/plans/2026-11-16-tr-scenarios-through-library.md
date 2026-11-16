@@ -1008,3 +1008,93 @@ Commit: `feat(tr): tr_continue and parameter classes; the current ramp is taken 
 - **§6 delivery:** three PRs in order (Tasks 4, 5 and 8). Product-only instead of two PRs per change, for the reason
   at the top. The Kyoto-line report of the TASK developers' files (`trloop`, `equnit`, `eqcalq`, `trmetric`) goes in
   each PR body for the author to forward.
+
+## Findings during execution (2026-11-17)
+
+Found while delivering PR 1; they change later tasks (Tasks 5 to 8), the `deps.lock` bump and the second spec.
+
+### F1. bpsd overruns its spline after a larger grid (fixed upstream-side: k-yoshimi/bpsd#7)
+
+- **The bug:** bpsd sized the spline only at the first get.
+- **Where it shows:** under MODELG 9, NRPMAX changes between NTEQIT re-solves. In the §5 run it alternates between 47
+  and 48; the first put is 48, so that run never overran.
+- **The fixes:**
+  - in bpsd, status 2 or 3 now adjusts the spline (k-yoshimi/bpsd#7);
+  - in TASK, `eq_bpsd_put` sizes its arrays again when EQ's grid changes (PR 1).
+- **Interim:** plato-cpc's fork PR #22 refuses a TR NRMAX different from the process's first preparation (`61ff3cdf`).
+  That guard comes off in a separate commit once the pinned bpsd has #7. The TR-NRMAX regrid tests are skipped until
+  then.
+- **The EQ-grid regrid tests** are gated on `TRLIB_BPSD_REGRID_FIX=1`.
+- **task-web's `deps.lock` bump moves bpsd** to the merge commit of #7.
+
+### F2. Splitting a run into several calls is not seamless
+
+Probe: `~/task-web-scratch/iter-heating/chunk-probe/`. It compares one `tr_run(N)` with chunked calls that add up to N:
+
+| Case | Largest relative difference |
+|---|---|
+| MODELG 2 defaults | 1e-13 (roundoff) |
+| MODELG 9 ITER, 7 MA flat, NTEQIT 0 | 5e-9 |
+| Same, NTEQIT 50, chunks aligned to 50 | 1e-9 |
+| Same, NTEQIT 50, chunks of 70 | 4.5e-8 |
+| Near an EQ failure (flat 9 MA, heated) | Q0 differs by 0.4 % |
+
+Every call begins with a prologue (`tr_eval`, `RIP=RIPS`, `DIPDT`, `tr_bpsd_get`). `tr2`'s `C` has the same prologue.
+Consequences:
+
+- **Task 6.**
+  - `tr_continue` must equal `tr2`'s `C` at the same cut points (the spec's test, 1e-10). That holds by construction
+    if `tr_continue` runs the same `tr_loop`.
+  - Do NOT promise that k chunks equal one call.
+  - Add a test that measures the chunk difference on the ITER MODELG 9 case and documents it (e.g. relative difference
+    < 1e-7 on WPT and Q0 for aligned chunks), so that a regression in the prologue shows up.
+  - Optional, and only if it is cheap and `tr2`-neutral: find which prologue statement causes the 1e-9. Report it; do
+    not change it in this PR without the TASK developers.
+- **task-web (second spec).** The scenario runner cuts segments only at schedule breakpoints: a ramp knot, a heating
+  event, a stage. That is what `tr2` does. It does not cut at the recording interval. The time series comes from F3.
+  The numerical checks of step 3 add one case: the same scenario with an extra breakpoint that changes nothing,
+  showing the effect of a cut.
+
+### F3. New Task 5b (PR 2): the run's history by name
+
+TR records a time history every `NGTSTP` steps (default 2):
+- `GT(NGT)` holds the time and `GVT(NGT, 1:NCTM=110)` the globals, in single precision (`GUCLIP`);
+- they are written in `tr/trrslt_globals.f90` from line 427;
+- the arrays have `NTM = 10001` rows (`tr/trcom0.f90:12`). Recording stops silently when they are full.
+
+Export it so that a client gets the whole trajectory without cutting the run.
+
+**C interface:**
+
+```c
+int tr_history_length(void);                                      /* rows recorded so far (NGT) */
+int tr_history_count(void);                                       /* number of named columns */
+int tr_history_name(int i, char* buf, int buflen);                /* 1-based; TR_ERR_INVALID past the end */
+int tr_history_get(const char* name, double* buf, int n, int* got);  /* copies min(n, NGT) rows, T included as "T" */
+```
+
+**The named columns.** Read the column map from `trrslt_globals.f90` lines 431-549, and check each against the code
+there. A curated list: T (`GT`), WPT, Q0, RIP, the central Te/Ti (TS0), TAUE1/TAUE2, BETAN, PNFT, PINT, POHT, PNBT,
+the RF/EC/IC powers, PRLT, POUT, AJT, AJOHT, AJNBT, AJBST, VLOOP, WPDOT, QF, and the central and average density.
+Every listed name gets a test that its last row equals the final scalar of PR 2's table to single precision (rel
+1e-6).
+
+**Other points:**
+- `NGT` and the arrays start again at `tr_prep` (check that `tr_prep` resets `NGT`). `tr_continue` appends.
+- `tr_history_full()`, or a flag in the length call, says when `NGT` reached `NTM`.
+- Python: `Trlib.history(names=None) -> dict[str, numpy.ndarray]`. `tr_mcp`: a `get_history` tool.
+- **Tests:**
+  - the length grows by `nsteps/NGTSTP` per call;
+  - the history equals across one call and `run` + `continue_run`, up to F2's difference;
+  - the last row agrees with the final scalars;
+  - a full buffer is reported.
+- **task-web** sets `NGTSTP` so that the scenario's steps / NGTSTP < 10001.
+
+### F4. task-web side of the bump (for the second spec and the `deps.lock` bump)
+
+- **Runs that now fail.** In library mode, MODELG 0, 4 or 25, and RIPS = 0, now fail with NONFINITE at nt 1. Before,
+  they returned RC 0 with NaN scalars, which task-web's `non_finite` flag (#133) caught. So
+  `tests/unit/test_tr_param_limits.py:250` and the assistant's `non_finite` tool descriptions change with the bump.
+- **`tr_last_error`.** A failing run now carries the record (`kind`, `code`, `nt`, `time`). task-web's bridge maps it
+  into the job's error.
+- **Rows to add.** The `deps.lock` bump takes lib-hardening, #22, PR 1-3 and bpsd at #7.
