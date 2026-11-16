@@ -10,6 +10,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
+  re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
+  (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
+  so a later preparation on a larger mesh in the same process wrote out of bounds (NaN or SIGSEGV under `MODELG` 3):
+  until the pinned bpsd resizes them (k-yoshimi/bpsd#7), `tr_run` refuses, and `validate()` reports, an `NRMAX`
+  other than the one of the process's first preparation attempt (failed or not), across `tr_finalize` and `tr_init`
+  too, for every `MODELG`.
 - **TR registry: NCLASS, the equations solved, the start current profile, particle transport and the particle
   source.** `tr_set_param` takes `MDNCLS`, `MDLEQB`, `MDLEQN`, `MDLEQE`, `PROFJ1`, `PROFJ2`, `AD0`, `AV0`, `CDP`,
   `CNP`, `MDLPSC`, `NPSCMAX` and `PSCTOT[i]`, `PSCR0[i]`, `PSCRW[i]`, `NSPSC[i]` (i = 1..10); the variables,

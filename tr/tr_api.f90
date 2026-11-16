@@ -70,14 +70,17 @@ MODULE tr_api
   ! #189: at most 3 findings per active species (density sign / zero
   ! density / temperature), species bounded by TR_MAX_NSMAX.
   ! + RIPS, RIPE (current_for_eq); + the equation switches, NPSCMAX and three per particle source
-  ! (source_and_equation_violations; NPSCM = 10, tr/trcomm_const.f90)
-  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2 + 6 + 3 * 10
+  ! (source_and_equation_violations; NPSCM = 10, tr/trcomm_const.f90); + NRMAX (mesh_violation)
+  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2 + 6 + 3 * 10 + 1
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
   ! Registry mutation counter seen by the last successful prep (#253).
   ! -1 = never prepared. See tr_param_generation in the registry.
   INTEGER, SAVE :: g_prep_generation = -1
+  ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
+  ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
+  INTEGER, SAVE :: g_first_nrmax = 0
 
   ! #246: layout query, callable before tr_init.
   PUBLIC :: tr_api_state_abi_version, tr_api_state_size
@@ -284,6 +287,7 @@ CONTAINS
        ! TR_ERR_INVALID returned, handle stays usable.
        CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
        CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
+       CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
        IF (nviol > 0) THEN
           DO i = 1, nviol
              WRITE(6, '(A)') 'XX tr_run: '//TRIM(vnames(i))//': '//TRIM(vmsgs(i))
@@ -291,6 +295,9 @@ CONTAINS
           ierr = TR_ERR_INVALID
           RETURN
        END IF
+       ! The first attempt fixes the mesh, failed or not: tr_prep can size
+       ! bpsd's splines (tr_set_metric) and then fail later (tr_prof_impurity).
+       IF (g_first_nrmax == 0) g_first_nrmax = NRMAX
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           ierr = TR_ERR_CALC_FAILED
@@ -453,6 +460,8 @@ CONTAINS
   !
   !   OUT_OF_RANGE / INCONSISTENT_PAIR: the equation switches and the
   !                 particle sources (see source_and_equation_violations).
+  !   OUT_OF_RANGE_AFTER_DEP: an NRMAX other than the process's first
+  !                 (see mesh_violation).
   !
   ! Future category (a follow-up PR): MISSING_REQUIRED.
   !
@@ -505,6 +514,7 @@ CONTAINS
     ! ---- The equation switches and the particle source (see
     !      source_and_equation_violations), also refused by tr_run.
     CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
+    CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
     DO i = 1, nviol
        CALL push_diag(TRIM(vnames(i)), vcodes(i), TRIM(vmsgs(i)))
     END DO
@@ -847,6 +857,32 @@ CONTAINS
     END SUBROUTINE add
 
   END SUBROUTINE source_and_equation_violations
+
+  ! ----- One TR mesh per process -------------------------------------
+  ! bpsd sizes its equilibrium and metric splines at the first get and keeps
+  ! that size (bpsd_get_equ1D, bpsd_get_metric1D): a later preparation on a
+  ! larger mesh in the same process writes past them (measured under MODELG
+  ! 3: NaN everywhere, or SIGSEGV), across tr_finalize and tr_init too.
+  ! Until the pinned bpsd resizes them (k-yoshimi/bpsd#7), an NRMAX that
+  ! differs from the one of this process's first tr_prep attempt (failed or
+  ! not: tr_prep sizes the splines before steps that can fail) is refused,
+  ! for every MODELG (MODELG 3 was measured to break; the others are held to
+  ! the same rule rather than measured one by one); a task-web job, or a test
+  ! under --forked, is a process of its own.
+  SUBROUTINE mesh_violation(nviol, vnames, vcodes, vmsgs)
+    INTEGER,                          INTENT(INOUT) :: nviol
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN), INTENT(INOUT) :: vnames(:)
+    INTEGER(C_INT),                   INTENT(INOUT) :: vcodes(:)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN),   INTENT(INOUT) :: vmsgs(:)
+
+    IF (g_first_nrmax == 0 .OR. NRMAX == g_first_nrmax) RETURN
+    IF (nviol >= MIN(SIZE(vnames), SIZE(vcodes), SIZE(vmsgs))) RETURN
+    nviol = nviol + 1
+    vnames(nviol) = "NRMAX"
+    vcodes(nviol) = TR_DIAG_OUT_OF_RANGE_AFTER_DEP
+    WRITE(vmsgs(nviol), '(A,I0,A,I0,A)') "NRMAX ", NRMAX, " differs from ", g_first_nrmax, &
+         ", this process's first: bpsd keeps its first mesh (k-yoshimi/bpsd#7); one NRMAX per process"
+  END SUBROUTINE mesh_violation
 
   !-------------------------------------------------------------------
   ! tr_state_abi_version / tr_state_size : layout query (#246).
