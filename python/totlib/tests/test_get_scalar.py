@@ -69,6 +69,6 @@ def test_tot_get_scalar_equals_the_trlib_value_for_the_same_run():
 
 def test_tot_get_scalar_refuses_a_bad_prefix_and_an_unknown_name():
     with Tot() as tot:
-        for bad in ("PNFT", "eq:PNFT", "fp:PNFT", "tr:NOSUCH", "tr:"):
+        for bad in ("PNFT", "eq:PNFT", "fp:PNFT", "tr:NOSUCH", "tr:", "tr:PNFT ", "tr: PNFT"):
             with pytest.raises(TotlibError):
                 tot.get_scalar(bad)

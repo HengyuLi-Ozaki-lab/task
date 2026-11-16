@@ -502,7 +502,7 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION tot_api_get_scalar(name, value) RESULT(ierr) BIND(C, NAME="tot_get_scalar")
     CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
-    REAL(C_DOUBLE),                       INTENT(OUT) :: value
+    REAL(C_DOUBLE),                       INTENT(INOUT) :: value   ! left as it was for an error
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=128) :: fname
     CHARACTER(KIND=C_CHAR) :: cname(33)
@@ -514,7 +514,7 @@ CONTAINS
     END IF
     CALL c_string_to_fortran(name, fname)
     n = LEN_TRIM(fname)
-    IF (n <= 3 .OR. n > 3 + 32 .OR. fname(1:3) /= 'tr:') THEN
+    IF (n <= 3 .OR. n > 3 + 32 .OR. fname(1:3) /= 'tr:' .OR. c_string_ends_blank(name)) THEN
        ierr = TOT_ERR_INVALID
        RETURN
     END IF
@@ -599,7 +599,7 @@ CONTAINS
     END IF
     CALL c_string_to_fortran(name, fname)
     m = LEN_TRIM(fname)
-    IF (m <= 3 .OR. m > 3 + 32 .OR. fname(1:3) /= 'tr:') THEN
+    IF (m <= 3 .OR. m > 3 + 32 .OR. fname(1:3) /= 'tr:' .OR. c_string_ends_blank(name)) THEN
        ierr = TOT_ERR_INVALID
        RETURN
     END IF
@@ -609,6 +609,21 @@ CONTAINS
     cname(m - 2) = C_NULL_CHAR
     ierr = tr_api_history_get(cname, buf, n, got)
   END FUNCTION tot_api_history_get
+
+  ! .TRUE. when the C string S (NUL-terminated, at most 128 characters) ends in a blank: tr_get_scalar refuses a name
+  ! with a blank, so tot's "tr:" names must too (c_string_to_fortran pads with blanks and hides them).
+  PURE FUNCTION c_string_ends_blank(s) RESULT(r)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: s
+    LOGICAL :: r
+    INTEGER :: k
+    r = .FALSE.
+    DO k = 1, 128
+       IF (s(k) == C_NULL_CHAR) THEN
+          IF (k > 1) r = (s(k - 1) == ' ')
+          RETURN
+       END IF
+    END DO
+  END FUNCTION c_string_ends_blank
 
 END MODULE tot_api
 

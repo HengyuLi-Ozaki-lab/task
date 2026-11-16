@@ -423,7 +423,9 @@ CONTAINS
          IDGLOB=1
 !        Library mode: a call of tr_run starts with an evaluation of the step the call before it ended on
 !        (tr_loop's prologue). Its globals are recomputed (WPDOT is 0 at the same T) and the row would
-!        repeat that step's time, so it is not recorded. tr2 keeps its rows as before.
+!        repeat that step's time, so it is not recorded. tr2 keeps its rows as before. Only this time
+!        history (GT, GVT) is guarded: the profile history TRATOG writes (GTR, GVR) and the print of
+!        TRSNAP still repeat that step at a cut; neither is exported by the library.
          IF(NGT.EQ.0) NT_ROW=-1
          IF(.NOT.(tr_library_mode .AND. NT.EQ.NT_ROW)) THEN
             CALL TRATOT

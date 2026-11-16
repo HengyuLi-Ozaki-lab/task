@@ -248,7 +248,7 @@ def test_the_history_after_a_re_preparation_starts_again():
 
 
 def test_a_full_buffer_is_reported_and_stops_recording():
-    # NTM = 10001 rows. NGTSTP 1 with a mesh of 5 radial points makes a row per step cheaply.
+    # NTM = 10001 rows. NGTSTP 1 and a small DT make a row per step.
     with Trlib() as t:
         t.set_param("NGTSTP", 1)
         t.set_param("NTSTEP", 100000)
@@ -283,3 +283,114 @@ def test_a_new_lifecycle_has_no_history_before_its_first_run():
         assert len(t.history("T")["T"]) == 0
         t.run(4)
         assert t.history_length() == 3
+
+
+# What each column holds, as the expression TRATOT writes (tr/trrslt_globals.f90). The test reads the column number
+# from that source, so the library's column map is checked against the code and not against this file's own numbers.
+EXPRESSION = {
+    "NE0": "ANS0(1)", "NEAV": "ANSAV(1)", "TE0": "TS0(1)", "TI0": "TS0(2)", "TEAV": "TSAV(1)", "TIAV": "TSAV(2)",
+    "WPT": "WPT", "AJT": "AJT", "AJOHT": "AJOHT", "AJNBT": "AJNBT", "AJRFT": "AJRFT", "AJBST": "AJBST",
+    "PINT": "PINT", "POHT": "POHT", "PNBT": "PNBT", "PRFE": "PRFT(1)", "PRFD": "PRFT(2)", "PNFT": "PNFT",
+    "POUT": "POUT", "VLOOP": "VLOOP", "ALI": "ALI", "RQ1": "RQ1", "Q0": "Q0", "WPDOT": "WPDOT",
+    "TAUE1": "TAUE1", "TAUE2": "TAUE2", "BETAP0": "BETAP0", "BETA0": "BETA0", "BETAA": "BETAA", "ZEFF0": "ZEFF0",
+    "QF": "QF", "RIP": "RIP", "PEXE": "PEXT(1)", "PEXI": "PEXT(2)",
+    "PECE": "PRFVT(1,1)", "PECI": "PRFVT(2,1)", "PLHE": "PRFVT(1,2)", "PLHI": "PRFVT(2,2)",
+    "PICE": "PRFVT(1,3)", "PICI": "PRFVT(2,3)", "TAUE98": "TAUE98", "H98Y2": "H98Y2", "NLAV": "ANLAV(1)",
+    "PRLT": "PRLT",
+}
+
+
+def _source_columns():
+    import re
+    src = (REPO / "tr" / "trrslt_globals.f90").read_text()
+    cols = {}
+    for num, expr in re.findall(r"GVT\(NGT,\s*(\d+)\)\s*=\s*GUCLIP\(([^!\n]*)\)", src):
+        cols[expr.replace(" ", "")] = int(num)
+    return cols
+
+
+def _write_gvt(lib, row, col, value):
+    ntm = 10001
+    arr = (ctypes.c_float * (ntm * 110)).in_dll(lib, "__trcomm_profile_MOD_gvt")
+    arr[(col - 1) * ntm + row] = value
+
+
+@pytest.mark.parametrize("name", sorted(EXPRESSION))
+def test_a_name_reads_the_column_the_source_writes_its_quantity_to(name):
+    # A sentinel (the column number + 0.5) in each column of the last row: the name must return the sentinel of
+    # the column TRATOT writes its expression to.
+    col = _source_columns()[EXPRESSION[name].replace(" ", "")]
+    lib = _ffi.load_library()
+    with Trlib() as t:
+        t.run(4)
+        last = t.history_length() - 1
+        for c in range(1, 111):
+            _write_gvt(lib, last, c, c + 0.5)
+        assert t.history(name)[name][-1] == col + 0.5, (name, col)
+
+
+def test_every_expression_in_the_table_is_a_column_of_the_source():
+    cols = _source_columns()
+    assert len(cols) == 110
+    for name, expr in EXPRESSION.items():
+        assert expr in cols, name
+    assert set(EXPRESSION) == set(COLUMNS) - {"T"}
+
+
+def test_derived_names_are_computed_from_the_columns_the_source_gives():
+    cols = _source_columns()
+    lib = _ffi.load_library()
+    with Trlib() as t:
+        t.run(4)
+        last = t.history_length() - 1
+        for c in range(1, 111):
+            _write_gvt(lib, last, c, c + 0.5)
+        h = t.history(["PRFST", "BETAN"])
+        prf = sum(cols[f"PRFT({k})"] + 0.5 for k in (1, 2, 3, 4))       # species 3 and 4 included
+        assert h["PRFST"][-1] == pytest.approx(prf, rel=1e-6)
+        v = lambda e: cols[e] + 0.5                                      # noqa: E731
+        betan = 100.0 * v("BETAA") / (v("RIP") / (v("RA") * v("BB")))
+        assert h["BETAN"][-1] == pytest.approx(betan, rel=1e-6)
+
+
+def test_the_average_and_line_averaged_values_match_the_state():
+    # Independent of the column map: a circular plasma weights a cell by its radius, so NEAV, TEAV, TIAV are the
+    # radius-weighted means of the state's profiles to a few per cent, and NLAV is the plain mean of ne. Electron
+    # and ion temperatures start 12 and 8 keV apart, and ne is twice the ion density, so a wrong species or column
+    # (NEAV for the density of the first ion, TEAV for TIAV) is out of tolerance.
+    with _Iter01(), Trlib() as t:
+        _iter01_hot(t)
+        t.set_param("PT[1]", 12.0)
+        for i in (2, 3, 4):
+            t.set_param(f"PT[{i}]", 8.0)
+        t.run(20)
+        s = t.get_state()
+        n = len(s.RN)
+        w = [(i + 0.5) for i in range(n)]
+        ne = [r[0] for r in s.RN]
+        te = [r[0] for r in s.RT]
+        ti = [r[1] for r in s.RT]
+        ni = [r[1] for r in s.RN]
+
+        def weighted(values, density):                 # radius-weighted, density-weighted mean
+            return sum(v * d * x for v, d, x in zip(values, density, w)) / sum(d * x for d, x in zip(density, w))
+
+        h = t.history(["NEAV", "TEAV", "TIAV", "NLAV"])
+        assert h["NEAV"][-1] == pytest.approx(weighted(ne, [1.0] * n), rel=0.05)
+        assert h["TEAV"][-1] == pytest.approx(weighted(te, ne), rel=0.05)
+        assert h["TIAV"][-1] == pytest.approx(weighted(ti, ni), rel=0.05)
+        assert h["NLAV"][-1] == pytest.approx(sum(ne) / n, rel=0.05)
+        assert abs(h["TEAV"][-1] - h["TIAV"][-1]) > 0.5      # the two differ: a swap is seen
+
+
+def test_a_run_of_one_step_then_a_changed_parameter_restarts_at_t_zero():
+    # NT_ROW (tr_eval) keeps the step of the last row; tr_prep sets NGT to 0, and the next run must record its
+    # own step 0 although the old NT_ROW can be 0 too: run(1) records step 0 only (NGTSTP 2).
+    with Trlib() as t:
+        t.run(1)
+        assert t.history_length() == 1
+        t.set_param("RR", 3.1)
+        t.run(4)
+        assert t.history_length() == 3
+        h = t.history("T")["T"]
+        assert h[0] == 0.0 and np.all(np.diff(h) > 0.0)

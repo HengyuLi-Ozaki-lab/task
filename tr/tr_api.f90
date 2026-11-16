@@ -93,6 +93,8 @@ MODULE tr_api
   ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
   ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
   INTEGER, SAVE :: g_first_nrmax = 0
+  ! The sizes of the scalar table and of the history table (the constructors below must match them).
+  INTEGER, PARAMETER :: N_SCALARS = 31, N_HISTORY = 47
   ! The same fact seen from the eq: names: once this process has made a preparation attempt (g_first_nrmax /= 0), an
   ! eq: set is refused (eq_name_refused), for the same bpsd reason. Both come off together with 61ff3cdf's guard.
 
@@ -1137,7 +1139,7 @@ CONTAINS
   ! The order here is the order tr_scalar_name enumerates.
   !-------------------------------------------------------------------
   PURE FUNCTION scalar_table() RESULT(names)
-    CHARACTER(LEN=8) :: names(31)
+    CHARACTER(LEN=8) :: names(N_SCALARS)
     names = [ CHARACTER(LEN=8) :: &
          'T', 'WPT', 'AJT', 'Q0', 'BETA0', 'BETAP0', 'BETAA', 'BETAN', &
          'TAUE1', 'TAUE2', 'ZEFF0', 'ALI', 'RQ1', 'AJRFT', &
@@ -1245,7 +1247,7 @@ CONTAINS
     CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
     INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
     INTEGER(C_INT) :: ierr
-    CHARACTER(LEN=8) :: tab(31)
+    CHARACTER(LEN=8) :: tab(N_SCALARS)
 
     tab = scalar_table()
     IF (i < 1 .OR. i > SIZE(tab)) THEN
@@ -1259,7 +1261,7 @@ CONTAINS
   ! TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for a name not in the table (value is left alone).
   FUNCTION tr_api_get_scalar(name, value) RESULT(ierr) BIND(C, NAME="tr_get_scalar")
     CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
-    REAL(C_DOUBLE),                       INTENT(OUT) :: value
+    REAL(C_DOUBLE),                       INTENT(INOUT) :: value   ! left as it was for an error
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=16) :: fname
     REAL(rkind) :: v
@@ -1302,8 +1304,8 @@ CONTAINS
   ! species TRGLOB sums). PEXST has no such columns (GVT holds PEXT(1:2) only).
   !-------------------------------------------------------------------
   SUBROUTINE history_table(names, cols)
-    CHARACTER(LEN=8), INTENT(OUT) :: names(47)
-    INTEGER,          INTENT(OUT) :: cols(47)
+    CHARACTER(LEN=8), INTENT(OUT) :: names(N_HISTORY)
+    INTEGER,          INTENT(OUT) :: cols(N_HISTORY)
     names = [ CHARACTER(LEN=8) :: &
          'T', 'NE0', 'NEAV', 'TE0', 'TI0', 'TEAV', 'TIAV', 'WPT', &
          'AJT', 'AJOHT', 'AJNBT', 'AJRFT', 'AJBST', 'PINT', 'POHT', 'PNBT', &
@@ -1364,7 +1366,7 @@ CONTAINS
   ! tr_history_count : the number of named columns.
   FUNCTION tr_api_history_count() RESULT(n) BIND(C, NAME="tr_history_count")
     INTEGER(C_INT) :: n
-    n = 47
+    n = N_HISTORY
   END FUNCTION tr_api_history_count
 
   ! tr_history_name : the I-th column name (1-based), as tr_scalar_name does.
@@ -1373,10 +1375,10 @@ CONTAINS
     CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
     INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
     INTEGER(C_INT) :: ierr
-    CHARACTER(LEN=8) :: names(47)
-    INTEGER :: cols(47)
+    CHARACTER(LEN=8) :: names(N_HISTORY)
+    INTEGER :: cols(N_HISTORY)
 
-    IF (i < 1 .OR. i > 47) THEN
+    IF (i < 1 .OR. i > N_HISTORY) THEN
        ierr = TR_ERR_INVALID
        RETURN
     END IF
@@ -1393,8 +1395,8 @@ CONTAINS
     INTEGER(C_INT),                       INTENT(OUT) :: got
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=16) :: fname
-    CHARACTER(LEN=8) :: names(47)
-    INTEGER :: cols(47)
+    CHARACTER(LEN=8) :: names(N_HISTORY)
+    INTEGER :: cols(N_HISTORY)
     INTEGER :: j, k, m
     LOGICAL :: ok
 
@@ -1410,7 +1412,7 @@ CONTAINS
     END IF
     CALL history_table(names, cols)
     k = 0
-    DO j = 1, 47
+    DO j = 1, N_HISTORY
        IF (TRIM(fname) == TRIM(names(j))) k = j
     END DO
     IF (k == 0) THEN

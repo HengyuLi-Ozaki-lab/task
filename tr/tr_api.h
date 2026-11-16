@@ -169,7 +169,9 @@ void tr_check_bpsd_pull(int *ok);
    tr_scalar_name: the i-th name (1-based) as a NUL-terminated string in buf of buflen characters;
      TR_ERR_INVALID past either end or when the name and its NUL do not fit.
    tr_get_scalar: the value of one name (exact, upper case); TR_ERR_NOT_INIT before tr_init, TR_ERR_INVALID for a
-     name not listed (*value is left as it was). */
+     name not listed (*value is left as it was). After tr_init and before the first tr_run the values are those of
+     the previous lifecycle in this process (as tr_get_state's scalars are), 0 in a fresh process: read them after
+     a run. */
 int tr_scalar_count(void);
 int tr_scalar_name(int i, char* buf, int buflen);
 int tr_get_scalar(const char* name, double* value);

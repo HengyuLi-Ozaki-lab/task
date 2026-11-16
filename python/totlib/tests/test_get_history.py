@@ -82,7 +82,7 @@ def test_tot_history_equals_the_tr_history_of_the_same_image():
 
 def test_tot_history_refuses_a_bad_name():
     with Tot() as tot:
-        for bad in (["T"], ["eq:T"], ["tr:NOSUCH"]):
+        for bad in (["T"], ["eq:T"], ["tr:NOSUCH"], ["tr:T "]):
             with pytest.raises(TotlibError):
                 tot.history(bad)
 

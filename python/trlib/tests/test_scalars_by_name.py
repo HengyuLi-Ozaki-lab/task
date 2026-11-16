@@ -155,3 +155,12 @@ def test_scalar_count_name_and_a_short_buffer_in_c():
     assert lib.tr_scalar_name(31, small, 6) == _ffi.TR_ERR_INVALID
     exact = ctypes.create_string_buffer(7)
     assert lib.tr_scalar_name(31, exact, 7) == 0 and exact.value == b"TAUE98"
+
+
+def test_an_unknown_name_leaves_the_value_as_it_was():
+    lib = _ffi.load_library()
+    with Trlib():
+        out = ctypes.c_double(-7.0)
+        assert lib.tr_get_scalar(b"NOSUCH", ctypes.byref(out)) == _ffi.TR_ERR_INVALID
+        assert lib.tr_get_scalar(b"WPT ", ctypes.byref(out)) == _ffi.TR_ERR_INVALID
+        assert out.value == -7.0
