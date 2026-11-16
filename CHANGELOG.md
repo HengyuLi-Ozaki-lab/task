@@ -218,6 +218,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **TR: `MDLEQE` 2 with `MDLEQB` 1 dropped the electron temperature equation.** `TR_TABLE` (`tr/trprep.f90`) took
+  equation 3 as the bulk-ion density, which it is only without the B_theta equation; with it, equation 3 is the
+  electron temperature, which was then left out of the solve (a PLATO case ran to Te0 117 eV instead of 228 eV). It
+  now takes the equation after the electron's temperature and rotation (`MDLEQU`), the bulk-ion density whenever the
+  temperatures are solved (`MDLEQT` 1, which the registry does not change). `MDLEQE` 0 and `MDLEQB` 0 are unchanged;
+  with the fix `MDLEQE` 2 and 0 reach the same steady state for a hydrogen plasma, as they did with `MDLEQB` 0.
 - **TR: a particle source far from every mesh point ended the run in NaN.** `TRPSCA` (`tr/trpsc.f90`) normalised the
   Gaussian by its volume integral, which underflowed to 0 when the centre `PSCR0` lay many widths `PSCRW` from every
   mesh point (outside the plasma, or narrower than the mesh spacing), so the source was infinite. The exponent is
