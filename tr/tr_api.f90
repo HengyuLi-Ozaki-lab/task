@@ -1464,8 +1464,8 @@ CONTAINS
   ! with that prologue (the plan's findings F2; test_continue.py measures
   ! it on ITER under MODELG 9).
   !
-  ! Refused (TR_ERR_INVALID, a REFUSED record with code 0, one line on
-  ! unit 6, nothing run): before a preparation; after a failed tr_prep or
+  ! Refused (TR_ERR_INVALID, a REFUSED record with code 0, a line on
+  ! unit 6 for each finding, nothing run): before a preparation; after a failed tr_prep or
   ! tr_loop of tr_run or tr_continue, until a tr_run prepares again (it
   ! prepares after any set; a tr_run with nothing set goes on from the
   ! failed state, as before); after a structural set since the preparation

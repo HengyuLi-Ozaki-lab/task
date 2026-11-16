@@ -958,12 +958,17 @@ Commit: `feat(tr): tr_continue and parameter classes; the current ramp is taken 
 - [ ] **Step 3: The baseline** (corrected 2026-11-17: `regen-baselines.yml` has only `workflow_dispatch`, and a dispatch
   is unreachable because the fork's default branch has no `.github/`; it has never run from a branch push).
   - On a scratch branch `regen/tr-iter01-m9` cut from PR 3's tip, one commit, never merged, edits that workflow: a
-    temporary `push: branches: ['regen/**']` trigger, and `tr_iter01_m9` appended to the `FIXTURES` fallback and to the
-    input default. Keep the full list: with `tr_iter01_m9` alone, the step that collects the `eqdata` blobs exits 1 on the
-    missing `eqdata.ITER01`.
-  - Push that branch to `origin`; the run builds `tr2` on Linux and uploads `regen-output/`. Take
-    `test_run/baselines/tr_iter01_m9/metrics.json` from the artifact, commit it on PR 3's own branch (not the regen one),
-    and delete the regen branch.
+    temporary `push: branches: ['regen/**']` trigger, and `tr_iter01_m9` put FIRST in the `FIXTURES` fallback and in the
+    input default (the fixture loop exits 1 on the first failing fixture, so the new one runs before any that could stop
+    it). Keep the full list: with `tr_iter01_m9` alone, the step that collects the `eqdata` blobs exits 1 on the missing
+    `eqdata.ITER01`.
+  - Push that branch to `origin`; the run builds `tr2` on Linux and uploads `regen-output/`. The artifact's root is
+    `regen-output/` and holds one folder per fixture. Copy `tr_iter01_m9/metrics.json` from it to
+    `test_run/baselines/tr_iter01_m9/metrics.json`, commit it on PR 3's own branch (not the regen one), and delete the
+    regen branch.
+  - Compare the 7 regenerated existing baselines (`eq_iter01`, `eq_tst2`, `tot_demo2014_short`, `tot_ht6m_short`,
+    `eq_jt60`, `tr_iter01`, `tr_tst2`) with the committed ones at 1e-10 (`test_run/scripts/compare_metrics.py`). That is
+    Linux evidence that the `tr2` baselines did not move; report it in the PR.
   - The equivalence test then runs on Linux CI at 1e-10 (it skips without the baseline, and off Linux).
 - [ ] **Step 4: Acceptance, once, recorded in the PR.**
   - Through `trlib`, the three stages at `NTEQIT=50` (`DT=0.02`, `run(1500)`; then `RIPE=9`, `PNBTOT=25`,
@@ -1143,7 +1148,7 @@ Every listed name gets a test that its last row equals the final scalar of PR 2'
 - **`eq:` names reached the bpsd#7 overrun with no guard**, and some did nothing (`eq:RR`, `eq:RA`, `eq:RKAP`,
   `eq:RDLT`, `eq:BB`, `eq:RIP` under `MODELG` 9; `eq:KNAMEQ` always). They are refused at set time now; every `eq:`
   name is refused after the process's first preparation attempt, until the pinned bpsd has #7.
-- **`REFUSED` is reserved** for `tr_continue` (PR 3); nothing records it.
+- **`REFUSED` is reserved** for `tr_continue` (PR 3); nothing records it. *(Superseded by Task 6: `tr_continue` records it.)*
 - **EQ's reason** (`EQ_ERRMSG`) is appended to an `EQ_FAILED` record's detail; `libtrapi.so` has no `eq_last_error`.
 - **The `eq:` guard closes one route to the bpsd#7 overrun, not all.** Measured on an unpatched bpsd: `MODELG` 9 with
   `RA` 0.5 in one lifecycle, then `RA` 1.0 (or the default) in the next, fails with `EQ_FAILED` 103 at q-scaling

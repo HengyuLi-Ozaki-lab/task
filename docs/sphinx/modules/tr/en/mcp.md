@@ -196,7 +196,7 @@ and friends.
 `run` or `continue_run` (`class` 1 in `describe_parameters`: `RIPE`, `PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`)
 take effect at its first step, and `NT`, `T` and the history go on. After a **structural** parameter (`class` 0: every other name
 and every `eq:` name; -1 is unknown) it is refused with `[failure: kind=REFUSED ...]` naming the last one, and the next `run`
-prepares again; it is refused too before a `run`, after a failed run, and for a negative count. `continue_run(0)` only
+prepares again; it is refused too before a `run`, and after a failed run (a negative count is refused by `trlib` before the call, without a record). `continue_run(0)` only
 checks. `run(0)` takes no step but the loop's exit sets `RIPS = RIPE`, so a ramp set before it is lost: do not use it as a
 smoke test between a set and a run. A run in several calls is not bit for bit one call; `NT` counts on, so the `NTEQIT` and
 `NTSTEP` cadences are counted from the preparation. When a call ends on an `NTEQIT` re-solve the last history row holds the

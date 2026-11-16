@@ -199,7 +199,7 @@ def test_nteqit():
 
 
 def test_with_nclass_tr2_s_c_is_not_a_continuation():
-    """With NCLASS (MDNCLS 1), tr2's C differs from tr_continue, and tr_continue equals one call.
+    """With NCLASS (MDNCLS != 0), tr2's C differs from tr_continue, and tr_continue equals one call.
 
     tr2's C starts NT at 0 again, and TRCFET takes NCLASS's resistivity only when NT /= 0
     (tr/trcoef_resistivity.f90:123), so the first step after tr2's cut has the classical one; tr_continue counts NT on.

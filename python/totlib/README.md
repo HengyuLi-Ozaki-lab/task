@@ -196,7 +196,7 @@ power deposition, fp → tr current source, etc.) lives in
 `continue_run` take effect at its first step; `nt`, `T` and the history go on. Every other `tr:` name and every `eq:` name is
 structural: set after a preparation it makes `continue_run` refuse (`TotlibInvalidParamError`, the message carries TR's
 record and names the last such name), and the next `run` prepares again. TOT's `eq:` setters tell TR for this; TR's
-refusal of most `eq:` names after the first preparation is not applied in `tot`. There is no `Tot.param_class`:
+refusal of every `eq:` name after the process's first preparation attempt (and of seven always) is not applied in `tot`. There is no `Tot.param_class`:
 `Trlib.param_class` answers for the same names (`eq:` names are 0). `continue_run(0)` only checks; `run(0)` takes no step
 but the loop's exit sets `RIPS = RIPE`, so a ramp set before it is lost. `run` and `continue_run` check the count (0 to
 2**31 - 1) before the call. See `python/trlib/README.md`, "Continuing a run", for what it equals.

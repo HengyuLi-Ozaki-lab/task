@@ -10,7 +10,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, #96 PR 1).
+- **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, task-web-client#96).
   - `tr_set_param` and `tr_set_param_str` send a name that starts with `eq:` to EQ's registry (`eq:RB`, `eq:NRMAX`,
     `eq:NSGMAX`, ...); an unknown name returns `TR_ERR_INVALID`, and an accepted one makes the next `tr_run` prepare
     again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (they do nothing
@@ -25,13 +25,13 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     (`EQ_FAILED` from the periodic `MODELG` 9 re-solve (`NTEQIT`) and from each exit of the q-scaling, with EQ's own
     reason appended to the detail when EQ set one,
     `TR_CHECK` from `TRCHCK`, `NONFINITE`, `PREP_FAILED`, `OTHER`; `REFUSED` is the record of a refused `tr_continue`, below), the Fortran code and
-    `nt=.. t=.. s: detail`. The first failure is kept; `tr_init` and every `tr_run` clear it. The library-mode
+    `nt=.. t=.. s: detail`. The first failure is kept; `tr_init`, every `tr_run` and every `tr_continue` clear it. The library-mode
     behaviour is gated; `tr2`'s output is byte-identical on a single healthy `R` (tr.ITER01 with `MODELG` 9,
     `NTEQIT` 50 and 0); the two #228 fixes below apply to `tr2` too.
   - `trlib`: `TrFailure`, `TrlibRunError.failure` (`None` when the `.so` predates `tr_last_error`) and
     `Trlib.last_error()`. `tr_mcp`: the run error string carries the record, and `describe_parameters` has an
     `eq_names` line. TOT and the mono build stop and record too, but `tot_api.h` and `totlib` have no accessor yet.
-- **TR library: outputs by name** (the MODELG 9 heating study of task-web, #96 PR 2).
+- **TR library: outputs by name** (the MODELG 9 heating study of task-web, task-web-client#96).
   - `tr_scalar_count`, `tr_scalar_name`, `tr_get_scalar(name, &value)`: 31 global results as `TRGLOB` last computed
     them (`T`, `WPT`, `AJT`, `Q0`, the betas, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`, `AJRFT`, `PNFT`, `QF`, `PINT`,
     `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`,
@@ -56,7 +56,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `Trlib.history(names=None)` returns `{name: ndarray}` (float64 from the single-precision rows: about 7 digits),
   with `history_names`, `history_length`, `history_full`; `tot_history_*` and `Tot.history` take `tr:<NAME>` names;
   `tr_mcp` has `get_history` and `describe_history_schema` (unit and meaning of each column).
-- **TR library: `tr_continue`, parameter classes, `tot_continue`** (the MODELG 9 heating study of task-web, #96 PR 3).
+- **TR library: `tr_continue`, parameter classes, `tot_continue`** (the MODELG 9 heating study of task-web, task-web-client#96).
   - `tr_continue(nsteps)` advances the prepared case without preparing again. The control parameters set since the
     last `tr_run` or `tr_continue` (`RIPE`, `PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`) take effect at its
     first step; `NT`, `T` and the history go on, and RIP ramps from the last call's `RIPE` to `RIPE` over its steps. It
@@ -65,19 +65,22 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     `test_continue_vs_tr2.py`, and ITER under `MODELG` 9 in three stages, `tr_iter01_m9`, below).
   - `tr_param_class(name)`: 1 for a control parameter, 0 for a structural one (any other name the setters take, and every
     `eq:` name), -1 for a name they do not know; callable before `tr_init`. `Trlib.continue_run`, `Trlib.param_class`.
-  - `tr_continue` refuses (`TR_ERR_INVALID`, a `REFUSED` record in `tr_last_error`, one line on unit 6, nothing run):
-    before a preparation; after a failed `tr_prep` or loop, until a `tr_run` prepares again; after a structural set
-    since the preparation (the record names the last one: `tr_run` prepares again); for a negative count; and for a
-    value `tr_run`'s own checks refuse (with `MODELG` 9, a negative `RIPE`). `TrlibParamError` carries the record as
-    `.failure`. `tr_continue(0)` makes the checks and does nothing else, and the control sets stay pending.
+  - `tr_continue` refuses (`TR_ERR_INVALID`, a `REFUSED` record in `tr_last_error`, a line on unit 6 for each finding,
+    nothing run): before a preparation; after a failed `tr_prep` or loop, until a `tr_run` prepares again; after a
+    structural set since the preparation (the record names the last one: `tr_run` prepares again); for a negative
+    count; and for a value `tr_run`'s own checks refuse (with `MODELG` 9, a negative `RIPE`). `TrlibParamError` carries
+    the record as `.failure`, except for a negative count: the C function refuses it with a record, but `Trlib` and
+    `Tot` refuse a count outside 0 to 2**31 - 1 before the call, without one. `tr_continue(0)` makes the checks and does
+    nothing else, and the control sets stay pending.
   - `tr_run(0)` is unchanged and has a flaw `tr_continue(0)` avoids: the loop's exit sets `RIPS = RIPE` even with no step,
     so a ramp set before `run(0)` is lost (`RIPS` 1, `RIPE` 2: `run(0)` then `run(10)` ends at 1.0 MA, not 2.0). The
-    docstrings of `run` in `tr_mcp` and `tot_mcp` called `ntmax=0` a valid no-op and a smoke test; they now say so.
+    docstrings of `run` in `tr_mcp` and `tot_mcp` called `ntmax=0` a valid no-op and a smoke test; they now say that `run(0)`
+    after a ramp set loses the ramp, that it is no smoke test between a set and a run, and that `continue_run(0)` only checks.
   - What it does not equal. (1) One call: a run in several calls is not bit for bit one call, as each call begins with
     the prologue (ITER, `MODELG` 9, `NTEQIT` 50, calls of 100 steps: `WPT` 1e-12, the whole state 1.3e-10). (2) `NT` counts
     on where `tr2`'s `C` starts it at 0, so the steps chosen by `NT` (the `NTEQIT` re-solve, the globals every `NTSTEP`,
     `NGTSTP`, `NGRSTP` steps) are counted from the preparation: `tr_continue` equals `C` when the steps before the cut are
-    a multiple of them. (3) With NCLASS (`MDNCLS` 1), `tr2`'s `C` takes the classical resistivity on its first step
+    a multiple of them. (3) With NCLASS (`MDNCLS` != 0), `tr2`'s `C` takes the classical resistivity on its first step
     (`NT` = 0, `tr/trcoef_resistivity.f90:123`) and `tr_continue` does not: it equals one call there, not `C`.
   - Two notes on what a run reads back. The last history row of a call that ends on an `NTEQIT` re-solve holds the
     q(0) from before it, as `tr2` prints it; the scalar `Q0` is what `TRCALC` recomputes after (7.7e-5 to 4.9e-4
@@ -88,7 +91,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     `TOT_ERR_INVALID` and the exception text carries the record. TOT has no parameter-class query: `Trlib.param_class` answers
     for the same names. TOT's `eq:` setters (number and string) tell TR (`tr_param_note_external_set`): an `eq:` set after a
     preparation is structural, so `tot_continue` refuses naming it and the next `tot_run` prepares again. Before, a TOT `eq:`
-    set did neither. This also means that a TOT `eq:` set alone now makes the next `tot_run` prepare again, which widens the
+    set did neither. `Tot.run` and `Tot.continue_run` check the count (0 to 2**31 - 1) before the call. This also means that a TOT `eq:` set alone now makes the next `tot_run` prepare again, which widens the
     unguarded route to the bpsd overrun of k-yoshimi/bpsd#7 (TOT's `eq:` dispatcher has no guard; the protection is
     bpsd#7 itself).
   - `tr_mcp` and `tot_mcp`: a `continue_run` tool; `tr_mcp`'s `describe_parameters` gives each name its `class`
@@ -270,7 +273,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `(RIPE - RIPS) / (NTMAX * DT)`; it is `(RIPE - RIPS) / ((NTMAX - NT) * DT)`, so that `tr_continue` ramps over its own
   steps. In `tr2` the line is reached only with `NT` = 0 (`R`: `tr_prep` sets it; `C`: `trmenu.f90:87`; `MDLUF` 1 and 3
   take the other branch), so it is the same number and the baselines do not move.
-- **TR library: a run made in several `tr_run` calls records the step at each cut once in the history.** In library
+- **TR library: a run made in several `tr_run` or `tr_continue` calls records the step at each cut once in the history.** In library
   mode every call began with an evaluation of the step the call before ended on, which wrote that step's row of
   `GT`/`GVT` a second time (with `WPDOT` 0). It is not recorded again (`tr/trexec.f90`, `tr_eval`); the profile history
   (`TRATOG`) and `TRSNAP`'s print still repeat the step and are not exported. `tr2` is unchanged.
@@ -342,8 +345,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **`Tot.run` took any integer as a C int.** `2**32 + 5` ran 5 steps and `2**31` read as negative. `Tot.run` and
-  `Tot.continue_run` check 0 to 2**31 - 1 as `Trlib.run` does and raise `TotlibInvalidParamError` before the call.
+- **`Tot.run` took any integer as a C int.** `2**32 + 5` ran 5 steps and `2**31` read as negative. It checks 0 to
+  2**31 - 1 as `Trlib.run` does and raises `TotlibInvalidParamError` before the call.
 - **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
   and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
   `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first

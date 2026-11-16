@@ -106,8 +106,8 @@ int tot_run(int ntmax);
  * preparing again. The control parameters set since the last tot_run or tot_continue ("tr:" RIPE, PNBTOT, PICTOT,
  * PECTOT, PLHTOT, NTEQIT, TPRST) take effect at its first step; NT, T and the history go on. tot runs only TR, as
  * tot_run does. Every "eq:" name set after a preparation is structural: the eq dispatcher tells TR (as tr_set_param
- * does), so the next tot_run prepares again and tot_continue refuses, naming it. TR's refusal of most eq: names
- * after the first preparation is not applied in tot.
+ * does), so the next tot_run prepares again and tot_continue refuses, naming it. TR refuses every eq: name after the process's first
+ * preparation attempt (and seven names always: eq_name_refused, tr/tr_api.f90); that refusal is not applied in tot.
  * Returns 0; 1 (TOT_ERR_INVALID) when tr_continue refuses (nothing ran; the record, kind REFUSED, is TR's
  * tr_last_error, read through trlib in the same image) or nsteps < 0; 2 before tot_init; 3 when the loop fails
  * (the record is tr_last_error's).

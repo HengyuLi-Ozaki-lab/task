@@ -217,7 +217,7 @@ int tr_history_get(const char* name, double* buf, int n, int* got);
      several calls is not bit for bit one call: each call begins with the loop's prologue (measured on ITER under
      MODELG 9 with NTEQIT 50, calls of 100 steps: WPT 1e-12, the whole state 1.3e-10; on the history row after a cut
      that falls on a re-solve WPDOT differs by 15 % to 36 %, TAUE2 and H98Y2 by 2 % to 3 %).
-     Refused (TR_ERR_INVALID with a REFUSED record in tr_last_error, one line on unit 6, nothing run):
+     Refused (TR_ERR_INVALID with a REFUSED record in tr_last_error, a line on unit 6 for each finding, nothing run):
       - before a preparation (tr_run prepares);
       - after a failed tr_prep or loop of tr_run or tr_continue, until a tr_run prepares again (it does after any
         tr_set_param or tr_set_param_str);

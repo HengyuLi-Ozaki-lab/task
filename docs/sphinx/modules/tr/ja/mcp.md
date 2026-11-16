@@ -185,7 +185,7 @@ tr-mcp print-config --client cursor --scope project
 `continue_run(nsteps)` は準備済みの計算を再準備せずに進めます. 前回の `run` / `continue_run` 以降に設定した**制御パラメータ**
 (`describe_parameters` の `class` が 1: `RIPE`, `PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`) は最初のステップから効き,
 `NT`・`T`・履歴は続きます. **構造パラメータ** (`class` 0: ほかのすべての名前と `eq:` 名, -1 は未知) のあとは `[failure: kind=REFUSED ...]`
-で最後の名前を示して拒否され, 次の `run` が再準備します. 準備前・失敗した計算のあと・負のステップ数も拒否です. `continue_run(0)` は
+で最後の名前を示して拒否され, 次の `run` が再準備します. 準備前・失敗した計算のあとも拒否です (負のステップ数は `trlib` が呼び出しの前に記録なしで拒否します). `continue_run(0)` は
 検査だけです. `run(0)` はステップを進めませんがループの出口で `RIPS = RIPE` になり, 事前に設定したランプが失われます (設定と実行の間の
 動作確認に使わないでください). 複数回に分けた計算は 1 回の計算とビット単位では一致せず, `NT` は続くので `NTEQIT` と `NTSTEP` の周期は
 準備からの数え方です. 呼び出しが `NTEQIT` の再計算で終わるとき, 履歴の最終行の q(0) は再計算前の値 (`tr2` の表示と同じ), スカラー `Q0` は
