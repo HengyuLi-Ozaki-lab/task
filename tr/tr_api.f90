@@ -93,10 +93,10 @@ MODULE tr_api
   ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
   ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
   INTEGER, SAVE :: g_first_nrmax = 0
-  ! The sizes of the scalar table and of the history table (the constructors below must match them).
-  INTEGER, PARAMETER :: N_SCALARS = 31, N_HISTORY = 47
   ! The same fact seen from the eq: names: once this process has made a preparation attempt (g_first_nrmax /= 0), an
   ! eq: set is refused (eq_name_refused), for the same bpsd reason. Both come off together with 61ff3cdf's guard.
+  ! The sizes of the scalar table and of the history table (the constructors below must match them).
+  INTEGER, PARAMETER :: N_SCALARS = 31, N_HISTORY = 47
 
   ! #246: layout query, callable before tr_init.
   PUBLIC :: tr_api_state_abi_version, tr_api_state_size

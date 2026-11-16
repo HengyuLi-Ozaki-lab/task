@@ -359,7 +359,8 @@ class Trlib:
     def history_length(self) -> int:
         """Rows recorded since the last preparation: the state at t = 0, then one per ``NGTSTP`` steps.
 
-        A call of :meth:`run` adds ``nsteps // NGTSTP`` rows (counting from the step it starts on). 0 before the
+        A row is recorded at every step that is a multiple of ``NGTSTP``, so a call of :meth:`run` adds the multiples among the
+        steps it runs (``nsteps // NGTSTP`` only when it starts on one: ``run(5)`` twice adds 3 and 3, ``run(1)`` adds 0 or 1). 0 before the
         first run. ``tr_prep`` starts the history again, so a run after a changed parameter does.
         """
         if self._closed:

@@ -177,7 +177,7 @@ int tr_scalar_name(int i, char* buf, int buflen);
 int tr_get_scalar(const char* name, double* value);
 
 /* The run's history by name (PR 2 of #96, Task 5b). TR records a row every NGTSTP steps (default 2) in single
-   precision: the state at t = 0 first, then one row per NGTSTP steps; a call of tr_run adds nsteps / NGTSTP rows.
+   precision: the state at t = 0 first, then a row at every step that is a multiple of NGTSTP, so a call of tr_run adds the multiples among the steps it runs (nsteps / NGTSTP only when it starts on one: run(5) twice adds 3 and 3, run(1) adds 0 or 1).
    tr_prep starts the history again (tr_run prepares again after a changed parameter). NTM = 10001 rows; when they
    are full recording stops silently in TR, and tr_history_full reports it.
    tr_history_length: rows recorded (0 before a run). tr_history_full: 1 when the rows are full, else 0.

@@ -4,7 +4,8 @@ TR records a row every NGTSTP steps (``tr_eval`` calls ``TRATOT``): ``GT(NGT)`` 
 ``GVT(NGT, 1:110)`` the globals, in single precision, in ``tr/trrslt_globals.f90``. ``tr_prep`` sets NGT to 0
 (``tr/trprep.f90``), so a run starts a history and a re-preparation starts it again. NTM = 10001 rows
 (``tr/trcom0.f90``); TRATOT stops recording when they are full. The first row is the state at t = 0, and each
-later call of ``tr_run`` adds nsteps / NGTSTP rows: the second call's first evaluation repeats the step the
+later call of ``tr_run`` adds the multiples of NGTSTP among the steps it runs (nsteps / NGTSTP when it starts on
+one): the second call's first evaluation repeats the step the
 first call ended on (``tr_loop``'s prologue), and that row is not recorded twice. One test per case.
 """
 from __future__ import annotations

@@ -164,6 +164,7 @@ tr-mcp print-config --client cursor --scope project
 |---|---|---|
 | `init` | ライブラリ初期化 (`tr_init`) | なし |
 | `set_param` | 単一パラメータ設定 | `name`, `value` (配列は `NAME[i]`) |
+| `set_param_str` | 文字列パラメータ設定 (`KNAMEQ`) | `name`, `value` |
 | `set_params` | まとめて設定 (scalar / list / dict) | `params` |
 | `run` | 時間ステップ進行 (`tr_run`) | `ntmax` (default=1) |
 | `get_state` | 現在の状態取得 (`tr_get_state`) | なし |

@@ -1060,11 +1060,14 @@ Consequences:
 A cut that falls on an NTEQIT re-solve changes the history row right after it. In the parent build the numbers are
 the same. Measured:
 
-| Case | Row after the cut | Run in chunks | One call |
+| Case | Row after the cut | One call | Run in chunks |
 |---|---|---|---|
 | NTEQIT 50, chunks of 100 | WPDOT at T = 2.04 | 0.874 | 0.746 |
-| NTEQIT 50, chunks of 100 | WPDOT at T = 8.04 | 0.400 | 0.255 (36 %) |
+| NTEQIT 50, chunks of 100 | WPDOT at T = 8.04 | 0.400 | 0.255 (36 % lower) |
 | Chunks of 70 | WPDOT at T = 7.04 | 0.447 | 0.292 |
+
+The one-call run carries the spike that the metric change of the re-solve puts into WPT; the chunked run does not, because
+after a cut its first TRGLOB re-anchors WPPRE/TPRE on the re-solved WPT.
 
 TAUE2 changes by up to 3 %, and H98Y2 with it.
 

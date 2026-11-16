@@ -173,6 +173,7 @@ file.
 |---|---|---|
 | `init` | initialize the library (`tr_init`) | none |
 | `set_param` | set a single parameter | `name`, `value` (arrays use `NAME[i]`) |
+| `set_param_str` | set a string parameter (`KNAMEQ`) | `name`, `value` |
 | `set_params` | bulk set (scalar / list / dict) | `params` |
 | `run` | advance time steps (`tr_run`) | `ntmax` (default=1) |
 | `get_state` | read the current state (`tr_get_state`) | none |

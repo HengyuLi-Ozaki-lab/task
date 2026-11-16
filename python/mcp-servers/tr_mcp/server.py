@@ -649,8 +649,8 @@ def handle_describe_history_schema() -> Dict[str, Any]:
     return {
         "description": (
             "The columns get_history can return, each with its unit and meaning. One row is recorded every "
-            "NGTSTP steps (default 2), the state at t = 0 first; a run in several calls adds nsteps / NGTSTP "
-            "rows per call; a changed parameter starts the history again; at most 10001 rows are kept "
+            "NGTSTP steps (default 2), the state at t = 0 first; a row is recorded at every step that is a multiple of NGTSTP, so a "
+            "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again; at most 10001 rows are kept "
             "('full' says when they are). Values are single precision (about 7 digits)."
         ),
         "columns": HISTORY_SCHEMA,

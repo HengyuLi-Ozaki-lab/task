@@ -241,6 +241,7 @@ LLM は `describe_parameters` を呼び、`group == "transport"` を抽出して
 |---|---|---|
 | `init` | ライブラリ初期化 | なし |
 | `set_param` | 単一パラメータ設定 | `name`, `value` (配列要素は `NAME[i]`) |
+| `set_param_str` | 文字列パラメータ設定 (`KNAMEQ`) | `name`, `value` |
 | `set_params` | まとめて設定 (scalar / list / dict) | `params` |
 | `run` | 時間ステップ進行 | `ntmax` (default=1) |
 | `get_state` | 現在の状態取得 | なし |

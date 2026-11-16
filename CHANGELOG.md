@@ -49,7 +49,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   densities and temperatures `NE0`, `NEAV`, `TE0`, `TI0`, `TEAV`, `TIAV`, `NLAV`, `WPT`, the currents, `PINT`, `POHT`,
   `PNBT`, the EC/LH/IC powers to electrons and ions, `PNFT`, `POUT`, `PRLT`, `VLOOP`, `Q0`, `RQ1`, `ALI`, the confinement
   times, the betas, `QF`, `RIP`, ... and `BETAN`, `PRFST`, which are computed from the row). The first row is the state
-  at t = 0, a call of `tr_run` adds `nsteps / NGTSTP` rows, and `tr_prep` (every first run and every run after a
+  at t = 0, a row is recorded at every step that is a multiple of `NGTSTP` (a call of `tr_run` adds `nsteps / NGTSTP` rows only when it
+  starts on one: `run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1), and `tr_prep` (every first run and every run after a
   changed parameter) starts the history again. The history holds `NTM` = 10001 rows and TR then stops recording
   silently; `tr_history_full` says when. A long run sets `NGTSTP` so that steps / `NGTSTP` < 10001.
   `Trlib.history(names=None)` returns `{name: ndarray}` (float64 from the single-precision rows: about 7 digits),
