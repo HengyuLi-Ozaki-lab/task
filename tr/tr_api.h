@@ -109,13 +109,21 @@ int tr_run(int ntmax);
  * TR_ERR_INVALID. These are refused too (TR_ERR_INVALID, one line on unit 6):
  *  - eq:RR, eq:RA, eq:RKAP, eq:RDLT, eq:BB, eq:RIP and eq:KNAMEQ, which do
  *    nothing through TR (MODELG 9 overwrites EQ's copies from TR's device, and
- *    TR passes its own KNAMEQ to EQ): set TR's own RR, RA, ... instead;
+ *    TR passes its own KNAMEQ to EQ): set TR's own RR, RA, ... instead (for
+ *    eq:RIP, RIPS and RIPE);
  *  - every eq: name once the process has made its first preparation attempt
  *    (failed or not; across tr_finalize and tr_init): until the pinned bpsd has
  *    k-yoshimi/bpsd#7 an EQ grid change in one process corrupts memory, so eq:
- *    names are set before the process's first tr_run. This comes off with the
- *    one-NRMAX-per-process guard of tr_run.
- * Under MODELG 3, 5 and 8 EQ's NRMAX, NTHMAX and NSUMAX come from TR's NRMAX. */
+ *    names are set before the process's first preparation attempt (a tr_run
+ *    refused by its own checks before tr_prep does not count). This comes off
+ *    with the one-NRMAX-per-process guard of tr_run.
+ * That guard closes only the direct route. Under MODELG 9 any input that
+ * moves EQ's plasma grid (NRPMAX: TR's RA, RR and other device inputs, MODELG,
+ * the eq: names, the drift between NTEQIT re-solves) needs a bpsd with
+ * k-yoshimi/bpsd#7. TOT's eq: dispatcher calls eq_param_set directly: the guard
+ * does not apply in totlib or the mono build.
+ * Under MODELG 3, 5 and 8 EQ's NRMAX is TR's NRMAX + 1, NTHMAX is 64 and
+ * NSUMAX is 0 (tr_set_metric). */
 int tr_set_param(const char* name, double value);
 int tr_set_param_str(const char* name, const char* value);
 int tr_get_state(tr_state_t* state);

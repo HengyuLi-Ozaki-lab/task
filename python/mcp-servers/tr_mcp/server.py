@@ -525,9 +525,14 @@ def handle_describe_parameters() -> Dict[str, Any]:
             "here, and the library refuses an unknown one. TR prepares "
             "again before its next run. eq:RR, RA, RKAP, RDLT, BB, RIP and "
             "KNAMEQ are refused (set TR's own), and so is every eq: name "
-            "after the process's first run (until the pinned bpsd has "
-            "k-yoshimi/bpsd#7). Under MODELG 3/5/8 EQ's NRMAX, NTHMAX and "
-            "NSUMAX come from TR's NRMAX."
+            "after the process's first preparation attempt (until the "
+            "pinned bpsd has k-yoshimi/bpsd#7; for eq:RIP set RIPS and "
+            "RIPE). That guard closes only the direct route: under MODELG "
+            "9 any input that moves EQ's plasma grid (TR's RA, RR and "
+            "other device inputs, MODELG, the eq: names, the drift "
+            "between NTEQIT re-solves) needs a bpsd with "
+            "k-yoshimi/bpsd#7. Under MODELG 3/5/8 EQ's NRMAX is TR's "
+            "NRMAX + 1, NTHMAX is 64 and NSUMAX is 0."
         ),
         "parameters": PARAMETER_REGISTRY,
     }

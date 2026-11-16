@@ -192,14 +192,25 @@ and grid through `set_param` / `set_param_str`; an unknown name raises `TrlibPar
 next `run` prepare again. Two kinds of `eq:` name are refused (`TrlibParamError`, one line on unit 6):
 
 - `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` do nothing through TR: under `MODELG` 9
-  EQ's copy is overwritten from TR's device, and TR passes its own `KNAMEQ` to EQ. Set `RR`, `RA`, ... (TR's) instead.
-  Under `MODELG` 3, 5 and 8 EQ's `NRMAX`, `NTHMAX` and `NSUMAX` come from TR's `NRMAX` (`tr_set_metric`).
+  EQ's copy is overwritten from TR's device, and TR passes its own `KNAMEQ` to EQ. Set `RR`, `RA`, ... (TR's) instead;
+  for `eq:RIP` set `RIPS` and `RIPE`, which TR passes to EQ as `RIP`.
+  Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, its `NTHMAX` is fixed at 64 and its `NSUMAX` at 0
+  (`tr_set_metric`, `tr/trmetric.f90`).
 - every `eq:` name, once this process has made its first preparation attempt (failed or not; across `tr_finalize`
   and `tr_init` too): until the pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change in one process corrupts memory
   (`EQ_FAILED` 103 from a spline written past its end, measured with `eq:NRMAX` 30 then 60 and `eq:RB` 2.0 then 1.2),
-  so `eq:` names are set before the process's first run. This guard comes off with the `NRMAX` guard below. A
-  change of `MODELG` between lifecycles also changes the EQ grid (`MODELG` 9 then the `tst2` defaults: 50 to 51 points),
-  and no guard covers that: its test is gated on `TRLIB_BPSD_REGRID_FIX=1`.
+  so `eq:` names are set before the process's first preparation attempt (a `run` that `tr_run`'s own checks refuse
+  before `tr_prep` does not count). This guard comes off with the `NRMAX` guard below.
+
+The `eq:` guard closes only the direct route, and that is why every `eq:` name is refused after a preparation (any EQ
+input can move the count). Under `MODELG` 9 *any* input that moves EQ's plasma grid (`NRPMAX`, which depends on EQ's
+`RA`, `RB` and the solved axis and edge) needs a bpsd with k-yoshimi/bpsd#7: TR's `RA`, `RR` and other device inputs,
+`MODELG` itself (`MODELG` 9 then the `tst2` defaults: 50 to 51 points; its test is gated on `TRLIB_BPSD_REGRID_FIX=1`),
+the `eq:` names, and the drift of `NRPMAX` between `NTEQIT` re-solves inside one run (47 and 48 in `tr.ITER01` with
+`MODELG` 9). Measured on an unpatched bpsd: `MODELG` 9 with `RA` 0.5 in one lifecycle, then `RA` 1.0 in the next, fails
+with `EQ_FAILED` 103 at q-scaling iteration 2, with no `eq:` name set and TR's `NRMAX` unchanged. The protection
+against the overrun is bpsd#7 itself. TOT's `eq:` dispatcher (`dispatch_eq` in `tot/tot_param_registry.f90`) calls
+`eq_param_set` directly, so this guard does not apply in `totlib` or the mono build.
 
 The registry below reflects `tr/tr_param_registry.f90` at Phase L-3.
 Add to it by extending that Fortran `SELECT CASE`; no Python change

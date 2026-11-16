@@ -1111,3 +1111,13 @@ Every listed name gets a test that its last row equals the final scalar of PR 2'
   name is refused after the process's first preparation attempt, until the pinned bpsd has #7.
 - **`REFUSED` is reserved** for `tr_continue` (PR 3); nothing records it.
 - **EQ's reason** (`EQ_ERRMSG`) is appended to an `EQ_FAILED` record's detail; `libtrapi.so` has no `eq_last_error`.
+- **The `eq:` guard closes one route to the bpsd#7 overrun, not all.** Measured on an unpatched bpsd: `MODELG` 9 with
+  `RA` 0.5 in one lifecycle, then `RA` 1.0 (or the default) in the next, fails with `EQ_FAILED` 103 at q-scaling
+  iteration 2, with no `eq:` name set and TR's `NRMAX` unchanged. EQ's plasma point count (`NRPMAX`) depends on `RA`,
+  `RB` and the solved axis and edge, and it moves between `NTEQIT` re-solves inside one run (47 and 48 in `tr.ITER01`
+  with `MODELG` 9). TOT's `eq:` dispatcher (`dispatch_eq` in `tot/tot_param_registry.f90`) calls `eq_param_set`
+  directly, so the guard does not apply in `totlib` or the mono build. **The protection against the overrun is bpsd#7
+  itself:** task-web's `deps.lock` bump that brings PR 1 must also move bpsd to #7's merge commit; if #7 is not merged
+  by then, the bump waits.
+- **EQ's reason is cleared** with the failure record (`tr_failure_clear`), so a later lifecycle's record does not carry
+  an earlier run's `EQ_ERRMSG`.
