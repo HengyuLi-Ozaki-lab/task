@@ -512,6 +512,12 @@ def handle_describe_parameters() -> Dict[str, Any]:
         "module": "tr",
         "count": len(PARAMETER_REGISTRY),
         "array_syntax": "Use NAME[i] (1-origin) for array elements, e.g. PN[1].",
+        "eq_names": (
+            "A name 'eq:NAME' (e.g. eq:RB, eq:NSGMAX) is passed to the "
+            "library as is and set in EQ's registry; it is not listed "
+            "here, and the library refuses an unknown one. TR prepares "
+            "again before its next run."
+        ),
         "parameters": PARAMETER_REGISTRY,
     }
 

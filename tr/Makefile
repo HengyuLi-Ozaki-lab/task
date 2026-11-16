@@ -186,7 +186,7 @@ TR_API_RUN_BIN=$(TR_API_SMOKE_DIR)/test_run
 
 # At L-3 the API drivers pull in TRCOMM, tr_loop, tr_prep, ... so we
 # need the full tr + eq + pl + bpsd + mtx link just like tr2.
-TR_API_DEPS=$(LIBS2) $(LIBX_MTX)
+TR_API_DEPS=../eq/eq_param_registry.o $(LIBS2) $(LIBX_MTX)
 
 # Step 1: header-only C compile (matches the documented user-level check
 #         `gcc -Wall -Wextra -c -o test_smoke.o test_smoke.c`).
@@ -387,7 +387,7 @@ $(OBJDIR_PIC)/trcomm.o              : $(OBJDIR_PIC)/trcomm_nf.o
 $(OBJDIR_PIC)/trinit.o              : $(OBJDIR_PIC)/libnf.o
 # trmain.f90 is not in SRCS_CORE, so it has no PIC object -- the non-PIC
 # twin below is the one that matters for it.
-$(OBJDIR_PIC)/tr_api.o              : $(OBJDIR_PIC)/libnf.o
+$(OBJDIR_PIC)/tr_api.o              : $(OBJDIR_PIC)/libnf.o ../eq/obj/pic/eq_param_registry.o
 $(OBJDIR_PIC)/trcalc.o              : $(OBJDIR_PIC)/libnf.o
 $(OBJDIR_PIC)/trprep.o              : $(OBJDIR_PIC)/libnf.o
 # trpnf_multi USEs trcomm (via trcomm_nf/trcomm_ctrl/trcomm_profile), libnf,
@@ -521,9 +521,18 @@ else
   SO_UNDEFINED =
 endif
 
-libtrapi.so: $(OBJ_LIBTRAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC)
+# EQ's parameter registry (PIC object) is linked into libtrapi.so only: the
+# "eq:" names of tr_set_param call it. Mono (tot/libtotapi_mono.so) takes the
+# eq objects itself and does not link libtrapi.so, so it has one copy.
+EQ_REGISTRY_PIC=../eq/obj/pic/eq_param_registry.o
+../eq/obj/pic/eq_param_registry.o: ../eq/eq_param_registry.f90
+	$(MAKE) -C ../eq obj/pic/eq_param_registry.o
+../eq/eq_param_registry.o: ../eq/eq_param_registry.f90
+	$(MAKE) -C ../eq eq_param_registry.o
+
+libtrapi.so: $(OBJ_LIBTRAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC) $(EQ_REGISTRY_PIC)
 	$(FCFREE) -shared -fPIC $(SO_SONAME) $(SO_UNDEFINED) \
-	    $(OBJ_LIBTRAPI) $(OBJBPSD_PIC) $(LIBMTX_PIC) \
+	    $(OBJ_LIBTRAPI) $(EQ_REGISTRY_PIC) $(OBJBPSD_PIC) $(LIBMTX_PIC) \
 	    $(SO_GROUP_BEGIN) $(LIBS_PIC) $(SO_GROUP_END) \
 	    -o libtrapi.so
 
@@ -620,7 +629,7 @@ $(OBJDIR)/trinit.o : trinit.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/libnf.o
 # tr_api_finalize and trmain call nf_finalize to release libnf's per-session
 # table; trcalc reads its nf_summary_logged latch; trprep calls nf_reset_log.
 $(OBJDIR)/trmain.o : $(OBJDIR)/libnf.o
-$(OBJDIR)/tr_api.o : $(OBJDIR)/libnf.o
+$(OBJDIR)/tr_api.o : $(OBJDIR)/libnf.o ../eq/eq_param_registry.o
 $(OBJDIR)/trcalc.o : $(OBJDIR)/libnf.o
 $(OBJDIR)/trprep.o : $(OBJDIR)/libnf.o
 $(OBJDIR)/trparm.o : trparm.f90 trcomm.f90 trcom1.f90

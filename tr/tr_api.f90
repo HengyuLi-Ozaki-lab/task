@@ -41,7 +41,9 @@ MODULE tr_api
        AJRFT, &
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_RW, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
-  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation
+  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation, &
+       tr_param_note_external_set
+  USE eq_param_registry, ONLY: eq_param_set, eq_param_set_str
   USE libnf,             ONLY: nf_finalize
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
@@ -150,7 +152,7 @@ CONTAINS
     REAL(C_DOUBLE), VALUE,                INTENT(IN) :: value
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=64) :: fname
-    INTEGER :: i, n
+    INTEGER :: i, n, eq_rc
 
     IF (.NOT. g_initialized) THEN
        ierr = TR_ERR_NOT_INIT
@@ -170,6 +172,22 @@ CONTAINS
     IF (i > LEN(fname)) THEN
        IF (c_str_overflows(name, LEN(fname) + 1)) THEN
           ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
+
+    ! An "eq:" name belongs to EQ's registry (the same one tot's "eq:"
+    ! names reach). A set that EQ takes changes what the next preparation
+    ! reads, so TR prepares again before its next run.
+    IF (n > 3) THEN
+       IF (fname(1:3) == 'eq:') THEN
+          CALL eq_param_set(fname(4:n), REAL(value, rkind), eq_rc)
+          IF (eq_rc /= 0) THEN
+             ierr = TR_ERR_INVALID
+          ELSE
+             CALL tr_param_note_external_set()
+             ierr = TR_OK
+          END IF
           RETURN
        END IF
     END IF
@@ -231,6 +249,19 @@ CONTAINS
     IF (i > LEN(fvalue)) THEN
        IF (c_str_overflows(value, LEN(fvalue) + 1)) THEN
           ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
+
+    ! "eq:" names go to EQ's string setter, as in tr_api_set_param.
+    IF (LEN_TRIM(fname) > 3) THEN
+       IF (fname(1:3) == 'eq:') THEN
+          IF (eq_param_set_str(fname(4:LEN_TRIM(fname)), TRIM(fvalue)) /= 0) THEN
+             ierr = TR_ERR_INVALID
+          ELSE
+             CALL tr_param_note_external_set()
+             ierr = TR_OK
+          END IF
           RETURN
        END IF
     END IF
