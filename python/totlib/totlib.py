@@ -305,11 +305,56 @@ class Tot:
         intentionally NOT invoked; cross-module coupling lives in
         :class:`~totlib.pipeline.TotPipeline` (L-7a, Python-side)
         instead of inside ``libtotapi.so``.
+
+        ``ntmax=0`` prepares (when a parameter was set) and takes no step, but the loop's exit still sets RIPS = RIPE:
+        a pending current ramp is lost and RIP stays where it was (the ``tr_run(0)`` note in ``tr/tr_api.h``).
+        ``continue_run(0)`` only checks.
         """
         if self._closed:
             raise TotlibError("run on closed Tot")
         rc = self._lib.tot_run(int(ntmax))
         raise_for_rc(f"tot_run({ntmax})", rc)
+
+    def continue_run(self, nsteps: int) -> None:
+        """Advance the prepared case ``nsteps`` more steps without preparing again (``tot_continue``).
+
+        ``tot_continue`` calls TR's ``tr_continue`` (``Trlib.continue_run``), as :meth:`run` calls ``tr_run``: the
+        control parameters set since the last :meth:`run` or :meth:`continue_run` (``tr:RIPE``, ``tr:PNBTOT``,
+        ``tr:PICTOT``, ``tr:PECTOT``, ``tr:PLHTOT``, ``tr:NTEQIT``, ``tr:TPRST``) take effect at its first step;
+        ``nt``, ``T`` and the history go on. Every other ``tr:`` name and every ``eq:`` name is structural: set after
+        a preparation it makes :meth:`continue_run` refuse, and the next :meth:`run` prepares again. There is no
+        ``param_class`` here: ``Trlib.param_class`` answers for the same names (``eq:`` names are 0).
+
+        Raises :class:`TotlibInvalidParamError` when TR refuses (no preparation yet, a failed run, a structural set
+        since the preparation -- the message carries TR's record, which names the last one -- a bad value) or for a
+        negative count, :class:`TotlibCalculationFailedError` when the loop fails.
+        """
+        if self._closed:
+            raise TotlibError("continue_run on closed Tot")
+        try:
+            fn = self._lib.tot_continue
+        except AttributeError as exc:
+            raise TotlibError(
+                "libtotapi.so does not export tot_continue; rebuild the shared library."
+            ) from exc
+        rc = fn(int(nsteps))
+        if rc == 1:
+            raise TotlibInvalidParamError(f"tot_continue({nsteps}): rc=1{self._tr_record_text()}")
+        raise_for_rc(f"tot_continue({nsteps})", rc)
+
+    def _tr_record_text(self) -> str:
+        """TR's last failure record as ``": <text>"`` ('' when it cannot be read): tot has no record of its own, and
+        ``tr_last_error`` is the one of the TR this ``Tot`` drives (the same image in mono; ``libtotapi.so`` links
+        ``libtrapi.so``, the library ``trlib`` loads)."""
+        try:
+            from trlib import _ffi as tr_ffi
+            lib = getattr(self._lib, "tr_last_error", None) or tr_ffi.load_library().tr_last_error
+            e = tr_ffi.TrDiagEntry()
+            lib(ctypes.byref(e))
+            msg = e.msg.decode("ascii", errors="replace").rstrip("\x00")
+            return f": {msg}" if msg else ""
+        except Exception:
+            return ""
 
     def get_state(self) -> TotState:
         """Copy the current TOT state into a :class:`TotState`.
