@@ -2,7 +2,7 @@
 
 MODULE trexec
 
-  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK
+  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK, tr_library_mode
   PRIVATE
   PUBLIC tr_exec,tr_eval,tr_coef_decide
 
@@ -399,13 +399,15 @@ CONTAINS
 
       SUBROUTINE tr_eval(NT,IERR)
 
-      USE TRCOMM, ONLY : NGRSTP, NGTSTP, NTMAX, NTSTEP, TPRE, WPPRE, rkind
+      USE TRCOMM, ONLY : NGRSTP, NGT, NGTSTP, NTMAX, NTSTEP, TPRE, WPPRE, rkind
       USE trrslt_files, ONLY : TRSNAP
       IMPLICIT NONE
       INTEGER,INTENT(IN) :: NT
       INTEGER,INTENT(OUT) :: IERR
       integer:: IDGLOB
       REAL(rkind):: TPRE_KEEP, WPPRE_KEEP
+!     The step of the last history row TRATOT recorded; -1 = none since the last tr_prep (NGT = 0).
+      INTEGER, SAVE :: NT_ROW = -1
 
       CALL TRCALC(IERR)
       IF(IERR.ne.0) RETURN
@@ -419,8 +421,15 @@ CONTAINS
       IF(MOD(NT,NGTSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB
          IDGLOB=1
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: a call of tr_run starts with an evaluation of the step the call before it ended on
+!        (tr_loop's prologue). Its globals are recomputed (WPDOT is 0 at the same T) and the row would
+!        repeat that step's time, so it is not recorded. tr2 keeps its rows as before.
+         IF(NGT.EQ.0) NT_ROW=-1
+         IF(.NOT.(tr_library_mode .AND. NT.EQ.NT_ROW)) THEN
+            CALL TRATOT
+            CALL TRATOTN
+            NT_ROW=NT
+         ENDIF
       ENDIF
       IF(MOD(NT,NGRSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB

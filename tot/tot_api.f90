@@ -70,7 +70,9 @@ MODULE tot_api
   ! flag for direct-ctypes callers (#209).
   USE eq_api, ONLY: eq_api_init,     eq_api_finalize
   USE tr_api, ONLY: tr_api_init,     tr_api_run,     tr_api_get_state, &
-                    tr_api_finalize, tr_api_get_scalar
+                    tr_api_finalize, tr_api_get_scalar, &
+                    tr_api_history_length, tr_api_history_full, tr_api_history_count, &
+                    tr_api_history_name, tr_api_history_get
   USE tr_state, ONLY: tr_state_c
   USE ti_api, ONLY: ti_api_init,     ti_api_run,     ti_api_finalize
   USE fp_api, ONLY: fp_api_init,     fp_api_run,     fp_api_finalize
@@ -522,6 +524,91 @@ CONTAINS
     cname(n - 2) = C_NULL_CHAR
     ierr = tr_api_get_scalar(cname, value)
   END FUNCTION tot_api_get_scalar
+
+  !-------------------------------------------------------------------
+  ! The run's history by name through tot (PR 2 of #96, Task 5b): the
+  ! tot_history_* entry points delegate to TR's tr_history_*, with the
+  ! "tr:" prefix on every name as tot_get_scalar and the registry have.
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_history_length() RESULT(n) BIND(C, NAME="tot_history_length")
+    INTEGER(C_INT) :: n
+    n = 0
+    IF (g_initialized .AND. g_tr_present) n = tr_api_history_length()
+  END FUNCTION tot_api_history_length
+
+  FUNCTION tot_api_history_full() RESULT(full) BIND(C, NAME="tot_history_full")
+    INTEGER(C_INT) :: full
+    full = 0
+    IF (g_initialized .AND. g_tr_present) full = tr_api_history_full()
+  END FUNCTION tot_api_history_full
+
+  FUNCTION tot_api_history_count() RESULT(n) BIND(C, NAME="tot_history_count")
+    INTEGER(C_INT) :: n
+    n = tr_api_history_count()
+  END FUNCTION tot_api_history_count
+
+  ! The I-th name as "tr:<NAME>" in BUF of BUFLEN characters; TOT_ERR_INVALID past either end or when it does not fit.
+  FUNCTION tot_api_history_name(i, buf, buflen) RESULT(ierr) BIND(C, NAME="tot_history_name")
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: i
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    CHARACTER(KIND=C_CHAR) :: tmp(32)
+    INTEGER :: k, n
+
+    ierr = tr_api_history_name(i, tmp, 32_C_INT)
+    IF (ierr /= 0) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
+    n = 0
+    DO k = 1, 32
+       IF (tmp(k) == C_NULL_CHAR) EXIT
+       n = k
+    END DO
+    IF (buflen < n + 4) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
+    buf(1) = 't'
+    buf(2) = 'r'
+    buf(3) = ':'
+    DO k = 1, n
+       buf(3 + k) = tmp(k)
+    END DO
+    buf(n + 4) = C_NULL_CHAR
+    ierr = TOT_ERR_OK
+  END FUNCTION tot_api_history_name
+
+  ! The first min(n, rows) rows of "tr:<NAME>" into BUF; *got is the number copied.
+  ! 0 = success, 1 = invalid (no "tr:" prefix, unknown name, n < 0), 2 = not initialised.
+  FUNCTION tot_api_history_get(name, buf, n, got) RESULT(ierr) BIND(C, NAME="tot_history_get")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(OUT) :: buf(*)
+    INTEGER(C_INT), VALUE,                INTENT(IN)  :: n
+    INTEGER(C_INT),                       INTENT(OUT) :: got
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=128) :: fname
+    CHARACTER(KIND=C_CHAR) :: cname(33)
+    INTEGER :: i, m
+
+    got = 0
+    IF (.NOT. g_initialized .OR. .NOT. g_tr_present) THEN
+       ierr = TOT_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_string_to_fortran(name, fname)
+    m = LEN_TRIM(fname)
+    IF (m <= 3 .OR. m > 3 + 32 .OR. fname(1:3) /= 'tr:') THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
+    DO i = 1, m - 3
+       cname(i) = fname(3 + i:3 + i)
+    END DO
+    cname(m - 2) = C_NULL_CHAR
+    ierr = tr_api_history_get(cname, buf, n, got)
+  END FUNCTION tot_api_history_get
 
 END MODULE tot_api
 

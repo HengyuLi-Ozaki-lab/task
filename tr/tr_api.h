@@ -174,6 +174,21 @@ int tr_scalar_count(void);
 int tr_scalar_name(int i, char* buf, int buflen);
 int tr_get_scalar(const char* name, double* value);
 
+/* The run's history by name (PR 2 of #96, Task 5b). TR records a row every NGTSTP steps (default 2) in single
+   precision: the state at t = 0 first, then one row per NGTSTP steps; a call of tr_run adds nsteps / NGTSTP rows.
+   tr_prep starts the history again (tr_run prepares again after a changed parameter). NTM = 10001 rows; when they
+   are full recording stops silently in TR, and tr_history_full reports it.
+   tr_history_length: rows recorded (0 before a run). tr_history_full: 1 when the rows are full, else 0.
+   tr_history_count / tr_history_name: the named columns, enumerated as tr_scalar_name does. "T" is the time;
+     the others are TR's names in tr/trrslt_globals.f90's TRATOT, in its units (see tr_mcp's get_history schema).
+   tr_history_get: copies the first min(n, rows) rows of the column `name` into buf and sets *got to that number.
+     TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for an unknown name or n < 0. */
+int tr_history_length(void);
+int tr_history_full(void);
+int tr_history_count(void);
+int tr_history_name(int i, char* buf, int buflen);
+int tr_history_get(const char* name, double* buf, int n, int* got);
+
 #ifdef __cplusplus
 }
 #endif

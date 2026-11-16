@@ -61,9 +61,9 @@ MODULE tr_api
   USE trfailure
   IMPLICIT NONE
   PRIVATE
-  PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, &
-            tr_api_set_param, tr_api_set_param_str, tr_api_finalize, &
-            tr_api_validate, &
+  PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, tr_api_history_get, &
+            tr_api_set_param, tr_api_set_param_str, tr_api_finalize, tr_api_history_name, &
+            tr_api_validate, tr_api_history_length, tr_api_history_full, tr_api_history_count, &
             tr_check_bpsd_pull, tr_api_last_error, tr_api_scalar_count, tr_api_scalar_name, tr_api_get_scalar
 
   ! Error codes (must match tr_api.h enum):
@@ -1282,5 +1282,147 @@ CONTAINS
     value = v
     ierr = TR_OK
   END FUNCTION tr_api_get_scalar
+
+  !-------------------------------------------------------------------
+  ! Time history by name (PR 2 of #96, Task 5b).
+  !
+  ! TR records a row every NGTSTP steps (tr_eval, trexec.f90): GT(NGT) is
+  ! the time and GVT(NGT, 1:NCTM) the globals, both single precision
+  ! (GUCLIP), written by TRATOT in trrslt_globals.f90 (the column numbers
+  ! below are TRATOT's). NTM rows (trcom0.f90); TRATOT stops recording
+  ! when they are full. tr_prep sets NGT to 0 (trprep.f90), so a run starts a
+  ! history and a re-preparation starts it again. In library mode tr_eval does not
+  ! record the step a call of tr_run starts on when the call before it ended on
+  ! it (the same T twice).
+  !
+  ! COL = 0: GT (the time); COL > 0: GVT column; BETAN and PRFST have no
+  ! column of their own and are computed from columns of the same row:
+  ! BETAN = 100 BETAA / (RIP / (RA BB)) (cols 85, 88, 98, 99, as TRGLOB),
+  ! PRFST = PRFT(1) + ... + PRFT(4) (cols 42 to 45; NSM = 4 = the
+  ! species TRGLOB sums). PEXST has no such columns (GVT holds PEXT(1:2) only).
+  !-------------------------------------------------------------------
+  SUBROUTINE history_table(names, cols)
+    CHARACTER(LEN=8), INTENT(OUT) :: names(47)
+    INTEGER,          INTENT(OUT) :: cols(47)
+    names = [ CHARACTER(LEN=8) :: &
+         'T', 'NE0', 'NEAV', 'TE0', 'TI0', 'TEAV', 'TIAV', 'WPT', &
+         'AJT', 'AJOHT', 'AJNBT', 'AJRFT', 'AJBST', 'PINT', 'POHT', 'PNBT', &
+         'PRFE', 'PRFD', 'PNFT', 'POUT', 'VLOOP', 'ALI', 'RQ1', 'Q0', &
+         'WPDOT', 'TAUE1', 'TAUE2', 'BETAP0', 'BETA0', 'BETAA', 'ZEFF0', 'QF', &
+         'RIP', 'PEXE', 'PEXI', 'PECE', 'PECI', 'PLHE', 'PLHI', 'PICE', &
+         'PICI', 'TAUE98', 'H98Y2', 'NLAV', 'PRLT', &
+         'BETAN', 'PRFST' ]
+    cols = [ INTEGER :: &
+         0, 1, 5, 9, 10, 13, 14, 33, 34, 35, 36, 37, 38, 39, 40, 41, &
+         42, 43, 46, 57, 74, 75, 76, 77, 78, 79, 80, 82, 84, 85, 86, 87, &
+         88, 89, 90, 91, 92, 93, 94, 95, 96, 102, 103, 104, 110, &
+         -1, -2 ]
+  END SUBROUTINE history_table
+
+  ! Rows recorded since the last tr_prep: 0 when TR is not prepared.
+  FUNCTION history_rows() RESULT(n)
+    USE trcomm, ONLY: NGT, NTM
+    INTEGER :: n
+    IF (.NOT. g_prepared) THEN
+       n = 0
+    ELSE
+       n = MAX(0, MIN(NGT, NTM))
+    END IF
+  END FUNCTION history_rows
+
+  ! Row I of column COL (see history_table), in double precision.
+  FUNCTION history_cell(col, i) RESULT(v)
+    USE trcomm, ONLY: GT, GVT
+    INTEGER, INTENT(IN) :: col, i
+    REAL(rkind) :: v
+    IF (col == 0) THEN
+       v = REAL(GT(i), rkind)
+    ELSE IF (col == -1) THEN
+       v = 1.0E2_rkind * REAL(GVT(i, 85), rkind) / (REAL(GVT(i, 88), rkind) &
+            / (REAL(GVT(i, 98), rkind) * REAL(GVT(i, 99), rkind)))
+    ELSE IF (col == -2) THEN
+       v = REAL(GVT(i, 42), rkind) + REAL(GVT(i, 43), rkind) + REAL(GVT(i, 44), rkind) + REAL(GVT(i, 45), rkind)
+    ELSE
+       v = REAL(GVT(i, col), rkind)
+    END IF
+  END FUNCTION history_cell
+
+  ! tr_history_length : rows recorded since the last preparation (0 before one).
+  FUNCTION tr_api_history_length() RESULT(n) BIND(C, NAME="tr_history_length")
+    INTEGER(C_INT) :: n
+    n = INT(history_rows(), C_INT)
+  END FUNCTION tr_api_history_length
+
+  ! tr_history_full : 1 when the history holds NTM rows and recording has stopped, else 0.
+  FUNCTION tr_api_history_full() RESULT(full) BIND(C, NAME="tr_history_full")
+    USE trcomm, ONLY: NTM
+    INTEGER(C_INT) :: full
+    full = 0
+    IF (history_rows() >= NTM) full = 1
+  END FUNCTION tr_api_history_full
+
+  ! tr_history_count : the number of named columns.
+  FUNCTION tr_api_history_count() RESULT(n) BIND(C, NAME="tr_history_count")
+    INTEGER(C_INT) :: n
+    n = 47
+  END FUNCTION tr_api_history_count
+
+  ! tr_history_name : the I-th column name (1-based), as tr_scalar_name does.
+  FUNCTION tr_api_history_name(i, buf, buflen) RESULT(ierr) BIND(C, NAME="tr_history_name")
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: i
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=8) :: names(47)
+    INTEGER :: cols(47)
+
+    IF (i < 1 .OR. i > 47) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL history_table(names, cols)
+    ierr = name_to_c_buffer(names(i), buf, buflen)
+  END FUNCTION tr_api_history_name
+
+  ! tr_history_get : copy the first min(n, rows) rows of the column NAME ("T" is the time) into BUF;
+  ! *got is the number copied. TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for an unknown name or n < 0.
+  FUNCTION tr_api_history_get(name, buf, n, got) RESULT(ierr) BIND(C, NAME="tr_history_get")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(OUT) :: buf(*)
+    INTEGER(C_INT), VALUE,                INTENT(IN)  :: n
+    INTEGER(C_INT),                       INTENT(OUT) :: got
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=16) :: fname
+    CHARACTER(LEN=8) :: names(47)
+    INTEGER :: cols(47)
+    INTEGER :: j, k, m
+    LOGICAL :: ok
+
+    got = 0
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_name_to_fortran(name, fname, ok)
+    IF (.NOT. ok .OR. n < 0) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL history_table(names, cols)
+    k = 0
+    DO j = 1, 47
+       IF (TRIM(fname) == TRIM(names(j))) k = j
+    END DO
+    IF (k == 0) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    m = MIN(INT(n), history_rows())
+    DO j = 1, m
+       buf(j) = history_cell(cols(k), j)
+    END DO
+    got = INT(m, C_INT)
+    ierr = TR_OK
+  END FUNCTION tr_api_history_get
 
 END MODULE tr_api

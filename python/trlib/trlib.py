@@ -20,7 +20,7 @@ import re
 import weakref
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Optional
+from typing import Dict, Iterable, List, Optional, Union
 
 from . import _ffi
 from .errors import (
@@ -341,6 +341,66 @@ class Trlib:
         ierr = fn(_encode_name(name), ctypes.byref(value))
         raise_for_ierr(f"tr_get_scalar('{name}')", ierr)
         return float(value.value)
+
+    # --- the run's history by name (PR 2 of #96, Task 5b) ----------------
+    def history_names(self) -> List[str]:
+        """The names of the recorded columns, "T" (the time) first."""
+        if self._closed:
+            raise TrlibError("history_names on closed Trlib")
+        count = int(self._scalar_fn("tr_history_count")())
+        fn = self._scalar_fn("tr_history_name")
+        names = []
+        for i in range(1, count + 1):
+            buf = ctypes.create_string_buffer(64)
+            raise_for_ierr(f"tr_history_name({i})", fn(i, buf, 64))
+            names.append(buf.value.decode("ascii"))
+        return names
+
+    def history_length(self) -> int:
+        """Rows recorded since the last preparation: the state at t = 0, then one per ``NGTSTP`` steps.
+
+        A call of :meth:`run` adds ``nsteps // NGTSTP`` rows (counting from the step it starts on). 0 before the
+        first run. ``tr_prep`` starts the history again, so a run after a changed parameter does.
+        """
+        if self._closed:
+            raise TrlibError("history_length on closed Trlib")
+        return int(self._scalar_fn("tr_history_length")())
+
+    def history_full(self) -> bool:
+        """True when the history holds 10001 rows (``NTM``): TR then stops recording, silently on its side."""
+        if self._closed:
+            raise TrlibError("history_full on closed Trlib")
+        return bool(self._scalar_fn("tr_history_full")())
+
+    def history(self, names: Union[None, str, Iterable[str]] = None) -> Dict[str, "object"]:
+        """The recorded columns by name, as ``{name: numpy.ndarray}`` of float64 (lists without numpy).
+
+        ``names`` is one name, several, or ``None`` for every column of :meth:`history_names`. The values are
+        TR's single-precision history, so they agree with :meth:`get_scalar` to about 1e-7 (relative). An
+        unknown name raises :class:`TrlibParamError`.
+        """
+        if self._closed:
+            raise TrlibError("history on closed Trlib")
+        if names is None:
+            wanted = self.history_names()
+        elif isinstance(names, str):
+            wanted = [names]
+        else:
+            wanted = list(names)
+        fn = self._scalar_fn("tr_history_get")
+        rows = self.history_length()
+        out: Dict[str, object] = {}
+        for name in wanted:
+            buf = (ctypes.c_double * max(rows, 1))()
+            got = ctypes.c_int(0)
+            raise_for_ierr(f"tr_history_get('{name}')", fn(_encode_name(name), buf, rows, ctypes.byref(got)))
+            values = buf[: int(got.value)]
+            if _ffi.HAS_NUMPY:
+                import numpy as np
+                out[name] = np.array(values, dtype=np.float64)
+            else:  # pragma: no cover - numpy is optional
+                out[name] = list(values)
+        return out
 
     # --- validation (Issue #143) ---------------------------------------
     def validate(self) -> List[TrDiagEntryPy]:

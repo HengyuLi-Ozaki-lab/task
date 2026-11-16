@@ -160,6 +160,19 @@ int tot_is_mono(void);
  */
 int tot_get_scalar(const char* name, double* value);
 
+/*
+ * The run's history by name through tot (Task 5b of #96): tr_history_* (tr/tr_api.h) with a "tr:" prefix on every
+ * name. tot_history_length / tot_history_full are 0 before tot_init. tot_history_count: the number of columns.
+ * tot_history_name: the i-th as "tr:<NAME>" (1, past either end or a buffer too short). tot_history_get: the first
+ * min(n, rows) rows of "tr:<NAME>" into buf, *got set; 1 for another prefix, an unknown name or n < 0, 2 before
+ * tot_init.
+ */
+int tot_history_length(void);
+int tot_history_full(void);
+int tot_history_count(void);
+int tot_history_name(int i, char* buf, int buflen);
+int tot_history_get(const char* name, double* buf, int n, int* got);
+
 #ifdef __cplusplus
 }
 #endif
