@@ -6,9 +6,10 @@
 ! clears it at the start of every tr_run and hands it out through tr_last_error.
 MODULE trfailure
   USE bpsd_kinds, ONLY: rkind
+  USE eqcom1_mod, ONLY: EQ_ERRMSG
   IMPLICIT NONE
   PRIVATE
-  PUBLIC :: tr_library_mode, tr_failure_clear, tr_failure_record, tr_failure_get
+  PUBLIC :: tr_library_mode, tr_failure_clear, tr_failure_record, tr_failure_get, TR_FAILURE_DETAIL_LEN
   PUBLIC :: TRF_NONE, TRF_EQ_FAILED, TRF_NONFINITE, TRF_TR_CHECK, TRF_PREP_FAILED, &
             TRF_REFUSED, TRF_OTHER
   INTEGER, PARAMETER :: TRF_NONE = 0, TRF_EQ_FAILED = 1, TRF_NONFINITE = 2, &
@@ -17,7 +18,9 @@ MODULE trfailure
   LOGICAL, SAVE :: tr_library_mode = .FALSE.
   INTEGER, SAVE :: g_kind = TRF_NONE, g_code = 0, g_nt = 0
   REAL(rkind), SAVE :: g_time = 0.0_rkind
-  CHARACTER(LEN=96), SAVE :: g_detail = ''
+  ! 96 characters of TR's own text and, for an EQ_FAILED record, EQ's EQ_ERRMSG (up to 200 characters) after it.
+  INTEGER, PARAMETER :: TR_FAILURE_DETAIL_LEN = 320
+  CHARACTER(LEN=TR_FAILURE_DETAIL_LEN), SAVE :: g_detail = ''
 CONTAINS
   SUBROUTINE tr_failure_clear()
     g_kind = TRF_NONE; g_code = 0; g_nt = 0; g_time = 0.0_rkind; g_detail = ''
@@ -30,6 +33,10 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(IN) :: detail
     IF (g_kind /= TRF_NONE) RETURN
     g_kind = kind; g_code = code; g_nt = nt; g_time = time; g_detail = detail
+    ! An EQ failure carries EQ's own reason when it set one (EQCALQ sets it; some EQCALC codes leave it empty):
+    ! detail = where // ': ' // EQ_ERRMSG.
+    IF (kind == TRF_EQ_FAILED .AND. LEN_TRIM(EQ_ERRMSG) > 0) &
+         g_detail = TRIM(detail)//': '//TRIM(EQ_ERRMSG)
   END SUBROUTINE tr_failure_record
 
   SUBROUTINE tr_failure_get(kind, code, nt, time, detail)

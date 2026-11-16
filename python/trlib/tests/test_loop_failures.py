@@ -89,8 +89,28 @@ def test_a_failed_q_scaling_is_recorded_as_eq_failed():
     assert "q-scaling" in p.stdout
 
 
+def test_a_q_scaling_failure_carries_eq_s_message():
+    # RA 1.8 under MODELG 9 (RB stays 2.0 outside it): EQCALQP fails the first solve with code 111, and the record's
+    # detail ends with EQ's own EQ_ERRMSG text, not only TR's "where".
+    p = _child('''
+        t = Trlib()
+        t.set_param("MODELG", 9); t.set_param("RA", 1.8)
+        try:
+            t.run(0); print("RC 0")
+        except TrlibRunError as e:
+            print("RC", e.failure.kind, e.failure.code)
+            print("MSG", e.failure.detail)
+            print("FULL", e)
+    ''')
+    assert p.returncode == 0, p.stderr[-2000:]
+    assert "RC EQ_FAILED 111" in p.stdout, p.stdout[-1500:]
+    msg = [l for l in p.stdout.splitlines() if l.startswith("MSG ")][0]
+    assert "q-scaling" in msg and "EQCALQ" in msg, msg
+
+
 def test_flat_9ma_with_nteqit_50_stops_before_25_s():
-    # tr2 goes on after "XX EQAXIS: AXIS NOT FOUND" at 1 s and ends with a state that means nothing
+    # tr2 goes on after "XX EQAXIS: AXIS NOT FOUND" at 1 s and ends with a state that means nothing.
+    # Slow (about 37 s): the failure is at nt 600, t 12 s, and no shorter case fails the same way.
     p = _child(ITER_M9 + '''
 t.set_param("NTEQIT", 50)
 try:

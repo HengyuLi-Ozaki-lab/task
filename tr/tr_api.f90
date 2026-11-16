@@ -85,6 +85,8 @@ MODULE tr_api
   ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
   ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
   INTEGER, SAVE :: g_first_nrmax = 0
+  ! The same fact seen from the eq: names: once this process has made a preparation attempt (g_first_nrmax /= 0), an
+  ! eq: set is refused (eq_name_refused), for the same bpsd reason. Both come off together with 61ff3cdf's guard.
 
   ! #246: layout query, callable before tr_init.
   PUBLIC :: tr_api_state_abi_version, tr_api_state_size
@@ -186,6 +188,10 @@ CONTAINS
     ! reads, so TR prepares again before its next run.
     IF (n > 3) THEN
        IF (fname(1:3) == 'eq:') THEN
+          IF (eq_name_refused('tr_set_param', fname(4:n))) THEN
+             ierr = TR_ERR_INVALID
+             RETURN
+          END IF
           CALL eq_param_set(fname(4:n), REAL(value, rkind), eq_rc)
           IF (eq_rc /= 0) THEN
              ierr = TR_ERR_INVALID
@@ -261,6 +267,10 @@ CONTAINS
     ! "eq:" names go to EQ's string setter, as in tr_api_set_param.
     IF (LEN_TRIM(fname) > 3) THEN
        IF (fname(1:3) == 'eq:') THEN
+          IF (eq_name_refused('tr_set_param_str', fname(4:LEN_TRIM(fname)))) THEN
+             ierr = TR_ERR_INVALID
+             RETURN
+          END IF
           IF (eq_param_set_str(fname(4:LEN_TRIM(fname)), TRIM(fvalue)) /= 0) THEN
              ierr = TR_ERR_INVALID
           ELSE
@@ -972,7 +982,9 @@ CONTAINS
     INTEGER(C_INT) :: ierr
     INTEGER :: kind, code, nt_rec, i, n
     REAL(rkind) :: time
-    CHARACTER(LEN=96) :: detail
+    CHARACTER(LEN=TR_FAILURE_DETAIL_LEN) :: detail
+    INTEGER :: ios
+    CHARACTER(LEN=TR_FAILURE_DETAIL_LEN + 40) :: full
     CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: pname
     CHARACTER(LEN=TR_DIAG_MSG_LEN) :: msg
     CALL tr_failure_get(kind, code, nt_rec, time, detail)
@@ -986,8 +998,12 @@ CONTAINS
     CASE DEFAULT;           pname = 'OTHER'
     END SELECT
     msg = ''
-    IF (kind /= TRF_NONE) &
-         WRITE(msg, '(A,I0,A,ES14.7,A,A)') 'nt=', nt_rec, ' t=', time, ' s: ', TRIM(detail)
+    ! The message is cut at the C buffer (TR_DIAG_MSG_LEN - 1 characters), and the write cannot abort on a long detail.
+    IF (kind /= TRF_NONE) THEN
+       WRITE(full, '(A,I0,A,ES14.7,A,A)', IOSTAT=ios) 'nt=', nt_rec, ' t=', time, ' s: ', TRIM(detail)
+       IF (ios /= 0) full = 'a failure whose record does not fit'
+       msg = full                    ! cut to the C buffer by the assignment
+    END IF
     ! Zero-fill, then copy and NUL-terminate, as tr_validate's push_diag does.
     DO i = 1, TR_DIAG_PARAM_LEN
        e%param(i) = C_NULL_CHAR
@@ -1006,5 +1022,40 @@ CONTAINS
     e%code = INT(code, C_INT)
     ierr = TR_OK
   END FUNCTION tr_api_last_error
+
+  !-------------------------------------------------------------------
+  ! eq_name_refused : true (and one line on unit 6) when an "eq:" name must not be set through TR.
+  !
+  ! nm is the name without its "eq:" prefix, who the calling routine.
+  !  - EQ's RR, RA, RKAP, RDLT, BB, RIP and KNAMEQ do nothing here: under MODELG 9 eq_bpsd_get overwrites the first
+  !    six from TR's device, and TR passes its own KNAMEQ to eq_load (tr/trmetric.f90); under MODELG 3/5/8
+  !    tr_set_metric sets EQ's NRMAX, NTHMAX and NSUMAX. The message names TR's own parameter.
+  !  - Once the process has made its first preparation attempt (g_first_nrmax /= 0) every eq: name is refused: a
+  !    change of EQ's grid writes past bpsd's splines until the pinned bpsd has k-yoshimi/bpsd#7 (see mesh_violation).
+  !-------------------------------------------------------------------
+  FUNCTION eq_name_refused(who, nm) RESULT(refused)
+    CHARACTER(LEN=*), INTENT(IN) :: who, nm
+    LOGICAL :: refused
+    CHARACTER(LEN=LEN(nm)) :: up
+    INTEGER :: i, k
+    up = nm
+    DO i = 1, LEN(up)
+       k = IACHAR(up(i:i))
+       IF (k >= IACHAR('a') .AND. k <= IACHAR('z')) up(i:i) = ACHAR(k - 32)
+    END DO
+    refused = .TRUE.
+    SELECT CASE (TRIM(up))
+    CASE ('RR', 'RA', 'RKAP', 'RDLT', 'BB', 'RIP', 'KNAMEQ')
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' is not settable through TR: set '//TRIM(up)// &
+            " (TR's), which TR passes to EQ"
+       RETURN
+    END SELECT
+    IF (g_first_nrmax /= 0) THEN
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' refused: until the pinned bpsd has k-yoshimi/bpsd#7 an EQ '// &
+            "grid change in one process corrupts memory, so eq: names are set before the process's first run"
+       RETURN
+    END IF
+    refused = .FALSE.
+  END FUNCTION eq_name_refused
 
 END MODULE tr_api

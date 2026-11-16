@@ -284,7 +284,6 @@ CONTAINS
       RETURN
       END SUBROUTINE TRGFRG
 
-    END MODULE trmetric
 
 !     ***********************************************************
 
@@ -305,3 +304,6 @@ CONTAINS
       WRITE(detail,'(A,I0,A,A)') 'tr_set_metric q-scaling, iteration ',it,': ',what
       CALL tr_failure_record(TRF_EQ_FAILED,code,0,t,detail)
       END SUBROUTINE tr_qscale_failure
+
+    END MODULE trmetric
+

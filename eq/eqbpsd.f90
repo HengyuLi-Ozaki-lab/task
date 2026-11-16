@@ -96,14 +96,17 @@
       if(eq_bpsd_init_flag) then
          CALL eq_bpsd_init(ierr)
       elseif(.not.allocated(equ1D%rho).or..not.allocated(metric1D%rho)) then
-         ! Defensive: not reachable while eq_bpsd_reset sets the init flag.
+         ! Defensive: not reachable while eq_bpsd_reset sets the init flag; kept
+         ! so that a later change of that flag cannot leave put writing into nothing.
          equ1D%nrmax=0
          metric1D%nrmax=0
          CALL eq_bpsd_init(ierr)
       elseif(size(equ1D%rho).ne.nrmax.or.size(metric1D%rho).ne.nrmax) then
          ! eq_bpsd_init sizes the arrays when its stored nrmax differs; clearing
-         ! it is defensive (put stores nrpmax there, which equals the new NRMAX
-         ! only when RB < RA, and that already fails in bpsd_put_data).
+         ! it is defensive: put stores nrpmax there, which equals the new NRMAX
+         ! only when RB < RA, and that already fails in bpsd_put_data. The clear
+         ! matters when the stored value equals the new NRMAX and exceeds the old
+         ! arrays, and on a grid shrink.
          equ1D%nrmax=0
          metric1D%nrmax=0
          CALL eq_bpsd_init(ierr)

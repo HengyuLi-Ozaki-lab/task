@@ -299,7 +299,7 @@
          IF(IERR.NE.0) THEN
             WRITE(EQ_ERRMSG,'(A,I0,A,I0,A)',IOSTAT=IOS) &
                  'EQCALQP: EQMAGS could not trace the flux surface ',NR, &
-                 ' (its status ',IERR,'); the usual cause is a wall RB'// &
+                 ' (its status ',IERR,'); one cause is a wall RB'// &
                  ' smaller than the plasma radius RA'
             WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
             IERR=111
@@ -594,7 +594,7 @@
       IF(IERR.NE.0) THEN
          WRITE(EQ_ERRMSG,'(A,I0,A)',IOSTAT=IOS) &
               'EQCALQP: EQMAGS could not trace the edge surface (its status ', &
-              IERR,'); the usual cause is a wall RB smaller than the plasma'// &
+              IERR,'); one cause is a wall RB smaller than the plasma'// &
               ' radius RA'
          WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
          IERR=112
