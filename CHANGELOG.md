@@ -31,6 +31,30 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   - `trlib`: `TrFailure`, `TrlibRunError.failure` (`None` when the `.so` predates `tr_last_error`) and
     `Trlib.last_error()`. `tr_mcp`: the run error string carries the record, and `describe_parameters` has an
     `eq_names` line. TOT and the mono build stop and record too, but `tot_api.h` and `totlib` have no accessor yet.
+- **TR library: outputs by name** (the MODELG 9 heating study of task-web, #96 PR 2).
+  - `tr_scalar_count`, `tr_scalar_name`, `tr_get_scalar(name, &value)`: 31 global results as `TRGLOB` last computed
+    them (`T`, `WPT`, `AJT`, `Q0`, the betas, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`, `AJRFT`, `PNFT`, `QF`, `PINT`,
+    `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`,
+    `TAUE98`) in the units of `tr/trrslt_globals.f90` (`PINT` includes the alpha power `PNFT`, which is `P_fus/5` for
+    D-T). They are current after `tr_run`; before the first run of a lifecycle they are the previous one's. An
+    unknown or inexact name returns `TR_ERR_INVALID` and leaves the value alone. `Trlib.scalar_names()`,
+    `Trlib.get_scalar()`; `TrState.scalars` holds all 31 after `get_state` (`to_dict()` keeps the 14 of the C struct,
+    which the baselines compare).
+  - `tot_get_scalar("tr:<NAME>", &value)` and `Tot.get_scalar` ask TR the same way (`tot_api.h`, `totlib`).
+  - `tr_mcp`: `get_state` returns the 31 scalars; `describe_state_schema` lists each with its unit and meaning, and a
+    test fails when the library lists a name the schema lacks.
+- **TR library: the run's history by name.** TR records a row every `NGTSTP` steps (default 2) in single precision
+  (`GT`, `GVT` of `TRATOT`); `tr_history_length`, `tr_history_full`, `tr_history_count`, `tr_history_name` and
+  `tr_history_get(name, buf, n, &got)` read it without cutting the run: 47 columns (`T`, the central and average
+  densities and temperatures `NE0`, `NEAV`, `TE0`, `TI0`, `TEAV`, `TIAV`, `NLAV`, `WPT`, the currents, `PINT`, `POHT`,
+  `PNBT`, the EC/LH/IC powers to electrons and ions, `PNFT`, `POUT`, `PRLT`, `VLOOP`, `Q0`, `RQ1`, `ALI`, the confinement
+  times, the betas, `QF`, `RIP`, ... and `BETAN`, `PRFST`, which are computed from the row). The first row is the state
+  at t = 0, a call of `tr_run` adds `nsteps / NGTSTP` rows, and `tr_prep` (every first run and every run after a
+  changed parameter) starts the history again. The history holds `NTM` = 10001 rows and TR then stops recording
+  silently; `tr_history_full` says when. A long run sets `NGTSTP` so that steps / `NGTSTP` < 10001.
+  `Trlib.history(names=None)` returns `{name: ndarray}` (float64 from the single-precision rows: about 7 digits),
+  with `history_names`, `history_length`, `history_full`; `tot_history_*` and `Tot.history` take `tr:<NAME>` names;
+  `tr_mcp` has `get_history` and `describe_history_schema` (unit and meaning of each column).
 - **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
   re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
   (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
@@ -200,6 +224,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   be made. Not refused: a centre density far below the edge's, which fails
   too (`PN(2)` = 1e-9, 1e-6 and 1e-4 end with `ierr=3` within 10 steps).
 
+- **TR library: a run made in several `tr_run` calls records the step at each cut once in the history.** In library
+  mode every call began with an evaluation of the step the call before ended on, which wrote that step's row of
+  `GT`/`GVT` a second time (with `WPDOT` 0). It is not recorded again (`tr/trexec.f90`, `tr_eval`); the profile history
+  (`TRATOG`) and `TRSNAP`'s print still repeat the step and are not exported. `tr2` is unchanged.
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and

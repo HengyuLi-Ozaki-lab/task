@@ -140,6 +140,18 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! 軸上 Zeff
 `tr_set_param` / `tr_set_param_str` の名前 `eq:NAME` は EQ のレジストリ (`eq_param_set`) に渡されます. このため
 `libtrapi.so` は `eq_param_registry.o` をリンクし, 受理された設定の後の `tr_run` は再度準備を行います. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` は TR 経由では何もしないため拒否され, プロセスの最初の準備の試行の後は, 固定された bpsd が k-yoshimi/bpsd#7 を持つまで, すべての `eq:` 名が拒否されます. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です. このガードは bpsd#7 の溢れへの直接の経路だけを塞ぎます: `MODELG` 9 では EQ のプラズマ格子を動かす入力はすべてその bpsd を必要とします (`python/trlib/README.md` 参照). TOT の `eq:` ディスパッチャはガードされません.
 
+## 出力の名前引き (`tr_api.f90`)
+
+`tr_state_t` のスカラーは `TRGLOB` が計算する 31 個の全体量のうち 14 個です. `tr_scalar_count`, `tr_scalar_name`,
+`tr_get_scalar(name, &value)` は 31 個すべてを名前で返します (`PNFT`, `QF`, `PINT`, `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`,
+`AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`, `TAUE98` が追加), 単位は `trrslt_globals.f90` のとおりです.
+`tot_get_scalar("tr:NAME")` はこれに委譲します.
+
+`tr_history_*` は `TRATOT` が `NGTSTP` ステップごとに書く時間履歴 `GT(NGT)`, `GVT(NGT, 1:110)` を名前で返します
+(47 列, **単精度** (`GUCLIP`), `NTM` = 10001 行). 行が満杯になると TR は黙って記録を止めます (`tr_history_full` で分かります):
+長い計算では `NGTSTP` を設定してください. `tr_prep` が `NGT` を 0 にするので, 準備のたびに履歴は最初からになります.
+ライブラリモードでは, 前の `tr_run` が終わったステップで次の呼び出しが始まるとき, そのステップの行を二重に記録しません.
+
 (reinit-constraints)=
 ## 再初期化の制約
 

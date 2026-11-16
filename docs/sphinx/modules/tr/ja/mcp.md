@@ -70,7 +70,7 @@ python -m tr_mcp.server --help
 python -m tr_mcp.server --print-tools
 ```
 
-9 ツールが並びます (詳細は下記の「提供ツール一覧」参照).
+12 ツールが並びます (詳細は下記の「提供ツール一覧」参照).
 
 ### 環境ヘルスチェック
 
@@ -158,7 +158,7 @@ tr-mcp print-config --client cursor --scope project
 
 ## 提供ツール一覧
 
-`tr_mcp` は 9 個のツールを公開します.
+`tr_mcp` は 12 個のツールを公開します.
 
 | ツール | 目的 | 主な引数 |
 |---|---|---|
@@ -169,12 +169,22 @@ tr-mcp print-config --client cursor --scope project
 | `get_state` | 現在の状態取得 (`tr_get_state`) | なし |
 | `finalize` | リソース解放 (`tr_finalize`) | なし |
 | `describe_parameters` | パラメータ一覧・型・説明 (LLM 向けのインスペクション) | なし |
-| `describe_state_schema` | `get_state` 戻り値の JSON schema | なし |
+| `describe_state_schema` | `get_state` 戻り値の JSON schema (31 個の `scalars` に単位つき) | なし |
+| `get_history` | 時間履歴 (`NGTSTP` ステップごとに 1 行, 単精度, 最大 10001 行) | `names` (省略で全列) |
+| `describe_history_schema` | `get_history` の列と単位 | なし |
 | `run_and_get_state` | `init + set + run + get_state` を一括実行 | `params`, `ntmax` |
 
 `describe_parameters` と `describe_state_schema` の 2 つは **LLM が
 パラメータ名を間違えないため** に存在します. LLM はまずこれを呼んで
 名前と型を確認してから, `set_params` などを呼ぶ流れになります.
+
+### 出力の名前引きと時間履歴 (`get_state`, `get_history`)
+
+`get_state` の `scalars` は TR が計算する 31 個の全体量 (`WPT`, `PNFT`, `PINT`, `QF`, `RIP` など) を返し, `describe_state_schema` が
+各量の単位と意味を示します (電力 MW, 電流 MA, エネルギー MJ). `get_history(names)` は時間履歴を, `NGTSTP` ステップごとに 1 行
+(既定 2, 最初の行は t = 0) `{rows, full, columns}` として返します. 値は**単精度**で, 履歴は **`NTM` = 10001 行**で止まります
+(TR は黙って記録をやめ, `full` が真になります): 長い計算では steps / `NGTSTP` が 10001 未満になるよう `NGTSTP` を設定してください.
+`describe_history_schema` が列ごとの単位を示します.
 
 ## 使い方の例
 

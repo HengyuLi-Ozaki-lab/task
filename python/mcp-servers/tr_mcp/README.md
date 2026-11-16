@@ -112,17 +112,20 @@ python -m tr_mcp.server --help
 python -m tr_mcp.server --print-tools
 ```
 
-以下の 9 ツールが並びます。
+以下の 12 ツールが並びます。
 
 ```
+describe_history_schema
 describe_parameters
 describe_state_schema
 finalize
+get_history
 get_state
 init
 run
 run_and_get_state
 set_param
+set_param_str
 set_params
 ```
 
@@ -243,8 +246,18 @@ LLM は `describe_parameters` を呼び、`group == "transport"` を抽出して
 | `get_state` | 現在の状態取得 | なし |
 | `finalize` | リソース解放 | なし |
 | `describe_parameters` | パラメータ一覧・型・説明 | なし |
-| `describe_state_schema` | `get_state` の JSON schema | なし |
+| `describe_state_schema` | `get_state` の JSON schema (31 個の `scalars` の単位つき) | なし |
+| `get_history` | 時間履歴 (`NGTSTP` ステップごとに 1 行, 単精度, 最大 10001 行) | `names` (省略で全列) |
+| `describe_history_schema` | `get_history` の列と単位 | なし |
 | `run_and_get_state` | init + set + run + get_state を一括 | `params`, `ntmax` |
+
+### 出力の名前引きと時間履歴 (`get_state`, `get_history`)
+
+`get_state` の `scalars` は TR が計算する 31 個の全体量 (`WPT`, `PNFT`, `PINT`, `QF`, `RIP` など) を返し, `describe_state_schema` が
+各量の単位と意味を示します (電力 MW, 電流 MA, エネルギー MJ). `get_history(names)` は時間履歴を, `NGTSTP` ステップごとに 1 行
+(既定 2, 最初の行は t = 0) 返します. 値は**単精度**で, 履歴は **`NTM` = 10001 行**で止まります (TR は黙って記録をやめ,
+戻り値の `full` が真になります): 長い計算では steps / `NGTSTP` が 10001 未満になるよう `NGTSTP` を設定してください.
+`describe_history_schema` が列ごとの単位を示します.
 
 ## 8. FAQ / トラブルシューティング
 
