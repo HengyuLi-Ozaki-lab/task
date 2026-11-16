@@ -20,11 +20,11 @@ TR uses an implicit time-stepping scheme. The advancement
 coefficient is `FADV` (do not confuse with `THETA`, which is
 reserved elsewhere): `FADV = 0.5` is Crank-Nicolson and
 `FADV = 1.0` is fully implicit. The value is hard-coded inside
-the time-step routine itself — `tr/trexec.f90:516` assigns
+the time-step routine itself — `tr/trexec.f90:527` assigns
 `FADV = 1.D0` unconditionally — so TR runs fully implicit out
 of the box and there is no public knob to switch to
 Crank-Nicolson without editing the source. The scheme-selector
-comments at `tr/trexec.f90:512-514` document the meaning of
+comments at `tr/trexec.f90:523-525` document the meaning of
 each value.
 
 Concrete consequence: a strict CFL condition does NOT apply.
