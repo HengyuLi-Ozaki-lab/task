@@ -493,7 +493,7 @@ def handle_finalize() -> str:
     #227 item 2: this used to mark the :class:`Trlib` handle closed *without*
     calling ``tr_finalize``, as a workaround for a SIGABRT (~40% of calls) in
     the Fortran cleanup path.  That left ``g_initialized`` set in
-    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (tr_api.f90:79 --
+    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (tr_api.f90:83 --
     "already initialized, just return OK") a subsequent ``init`` became a
     no-op that did **not** restore defaults.  It also disagreed with
     ``handle_run_and_get_state``, which needs a real finalize for its

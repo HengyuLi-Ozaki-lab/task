@@ -203,7 +203,7 @@ def test_fixture_structure_is_intact(path: Path):
 #     Setting a transport or kinetic radial grid there is entirely normal.
 #
 #     Note it does NOT follow that such a value cannot reach the blob:
-#     tr/trmetric.f90:33-38 pushes `nrmax+1`, `nthmax=64` and `nsumax=0`
+#     tr/trmetric.f90:37-42 pushes `nrmax+1`, `nthmax=64` and `nsumax=0`
 #     INTO the /EQ/ namelist via eq_parm(2,...) whenever modelg is 3, 5 or
 #     8 -- and tot_ht6m_short.trparm:2 sets modelg=3, so that branch is
 #     live for this very case. Two things make the exclusion safe anyway,

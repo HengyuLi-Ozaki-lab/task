@@ -20,11 +20,11 @@ TR uses an implicit time-stepping scheme. The advancement
 coefficient is `FADV` (do not confuse with `THETA`, which is
 reserved elsewhere): `FADV = 0.5` is Crank-Nicolson and
 `FADV = 1.0` is fully implicit. The value is hard-coded inside
-the time-step routine itself — `tr/trexec.f90:499` assigns
+the time-step routine itself — `tr/trexec.f90:502` assigns
 `FADV = 1.D0` unconditionally — so TR runs fully implicit out
 of the box and there is no public knob to switch to
 Crank-Nicolson without editing the source. The scheme-selector
-comments at `tr/trexec.f90:495-499` document the meaning of
+comments at `tr/trexec.f90:498-502` document the meaning of
 each value.
 
 Concrete consequence: a strict CFL condition does NOT apply.
@@ -73,9 +73,9 @@ differ.
 
 Each time step runs an inner iteration that converges toward
 `EPSLTR` (relative residual threshold). The convergence checks
-live at `tr/trexec.f90:112-128` (per species, per radial
+live at `tr/trexec.f90:113-129` (per species, per radial
 cell). The exit-on-iteration-budget guard sits at
-`tr/trexec.f90:138-141`: when the iteration counter reaches
+`tr/trexec.f90:139-142`: when the iteration counter reaches
 `LMAXTR` the loop exits *without* setting `IERR` and *without*
 writing a console diagnostic, so the run **silently continues**
 with whatever residual was reached. There is no per-step flag
@@ -93,7 +93,7 @@ cell) rather than a sign of an underlying numerical problem.
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) diagnosis
 
-`tr_api_run` (`tr/tr_api.f90:303,318`) returns
+`tr_api_run` (`tr/tr_api.f90:345,362`) returns
 `TR_ERR_CALC_FAILED` for **any** non-zero result code from the
 underlying `tr_prep` / `tr_loop` routines. The wrapper
 deliberately collapses the full set of downstream failure
@@ -164,23 +164,23 @@ one of five `TrDiagCode` values from the enum at
 `tr/tr_api.h:76-82` (mirrored in `python/trlib/_ffi.py:74-78`).
 The enum reserves five categories; `tr_api_validate` emits four
 of them, and `MISSING_REQUIRED` is reserved for a later category
-(`tr/tr_api.f90:466`):
+(`tr/tr_api.f90:511`):
 
 - **`OUT_OF_RANGE`** — a parameter value sits outside the
   range that `tr_api_validate` checks. Validate's `NSMAX`
   check, for example, compares against the run-time species
   bound `NSM = 4` (not the compile-time C ABI bound
   `TR_MAX_NSMAX = 8`), so `NSMAX = 5` reaches `validate()`
-  and is reported here (`tr/tr_api.f90:494`). Note: values
+  and is reported here (`tr/tr_api.f90:539`). Note: values
   beyond the registry's own range — e.g. `NSMAX > 8` — are
   rejected by `set_param` *before* validate runs
-  (`tr/tr_param_registry.f90:154-156`), so you will not see
+  (`tr/tr_param_registry.f90:155-157`), so you will not see
   them in the diagnostic list. Validate's job is to catch the
   values the registry accepted but the run-time still cannot
   use. The same code covers the per-species profiles of #189,
   the equation switches and the particle sources (section 14 of
   {doc}`parameters`), and `EXTERNAL_DRIVEN_RW <= 0` with
-  `EXTERNAL_DRIVEN_I != 0` (`tr/tr_api.f90:526-529`), a pair
+  `EXTERNAL_DRIVEN_I != 0` (`tr/tr_api.f90:571-574`), a pair
   that is reported here rather than as `INCONSISTENT_PAIR`.
 
 - **`OUT_OF_RANGE_AFTER_DEP`** — a value that passes its own

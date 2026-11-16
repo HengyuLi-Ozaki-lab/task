@@ -102,7 +102,7 @@ CONTAINS
     ! these defaults MUST be set here -- otherwise NRMAX/NTHMAX stay 0
     ! and equnit::eq_load's save/restore of those counters around
     ! eqload() leaves the post-load grid sized 0, which then corrupts
-    ! the heap inside SPL2D in eqcalq (eqcalq.f90:1041). Callers can
+    ! the heap inside SPL2D in eqcalq (eqcalq.f90:1090). Callers can
     ! still override MODELG / KNAMEQ / etc. afterwards via
     ! eq_set_param / eq_set_param_str.
     CALL equnit_eq_init
