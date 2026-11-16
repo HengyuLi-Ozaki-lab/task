@@ -296,6 +296,15 @@
 !     &        PSIP(NR),PPS(NR),TTS(NR),RINIT,ZINIT
 
          CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
+         IF(IERR.NE.0) THEN
+            WRITE(EQ_ERRMSG,'(A,I0,A,I0,A)',IOSTAT=IOS) &
+                 'EQCALQP: EQMAGS could not trace the flux surface ',NR, &
+                 ' (its status ',IERR,'); the usual cause is a wall RB'// &
+                 ' smaller than the plasma radius RA'
+            WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+            IERR=111
+            RETURN
+         ENDIF
 
          SUMS=0.D0
          SUMV=0.D0
@@ -396,6 +405,15 @@
          AVEIR  (NR)=SUMAVIR /SUMV
          RITOR  (NR)=SUMAVGR2
 
+         IF(NZMINR.LE.1.OR.NZMINR.GE.NA.OR. &
+            NZMAXR.LE.1.OR.NZMAXR.GE.NA) THEN
+            WRITE(EQ_ERRMSG,'(A,I0,A,I0,A,I0,A)',IOSTAT=IOS) &
+                 'EQCALQP: the top or bottom of a flux surface is at the end of its contour (indices ', &
+                 NZMINR,' and ',NZMAXR,' of ',NA,'); the surface is not a closed curve around the axis'
+            WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+            IERR=110
+            RETURN
+         ENDIF
          call zminmax(YA,NZMINR,ZMIN,ZMINR)
          call zminmax(YA,NZMAXR,ZMAX,ZMAXR)
 
@@ -573,6 +591,15 @@
       ZINIT=ZAXIS
       TTSA=TTFUNC(0.D0)
       CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
+      IF(IERR.NE.0) THEN
+         WRITE(EQ_ERRMSG,'(A,I0,A)',IOSTAT=IOS) &
+              'EQCALQP: EQMAGS could not trace the edge surface (its status ', &
+              IERR,'); the usual cause is a wall RB smaller than the plasma'// &
+              ' radius RA'
+         WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+         IERR=112
+         RETURN
+      ENDIF
 
       SUMS=0.D0
       SUMV=0.D0
@@ -706,6 +733,8 @@
             RMAX=RAXIS
             ZMIN=ZAXIS
             ZMAX=ZAXIS
+            NZMINR=1
+            NZMAXR=1
 
             DO NTH=1,NTHMAX+1
                ya(1,nth)=RPS(NTH,NR)
@@ -722,6 +751,15 @@
                ENDIF
             ENDDO
 
+            IF(NZMINR.LE.1.OR.NZMINR.GE.NTHMAX+1.OR. &
+               NZMAXR.LE.1.OR.NZMAXR.GE.NTHMAX+1) THEN
+               WRITE(EQ_ERRMSG,'(A,I0,A,I0,A,I0,A)',IOSTAT=IOS) &
+                    'EQCALQV: the top or bottom of a flux surface is at the end of its contour (indices ', &
+                    NZMINR,' and ',NZMAXR,' of ',NTHMAX+1,'); the surface is not a closed curve around the axis'
+               WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+               IERR=110
+               RETURN
+            ENDIF
             call zminmax(YA,NZMINR,ZMIN,ZMINR)
             call zminmax(YA,NZMAXR,ZMAX,ZMAXR)
 
@@ -778,6 +816,8 @@
             RMAX=RAXIS
             ZMIN=ZAXIS
             ZMAX=ZAXIS
+            NZMINR=1
+            NZMAXR=1
             BMIN=ABS(2.D0*BB)
             BMAX=0.D0
 
@@ -853,6 +893,15 @@
             AVEGP2 (NR)=SUMAVGV2/SUMV*4.D0*PI**2
             AVEIR  (NR)=SUMAVIR /SUMV
 
+            IF(NZMINR.LE.1.OR.NZMINR.GE.NA.OR. &
+               NZMAXR.LE.1.OR.NZMAXR.GE.NA) THEN
+               WRITE(EQ_ERRMSG,'(A,I0,A,I0,A,I0,A)',IOSTAT=IOS) &
+                    'EQCALQV: the top or bottom of a flux surface is at the end of its contour (indices ', &
+                    NZMINR,' and ',NZMAXR,' of ',NA,'); the surface is not a closed curve around the axis'
+               WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+               IERR=110
+               RETURN
+            ENDIF
             call zminmax(YA,NZMINR,ZMIN,ZMINR)
             call zminmax(YA,NZMAXR,ZMAX,ZMAXR)
 

@@ -131,7 +131,7 @@ left over from it. None is a regression of the merges.
   devices larger than the default box [1.5, 4.5] x [-2, 2], which run (ITER-sized `RR=6.2`, `RA=2.0`: two diagnostics
   and a successful `run(0)`). The box check now needs `MODELG = 2` (since `ebd44d7e`: any but a file format) and `MDLEQF >= 10`.
 - **EQ `validate()`, open (medium).** After a run, `validate()` reads the box that `EQCALQP` overwrote with the traced
-  plasma extent, for any `MDLEQF` (`eq/eqcalq.f90:603-613`): with `MDLEQF = 10` and the box `[4.0, 8.5] x [-4, 4]` it
+  plasma extent, for any `MDLEQF` (`eq/eqcalq.f90:630-640`): with `MDLEQF = 10` and the box `[4.0, 8.5] x [-4, 4]` it
   returns `[]` before `run(0)` and, after a successful run, both extent diagnostics (the box has become
   `[4.201, ...]`). Since `ebd44d7e` it is one diagnostic, the outer edge: the traced `RGMAX` is 8e-5 below `RR + RA`
   there (3e-4 on the default device). With `MDLEQF >= 10` the next `run(0)` of the same instance reads that box too,

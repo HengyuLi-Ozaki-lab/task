@@ -631,8 +631,9 @@ CONTAINS
     ! ---- INCONSISTENT_PAIR: the wall must enclose the plasma (RB >=
     !      RA) in an analytic solve. Measured: a large device (RR=6.2,
     !      RA=2.0) run through MODELG=2 mode=0 with RB left at the
-    !      small-tokamak default (1.2) aborts the process (EQMAGS cannot
-    !      trace a surface and a later zminmax call reads YA(:,0));
+    !      small-tokamak default (1.2) fails the run (EQMAGS cannot trace
+    !      a surface; EQCALQP returns ierr=111 and eq_last_error says so;
+    !      before that it read YA(:,0) in zminmax and ended the process);
     !      RB=0.8 with RA=1.0 runs but gives a different equilibrium
     !      than an enclosing wall (PVOL 57.97 against 59.16, the same for
     !      every MODELG solved), because the solve and its R-Z grid use the
@@ -692,8 +693,8 @@ CONTAINS
     !      the box as it moves (RDLT=0.4 with RGMIN=RR fails, ierr=103),
     !      and a Z bound inside the axis's rounding (ZGMIN=-1e-14 fails).
     !      After the solve EQCALQP overwrites the four with the traced
-    !      plasma extent for any MDLEQF (eqcalq.f90:603-613; EQCALQV
-    !      again for MDLEQF < 10, 977-988), so for MDLEQF < 10 they are
+    !      plasma extent for any MDLEQF (eqcalq.f90:630-640; EQCALQV
+    !      again for MDLEQF < 10, 1026-1037), so for MDLEQF < 10 they are
     !      outputs only. With MDLEQF >= 10 a validate() after a run reads
     !      the traced RGMAX, 3e-4 below RR+RA at the defaults: the edge is
     !      flagged, rightly once an input has changed, since the next
