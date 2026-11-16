@@ -15,6 +15,8 @@
 !   tr_get_state  -> populates the tr_state_c struct from the same set of
 !                    TRCOMM scalars/arrays that trregress.f90 dumps.
 !   tr_finalize   -> DEALLOCATE_TRCOMM + clears g_* flags.
+!   tr_continue   -> tr_loop on the prepared case, NT counting on (PR 3 of #96);
+!                    tr_param_class says which names it takes in.
 !
 ! The Fortran-side names are tr_api_* to avoid colliding with the existing
 ! SUBROUTINE tr_init in trinit.f90 (and friends); the C-side public names
@@ -42,7 +44,7 @@ MODULE tr_api
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_RW, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
   USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation, &
-       tr_param_note_external_set
+       tr_param_note_external_set, tr_param_structural_generation, tr_param_last_structural, tr_param_class
   USE eq_param_registry, ONLY: eq_param_set, eq_param_set_str
   ! EQ's mesh sizes and the compile-time maxima of its arrays (the ones eq_validate checks, eq/eq_api.f90). Renamed:
   ! TRCOMM has an NRMAX of its own.
@@ -64,7 +66,8 @@ MODULE tr_api
   PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, tr_api_history_get, &
             tr_api_set_param, tr_api_set_param_str, tr_api_finalize, tr_api_history_name, &
             tr_api_validate, tr_api_history_length, tr_api_history_full, tr_api_history_count, &
-            tr_check_bpsd_pull, tr_api_last_error, tr_api_scalar_count, tr_api_scalar_name, tr_api_get_scalar
+            tr_check_bpsd_pull, tr_api_last_error, tr_api_scalar_count, tr_api_scalar_name, tr_api_get_scalar, &
+            tr_api_continue, tr_api_param_class
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -90,6 +93,10 @@ MODULE tr_api
   ! Registry mutation counter seen by the last successful prep (#253).
   ! -1 = never prepared. See tr_param_generation in the registry.
   INTEGER, SAVE :: g_prep_generation = -1
+  ! The structural count (tr_param_structural_generation) seen by the last successful prep, and whether a tr_prep or
+  ! tr_loop of tr_run or tr_continue failed since then: tr_continue refuses on either (PR 3 of #96).
+  INTEGER, SAVE :: g_prep_structural = -1
+  LOGICAL, SAVE :: g_failed = .FALSE.
   ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
   ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
   INTEGER, SAVE :: g_first_nrmax = 0
@@ -154,6 +161,7 @@ CONTAINS
     tr_eq_init    = .TRUE.
     g_initialized = .TRUE.
     g_prepared    = .FALSE.
+    g_failed      = .FALSE.
     ! Library mode: tr_loop, tr_set_metric and tr_exec record their failures and
     ! tr_loop tests the periodic equilibrium solve. Only this entry sets it.
     tr_library_mode = .TRUE.
@@ -206,7 +214,7 @@ CONTAINS
           IF (eq_rc /= 0) THEN
              ierr = TR_ERR_INVALID
           ELSE
-             CALL tr_param_note_external_set()
+             CALL tr_param_note_external_set(fname(1:n))
              ierr = TR_OK
           END IF
           RETURN
@@ -284,7 +292,7 @@ CONTAINS
           IF (eq_param_set_str(fname(4:LEN_TRIM(fname)), TRIM(fvalue)) /= 0) THEN
              ierr = TR_ERR_INVALID
           ELSE
-             CALL tr_param_note_external_set()
+             CALL tr_param_note_external_set(TRIM(fname))
              ierr = TR_OK
           END IF
           RETURN
@@ -363,11 +371,14 @@ CONTAINS
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, T, 'tr_prep failed')
+          g_failed = .TRUE.
           ierr = TR_ERR_CALC_FAILED
           RETURN
        END IF
        g_prepared = .TRUE.
+       g_failed   = .FALSE.
        g_prep_generation = tr_param_generation()
+       g_prep_structural = tr_param_structural_generation()
     END IF
 
     ! Override NTMAX for this call so tr_loop steps exactly ntmax_in
@@ -380,6 +391,7 @@ CONTAINS
     IF (calc_ierr /= 0) THEN
        ! A failure that tr_loop's callees did not record is kept as OTHER.
        CALL tr_failure_record(TRF_OTHER, calc_ierr, NT, T, 'tr_loop returned a non-zero status')
+       g_failed = .TRUE.
        ierr = TR_ERR_CALC_FAILED
        RETURN
     END IF
@@ -497,6 +509,7 @@ CONTAINS
     tr_eq_init    = .TRUE.
     g_initialized = .FALSE.
     g_prepared    = .FALSE.
+    g_failed      = .FALSE.
     ierr = TR_OK
   END FUNCTION tr_api_finalize
 
@@ -983,12 +996,12 @@ CONTAINS
   END FUNCTION tr_api_state_size
 
   !-------------------------------------------------------------------
-  ! tr_last_error : the first failure of the last tr_run.
+  ! tr_last_error : the first failure of the last tr_run or tr_continue.
   !
   ! param = the kind (NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED,
-  ! OTHER; REFUSED is reserved for tr_continue and not recorded yet), code =
+  ! OTHER, or REFUSED: tr_continue refused to run, with code 0), code =
   ! the Fortran status, msg = "nt=<step> t=<time> s: <what failed>" (for
-  ! EQ_FAILED the text ends with EQ's EQ_ERRMSG). Cleared at the start of every tr_run. Always TR_OK.
+  ! EQ_FAILED the text ends with EQ's EQ_ERRMSG). Cleared at the start of every tr_run and tr_continue. Always TR_OK.
   !-------------------------------------------------------------------
   FUNCTION tr_api_last_error(e) RESULT(ierr) BIND(C, NAME="tr_last_error")
     TYPE(tr_diag_entry_c), INTENT(OUT) :: e
@@ -1426,5 +1439,141 @@ CONTAINS
     got = INT(m, C_INT)
     ierr = TR_OK
   END FUNCTION tr_api_history_get
+
+  !-------------------------------------------------------------------
+  ! Run control (PR 3 of #96).
+  !
+  ! tr_continue : advance the prepared case by nsteps more steps without
+  ! preparing again. The control parameters set since the last tr_run or
+  ! tr_continue (tr_param_class 1) take effect at its first step; it runs
+  ! the same tr_loop as tr_run, with the same prologue (tr_eval, RIP = RIPS,
+  ! DIPDT, tr_bpsd_get), as tr2's C does, so it equals tr2's C at the same
+  ! cut (python/trlib/tests/test_continue_vs_tr2.py, 1e-10).
+  !
+  ! NT counts on across calls; tr2's C starts it at 0. The steps tr_loop
+  ! and tr_eval pick by NT (MOD with NTEQIT, NTSTEP, NGTSTP, NGRSTP) are
+  ! counted from the preparation here, so a call equals tr2's C on the same
+  ! cut when the steps before it are a multiple of those. With NCLASS
+  ! (MDNCLS /= 0) it does not: TRCFET takes NCLASS's resistivity only when
+  ! NT /= 0 (tr/trcoef_resistivity.f90:123), so tr2's C takes the classical
+  ! one on its first step and tr_continue does not (measured on tr_iter01:
+  ! 1.2e-4 from tr2's C, 5e-14 from one call). RIP ramps from RIPS (the
+  ! last call's RIPE) to RIPE over this call's steps (tr/trloop.f90, DIPDT).
+  !
+  ! A run in several calls is not bit for bit one call: each call begins
+  ! with that prologue (the plan's findings F2; test_continue.py measures
+  ! it on ITER under MODELG 9).
+  !
+  ! Refused (TR_ERR_INVALID, a REFUSED record with code 0, one line on
+  ! unit 6, nothing run): before a preparation; after a failed tr_prep or
+  ! tr_loop of tr_run or tr_continue, until a tr_run prepares again (it
+  ! prepares after any set; a tr_run with nothing set goes on from the
+  ! failed state, as before); after a structural set since the preparation
+  ! (the record names the last one); nsteps < 0; a value tr_run's own checks
+  ! refuse (species_profile_violations: with MODELG 9 a negative RIPE).
+  ! TR_ERR_NOT_INIT before tr_init. TR_ERR_CALC_FAILED when the loop fails,
+  ! with its record, as tr_run. tr_continue(0) makes these checks and does
+  ! nothing else: no loop (whose exit would set RIPS = RIPE), and the control
+  ! sets stay pending for the next call.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_continue(nsteps) RESULT(ierr) BIND(C, NAME="tr_continue")
+    INTEGER(C_INT), VALUE, INTENT(IN) :: nsteps
+    INTEGER(C_INT) :: ierr
+    INTEGER :: ntmax_save, calc_ierr, nviol, i
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
+    INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
+
+    CALL tr_failure_clear()      ! the record belongs to one tr_run or tr_continue
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+    IF (nsteps < 0) THEN
+       CALL refuse('the step count is negative')
+       RETURN
+    END IF
+    IF (.NOT. g_prepared) THEN
+       CALL refuse('no prepared case: tr_run prepares one')
+       RETURN
+    END IF
+    IF (g_failed) THEN
+       CALL refuse('the last run failed: a tr_run after a parameter set prepares the case again')
+       RETURN
+    END IF
+    IF (g_prep_structural /= tr_param_structural_generation()) THEN
+       CALL refuse('structural parameter '//TRIM(tr_param_last_structural())// &
+            ' set since the preparation: tr_run prepares the case again')
+       RETURN
+    END IF
+    ! The checks tr_run makes before it prepares: of the control names they read RIPE (current_for_eq).
+    CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+    CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
+    CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
+    IF (nviol > 0) THEN
+       DO i = 2, nviol
+          WRITE(6, '(A)') 'XX tr_continue: '//TRIM(vnames(i))//': '//TRIM(vmsgs(i))
+       END DO
+       CALL refuse(TRIM(vnames(1))//': '//TRIM(vmsgs(1)))
+       RETURN
+    END IF
+    ! No step: tr_loop would leave at once and set RIPS = RIPE at its exit (tr/trloop.f90), so a RIPE set before
+    ! this call would be lost (the next call starts from RIP = device%ip with DIPDT 0). The control sets stay pending.
+    IF (nsteps == 0) THEN
+       ierr = TR_OK
+       RETURN
+    END IF
+
+    g_prep_generation = tr_param_generation()     ! the control sets are taken in: tr_run does not prepare for them
+    ntmax_save = NTMAX
+    NTMAX      = NT + nsteps
+    CALL tr_loop(calc_ierr)
+    NTMAX      = ntmax_save
+    IF (calc_ierr /= 0) THEN
+       CALL tr_failure_record(TRF_OTHER, calc_ierr, NT, T, 'tr_loop returned a non-zero status')
+       g_failed = .TRUE.
+       ierr = TR_ERR_CALC_FAILED
+       RETURN
+    END IF
+    ierr = TR_OK
+
+  CONTAINS
+
+    SUBROUTINE refuse(why)
+      CHARACTER(LEN=*), INTENT(IN) :: why
+      CALL tr_failure_record(TRF_REFUSED, 0, NT, T, why)
+      WRITE(6, '(A)') 'XX tr_continue: '//why
+      ierr = TR_ERR_INVALID
+    END SUBROUTINE refuse
+
+  END FUNCTION tr_api_continue
+
+  !-------------------------------------------------------------------
+  ! tr_param_class : 1 for a control parameter (tr_continue takes it in),
+  ! 0 for a structural one (a name tr_set_param or tr_set_param_str takes,
+  ! or any eq: name; tr_run prepares again after it), -1 for a name the
+  ! setter does not know (tr_param_registry's tr_param_class). The name is
+  ! read as tr_set_param reads it; one that does not fit its 64 characters
+  ! is -1. No lifecycle check: callable before tr_init.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_param_class(name) RESULT(cls) BIND(C, NAME="tr_param_class")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
+    INTEGER(C_INT) :: cls
+    CHARACTER(LEN=64) :: fname
+    INTEGER :: i
+
+    fname = ' '
+    DO i = 1, LEN(fname)
+       IF (name(i) == C_NULL_CHAR) EXIT
+       fname(i:i) = name(i)
+    END DO
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          cls = -1
+          RETURN
+       END IF
+    END IF
+    cls = INT(tr_param_class(TRIM(fname)), C_INT)
+  END FUNCTION tr_api_param_class
 
 END MODULE tr_api

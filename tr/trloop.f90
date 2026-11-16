@@ -42,7 +42,7 @@ CONTAINS
          DIPDT=0.D0
       ELSE
          RIP=RIPS
-         IF(NTMAX.NE.0) DIPDT=(RIPE-RIPS)/(DBLE(NTMAX)*DT)
+         IF(NTMAX.GT.NT) DIPDT=(RIPE-RIPS)/(DBLE(NTMAX-NT)*DT)  ! over this call (tr2: NT=0)
          write(6,'(A,1P4E12.4)') "**RIP,RIPS,RIPE,DIP=",RIP,RIPS,RIPE,DIPDT
       ENDIF
 
