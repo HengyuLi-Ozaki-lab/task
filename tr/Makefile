@@ -671,8 +671,8 @@ $(OBJDIR)/trpsc.o  : trpsc.f90  trcomm.f90
 # Phase L-2 / L-3 C ABI sources. tr_state is independent of TRCOMM;
 # tr_param_registry and tr_api pull in TRCOMM plus tr_prep / tr_loop.
 $(OBJDIR)/tr_state.o : tr_state.f90
-$(OBJDIR)/tr_param_registry.o : tr_param_registry.f90 trcomm.f90 \
-                     $(OBJDIR)/trcomm.o
+$(OBJDIR)/tr_param_registry.o : tr_param_registry.f90 trcomm.f90 tr_state.f90 \
+                     $(OBJDIR)/trcomm.o $(OBJDIR)/tr_state.o
 $(OBJDIR)/tr_api.o   : tr_api.f90 tr_state.f90 \
                      $(OBJDIR)/tr_state.o $(OBJDIR)/tr_param_registry.o \
                      $(OBJDIR)/trcomm.o $(OBJDIR)/trinit.o \

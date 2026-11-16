@@ -120,6 +120,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELG": {"type": "int",   "group": "geometry",     "description": "equilibrium/geometry selector"},
     # --- plasma arrays (1..NSMM) ------------------------------------
     "NSMAX":  {"type": "int",   "group": "plasma",       "description": "number of species"},
+    "NRMAX":  {"type": "int",   "group": "plasma",       "description": "TR radial mesh points"},
     "PA":     {"type": "float[NSMM]", "group": "plasma", "description": "atomic mass per species (1-origin)"},
     "PZ":     {"type": "float[NSMM]", "group": "plasma", "description": "charge number per species"},
     "PN":     {"type": "float[NSMM]", "group": "plasma", "description": "initial density per species [10^20 m^-3]"},
@@ -138,6 +139,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "NTSTEP": {"type": "int",   "group": "time",         "description": "output cadence"},
     "EPSLTR": {"type": "float", "group": "time",         "description": "convergence tolerance"},
     "LMAXTR": {"type": "int",   "group": "time",         "description": "max inner-iteration count"},
+    "NTEQIT": {"type": "int",   "group": "time",         "description": "EQ re-solve interval in steps under MODELG=9 (0 = never)"},
     "NGTSTP": {"type": "int",   "group": "time",         "description": "graphics-output cadence (steps)"},
     "NGRSTP": {"type": "int",   "group": "time",         "description": "graphics-output cadence (radial)"},
     # --- transport coefficients ------------------------------------
@@ -159,6 +161,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MDLPEL": {"type": "int", "group": "modules", "description": "pellet injection module"},
     "MDLJBS": {"type": "int", "group": "modules", "description": "bootstrap-current model"},
     "MDLST":  {"type": "int", "group": "modules", "description": "sawtooth model"},
+    "TPRST":  {"type": "float", "group": "modules", "description": "sawtooth period [s]"},
     "MDLNF":  {"type": "int", "group": "modules", "description": "neutron/fusion module"},
     "MDLUF":  {"type": "int", "group": "modules", "description": "UFILE I/O mode"},
     # --- heating / current-drive scalars ---------------------------

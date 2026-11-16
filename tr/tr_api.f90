@@ -167,9 +167,8 @@ CONTAINS
        END IF
     END IF
 
-    ! Changing NRMAX / NSMAX after allocation would invalidate the
-    ! currently-allocated arrays. Rather than silently re-allocating we
-    ! require the caller to finalize and re-init in that case.
+    ! NRMAX is settable. Changing the mesh between preparations in one
+    ! process needs a bpsd with the spline-resize fix (see the README).
     IF (tr_param_set(TRIM(fname), value) /= 0) THEN
        ierr = TR_ERR_INVALID
     ELSE
@@ -457,11 +456,10 @@ CONTAINS
   !
   ! Future category (a follow-up PR): MISSING_REQUIRED.
   !
-  ! Note: NRMAX / NSZMAX / NSNMAX are NOT currently settable via
-  ! tr_set_param (the registry does not expose them), so runtime values
-  ! stay at their tr_init defaults and never exceed the compile-time
-  ! maxima. Follow-ups that extend the registry should add matching
-  ! checks here.
+  ! Note: NSZMAX / NSNMAX are NOT settable via tr_set_param, so they stay
+  ! at their tr_init defaults. NRMAX is settable, and the registry refuses
+  ! a value outside 3 .. TR_MAX_NRMAX, so it never exceeds the state
+  ! struct.
   !-------------------------------------------------------------------
   FUNCTION tr_api_validate(diag, diag_cap, ndiag) &
            RESULT(ierr) BIND(C, NAME="tr_validate")

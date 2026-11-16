@@ -153,13 +153,13 @@ is required — the wrapper forwards names verbatim.
 |---|---|---|
 | Geometry / device | `RR`, `RA`, `RKAP`, `RDLT`, `BB`, `PHIA` | scalar doubles |
 | Plasma (arrays, 1..NSMM) | `PA[i]`, `PZ[i]`, `PN[i]`, `PNS[i]`, `PT[i]`, `PTS[i]` | 1-origin index |
-| Plasma scalars | `NSMAX` | cast to INT |
+| Plasma scalars | `NSMAX`, `NRMAX` | cast to INT. `NRMAX` is TR's radial mesh, 3 to 500 (1 and 2 abort the solver; 500 is `TR_MAX_NRMAX`). Changing the TR or EQ mesh between preparations in one process needs bpsd with the spline-resize fix (k-yoshimi/bpsd#7) and, for a change of the EQ grid, `eq_bpsd_put` sizing its arrays again when the grid changes (a TASK-side fix that is not part of the registry change and may be absent from your tree). Without both, use one mesh per process: a later preparation on another grid writes out of bounds |
 | Current | `RIPS`, `RIPE` | |
-| Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR` | int-typed coerced |
+| Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR`, `NTEQIT` | int-typed coerced. `NTEQIT` is the step interval of the EQ re-solve under `MODELG=9` (0 = never; negative refused) |
 | Transport switches | `MDLKAI`, `MDLETA`, `MDLAD`, `MDLAVK`, `CHP`, `CK0`, `CK1` | |
 | Transport arrays | `CDW[i]` | |
 | Transport weights | `CDH`, `CNH` | the weights of `chi_s = CDH*chi_turb + CNH*chi_NC` (`chi_NC` the neoclassical chi, `AKNC`); default 1 (neutral) |
-| Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF` | |
+| Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF`; `TPRST` | `TPRST` is the sawtooth period in s (must be > 0) |
 | Fusion model of `trx` | `MODEL_PNF` | 0 (default) leaves `MDLNF` in charge; 1 is D-T; 2, 3, 4, 12, 14 evaluate more reactions and pass nothing to the solve. Not together with `MDLNF`; see `docs/sphinx/modules/tr/en/parameters.md` for what it does not do yet |
 | NCLASS and particle transport | `MDNCLS`, `AD0`, `AV0`, `CDP`, `CNP` | `MDNCLS` ≠ 0 takes the neoclassical transport, the resistivity and the bootstrap current from NCLASS; with the default `MDLAD` 3 and with NCLASS, D_s = CDP·AD0·chi_turb + CNP·D_NC; `AV0` is the pinch of `MDLAD` 1, 2, 4 |
 | Equations solved | `MDLEQB`, `MDLEQN`, `MDLEQE` | B_theta evolved (1, default) or held (with `MODELG` 3 TR reloads psi from the equilibrium every step either way); densities held (0, default) or evolved; with densities evolved, 0/1/2 = electrons from quasi-neutrality / both solved / bulk ions from quasi-neutrality (2 only for two species, hydrogenic species 2, no impurity density, no UFILE) |

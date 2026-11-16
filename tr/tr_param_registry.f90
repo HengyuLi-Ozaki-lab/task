@@ -49,11 +49,12 @@
 ! docs/superpowers/plans/2026-04-18-tr-library-L3-param-registry.md.
 
 MODULE tr_param_registry
+  USE tr_state, ONLY: TR_MAX_NRMAX
   USE trcomm, ONLY: rkind, &
        RR, RA, RKAP, RDLT, BB, PHIA, &
        NSMAX, PA, PZ, PN, PNS, PT, PTS, &
        RIPS, RIPE, &
-       DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, &
+       DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, NTEQIT, TPRST, NRMAX, &
        MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, CDH, CNH, &
        MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF, &
        model_pnf, &
@@ -76,6 +77,9 @@ MODULE tr_param_registry
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
   INTEGER, SAVE :: g_generation = 0
+
+  ! Smallest NRMAX the solver runs on (measured: NRMAX 1 and 2 abort in a Fortran bounds check, 3 to 10 run).
+  INTEGER, PARAMETER :: NRMAX_MIN = 3
 
 CONTAINS
 
@@ -199,6 +203,19 @@ CONTAINS
     CASE ("MDLPEL"); MDLPEL = INT(value)
     CASE ("MDLJBS"); MDLJBS = INT(value)
     CASE ("MDLST");  MDLST  = INT(value)
+    CASE ("NTEQIT")
+       IF (value < 0.0_rkind) THEN; ierr = 1; ELSE; NTEQIT = INT(value); END IF
+    CASE ("TPRST")
+       IF (.NOT. value > 0.0_rkind) THEN; ierr = 1; ELSE; TPRST = value; END IF
+    CASE ("NRMAX")
+       ! TR's radial mesh. The state carries at most TR_MAX_NRMAX surfaces
+       ! (tr/tr_state.f90). Under MODELG 3, 5 and 8 it sets the EQ grid
+       ! that goes into bpsd.
+       IF (value < REAL(NRMAX_MIN, rkind) .OR. value > REAL(TR_MAX_NRMAX, rkind)) THEN
+          ierr = 1
+       ELSE
+          NRMAX = INT(value)
+       END IF
     CASE ("MDLNF");  MDLNF  = INT(value)
     ! Selects the multi-reaction fusion path ported from trx (P1 Task 6).
     ! 0 (default) = legacy MDLNF only; 1/2/3/4/12/14 additionally evaluate
@@ -308,7 +325,7 @@ CONTAINS
           "MDLNB", "MDLEC", "MDLLH", "MDLIC", "MDLPEL", "MDLJBS", &
           "MDLST", "MDLNF", "MODEL_PNF", "MDLUF", &
           "MDNCLS", "MDLEQB", "MDLEQN", "MDLEQE", "MDLPSC", "NPSCMAX", &
-          "NSPSC")
+          "NSPSC", "NTEQIT", "NRMAX")
        refused = ABS(value) > REAL(HUGE(0), rkind)
     END SELECT
   END FUNCTION value_refused
