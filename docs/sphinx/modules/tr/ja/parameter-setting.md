@@ -71,7 +71,8 @@ with Trlib() as tr:
 `EXTERNAL_DRIVEN_I != 0` かつ `EXTERNAL_DRIVEN_RW <= 0` (`OUT_OF_RANGE`),
 および UFILE モード以外 (`MDLUF` が 1/2/3 でない) のとき active な粒子種
 `1..NSMAX` の namelist プロファイル: `PN`/`PNS` が負, 両方 0, 非有限,
-または `PT`/`PTS` が 0 以下の場合に `PN[ns]` / `PT[ns]` / `PTS[ns]` として
+`PN` が 0 で `PNS` が正 (磁気軸で密度が 0 になり, 実行は失敗するか NaN で
+終わる, task-web-client #190), または `PT`/`PTS` が 0 以下の場合に `PN[ns]` / `PT[ns]` / `PTS[ns]` として
 報告 (両方 0 は `OUT_OF_RANGE_AFTER_DEP`, それ以外は `OUT_OF_RANGE`).
 輸送ステップがこれらで割るため, 実行すると NaN になるからです (#189).
 `run()` も `tr_prep` 前に同じ条件で拒否 (`TrlibParamError`) し, コンパイル時

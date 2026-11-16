@@ -144,6 +144,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **TR library: `tr_run` and `validate()` refuse a zero centre density with
+  an edge density** (MS10-DP-ISSP/task-web-client#190). `PN = 0` with
+  `PNS > 0` for an active species (outside the UFILE modes `MDLUF` 1/2/3,
+  which the check leaves out) was let through as "runs finite", but the
+  density then vanishes at the axis and the run fails (`tr_prep`'s impurity
+  dilution goes negative on the TST-2 case with `PN(1)` or `PN(2)` at 0;
+  species 3 of TST-2 was finite after 2 steps and met a negative temperature
+  at step 9) or completes with `WPT`, `Q0`, the betas and `TAUE` NaN (TR's
+  defaults with `PN(2) = 0`). `validate()` now reports it as `PN[ns]`
+  (`OUT_OF_RANGE`), and `tr_run` returns `TR_ERR_INVALID` before `tr_prep`,
+  as for a negative density. **A change of behaviour**: such a run used to
+  be made. Not refused: a centre density far below the edge's, which fails
+  too (`PN(2)` = 1e-9, 1e-6 and 1e-4 end with `ierr=3` within 10 steps).
+
 - **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
   run re-preps the module, whoever set it (#253).** `tr_set_param` /
   `fp_set_param` / `ti_set_param` used to clear the module's private
