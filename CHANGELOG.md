@@ -225,6 +225,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **TR: a sawtooth with q below 1 out to the edge read past the mesh.** `TRSAWT` (`tr/trcalc.f90`) printed its
+  profiles to two points past the mixing radius, which is `NRMAX` when q stays below 1 to the edge: a bounds-checking
+  build stopped the process ("Index '51' of dimension 1 of array 'rm' above upper bound of 50" on PLATO's shape at
+  150 kA with `MDLST` 1), others read beyond the arrays. The print stops at `NRMAX`.
 - **TR: `MDLEQE` 2 with `MDLEQB` 1 dropped the electron temperature equation.** `TR_TABLE` (`tr/trprep.f90`) took
   equation 3 as the bulk-ion density, which it is only without the B_theta equation; with it, equation 3 is the
   electron temperature, which was then left out of the solve (a PLATO case ran to Te0 117 eV instead of 228 eV). It
