@@ -15,7 +15,7 @@ walkthrough を扱います — スカラーパラメータ追加,
 
 ## Walkthrough A — 新規スカラーパラメータの追加
 
-TR のパラメータレジストリは `tr/tr_param_registry.f90:136+`
+TR のパラメータレジストリは `tr/tr_param_registry.f90:141+`
 の `SELECT CASE` 手書き dispatch を使っています. 新規
 パラメータ `FOO` の追加は dispatch の 1 個の新規 `CASE`
 行 + `tr/trinit.f90` のデフォルトで完了します.
@@ -26,7 +26,7 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:136+`
    にない場合), 該当する `tr/trcomm*.f90` モジュールに
    類似パラメータと並べて宣言する. 既存ならスキップ.
 2. **registry の case を追加する.**
-   `tr/tr_param_registry.f90:136` から始まる
+   `tr/tr_param_registry.f90:141` から始まる
    `SELECT CASE (TRIM(b))` ブロックに
    `CASE ("FOO"); FOO = value` のような行を追加.
    per-section のグループ化規約を保つため, 類似パラメータ
@@ -42,7 +42,7 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:136+`
    (`tr/tr_api.f90:165-169,177-220` で確認), C ABI 変更は
    不要です.
 
-配列値パラメータについては, `tr/tr_param_registry.f90:161-166`
+配列値パラメータについては, `tr/tr_param_registry.f90:166-171`
 の bounds-check 付きイディオムをテンプレートに使います.
 既存の `PA[i]` / `PN[i]` / `PNS[i]` / `PT[i]` ケースが
 パターンを示しています: 各 `CASE` で `idx` を `SIZE(...)`

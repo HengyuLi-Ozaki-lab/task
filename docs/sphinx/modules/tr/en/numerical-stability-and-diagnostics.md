@@ -174,7 +174,7 @@ of them, and `MISSING_REQUIRED` is reserved for a later category
   and is reported here (`tr/tr_api.f90:560`). Note: values
   beyond the registry's own range — e.g. `NSMAX > 8` — are
   rejected by `set_param` *before* validate runs
-  (`tr/tr_param_registry.f90:155-157`), so you will not see
+  (`tr/tr_param_registry.f90:160-162`), so you will not see
   them in the diagnostic list. Validate's job is to catch the
   values the registry accepted but the run-time still cannot
   use. The same code covers the per-species profiles of #189,

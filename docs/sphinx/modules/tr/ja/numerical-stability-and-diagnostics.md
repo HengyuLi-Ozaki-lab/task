@@ -157,7 +157,7 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
   validate に到達しここで報告されます (`tr/tr_api.f90:560`).
   注意: registry の宣言範囲を超える値 (例: `NSMAX > 8`) は
   validate が走る **前** に `set_param` で拒否されます
-  (`tr/tr_param_registry.f90:155-157`) ので, この診断リストには
+  (`tr/tr_param_registry.f90:160-162`) ので, この診断リストには
   現れません. validate の役割は registry が受理したが実行時には
   使えない値を catch することです. 同じコードで #189 の種ごとの
   分布, 方程式のスイッチと粒子源 ({doc}`parameters` の 14 節),

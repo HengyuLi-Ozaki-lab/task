@@ -16,7 +16,7 @@ field. Each is a recipe, not a derivation.
 ## Walkthrough A — Add a new scalar parameter
 
 The TR parameter registry uses a hand-written `SELECT CASE`
-dispatch in `tr/tr_param_registry.f90:136+`. Adding a
+dispatch in `tr/tr_param_registry.f90:141+`. Adding a
 parameter `FOO` is one new `CASE` line in that dispatch
 plus a default in `tr/trinit.f90`.
 
@@ -29,7 +29,7 @@ plus a default in `tr/trinit.f90`.
 2. **Add the registry case.** Add a line like
    `CASE ("FOO"); FOO = value` in the
    `SELECT CASE (TRIM(b))` block that starts at
-   `tr/tr_param_registry.f90:136`. Place it near similar
+   `tr/tr_param_registry.f90:141`. Place it near similar
    parameters to preserve the per-section grouping
    convention. An integer parameter (`FOO = INT(value)`)
    also goes into the name list of `value_refused` in the
@@ -44,7 +44,7 @@ plus a default in `tr/trinit.f90`.
    `tr/tr_api.f90:165-169,177-220`).
 
 For array-valued parameters, the bounds-checked idiom at
-`tr/tr_param_registry.f90:161-166` is the template. The
+`tr/tr_param_registry.f90:166-171` is the template. The
 existing `PA[i]` / `PN[i]` / `PNS[i]` / `PT[i]` cases
 show the pattern: each `CASE` checks `idx` against
 `SIZE(...)` and either assigns or sets `ierr = 1`.
