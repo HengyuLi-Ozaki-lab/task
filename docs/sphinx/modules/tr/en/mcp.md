@@ -333,6 +333,12 @@ with `tr-mcp doctor`.
 | `invalid parameter` (from `run`) | An active species with an unevolvable profile (`PN`/`PNS` negative, both zero, or non-finite; `PN` zero with `PNS` positive, task-web-client #190; `PT`/`PTS` non-positive, #189) or `NSMAX` above the compile-time maximum; `validate` lists the offending `PN[ns]` / `PT[ns]` / `PTS[ns]` |
 | `calculation failed` | Check the consistency of `DT` and the equilibrium input. Reset via `finalize` → `init` |
 
+A failed `run` puts the library's failure record in the error string:
+`[failure: kind=EQ_FAILED code=103 nt=600 time=12 s; <detail>]` (`kind` is `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
+`PREP_FAILED`, `REFUSED` or `OTHER`; see `python/trlib/README.md`). `MODELG` 0, 4, 25 and `RIPS = 0` now fail this
+way (`NONFINITE`, nt 1) where they used to return a state with non-finite scalars. A name `eq:NAME` in `set_param`
+goes to EQ's registry (`describe_parameters` says so in its `eq_names` line).
+
 For details, see §8 FAQ of `python/mcp-servers/tr_mcp/README.md`.
 
 ## References

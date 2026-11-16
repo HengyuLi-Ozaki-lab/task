@@ -10,9 +10,9 @@ focuses on `tr`-specific aspects.
 
 ## Entry layer (`tr_api.f90`)
 
-There are **7 functions** called from C: the standard 5 functions +
+There are **8 functions** called from C: the standard 5 functions +
 `tr_set_param_str` (for strings) + `tr_validate` (the pre-run
-validation added in PR #172).
+validation added in PR #172) + `tr_last_error` (the record of the last failure).
 
 | C symbol | Fortran-side | LOC (approx) | Role |
 |---|---|---|---|
@@ -23,6 +23,7 @@ validation added in PR #172).
 | `tr_get_state`     | `tr_api_get_state`     | ~40 | Copies the `TRCOMM` scalars and `RN/RT/AJ/QP` into the C struct |
 | `tr_finalize`      | `tr_api_finalize`      | ~10 | `DEALLOCATE_TRCOMM` + reset of `g_*` flags |
 | `tr_validate`      | `tr_api_validate`      | ~50 | Range checks for registered parameters + `KNAMEQ` file-existence check |
+| `tr_last_error`    | `tr_api_last_error`    | ~10 | The first failure of the last `tr_run` (kind, Fortran code, `nt=.. t=.. s: detail`), from `trfailure.f90` |
 
 All are bound with `BIND(C, NAME="tr_xxx")` to fix the C ABI symbol
 name. The Fortran-side names use the `tr_api_*` prefix to avoid a
@@ -137,6 +138,18 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! axis Zeff
 For physical meanings, see the table in {doc}`state`.
 
 (reinit-constraints)=
+## Library mode and failures (`trfailure.f90`)
+
+`tr_init` sets *library mode* and clears the failure record; `tr2` never sets it. In library mode `tr_loop` tests the
+periodic `MODELG = 9` equilibrium re-solve (`NTEQIT`) and a non-finite Q0, stored energy or central temperature after
+each step, and ends the run at the first failure with the record (`EQ_FAILED`, `NONFINITE`, `TR_CHECK`, `PREP_FAILED`,
+`OTHER`); `tr_set_metric`'s q-scaling and `TRCHCK` record theirs. `tr2` calls `eq_calc` untested as before.
+**Changes of behaviour:** `MODELG` 0, 4, 25 and `RIPS = 0` returned RC 0 with non-finite scalars and now fail with
+`NONFINITE`.
+
+A name `eq:NAME` in `tr_set_param` / `tr_set_param_str` is sent to EQ's registry (`eq_param_set`); `libtrapi.so` links
+`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again.
+
 ## Re-initialisation constraints
 
 If you repeat `tr_finalize` → `tr_init` in the same process, parts

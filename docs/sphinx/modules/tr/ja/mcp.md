@@ -309,6 +309,12 @@ MCP サーバの標準エラー出力が LLM クライアントに渡ります.
 | `invalid parameter` (`run` から) | 発展できないプロファイルを持つ active 粒子種 (`PN`/`PNS` が負・両方 0・非有限, `PN` が 0 で `PNS` が正 (task-web-client #190), `PT`/`PTS` が 0 以下, #189) か, コンパイル時上限を超える `NSMAX`. `validate` が該当の `PN[ns]` / `PT[ns]` / `PTS[ns]` を列挙 |
 | `calculation failed` | `DT` と平衡入力の整合性. `finalize` → `init` でリセット |
 
+`run` が失敗すると, ライブラリの失敗記録がエラー文字列に入ります:
+`[failure: kind=EQ_FAILED code=103 nt=600 time=12 s; <詳細>]` (`kind` は `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
+`PREP_FAILED`, `REFUSED`, `OTHER` のいずれか. `python/trlib/README.md` 参照). `MODELG` 0, 4, 25 および `RIPS = 0` は,
+従来は非有限のスカラーを持つ状態を返していましたが, 今は同じ形 (`NONFINITE`, nt 1) で失敗します. `set_param` の名前
+`eq:NAME` は EQ のレジストリに渡されます (`describe_parameters` の `eq_names` 行に記載).
+
 詳細は `python/mcp-servers/tr_mcp/README.md` の §8 FAQ を参照してください.
 
 ## 参考資料

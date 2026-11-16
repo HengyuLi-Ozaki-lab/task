@@ -109,6 +109,36 @@ wrapper from different commits used to fail silently (fields written
 past the struct, or appended fields read as `0.0`). A wrapper older
 than #246 does not ask, so keep the two from the same commit.
 
+## Failures: `tr_last_error`, `TrFailure`, `Trlib.last_error()`
+
+`tr_init` puts the library in **library mode** (`tr2` never is). In it, the time loop returns the first failure
+instead of going on, and the C call `tr_last_error(tr_diag_entry_t*)` reports it (`param` = kind, `code`, and
+`msg` = `nt=<step> t=<time> s: <what failed>`). `Trlib.last_error()` returns it as a `TrFailure(kind, code, nt, time,
+detail)`, and `TrlibRunError.failure` carries it when `run` raises (`None` when the `.so` predates `tr_last_error`). The
+first failure is kept; `tr_init` and every `tr_run` clear the record (`kind == "NONE"`).
+
+| kind | meaning |
+|---|---|
+| `EQ_FAILED` | an equilibrium solve of `MODELG = 9` failed: the initial q-scaling (`tr_set_metric`) or the periodic re-solve (`NTEQIT`); `code` is EQ's (103 axis out of plasma, 110/111/112 below) |
+| `NONFINITE` | Q0, the stored energy or a central temperature is not finite (`code` -3) |
+| `TR_CHECK` | `TRCHCK`: a negative temperature |
+| `PREP_FAILED`, `REFUSED`, `OTHER` | the preparation failed; a refusal before the run; any other non-zero status of the loop |
+
+EQ's own codes 110 (a flux-surface extremum at the edge of the contour array), 111 and 112 (`EQMAGS` could not trace
+the surface in the loop, or the edge surface) come with a reason in EQ's `eq_last_error`.
+
+`tr_mcp` puts the record in the error string of a failed `run`: `... [failure: kind=EQ_FAILED code=103 nt=600
+time=12 s; <detail>]`.
+
+### Changes of behaviour (library mode only)
+
+- `MODELG` 0, 4 or 25, and `RIPS = 0`, used to return RC 0 with about ten non-finite scalars; they now fail with
+  `NONFINITE` at nt 1. A client that tested for non-finite scalars after a successful `run` (task-web's `non_finite`
+  flag) now gets the error instead.
+- A failing periodic re-solve (`NTEQIT`) or q-scaling ends the run with `EQ_FAILED`; the loop used to go on, and a
+  checked build used to stop the process at an array bound.
+- `tr2` is unchanged.
+
 ## API reference
 
 ### `Trlib(lib_path: str | None = None)`
@@ -139,11 +169,20 @@ Snapshot current TRCOMM scalars and `[0:nrmax][0:nsmax]` profile
 arrays into a `TrState` dataclass. Trailing padding (up to
 `TR_MAX_NRMAX=500` / `TR_MAX_NSMAX=8`) is ignored.
 
+### `Trlib.last_error() -> TrFailure`
+
+The first failure of the last `run` (see above), or `kind == "NONE"`. Raises `TrlibError` for a library without
+`tr_last_error`.
+
 ### `Trlib.close() -> None`
 
 Idempotent. The context manager calls this automatically.
 
 ## Supported parameters
+
+A name that starts with `eq:` (`eq:RB`, `eq:NRMAX`, `eq:KNAMEQ`, ...) goes to EQ's registry, so `MODELG` 9 sets EQ's wall
+and grid through `set_param` / `set_param_str`; an unknown name raises `TrlibParamError`, and an accepted one makes the
+next `run` prepare again.
 
 The registry below reflects `tr/tr_param_registry.f90` at Phase L-3.
 Add to it by extending that Fortran `SELECT CASE`; no Python change

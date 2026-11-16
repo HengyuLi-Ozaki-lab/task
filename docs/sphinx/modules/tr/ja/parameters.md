@@ -197,6 +197,10 @@ $$X(\rho) = (X_0 - X_S)\,(1 - \rho^{\text{PROFN1}})^{\text{PROFN2}} + X_S$$
 | `NRMAX`  | int    | 50    | — | TR の径方向メッシュ, 3 から 500 (`TR_MAX_NRMAX`). 1 プロセスに 1 つの値: bpsd がスプラインを再確保するまで (k-yoshimi/bpsd#7), `tr_run` はそのプロセスの最初の準備と異なる `NRMAX` を拒否します; EQ グリッドの変更には `eq_bpsd_put` の再確保も必要 |
 | `NTEQIT` | int    | 0     | — | `MODELG = 9` での EQ 再計算のステップ間隔 (0 = しない) |
 
+`set_param` の名前 `eq:NAME` (`eq:RB`, `eq:NRMAX` など) は EQ のレジストリに設定されるため, `MODELG = 9` で `tot` なしに EQ の壁と
+グリッドを指定できます. 未知の名前は拒否され, 次の `run` は再度準備を行います. `MODELG = 9` の解が失敗すると, ライブラリ実行は
+失敗記録 (`tr_last_error`; `python/trlib/README.md` 参照) を残して終了します.
+
 ## 7. 輸送モデル (Transport model)
 
 熱・粒子輸送の係数とモデル選択. `MDLKAI` は特に選択肢が多いため, 代表値は
