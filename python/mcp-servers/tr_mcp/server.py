@@ -475,6 +475,16 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
     return applied
 
 
+def _failure_suffix(failure: Any) -> str:
+    """The library's record of what failed or was refused (tr_last_error), as one bracketed string."""
+    if failure is None or failure.kind == "NONE":
+        return ""
+    return (
+        f" [failure: kind={failure.kind} code={failure.code} "
+        f"nt={failure.nt} time={failure.time:g} s; {failure.detail}]"
+    )
+
+
 def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
     """Translate a trlib exception into the MCP ToolError class.
 
@@ -483,17 +493,12 @@ def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
     """
     if isinstance(exc, TrlibParamError):
         msg = f"invalid parameter: {exc}"
+        msg += _failure_suffix(getattr(exc, "failure", None))     # a refusal of tr_continue carries its record
     elif isinstance(exc, TrlibStateError):
         msg = f"library not initialized (call init first): {exc}"
     elif isinstance(exc, TrlibRunError):
         msg = f"calculation failed: {exc}"
-        failure = getattr(exc, "failure", None)
-        if failure is not None and failure.kind != "NONE":
-            # The library's record of what failed (tr_last_error), in the same string.
-            msg += (
-                f" [failure: kind={failure.kind} code={failure.code} "
-                f"nt={failure.nt} time={failure.time:g} s; {failure.detail}]"
-            )
+        msg += _failure_suffix(getattr(exc, "failure", None))
     elif isinstance(exc, TrlibNotImplementedError):
         msg = f"not implemented in this libtrapi.so build: {exc}"
     elif isinstance(exc, TrlibInitError):
@@ -574,6 +579,15 @@ def handle_run(ntmax: int = 1) -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+def handle_continue_run(nsteps: int = 1) -> str:
+    try:
+        tr = STATE.ensure_open()
+        tr.continue_run(int(nsteps))
+        return f"continued {nsteps} time step(s)"
+    except Exception as exc:
+        raise _wrap_trlib_error(exc) from exc
+
+
 def _state_dict(tr: Trlib) -> Dict[str, Any]:
     """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
     compare) with ``scalars`` replaced by all the library's named global results."""
@@ -617,6 +631,17 @@ def handle_finalize() -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _with_classes() -> Dict[str, Dict[str, Any]]:
+    """The registry with each name's class from the library (``tr_param_class``: 1 control, 0 structural, -1 the
+    setter does not know it). The library is the one source of the list; when it cannot be opened the entries come
+    without a class."""
+    try:
+        tr = STATE.ensure_open()
+        return {n: {**e, "class": tr.param_class(n)} for n, e in PARAMETER_REGISTRY.items()}
+    except Exception:
+        return PARAMETER_REGISTRY
+
+
 def handle_describe_parameters() -> Dict[str, Any]:
     return {
         "module": "tr",
@@ -637,7 +662,13 @@ def handle_describe_parameters() -> Dict[str, Any]:
             "k-yoshimi/bpsd#7. Under MODELG 3/5/8 EQ's NRMAX is TR's "
             "NRMAX + 1, NTHMAX is 64 and NSUMAX is 0."
         ),
-        "parameters": PARAMETER_REGISTRY,
+        "classes": (
+            "Each parameter's 'class' says what continue_run does with it: 1 control (RIPE, PNBTOT, PICTOT, PECTOT, "
+            "PLHTOT, NTEQIT, TPRST: continue_run takes a set in at its first step), 0 structural (the next run "
+            "prepares again and continue_run refuses after the set, naming it), -1 unknown to the setter. Every "
+            "'eq:' name is 0."
+        ),
+        "parameters": _with_classes(),
     }
 
 
@@ -785,11 +816,34 @@ def build_server() -> Any:
 
     @mcp.tool()
     def run(ntmax: int = 1) -> str:
-        """Advance the simulation by ``ntmax`` time steps.
+        """Advance the simulation by ``ntmax`` time steps. Prepares again after any
+        set; ``NT``, ``T`` and the history start again.
 
-        ``ntmax=0`` is a valid no-op (useful as a smoke test).
+        ``ntmax=0`` prepares (when a parameter was set) and takes no step, but the
+        loop's exit still sets RIPS = RIPE: ``run(0)`` after a ramp set (RIPE)
+        loses the ramp, and RIP stays where it was (the ``tr_run(0)`` note in
+        ``tr/tr_api.h``). It is a no-op only when nothing is pending: do not use
+        it as a smoke test between a set and a run. ``continue_run(0)`` only
+        checks and keeps the sets pending.
         """
         return handle_run(ntmax)
+
+    @mcp.tool()
+    def continue_run(nsteps: int = 1) -> str:
+        """Advance the prepared case ``nsteps`` more steps without preparing again.
+
+        The control parameters set since the last ``run`` or ``continue_run`` take
+        effect at its first step (class 1 in ``describe_parameters``: RIPE, PNBTOT,
+        PICTOT, PECTOT, PLHTOT, NTEQIT, TPRST); RIP ramps from the last call's RIPE
+        to RIPE over these steps. ``NT``, ``T`` and the history go on. Refused (an
+        error carrying the record, kind REFUSED): before a ``run``; after a failed
+        run until a ``run``; after a structural parameter (class 0, any ``eq:`` name
+        too) was set since the preparation, naming the last one (``run`` prepares
+        again); for a negative count or a value ``run`` refuses. A run in several
+        calls is not bit for bit one call (each call begins with the loop's
+        prologue). ``continue_run(0)`` only checks.
+        """
+        return handle_continue_run(nsteps)
 
     @mcp.tool()
     def get_state() -> Dict[str, Any]:
