@@ -160,7 +160,7 @@ includes the alpha power `PNFT`, and `P_fus = 5 PNFT` for D-T). They are current
 TR records a time history every `NGTSTP` steps (default 2): `Trlib.history(names=None)` returns `{name: numpy.ndarray}`
 for 47 columns (`Trlib.history_names()`; `T` is the time), `history_length()` the rows and `history_full()` whether the
 buffer is used up. The values are **single precision** (about 7 digits). The last row agrees with `get_scalar` to rel 1e-6
-only when the last step of the call was recorded and the buffer was not yet full: with the defaults `run(1)` leaves
+only when the last step of the call was recorded, that is a multiple of `NGTSTP` reached before the buffer was full: with the defaults `run(1)` leaves
 `history("T")["T"][-1]` at 0 while `get_scalar("T")` is `DT` (no row was recorded), and recording stops at capacity
 (`history_full()` is true), so the history lags the state once the run advances past it (a history that fills exactly at
 the end of a call is still current). Under `MODELG` 9 it also differs when the last step is a multiple of `NTEQIT`: the row is
