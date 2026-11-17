@@ -176,8 +176,30 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   defaults with `PN(2) = 0`). `validate()` now reports it as `PN[ns]`
   (`OUT_OF_RANGE`), and `tr_run` returns `TR_ERR_INVALID` before `tr_prep`,
   as for a negative density. **A change of behaviour**: such a run used to
-  be made. Not refused: a centre density far below the edge's, which fails
-  too (`PN(2)` = 1e-9, 1e-6 and 1e-4 end with `ierr=3` within 10 steps).
+  be made. Not refused: a centre density near zero, which fails too when it
+  is far below the edge's (on TR's defaults, with the plasma kept
+  quasi-neutral, `PN/PNS` = 2e-3 and below end with `ierr=3`; 0.01
+  completes). This entry first said `PN(2)` = 1e-9, 1e-6 and 1e-4 showed
+  that; those runs lowered the ions alone, under electrons at 0.5, so they
+  were far below the electrons as well (the next entry,
+  task-web-client#200) and do not tell the two causes apart.
+
+- **TR library: `validate()` reports densities that are not quasi-neutral**
+  (MS10-DP-ISSP/task-web-client#200). TR takes the electrons' density equal
+  to the ions' charge density, `PN(1) = sum PZ(s)*PN(s)` over `s = 2..NSMAX`
+  (`trprof` dilutes the main ions by the impurity model's charge, which it
+  takes in proportion to the electrons), and nothing made the namelist agree.
+  `validate()` now reports a difference above 1e-3 of the larger, at the
+  centre as `PN[1]` and at the edge as `PNS[1]` (`INCONSISTENT_PAIR`), outside
+  the UFILE modes `MDLUF` 1/2/3 and not beside a finding of the
+  species-profile checks. `tr_run` does not refuse it: on TR's defaults
+  (`PN(1) = 0.5`), `PN(2)` from 0.005 to 0.05 fails at step 0 (`NEGATIVE
+  TEMPERATURE AT STEP 0`), and 0.1 and 0.4 complete. **A change of
+  behaviour** for a caller of
+  `validate()`: a configuration it passed may now return these findings
+  (two tests of the species checks had species 3 without its electrons).
+  The measured limits are in the TR parameter documentation (section 3); no
+  lower bound on a positive centre density or on `PN/PNS` is checked.
 
 - **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
   run re-preps the module, whoever set it (#253).** `tr_set_param` /

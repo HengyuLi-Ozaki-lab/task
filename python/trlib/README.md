@@ -222,8 +222,13 @@ for the zero-density case, `OUT_OF_RANGE` otherwise). `run()` also
 refuses `NSMAX` above the compile-time `NSM` (4), which `validate()`
 already reported. Raising `NSMAX` above a fixture's species count
 therefore needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the new
-species. `PN[ns]=0` is refused with `PNS[ns]>0` too (task-web-client #190): the density then
-vanishes at the axis and the run fails or ends with NaN. In the UFILE modes
+species, and `PN[1]`, `PNS[1]` raised by its charge density (`PZ[ns]·PN[ns]`,
+`PZ[ns]·PNS[ns]`) for `validate()` to stay clean. `PN[ns]=0` is refused with `PNS[ns]>0` too (task-web-client #190): the density then
+vanishes at the axis and the run fails or ends with NaN. Densities that are
+not quasi-neutral (`PN[1]` away from `Σ PZ[s]·PN[s]`, `s = 2..NSMAX`, or `PNS[1]` from
+`Σ PZ[s]·PNS[s]`, by more than 1e-3 of the larger) are reported by `validate()` as
+`INCONSISTENT_PAIR` and not refused by `run()` (task-web-client #200): ions far
+below the electrons fail at step 0, a smaller difference runs. In the UFILE modes
 `MDLUF=1/2/3` the species that `tr_prof` still takes from the namelist
 are not checked yet (follow-up issue).
 
