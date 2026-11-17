@@ -153,6 +153,8 @@ class _MockTrlib:
 
     def get_state(self) -> Any:
         class _S:
+            scalars: Dict[str, float] = {"WPT": 1.0}   # the handlers return TrState.scalars (all named results)
+
             def to_dict(self_inner) -> Dict[str, Any]:
                 return {
                     "NT": 0, "NRMAX": 0, "NSMAX": 0,

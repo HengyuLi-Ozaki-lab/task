@@ -239,6 +239,34 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     except AttributeError:  # pragma: no cover - only on builds before tr_last_error
         pass
 
+    # Outputs by name (PR 2 of #96): the scalar table. Best-effort, as tr_last_error above: a library built
+    # before leaves the attribute missing and Trlib.get_scalar says so on first use.
+    try:
+        lib.tr_scalar_count.restype = ctypes.c_int
+        lib.tr_scalar_count.argtypes = []
+        lib.tr_scalar_name.restype = ctypes.c_int
+        lib.tr_scalar_name.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        lib.tr_get_scalar.restype = ctypes.c_int
+        lib.tr_get_scalar.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double)]
+    except AttributeError:  # pragma: no cover - only on builds before the scalar table
+        pass
+
+    # The run's history by name (PR 2 of #96, Task 5b); best-effort as above.
+    try:
+        lib.tr_history_length.restype = ctypes.c_int
+        lib.tr_history_length.argtypes = []
+        lib.tr_history_full.restype = ctypes.c_int
+        lib.tr_history_full.argtypes = []
+        lib.tr_history_count.restype = ctypes.c_int
+        lib.tr_history_count.argtypes = []
+        lib.tr_history_name.restype = ctypes.c_int
+        lib.tr_history_name.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        lib.tr_history_get.restype = ctypes.c_int
+        lib.tr_history_get.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double), ctypes.c_int,
+                                       ctypes.POINTER(ctypes.c_int)]
+    except AttributeError:  # pragma: no cover - only on builds before the history
+        pass
+
     lib.tr_finalize.restype = ctypes.c_int
     lib.tr_finalize.argtypes = []
 

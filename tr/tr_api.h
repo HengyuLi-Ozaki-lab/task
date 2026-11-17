@@ -163,6 +163,34 @@ int tr_last_error(tr_diag_entry_t* e);
  * not change tr_state_t contents. */
 void tr_check_bpsd_pull(int *ok);
 
+/* Outputs by name (PR 2 of #96). The scalars are TR's global results as TRGLOB last computed them (output steps
+   and the last step of a run), in the units of tr/trrslt_globals.f90; the names are listed by tr_scalar_name.
+   tr_scalar_count: the number of names (31).
+   tr_scalar_name: the i-th name (1-based) as a NUL-terminated string in buf of buflen characters;
+     TR_ERR_INVALID past either end or when the name and its NUL do not fit.
+   tr_get_scalar: the value of one name (exact, upper case); TR_ERR_NOT_INIT before tr_init, TR_ERR_INVALID for a
+     name not listed (*value is left as it was). After tr_init and before the first tr_run the values are those of
+     the previous lifecycle in this process (as tr_get_state's scalars are), 0 in a fresh process: read them after
+     a run. */
+int tr_scalar_count(void);
+int tr_scalar_name(int i, char* buf, int buflen);
+int tr_get_scalar(const char* name, double* value);
+
+/* The run's history by name (PR 2 of #96, Task 5b). TR records a row every NGTSTP steps (default 2) in single
+   precision: the state at t = 0 first, then a row at every step that is a multiple of NGTSTP, so a call of tr_run adds the multiples among the steps it runs (nsteps / NGTSTP only when it starts on one: run(5) twice adds 3 and 3, run(1) adds 0 or 1).
+   tr_prep starts the history again (tr_run prepares again after a changed parameter). NTM = 10001 rows; when they
+   are full recording stops silently in TR, and tr_history_full reports it.
+   tr_history_length: rows recorded (0 before a run). tr_history_full: 1 when the rows are full, else 0.
+   tr_history_count / tr_history_name: the named columns, enumerated as tr_scalar_name does. "T" is the time;
+     the others are TR's names in tr/trrslt_globals.f90's TRATOT, in its units (see tr_mcp's get_history schema).
+   tr_history_get: copies the first min(n, rows) rows of the column `name` into buf and sets *got to that number.
+     TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for an unknown name or n < 0. */
+int tr_history_length(void);
+int tr_history_full(void);
+int tr_history_count(void);
+int tr_history_name(int i, char* buf, int buflen);
+int tr_history_get(const char* name, double* buf, int n, int* got);
+
 #ifdef __cplusplus
 }
 #endif

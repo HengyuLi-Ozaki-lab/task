@@ -208,17 +208,112 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
 }
 
 
+# The global results the library names (``Trlib.scalar_names()``), with the unit each has in
+# tr/trrslt_globals.f90. tests/test_scalar_schema.py fails for a name the library lists and this table lacks.
+SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
+    "T":      {"unit": "s",   "description": "time"},
+    "WPT":    {"unit": "MJ",  "description": "stored energy of the bulk species and the fast ions"},
+    "AJT":    {"unit": "MA",  "description": "total plasma current"},
+    "Q0":     {"unit": "",    "description": "safety factor on axis"},
+    "BETA0":  {"unit": "",    "description": "central toroidal beta (fraction)"},
+    "BETAP0": {"unit": "",    "description": "central poloidal beta"},
+    "BETAA":  {"unit": "",    "description": "volume-averaged toroidal beta (fraction)"},
+    "BETAN":  {"unit": "% m T / MA", "description": "normalised toroidal beta (Troyon), 100 BETAA / (RIP / (RA BB))"},
+    "TAUE1":  {"unit": "s",   "description": "energy confinement time, steady state: WPT / PINT"},
+    "TAUE2":  {"unit": "s",   "description": "energy confinement time, transient: WPT / (PINT - WPDOT)"},
+    "ZEFF0":  {"unit": "",    "description": "effective charge number on axis"},
+    "ALI":    {"unit": "",    "description": "internal inductance"},
+    "RQ1":    {"unit": "m",   "description": "distance of the q = 1 surface from the axis (0 when q0 >= 1). When q already exceeds 1 in the first cell, TRGLOB's first-cell branch (tr/trrslt_globals.f90:374) multiplies by DR, which is a normalised radius, not by RA: the value is then a fraction of the minor radius, not metres (for the TASK developers)"},
+    "AJRFT":  {"unit": "MA",  "description": "RF and external driven current"},
+    "PNFT":   {"unit": "MW",  "description": "fusion alpha power (P_fus = 5 PNFT for D-T)"},
+    "QF":     {"unit": "",    "description": "fusion gain: 5 PNFT / (POHT + PNBT + PRFST + PEXST)"},
+    "PINT":   {"unit": "MW",  "description": "total input power: POHT + PNBT + PRFST + PNFT + PEXST (alpha power included)"},
+    "POHT":   {"unit": "MW",  "description": "ohmic power"},
+    "PNBT":   {"unit": "MW",  "description": "neutral-beam power"},
+    "PRFST":  {"unit": "MW",  "description": "RF power, all species"},
+    "PEXST":  {"unit": "MW",  "description": "external power from experimental data, all species"},
+    "PRLT":   {"unit": "MW",  "description": "radiation loss (line)"},
+    "POUT":   {"unit": "MW",  "description": "total output power: conduction, charge exchange, ionisation, radiation"},
+    "AJOHT":  {"unit": "MA",  "description": "ohmic current"},
+    "AJNBT":  {"unit": "MA",  "description": "neutral-beam driven current"},
+    "AJBST":  {"unit": "MA",  "description": "bootstrap current"},
+    "RIP":    {"unit": "MA",  "description": "boundary (programmed) plasma current at this time"},
+    "VLOOP":  {"unit": "V",   "description": "one-turn voltage at the edge"},
+    "WPDOT":  {"unit": "MW",  "description": "rate of change of WPT between the last two global evaluations"},
+    "H98Y2":  {"unit": "",    "description": "H factor: TAUE2 / TAUE98"},
+    "TAUE98": {"unit": "s",   "description": "IPB98(y,2) confinement time scaling"},
+}
+
+
+# The columns of the time history (``Trlib.history_names()``), with units from tr/trrslt_globals.f90 TRATOT.
+# Values are single precision. tests/test_history_schema.py fails for a column the library lists and this lacks.
+HISTORY_SCHEMA: Dict[str, Dict[str, str]] = {
+    "T": {"unit": "s", "description": "time of the row"},
+    "NE0": {"unit": "1e20 m^-3", "description": "electron density on axis"},
+    "NEAV": {"unit": "1e20 m^-3", "description": "electron density, volume average"},
+    "TE0": {"unit": "keV", "description": "electron temperature on axis"},
+    "TI0": {"unit": "keV", "description": "temperature of the first bulk ion species (species 2) on axis"},
+    "TEAV": {"unit": "keV", "description": "electron temperature, density-weighted volume average"},
+    "TIAV": {"unit": "keV", "description": "temperature of the first bulk ion species, density-weighted volume average"},
+    "WPT": {"unit": "MJ", "description": "stored energy"},
+    "AJT": {"unit": "MA", "description": "total plasma current"},
+    "AJOHT": {"unit": "MA", "description": "ohmic current"},
+    "AJNBT": {"unit": "MA", "description": "neutral-beam driven current"},
+    "AJRFT": {"unit": "MA", "description": "RF and external driven current"},
+    "AJBST": {"unit": "MA", "description": "bootstrap current"},
+    "PINT": {"unit": "MW", "description": "total input power, alpha power included"},
+    "POHT": {"unit": "MW", "description": "ohmic power"},
+    "PNBT": {"unit": "MW", "description": "neutral-beam power"},
+    "PRFE": {"unit": "MW", "description": "RF power into species 1 (electrons)"},
+    "PRFD": {"unit": "MW", "description": "RF power into species 2 (first bulk ion)"},
+    "PNFT": {"unit": "MW", "description": "fusion alpha power"},
+    "POUT": {"unit": "MW", "description": "total output power"},
+    "VLOOP": {"unit": "V", "description": "one-turn voltage at the edge"},
+    "ALI": {"unit": "", "description": "internal inductance"},
+    "RQ1": {"unit": "m", "description": "distance of the q = 1 surface from the axis; in TRGLOB's first-cell branch (tr/trrslt_globals.f90:374) a normalised radius, not metres (for the TASK developers)"},
+    "Q0": {"unit": "", "description": "safety factor on axis"},
+    "WPDOT": {"unit": "MW", "description": "rate of change of the stored energy"},
+    "TAUE1": {"unit": "s", "description": "energy confinement time, steady state"},
+    "TAUE2": {"unit": "s", "description": "energy confinement time, transient"},
+    "BETAP0": {"unit": "", "description": "central poloidal beta"},
+    "BETA0": {"unit": "", "description": "central toroidal beta (fraction)"},
+    "BETAA": {"unit": "", "description": "volume-averaged toroidal beta (fraction)"},
+    "ZEFF0": {"unit": "", "description": "effective charge number on axis"},
+    "QF": {"unit": "", "description": "fusion gain 5 PNFT / (POHT + PNBT + PRFST + PEXST)"},
+    "RIP": {"unit": "MA", "description": "boundary plasma current at the row's time"},
+    "PEXE": {"unit": "MW", "description": "external power into species 1 (electrons)"},
+    "PEXI": {"unit": "MW", "description": "external power into species 2 (first bulk ion)"},
+    "PECE": {"unit": "MW", "description": "EC heating of electrons"},
+    "PECI": {"unit": "MW", "description": "EC heating of ions"},
+    "PLHE": {"unit": "MW", "description": "LH heating of electrons"},
+    "PLHI": {"unit": "MW", "description": "LH heating of ions"},
+    "PICE": {"unit": "MW", "description": "IC heating of electrons"},
+    "PICI": {"unit": "MW", "description": "IC heating of ions"},
+    "TAUE98": {"unit": "s", "description": "IPB98(y,2) confinement time scaling"},
+    "H98Y2": {"unit": "", "description": "H factor TAUE2 / TAUE98"},
+    "NLAV": {"unit": "1e20 m^-3", "description": "line-averaged electron density"},
+    "PRLT": {"unit": "MW", "description": "radiation loss (line)"},
+    "BETAN": {"unit": "% m T / MA", "description": "normalised toroidal beta, 100 BETAA / (RIP / (RA BB)); computed from the row's columns"},
+    "PRFST": {"unit": "MW", "description": "RF power into the four species, sum of the four PRFT columns; computed from the row's columns"},
+}
+
+
 STATE_SCHEMA: Dict[str, Any] = {
     "type": "object",
-    "title": "TrState (wire format of trlib.state.TrState.to_dict())",
+    "title": "TrState (trlib.state.TrState.to_dict() with all the named scalars)",
     "properties": {
         "NT":    {"type": "integer", "description": "current time-step index"},
         "NRMAX": {"type": "integer", "description": "radial points in use"},
         "NSMAX": {"type": "integer", "description": "species in use"},
         "scalars": {
             "type": "object",
-            "description": "14 plasma scalars (T, WPT, AJT, Q0, BETA0, BETAP0, BETAA, BETAN, TAUE1, TAUE2, ZEFF0, ALI, RQ1, AJRFT)",
-            "additionalProperties": {"type": "number"},
+            "description": (
+                "the library's named global results (31), each as of the last step TR computed them on; "
+                "units are in each entry"
+            ),
+            "properties": {
+                name: {"type": "number", **entry} for name, entry in SCALAR_SCHEMA.items()
+            },
         },
         "profile": {
             "type": "array",
@@ -479,10 +574,18 @@ def handle_run(ntmax: int = 1) -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _state_dict(tr: Trlib) -> Dict[str, Any]:
+    """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
+    compare) with ``scalars`` replaced by all the library's named global results."""
+    state = tr.get_state()
+    out = state.to_dict()
+    out["scalars"] = dict(state.scalars)
+    return out
+
+
 def handle_get_state() -> Dict[str, Any]:
     try:
-        tr = STATE.ensure_open()
-        return tr.get_state().to_dict()
+        return _state_dict(STATE.ensure_open())
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
@@ -542,6 +645,35 @@ def handle_describe_state_schema() -> Dict[str, Any]:
     return STATE_SCHEMA
 
 
+def handle_describe_history_schema() -> Dict[str, Any]:
+    return {
+        "description": (
+            "The columns get_history can return, each with its unit and meaning. One row is recorded every "
+            "NGTSTP steps (default 2), the state at t = 0 first; a row is recorded at every step that is a multiple of NGTSTP, so a "
+            "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again; at most 10001 rows are kept "
+            "('full' says when they are). Values are single precision (about 7 digits)."
+        ),
+        "columns": HISTORY_SCHEMA,
+    }
+
+
+def handle_get_history(names: Optional[List[str]] = None) -> Dict[str, Any]:
+    """The run's time history: ``{"rows": n, "full": bool, "columns": {name: [values]}}``.
+
+    ``names`` selects columns (``None`` = all); an unknown name is an error that names it.
+    """
+    try:
+        tr = STATE.ensure_open()
+        data = tr.history(names)
+        return {
+            "rows": tr.history_length(),
+            "full": tr.history_full(),
+            "columns": {k: [float(x) for x in v] for k, v in data.items()},
+        }
+    except Exception as exc:
+        raise _wrap_trlib_error(exc) from exc
+
+
 def handle_run_and_get_state(
     params: Optional[Dict[str, SupportedValue]] = None,
     ntmax: int = 1,
@@ -566,7 +698,7 @@ def handle_run_and_get_state(
         if params:
             _apply_bulk_params(tr, params)
         tr.run(int(ntmax))
-        return tr.get_state().to_dict()
+        return _state_dict(tr)
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
@@ -578,7 +710,7 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 10 tr tools."""
+    """Build and return a FastMCP server instance with the 12 tr tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -664,7 +796,8 @@ def build_server() -> Any:
         """Return the current simulation state.
 
         Returns a dict with ``NT``, ``NRMAX``, ``NSMAX``, ``scalars``
-        (14 plasma scalars), and ``profile`` (radial profile array).
+        (the 31 named global results, units in `describe_state_schema`),
+        and ``profile`` (radial profile array).
         Schema also available via `describe_state_schema`.
         """
         return handle_get_state()
@@ -691,6 +824,23 @@ def build_server() -> Any:
     def describe_state_schema() -> Dict[str, Any]:
         """Return a JSON schema describing `get_state` output."""
         return handle_describe_state_schema()
+
+    @mcp.tool()
+    def get_history(names: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Return the run's time history without cutting the run.
+
+        ``names`` selects columns (``T`` is the time; `describe_history_schema`
+        lists every column with its unit); omit it for all. One row is
+        recorded every NGTSTP steps, the state at t = 0 first, up to 10001
+        rows (``full`` says when they are used up; raise NGTSTP for a longer
+        run). Returns ``rows``, ``full`` and ``columns``.
+        """
+        return handle_get_history(names)
+
+    @mcp.tool()
+    def describe_history_schema() -> Dict[str, Any]:
+        """Return the columns `get_history` can return, with units."""
+        return handle_describe_history_schema()
 
     @mcp.tool()
     def run_and_get_state(
@@ -746,6 +896,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "finalize",
                 "describe_parameters",
                 "describe_state_schema",
+                "get_history",
+                "describe_history_schema",
                 "run_and_get_state",
             ]
         ):

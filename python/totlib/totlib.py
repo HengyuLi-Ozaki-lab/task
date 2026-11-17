@@ -329,5 +329,88 @@ class Tot:
         raise_for_rc("tot_get_state", rc)
         return TotState.from_c(c)
 
+    def get_scalar(self, name: str) -> float:
+        """One of TR's named global results, ``"tr:<NAME>"`` (``Trlib.scalar_names()`` lists them).
+
+        ``tot_get_scalar`` removes the prefix and asks TR (``tr_get_scalar``), so the value is the one
+        ``Trlib.get_scalar`` returns for the TR this ``Tot`` drives. A name without ``tr:`` or an unknown one
+        raises :class:`TotlibInvalidParamError`.
+        """
+        if self._closed:
+            raise TotlibError("get_scalar on closed Tot")
+        try:
+            fn = self._lib.tot_get_scalar
+        except AttributeError as exc:
+            raise TotlibError(
+                "libtotapi.so does not export tot_get_scalar; rebuild the shared library."
+            ) from exc
+        value = ctypes.c_double(0.0)
+        rc = fn(_encode_name(name), ctypes.byref(value))
+        raise_for_rc(f"tot_get_scalar('{name}')", rc)
+        return float(value.value)
+
+    # --- the run's history by name (Task 5b of #96) ----------------------
+    def _history_fn(self, symbol: str):
+        try:
+            return getattr(self._lib, symbol)
+        except AttributeError as exc:
+            raise TotlibError(
+                f"libtotapi.so does not export {symbol}; rebuild the shared library."
+            ) from exc
+
+    def history_names(self) -> list:
+        """The names of the recorded columns as ``"tr:<NAME>"``, ``tr:T`` (the time) first."""
+        if self._closed:
+            raise TotlibError("history_names on closed Tot")
+        count = int(self._history_fn("tot_history_count")())
+        fn = self._history_fn("tot_history_name")
+        names = []
+        for i in range(1, count + 1):
+            buf = ctypes.create_string_buffer(64)
+            raise_for_rc(f"tot_history_name({i})", fn(i, buf, 64))
+            names.append(buf.value.decode("ascii"))
+        return names
+
+    def history_length(self) -> int:
+        """Rows TR has recorded since its last preparation (see ``Trlib.history_length``)."""
+        if self._closed:
+            raise TotlibError("history_length on closed Tot")
+        return int(self._history_fn("tot_history_length")())
+
+    def history_full(self) -> bool:
+        """True when TR's history holds all its 10001 rows."""
+        if self._closed:
+            raise TotlibError("history_full on closed Tot")
+        return bool(self._history_fn("tot_history_full")())
+
+    def history(self, names: Optional[Iterable[str]] = None) -> dict:
+        """TR's time history by name, ``{"tr:<NAME>": numpy.ndarray}`` (``Trlib.history`` through tot).
+
+        ``names`` carry the ``tr:`` prefix; ``None`` returns every column. A name without it or an unknown
+        one raises :class:`TotlibInvalidParamError`.
+        """
+        if self._closed:
+            raise TotlibError("history on closed Tot")
+        if names is None:
+            wanted = self.history_names()
+        elif isinstance(names, str):
+            wanted = [names]
+        else:
+            wanted = list(names)
+        fn = self._history_fn("tot_history_get")
+        rows = self.history_length()
+        out = {}
+        for name in wanted:
+            buf = (ctypes.c_double * max(rows, 1))()
+            got = ctypes.c_int(0)
+            raise_for_rc(f"tot_history_get('{name}')", fn(_encode_name(name), buf, rows, ctypes.byref(got)))
+            values = buf[: int(got.value)]
+            if _ffi.HAS_NUMPY:
+                import numpy as np
+                out[name] = np.array(values, dtype=np.float64)
+            else:  # pragma: no cover - numpy is optional
+                out[name] = list(values)
+        return out
+
 
 __all__ = ["Tot"]

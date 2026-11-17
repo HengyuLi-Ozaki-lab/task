@@ -149,6 +149,18 @@ each step, and ends the run at the first failure with the record (`EQ_FAILED`, `
 A name `eq:NAME` in `tr_set_param` / `tr_set_param_str` is sent to EQ's registry (`eq_param_set`); `libtrapi.so` links
 `eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` dispatcher is not guarded.
 
+## Outputs by name (`tr_api.f90`)
+
+The scalars of `tr_state_t` are 14 of the 31 global results `TRGLOB` computes; `tr_scalar_count`, `tr_scalar_name` and
+`tr_get_scalar(name, &value)` give all 31 by name (`PNFT`, `QF`, `PINT`, `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`,
+`AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`, `TAUE98` in addition), in the units of `trrslt_globals.f90`.
+`tot_get_scalar("tr:NAME")` delegates to it.
+
+`tr_history_*` export the time history `GT(NGT)`, `GVT(NGT, 1:110)` that `TRATOT` writes every `NGTSTP` steps (`tr_eval`):
+47 columns by name, in **single precision** (`GUCLIP`), `NTM` = 10001 rows. TR stops recording silently when they are full
+(`tr_history_full` reports it): a long run sets `NGTSTP`. `tr_prep` sets `NGT` to 0, so a preparation starts the history
+again. In library mode `tr_eval` does not record the step a `tr_run` call starts on when the previous call ended on it.
+
 (reinit-constraints)=
 ## Re-initialisation constraints
 

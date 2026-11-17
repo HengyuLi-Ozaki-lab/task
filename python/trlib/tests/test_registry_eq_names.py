@@ -31,8 +31,11 @@ def test_an_eq_set_before_the_first_run_is_taken_and_the_run_follows():
 
 
 def test_a_refused_unknown_eq_set_does_not_prepare_again():
-    # Before the first run an unknown eq: name is refused by the registry (not by the one-process guard) and the
-    # refused set does not make the first run prepare twice: nt counts from the run's own start.
+    # Before the first run an unknown eq: name is refused by the registry (not by the one-process guard). Checked
+    # here: the refusal raises, and the runs of 2 and 1 steps after it end at nt 3. That does not show the refused
+    # set left the registry's counter alone: run(2) prepares in any case, and run(1) is the one that would prepare
+    # again if the counter had moved. test_a_refused_eq_set_after_a_run_does_not_prepare_again is the same check
+    # with a run before the refusal.
     with Trlib() as t:
         with pytest.raises(TrlibParamError):
             t.set_param("eq:NOSUCHNAME", 1.0)

@@ -1055,6 +1055,35 @@ Consequences:
   The numerical checks of step 3 add one case: the same scenario with an extra breakpoint that changes nothing,
   showing the effect of a cut.
 
+### F2, extended (Task 5/5b review, 2026-11-17)
+
+A cut that falls on an NTEQIT re-solve changes the history row right after it. In the parent build the numbers are
+the same. Measured:
+
+| Case | Row after the cut | One call | Run in chunks |
+|---|---|---|---|
+| NTEQIT 50, chunks of 100 | WPDOT at T = 2.04 | 0.874 | 0.746 |
+| NTEQIT 50, chunks of 100 | WPDOT at T = 8.04 | 0.400 | 0.255 (36 % lower) |
+| Chunks of 70 | WPDOT at T = 7.04 | 0.447 | 0.292 |
+
+The one-call run carries the spike that the metric change of the re-solve puts into WPT; the chunked run does not, because
+after a cut its first TRGLOB re-anchors WPPRE/TPRE on the re-solved WPT.
+
+TAUE2 changes by up to 3 %, and H98Y2 with it.
+
+- **Cause.** A call's first TRGLOB runs at the same T after `eq_calc` and re-anchors WPPRE/TPRE on the re-solved WPT
+  (`tr/trrslt_globals.f90:332-338`).
+- **Not affected.** State: the evolved profiles do not change.
+- **Consequences:**
+  - task-web's steady test takes dW/dt from the WPT series over its window, not from WPDOT.
+  - Task 6's history test (one call against `run` + `continue_run`) excludes or bounds WPDOT, TAUE2 and H98Y2 on the
+    row after a cut.
+  - **Option for PR 3** (library mode only, outputs only): a call that continues keeps WPPRE/TPRE, as the last-step
+    branch does at `tr/trexec.f90:447-453`. This makes the diagnostics seamless. Propose it to the TASK developers in
+    the PR body.
+  - `tr2`'s `C` still writes the history row of the step at each cut a second time. A history compared against `tr2`
+    drops one row per cut.
+
 ### F3. New Task 5b (PR 2): the run's history by name
 
 TR records a time history every `NGTSTP` steps (default 2):

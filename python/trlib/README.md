@@ -146,6 +146,29 @@ time=12 s; <detail>]`.
   one `tr2` session under `MODELG` 9 adopts the equilibrium again, where it used to differ. `tr2`'s output is
   unchanged on a single `R` that succeeds (`tr.ITER01` with `MODELG` 9, `NTEQIT` 50 and 0: byte-identical).
 
+## Outputs by name: scalars and the time history
+
+`Trlib.scalar_names()` lists the 31 global results TR computes (`T`, `WPT`, `AJT`, `Q0`, `BETA0`, `BETAP0`, `BETAA`,
+`BETAN`, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`, `AJRFT`, `PNFT`, `QF`, `PINT`, `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`,
+`POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`, `TAUE98`); `Trlib.get_scalar(name)` returns one as
+`TRGLOB` last computed it, in the units of `tr/trrslt_globals.f90` (powers in MW, currents in MA, energy in MJ; `PINT`
+includes the alpha power `PNFT`, and `P_fus = 5 PNFT` for D-T). They are current after `run`; between `Trlib()` and the first
+`run` they are the previous lifecycle's. An unknown or inexact name raises `TrlibParamError`. `get_state().scalars` holds all
+31; `to_dict()` keeps the 14 of the C struct. `tr_mcp`'s `describe_state_schema` gives each name its unit and meaning.
+
+TR records a time history every `NGTSTP` steps (default 2): `Trlib.history(names=None)` returns `{name: numpy.ndarray}`
+for 47 columns (`Trlib.history_names()`; `T` is the time), `history_length()` the rows and `history_full()` whether the
+buffer is used up. The values are **single precision** (about 7 digits). The last row agrees with `get_scalar` to rel 1e-6 only when the last step of the call was
+recorded and the buffer was not yet full: with the defaults `run(1)` leaves `history("T")["T"][-1]` at 0 while
+`get_scalar("T")` is `DT` (no row was recorded), and recording stops at capacity (`history_full()` is true), so the history lags the state once the run advances past it (a
+history that fills exactly at the end of a call is still current).
+The first row is the state at t = 0 and a row is recorded at every step that is a multiple of `NGTSTP`, so a `run` adds `n // NGTSTP` rows only when it starts on
+one (`run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1);
+`tr_prep` starts the history again, so the first `run` and every `run` after a changed parameter do. **The buffer holds
+`NTM` = 10001 rows; TR then stops recording without a message** (`history_full()` is true): set `NGTSTP` so that
+steps / `NGTSTP` stays below 10001 for a long run. `BETAN` and `PRFST` are computed from the row; `PEXST` has no column.
+`tot` has the same through `Tot.get_scalar("tr:NAME")` and `Tot.history(["tr:NAME", ...])`.
+
 ## API reference
 
 ### `Trlib(lib_path: str | None = None)`
@@ -175,6 +198,10 @@ used by the smoke tests.
 Snapshot current TRCOMM scalars and `[0:nrmax][0:nsmax]` profile
 arrays into a `TrState` dataclass. Trailing padding (up to
 `TR_MAX_NRMAX=500` / `TR_MAX_NSMAX=8`) is ignored.
+
+### `Trlib.get_scalar(name) -> float`, `Trlib.scalar_names()`, `Trlib.history(names=None)`
+
+See "Outputs by name" above. `history` returns float64 arrays; `history_names()`, `history_length()` and `history_full()` describe the table.
 
 ### `Trlib.last_error() -> TrFailure`
 
