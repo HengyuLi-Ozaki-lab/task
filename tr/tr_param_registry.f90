@@ -76,8 +76,13 @@ MODULE tr_param_registry
   PUBLIC :: tr_param_set_str
   PUBLIC :: tr_param_note_external_set
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
+  PUBLIC :: tr_param_structural_generation, tr_param_last_structural, tr_param_class
 
   INTEGER, SAVE :: g_generation = 0
+  ! The sets of a structural parameter (every name but the control ones, is_control) and the name of the last one:
+  ! tr_continue refuses when the count moved since the preparation (tr/tr_api.f90).
+  INTEGER, SAVE :: g_structural = 0
+  CHARACTER(LEN=64), SAVE :: g_last_structural = ''
 
   ! Smallest NRMAX the solver runs on (measured: NRMAX 1 and 2 abort in a Fortran bounds check, 3 to 10 run).
   INTEGER, PARAMETER :: NRMAX_MIN = 3
@@ -104,7 +109,7 @@ CONTAINS
     REAL(rkind),      INTENT(IN) :: value
     INTEGER :: ierr
     ierr = tr_param_set_impl(name, value)
-    IF (ierr == 0) g_generation = g_generation + 1
+    IF (ierr == 0) CALL count_set(name)
   END FUNCTION tr_param_set
 
   FUNCTION tr_param_set_str(name, value) RESULT(ierr)
@@ -112,7 +117,7 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(IN) :: value
     INTEGER :: ierr
     ierr = tr_param_set_str_impl(name, value)
-    IF (ierr == 0) g_generation = g_generation + 1
+    IF (ierr == 0) CALL count_set(name)
   END FUNCTION tr_param_set_str
 
   FUNCTION tr_param_set_impl(name, value) RESULT(ierr)
@@ -427,10 +432,107 @@ CONTAINS
   ! tr_param_note_external_set : a set that did not go through this
   ! registry changed what the next preparation reads (an "eq:" name
   ! taken by EQ's registry). Advances the mutation counter so that
-  ! tr_api_run prepares again.
+  ! tr_api_run prepares again, and the structural count, as every
+  ! "eq:" name is structural (tr_param_class); NAME, the name as it
+  ! was set, is the one tr_continue's refusal reports.
   !-------------------------------------------------------------------
-  SUBROUTINE tr_param_note_external_set()
+  SUBROUTINE tr_param_note_external_set(name)
+    CHARACTER(LEN=*), INTENT(IN), OPTIONAL :: name
     g_generation = g_generation + 1
+    g_structural = g_structural + 1
+    g_last_structural = 'eq:'
+    IF (PRESENT(name)) g_last_structural = name
   END SUBROUTINE tr_param_note_external_set
+
+  !-------------------------------------------------------------------
+  ! Parameter classes (PR 3 of #96): what tr_continue may take in.
+  !
+  ! A control parameter takes effect at the next step of a running case
+  ! (tr_continue, tr/tr_api.f90); every other name is structural: it is
+  ! read by the preparation, and tr_run prepares again after it.
+  ! A name is here only when python/trlib/tests/test_continue_vs_tr2.py
+  ! shows that tr_continue equals tr2's C for it at 1e-10.
+  !-------------------------------------------------------------------
+  LOGICAL FUNCTION is_control(b)
+    CHARACTER(LEN=*), INTENT(IN) :: b
+    SELECT CASE (TRIM(b))
+    CASE ("RIPE", "PNBTOT", "PICTOT", "PECTOT", "PLHTOT", "NTEQIT", "TPRST")
+       is_control = .TRUE.
+    CASE DEFAULT
+       is_control = .FALSE.
+    END SELECT
+  END FUNCTION is_control
+
+  ! After a successful set: the generation moves, and the structural count with it unless the base name is a
+  ! control one. NAME is the name as it was set ("PN[2]", "KNAMEQ").
+  SUBROUTINE count_set(name)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    CHARACTER(LEN=32) :: b
+    INTEGER :: idx
+    g_generation = g_generation + 1
+    CALL parse_array_subscript(name, b, idx)
+    IF (is_control(b)) RETURN
+    g_structural = g_structural + 1
+    g_last_structural = ADJUSTL(name)
+  END SUBROUTINE count_set
+
+  FUNCTION tr_param_structural_generation() RESULT(gen)
+    INTEGER :: gen
+    gen = g_structural
+  END FUNCTION tr_param_structural_generation
+
+  FUNCTION tr_param_last_structural() RESULT(name)
+    CHARACTER(LEN=64) :: name
+    name = g_last_structural
+  END FUNCTION tr_param_last_structural
+
+  !-------------------------------------------------------------------
+  ! tr_param_class : 1 for a control parameter, 0 for a structural one
+  ! (a name tr_param_set or tr_param_set_str takes, or any "eq:" name:
+  ! EQ's registry is not asked), -1 for a name the setter does not know.
+  ! The subscript of an array name is parsed as the setter parses it
+  ! (a malformed one is -1) but not range-checked.
+  !
+  ! KNOWN_NAMES are the CASE names of tr_param_set_impl and of
+  ! tr_param_set_str_impl: a new CASE there goes into this list too
+  ! (python/trlib/tests/test_continue.py holds the list to the CASEs,
+  ! read from this file).
+  !-------------------------------------------------------------------
+  FUNCTION tr_param_class(name) RESULT(cls)
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    INTEGER :: cls
+    CHARACTER(LEN=18), PARAMETER :: KNOWN_NAMES(90) = [ CHARACTER(LEN=18) :: &
+         "RR", "RA", "RKAP", "RDLT", "BB", "PHIA", "MODELG", "NSMAX", &
+         "PA", "PZ", "PN", "PNS", "PT", "PTS", "PROFN1", "PROFN2", "PNC", "MDLIMP", &
+         "RIPS", "RIPE", "DT", "NTMAX", "NTSTEP", "EPSLTR", "LMAXTR", "NGTSTP", "NGRSTP", &
+         "MDLKAI", "MDLETA", "MDLAD", "MDLAVK", "CDW", "CHP", "CK0", "CK1", "CDH", "CNH", &
+         "MDLNB", "MDLEC", "MDLLH", "MDLIC", "MDLPEL", "MDLJBS", "MDLST", "NTEQIT", "TPRST", "NRMAX", &
+         "MDLNF", "MODEL_PNF", "MDLUF", &
+         "PNBTOT", "PNBR0", "PNBRW", "PNBENG", "PNBRTG", &
+         "PICCD", "PICR0", "PICRW", "PICNPR", "PICTOT", &
+         "PECCD", "PECR0", "PECRW", "PECNPR", "PECTOT", &
+         "PLHCD", "PLHR0", "PLHRW", "PLHNPR", "PLHTOT", &
+         "EXTERNAL_DRIVEN_I", "EXTERNAL_DRIVEN_R0", "EXTERNAL_DRIVEN_RW", &
+         "MDNCLS", "MDLEQB", "MDLEQN", "MDLEQE", "PROFJ1", "PROFJ2", "AD0", "AV0", "CDP", "CNP", &
+         "MDLPSC", "NPSCMAX", "PSCTOT", "PSCR0", "PSCRW", "NSPSC", &
+         "KNAMEQ" ]
+    CHARACTER(LEN=32) :: b
+    INTEGER :: idx
+
+    cls = -1
+    IF (LEN_TRIM(name) > 3) THEN
+       IF (name(1:3) == 'eq:') THEN
+          cls = 0
+          RETURN
+       END IF
+    END IF
+    CALL parse_array_subscript(name, b, idx)
+    IF (idx < 0) RETURN
+    IF (is_control(b)) THEN
+       cls = 1
+    ELSE IF (ANY(KNOWN_NAMES == b)) THEN
+       cls = 0
+    END IF
+  END FUNCTION tr_param_class
 
 END MODULE tr_param_registry

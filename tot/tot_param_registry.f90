@@ -143,12 +143,17 @@ CONTAINS
 
   SUBROUTINE dispatch_eq(bare, value, ierr)
     USE eq_param_registry, ONLY: eq_param_set
+    USE tr_param_registry, ONLY: tr_param_note_external_set
     CHARACTER(LEN=*), INTENT(IN)  :: bare
     REAL(C_DOUBLE),   INTENT(IN)  :: value
     INTEGER,          INTENT(OUT) :: ierr
     INTEGER :: rc
     CALL eq_param_set(bare, value, rc)
     IF (rc == 0) THEN
+       ! TR prepares from EQ's registry too: tell it (as tr_api_set_param does for "eq:"), so that the next tot_run
+       ! prepares again and tot_continue refuses, naming this one. TR's guard on eq: names after the first
+       ! preparation is not applied here.
+       CALL tr_param_note_external_set('eq:'//bare)
        ierr = 0
     ELSE
        ierr = 1
@@ -217,10 +222,12 @@ CONTAINS
 
   FUNCTION dispatch_eq_str(bare, value) RESULT(ierr)
     USE eq_param_registry, ONLY: eq_param_set_str
+    USE tr_param_registry, ONLY: tr_param_note_external_set
     CHARACTER(LEN=*), INTENT(IN) :: bare
     CHARACTER(LEN=*), INTENT(IN) :: value
     INTEGER :: ierr
     IF (eq_param_set_str(bare, value) == 0) THEN
+       CALL tr_param_note_external_set('eq:'//bare)    ! as dispatch_eq
        ierr = 0
     ELSE
        ierr = 1

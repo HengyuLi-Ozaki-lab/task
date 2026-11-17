@@ -7,6 +7,11 @@ TR records a row every NGTSTP steps (``tr_eval`` calls ``TRATOT``): ``GT(NGT)`` 
 later call of ``tr_run`` adds the multiples of NGTSTP among the steps it runs (nsteps / NGTSTP when it starts on
 one): the second call's first evaluation repeats the step the
 first call ended on (``tr_loop``'s prologue), and that row is not recorded twice. One test per case.
+
+The last row equals the final scalar to single precision, except under MODELG 9 when the last step is a multiple
+of NTEQIT: ``tr_eval`` writes the row before the step's equilibrium re-solve, so for Q0 and what TRCALC recomputes
+after it the row holds the value before the re-solve, as ``tr2`` prints it (TRSNAP), and ``get_scalar`` the value
+after it (measured on Q0: 7.7e-5 to 4.9e-4 relative). The cases here are ITER01 under MODELG 3, with no re-solve.
 """
 from __future__ import annotations
 

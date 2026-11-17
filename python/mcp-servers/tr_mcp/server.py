@@ -42,7 +42,7 @@ import math
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # ---------------------------------------------------------------------
 # Make ``trlib`` importable without a wheel install.
@@ -475,6 +475,18 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
     return applied
 
 
+def _failure_suffix(failure: Any, text: str = "") -> str:
+    """The library's record of what failed or was refused (tr_last_error), as one bracketed string. ``text`` is the
+    exception's own message: a detail it already carries (trlib puts a refusal's reason in it) is not repeated."""
+    if failure is None or failure.kind == "NONE":
+        return ""
+    detail = "" if failure.detail and failure.detail in text else f"; {failure.detail}"
+    return (
+        f" [failure: kind={failure.kind} code={failure.code} "
+        f"nt={failure.nt} time={failure.time:g} s{detail}]"
+    )
+
+
 def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
     """Translate a trlib exception into the MCP ToolError class.
 
@@ -483,17 +495,12 @@ def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
     """
     if isinstance(exc, TrlibParamError):
         msg = f"invalid parameter: {exc}"
+        msg += _failure_suffix(getattr(exc, "failure", None), str(exc))     # a refusal of tr_continue carries its record
     elif isinstance(exc, TrlibStateError):
         msg = f"library not initialized (call init first): {exc}"
     elif isinstance(exc, TrlibRunError):
         msg = f"calculation failed: {exc}"
-        failure = getattr(exc, "failure", None)
-        if failure is not None and failure.kind != "NONE":
-            # The library's record of what failed (tr_last_error), in the same string.
-            msg += (
-                f" [failure: kind={failure.kind} code={failure.code} "
-                f"nt={failure.nt} time={failure.time:g} s; {failure.detail}]"
-            )
+        msg += _failure_suffix(getattr(exc, "failure", None), str(exc))
     elif isinstance(exc, TrlibNotImplementedError):
         msg = f"not implemented in this libtrapi.so build: {exc}"
     elif isinstance(exc, TrlibInitError):
@@ -574,6 +581,15 @@ def handle_run(ntmax: int = 1) -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+def handle_continue_run(nsteps: int = 1) -> str:
+    try:
+        tr = STATE.ensure_open()
+        tr.continue_run(int(nsteps))
+        return f"continued {nsteps} time step(s)"
+    except Exception as exc:
+        raise _wrap_trlib_error(exc) from exc
+
+
 def _state_dict(tr: Trlib) -> Dict[str, Any]:
     """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
     compare) with ``scalars`` replaced by all the library's named global results."""
@@ -617,8 +633,23 @@ def handle_finalize() -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _with_classes() -> Tuple[Dict[str, Dict[str, Any]], Optional[str]]:
+    """The registry with each name's class from the library (``tr_param_class``: 1 control, 0 structural, -1 the
+    setter does not know it), and why there is none when the library cannot be loaded. ``tr_param_class`` needs no
+    ``tr_init``, so this loads the library without opening a lifecycle (``describe_parameters`` has no side effect on
+    the run state)."""
+    try:
+        from trlib import _ffi
+        from trlib.trlib import _encode_name
+        fn = _ffi.load_library().tr_param_class
+        return {n: {**e, "class": int(fn(_encode_name(n)))} for n, e in PARAMETER_REGISTRY.items()}, None
+    except Exception as exc:
+        return PARAMETER_REGISTRY, f"{type(exc).__name__}: {exc}"
+
+
 def handle_describe_parameters() -> Dict[str, Any]:
-    return {
+    parameters, classes_error = _with_classes()
+    out: Dict[str, Any] = {
         "module": "tr",
         "count": len(PARAMETER_REGISTRY),
         "array_syntax": "Use NAME[i] (1-origin) for array elements, e.g. PN[1].",
@@ -637,8 +668,19 @@ def handle_describe_parameters() -> Dict[str, Any]:
             "k-yoshimi/bpsd#7. Under MODELG 3/5/8 EQ's NRMAX is TR's "
             "NRMAX + 1, NTHMAX is 64 and NSUMAX is 0."
         ),
-        "parameters": PARAMETER_REGISTRY,
+        "classes": (
+            "Each parameter's 'class' says what continue_run does with it: 1 control (RIPE, PNBTOT, PICTOT, PECTOT, "
+            "PLHTOT, NTEQIT, TPRST: continue_run takes a set in at its first step), 0 structural (the next run "
+            "prepares again and continue_run refuses after the set, naming it), -1 unknown to the setter. Every "
+            "'eq:' name is 0."
+        ),
+        "parameters": parameters,
     }
+    if classes_error is not None:
+        out["classes_unavailable"] = (
+            "the classes could not be read because the library did not load: " + classes_error
+        )
+    return out
 
 
 def handle_describe_state_schema() -> Dict[str, Any]:
@@ -650,7 +692,7 @@ def handle_describe_history_schema() -> Dict[str, Any]:
         "description": (
             "The columns get_history can return, each with its unit and meaning. One row is recorded every "
             "NGTSTP steps (default 2), the state at t = 0 first; a row is recorded at every step that is a multiple of NGTSTP, so a "
-            "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again; at most 10001 rows are kept "
+            "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again, a control set followed by continue_run does not; at most 10001 rows are kept "
             "('full' says when they are). Values are single precision (about 7 digits)."
         ),
         "columns": HISTORY_SCHEMA,
@@ -710,7 +752,7 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 12 tr tools."""
+    """Build and return a FastMCP server instance with the 13 tr tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -785,11 +827,35 @@ def build_server() -> Any:
 
     @mcp.tool()
     def run(ntmax: int = 1) -> str:
-        """Advance the simulation by ``ntmax`` time steps.
+        """Advance the simulation by ``ntmax`` time steps. Prepares again after any
+        set; ``NT``, ``T`` and the history start again.
 
-        ``ntmax=0`` is a valid no-op (useful as a smoke test).
+        ``ntmax=0`` prepares (when a parameter was set) and takes no step, but the
+        loop's exit still sets RIPS = RIPE: ``run(0)`` after a ramp set (RIPE)
+        loses the ramp, and RIP stays where it was (the ``tr_run(0)`` note in
+        ``tr/tr_api.h``). It is a no-op only when nothing is pending: do not use
+        it as a smoke test between a set and a run. ``continue_run(0)`` only
+        checks and keeps the sets pending.
         """
         return handle_run(ntmax)
+
+    @mcp.tool()
+    def continue_run(nsteps: int = 1) -> str:
+        """Advance the prepared case ``nsteps`` more steps without preparing again.
+
+        The control parameters set since the last ``run`` or ``continue_run`` take
+        effect at its first step (class 1 in ``describe_parameters``: RIPE, PNBTOT,
+        PICTOT, PECTOT, PLHTOT, NTEQIT, TPRST); RIP ramps from the last call's RIPE
+        to RIPE over these steps. ``NT``, ``T`` and the history go on. Refused (an
+        error carrying the record, kind REFUSED): before a ``run``; after a failed
+        run until a ``run``; after a structural parameter (class 0, any ``eq:`` name
+        too) was set since the preparation, naming the last one (``run`` prepares
+        again); for a value ``run`` refuses (a negative count is refused by trlib before the
+        call, without a record). A run in several
+        calls is not bit for bit one call (each call begins with the loop's
+        prologue). ``continue_run(0)`` only checks.
+        """
+        return handle_continue_run(nsteps)
 
     @mcp.tool()
     def get_state() -> Dict[str, Any]:
@@ -898,6 +964,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "describe_state_schema",
                 "get_history",
                 "describe_history_schema",
+                "continue_run",
                 "run_and_get_state",
             ]
         ):

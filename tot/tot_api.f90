@@ -72,7 +72,8 @@ MODULE tot_api
   USE tr_api, ONLY: tr_api_init,     tr_api_run,     tr_api_get_state, &
                     tr_api_finalize, tr_api_get_scalar, &
                     tr_api_history_length, tr_api_history_full, tr_api_history_count, &
-                    tr_api_history_name, tr_api_history_get
+                    tr_api_history_name, tr_api_history_get, &
+                    tr_api_continue
   USE tr_state, ONLY: tr_state_c
   USE ti_api, ONLY: ti_api_init,     ti_api_run,     ti_api_finalize
   USE fp_api, ONLY: fp_api_init,     fp_api_run,     fp_api_finalize
@@ -627,6 +628,36 @@ CONTAINS
     END DO
     r = .TRUE.          ! no NUL in 128 characters: the copy cut the name
   END FUNCTION c_string_ends_blank
+
+  !-------------------------------------------------------------------
+  ! tot_continue : advance the prepared case nsteps more steps without
+  ! preparing again (PR 3 of #96). Delegates to tr_api_continue, as
+  ! tot_run delegates to tr_api_run: tot runs only TR.
+  !
+  ! Returns 0 = success, 1 = TR_ERR_INVALID: tr_continue refused (the
+  ! record is TR's tr_last_error: no preparation, a failed run, a
+  ! structural set since the preparation -- an "eq:" name too, which
+  ! tot_param_registry's eq dispatcher tells TR about -- a bad value),
+  ! or nsteps < 0 (refused there); 2 = not initialised; 3 = the loop failed.
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_continue(nsteps) RESULT(ierr) BIND(C, NAME="tot_continue")
+    INTEGER(C_INT), VALUE, INTENT(IN) :: nsteps
+    INTEGER(C_INT) :: ierr
+    INTEGER(C_INT) :: rc
+
+    IF (.NOT. g_initialized) THEN      ! as tot_run: tot_init has made TR present whenever it succeeded
+       ierr = TOT_ERR_NOT_INIT
+       RETURN
+    END IF
+    rc = tr_api_continue(nsteps)      ! a negative count is refused there, with a record
+    IF (rc == 0) THEN
+       ierr = TOT_ERR_OK
+    ELSE IF (rc == 1) THEN          ! TR_ERR_INVALID: a refusal, nothing ran
+       ierr = TOT_ERR_INVALID
+    ELSE
+       ierr = TOT_ERR_RUN_FAILED
+    END IF
+  END FUNCTION tot_api_continue
 
 END MODULE tot_api
 

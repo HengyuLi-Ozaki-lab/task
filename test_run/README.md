@@ -111,6 +111,7 @@ TR 本体 (`tr/trregress.f90`) は、環境変数 `TR_REGRESS_DUMP=1` が設定�
 | `tr_iter01` | `eq_iter01` | ITER 相当機（`modelg=3`）、NTMAX=100 短縮版 |
 | `tr_m0904`  | なし       | 解析ジオメトリ（`modelg=2`）、NTMAX=50 |
 | `tr_tst2`   | `eq_tst2`  | TST-2 小型機（`modelg=3`）、NTMAX=10 |
+| `tr_iter01_m9` | なし    | ITER（`modelg=9`、`NTEQIT=0`）、`r` / `c` / `c` の 3 段（1500・2000・6500 ステップ）。`tr_continue` の照合用。EQ の `eqparm` は `inputs/tr_iter01_m9.eqparm`。baseline は Linux で生成する（無ければ `test_equivalence.py::test_iter01_m9` は skip） |
 
 ## TI モジュールの回帰判定の仕組み
 

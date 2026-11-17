@@ -114,8 +114,9 @@ than #246 does not ask, so keep the two from the same commit.
 `tr_init` puts the library in **library mode** (`tr2` never is). In it, the time loop returns the first failure
 instead of going on, and the C call `tr_last_error(tr_diag_entry_t*)` reports it (`param` = kind, `code`, and
 `msg` = `nt=<step> t=<time> s: <what failed>`). `Trlib.last_error()` returns it as a `TrFailure(kind, code, nt, time,
-detail)`, and `TrlibRunError.failure` carries it when `run` raises (`None` when the `.so` predates `tr_last_error`). The
-first failure is kept; `tr_init` and every `tr_run` clear the record (`kind == "NONE"`).
+detail)`, and `TrlibRunError.failure` carries it when `run` or `continue_run` raises (`None` when the `.so` predates
+`tr_last_error`), as `TrlibParamError.failure` carries a `REFUSED` one. The first failure is kept; `tr_init` and every
+`tr_run` and `tr_continue` clear the record (`kind == "NONE"`).
 
 | kind | meaning |
 |---|---|
@@ -123,7 +124,7 @@ first failure is kept; `tr_init` and every `tr_run` clear the record (`kind == "
 | `NONFINITE` | Q0, the stored energy or a central temperature is not finite (`code` -3) |
 | `TR_CHECK` | `TRCHCK`: a negative temperature |
 | `PREP_FAILED`, `OTHER` | the preparation failed; any other non-zero status of the loop |
-| `REFUSED` | reserved for `tr_continue` (PR 3 of the plan); nothing records it yet (`tr_run` refuses before the run by returning `TR_ERR_INVALID`, with no record) |
+| `REFUSED` | `tr_continue` refused to run (`code` 0, nothing run): no prepared case, the last run failed (until a `run` prepares again), a structural parameter set since the preparation (`detail` names the last one), a negative count (the C function only: `continue_run` refuses a count outside 0 to 2**31 - 1 before the call, with `failure` `None`), or a value `tr_run`'s own checks refuse; `continue_run` raises `TrlibParamError` with it as `.failure`. `tr_run`'s own refusals return `TR_ERR_INVALID` with no record |
 
 EQ's own codes 110 (a flux-surface extremum at the edge of the contour array), 111 and 112 (`EQMAGS` could not trace
 the surface in the loop, or the edge surface) come with a reason in EQ's `EQ_ERRMSG` (`libtrapi.so` does not export
@@ -158,16 +159,44 @@ includes the alpha power `PNFT`, and `P_fus = 5 PNFT` for D-T). They are current
 
 TR records a time history every `NGTSTP` steps (default 2): `Trlib.history(names=None)` returns `{name: numpy.ndarray}`
 for 47 columns (`Trlib.history_names()`; `T` is the time), `history_length()` the rows and `history_full()` whether the
-buffer is used up. The values are **single precision** (about 7 digits). The last row agrees with `get_scalar` to rel 1e-6 only when the last step of the call was
-recorded and the buffer was not yet full: with the defaults `run(1)` leaves `history("T")["T"][-1]` at 0 while
-`get_scalar("T")` is `DT` (no row was recorded), and recording stops at capacity (`history_full()` is true), so the history lags the state once the run advances past it (a
-history that fills exactly at the end of a call is still current).
+buffer is used up. The values are **single precision** (about 7 digits). The last row agrees with `get_scalar` to rel 1e-6
+only when the last step of the call was recorded, that is a multiple of `NGTSTP` reached before the buffer was full: with the defaults `run(1)` leaves
+`history("T")["T"][-1]` at 0 while `get_scalar("T")` is `DT` (no row was recorded), and recording stops at capacity
+(`history_full()` is true), so the history lags the state once the run advances past it (a history that fills exactly at
+the end of a call is still current). Under `MODELG` 9 it also differs when the last step is a multiple of `NTEQIT`: the row is
+written before that step's equilibrium re-solve, so for Q0 and what `TRCALC` recomputes after it the row holds the value
+before the re-solve, as `tr2` prints it (`TRSNAP`), and `get_scalar` the value after it; measured on Q0: 7.7e-5 to 4.9e-4
+relative.
 The first row is the state at t = 0 and a row is recorded at every step that is a multiple of `NGTSTP`, so a `run` adds `n // NGTSTP` rows only when it starts on
 one (`run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1);
 `tr_prep` starts the history again, so the first `run` and every `run` after a changed parameter do. **The buffer holds
 `NTM` = 10001 rows; TR then stops recording without a message** (`history_full()` is true): set `NGTSTP` so that
 steps / `NGTSTP` stays below 10001 for a long run. `BETAN` and `PRFST` are computed from the row; `PEXST` has no column.
 `tot` has the same through `Tot.get_scalar("tr:NAME")` and `Tot.history(["tr:NAME", ...])`.
+
+## Continuing a run: `continue_run`, parameter classes, what it equals
+
+`Trlib.continue_run(n)` advances the prepared case `n` more steps without preparing again. `Trlib.param_class(name)` says
+what a set does to a prepared case: **1 control** (`RIPE`, `PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`: taken
+in at the first step of the next `continue_run`), **0 structural** (every other name `set_param` takes, and every `eq:` name:
+the next `run` prepares again and `continue_run` refuses, naming the last such name), **-1 unknown**. A refusal raises
+`TrlibParamError` with a `REFUSED` record as `.failure`: before a `run`, after a failed run (until a `run` prepares
+again), after a structural set, and for a value `run` refuses. A count outside 0 to 2**31 - 1 (a negative one too) is refused before the call, without a record: the C function `tr_continue` refuses a negative count with one.
+
+- **`continue_run(0)`** makes these checks and does nothing else: the control sets stay pending for the next call. `run(0)`
+  does not: it takes no step but the loop's exit sets `RIPS = RIPE`, so a ramp set before it is lost.
+- **`NT` phase.** `nt`, `T` and the history go on across calls; `tr2`'s `C` starts `NT` at 0 again. The steps chosen by `NT`
+  (the `NTEQIT` re-solve, the globals every `NTSTEP`, `NGTSTP`, `NGRSTP` steps) are counted from the preparation, so
+  `continue_run` equals `tr2`'s `C` at the same cut when the steps before it are a multiple of those. With NCLASS
+  (`MDNCLS` != 0) `tr2`'s `C` takes the classical resistivity on its first step and `continue_run` does not (it equals one call).
+- **Several calls are not one call**, bit for bit: each call begins with the loop's prologue (ITER, `MODELG` 9, `NTEQIT` 50,
+  calls of 100 steps: `WPT` 1e-12, the whole state 1.3e-10).
+- **q(0) at the end of a call.** The last history row holds the q(0) from before an `NTEQIT` re-solve on that step, as `tr2`
+  prints it; `get_scalar("Q0")` is the value after it (7.7e-5 to 4.9e-4 relative). To read q(0) inside a stage, take the history
+  row at that time (set `NGTSTP` so that there is one) and do not cut the run there: a cut changes the row after it.
+- **`WPDOT`, `TAUE2`, `H98Y2` on the row after a cut** that falls on a re-solve differ from a one-call run (`WPDOT` 15 % to
+  36 %, `TAUE2` and `H98Y2` 2 % to 3 %): the call's first `TRGLOB` re-anchors `WPPRE`/`TPRE` on the re-solved `WPT`. The
+  state is not affected; take dW/dt from the `WPT` series.
 
 ## API reference
 
@@ -190,8 +219,20 @@ Bulk-set **scalar** parameters. Raises `TrlibError` on keys containing
 
 ### `Trlib.run(ntmax: int) -> None`
 
-Advance the simulation by `ntmax` steps. `ntmax=0` is a valid no-op
-used by the smoke tests.
+Advance the simulation by `ntmax` steps. `ntmax=0` prepares (when a parameter was set) and takes no step, but
+the loop's exit still sets `RIPS = RIPE`: a current ramp pending at that point is lost, and RIP stays where the
+preparation or the last step left it (`RIPS` 1, `RIPE` 2: `run(0)` then `run(10)` ends at 1.0 MA, not 2.0; `tr2`'s `R`
+with `NTMAX` = 0 runs the same path). `run`'s behaviour is kept; `continue_run(0)` only checks and does nothing.
+
+### `Trlib.continue_run(nsteps: int) -> None`, `Trlib.param_class(name) -> int`
+
+`continue_run` advances the prepared case `nsteps` more steps without preparing again (`tr_continue`): the control
+parameters set since the last call take effect, and `nt`, `T` and the history go on. `param_class` is 1 for a control
+parameter (`RIPE`, `PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`), 0 for a structural one (any other name the
+setter takes, and every `eq:` name: `run` prepares again after it), -1 for an unknown name. A refusal raises
+`TrlibParamError` with the `REFUSED` record as `.failure`. `continue_run(0)` makes the checks and does nothing else: the
+control sets stay pending for the next call. `tr/tr_api.h` says what `tr_continue` equals (`tr2`'s `C` at the same cut)
+and what it does not (one call, bit for bit; `tr2`'s `C` with NCLASS).
 
 ### `Trlib.get_state() -> TrState`
 
@@ -205,7 +246,7 @@ See "Outputs by name" above. `history` returns float64 arrays; `history_names()`
 
 ### `Trlib.last_error() -> TrFailure`
 
-The first failure of the last `run` (see above), or `kind == "NONE"`. Raises `TrlibError` for a library without
+The first failure of the last `run` or `continue_run` (see above), or `kind == "NONE"`. Raises `TrlibError` for a library without
 `tr_last_error`.
 
 ### `Trlib.close() -> None`
@@ -391,7 +432,7 @@ Every `tr_*` return code maps to a concrete subclass of `TrlibError`:
 | ierr | class | meaning |
 |---|---|---|
 | 0 | — | success |
-| 1 | `TrlibParamError` | invalid parameter name / index / value |
+| 1 | `TrlibParamError` | invalid parameter name / index / value, or a `continue_run` that `tr_continue` refused (`.failure`) |
 | 2 | `TrlibStateError` | API call before `tr_init` or after `close` |
 | 3 | `TrlibRunError` | calculation or `tr_get_state` failed |
 | 4 | `TrlibNotImplementedError` | Phase L-2 stub return |

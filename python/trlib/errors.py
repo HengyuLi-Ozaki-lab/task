@@ -23,7 +23,16 @@ class TrlibInitError(TrlibError):
 
 
 class TrlibParamError(TrlibError):
-    """Invalid parameter name or value (ierr == 1)."""
+    """Invalid parameter name or value (ierr == 1).
+
+    ``failure`` is the library's record of a refusal that has one: the ``REFUSED`` :class:`TrFailure` of a
+    ``continue_run`` that ``tr_continue`` refused. ``None`` for every other refusal (a name or a value, or a count
+    that ``trlib`` refuses before the call).
+    """
+
+    def __init__(self, *args, failure: Optional["TrFailure"] = None):
+        super().__init__(*args)
+        self.failure = failure
 
 
 class TrlibStateError(TrlibError):
@@ -32,14 +41,15 @@ class TrlibStateError(TrlibError):
 
 @dataclass(frozen=True)
 class TrFailure:
-    """The first failure of a ``tr_run``, as ``tr_last_error`` reports it.
+    """The first failure of a ``tr_run`` or ``tr_continue``, as ``tr_last_error`` reports it.
 
     ``kind`` is ``NONE`` (no failure), ``EQ_FAILED`` (an equilibrium solve of
     ``MODELG=9``: the initial q-scaling or the periodic re-solve), ``NONFINITE``
     (Q0, the stored energy or a central temperature is not finite),
-    ``TR_CHECK`` (negative temperature), ``PREP_FAILED`` or ``OTHER`` (``REFUSED``
-    is reserved for ``tr_continue``, PR 3); ``code`` is the Fortran status, ``nt`` the step and ``time`` the
-    time in seconds; ``detail`` says what failed.
+    ``TR_CHECK`` (negative temperature), ``PREP_FAILED``, ``OTHER``, or ``REFUSED`` (``tr_continue`` refused to
+    run: no prepared case, the last run failed, a structural parameter set since the preparation, which ``detail``
+    names, a negative count, or a value ``tr_run``'s own checks refuse; ``code`` 0); ``code`` is the Fortran status,
+    ``nt`` the step and ``time`` the time in seconds; ``detail`` says what failed.
     """
 
     kind: str
@@ -53,7 +63,7 @@ class TrlibRunError(TrlibError):
     """Calculation or get_state failed (ierr == 3).
 
     ``failure`` is the library's record of what failed (a :class:`TrFailure`),
-    or ``None`` when it was not read (a failure other than ``tr_run``'s).
+    or ``None`` when it was not read (a failure other than ``tr_run``'s or ``tr_continue``'s).
     """
 
     def __init__(self, *args, failure: Optional[TrFailure] = None):

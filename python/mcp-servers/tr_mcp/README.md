@@ -112,9 +112,10 @@ python -m tr_mcp.server --help
 python -m tr_mcp.server --print-tools
 ```
 
-以下の 12 ツールが並びます。
+以下の 13 ツールが並びます。
 
 ```
+continue_run
 describe_history_schema
 describe_parameters
 describe_state_schema
@@ -247,10 +248,24 @@ LLM は `describe_parameters` を呼び、`group == "transport"` を抽出して
 | `get_state` | 現在の状態取得 | なし |
 | `finalize` | リソース解放 | なし |
 | `describe_parameters` | パラメータ一覧・型・説明 | なし |
+| `continue_run` | 準備済みの計算を再準備せずに `nsteps` ステップ続ける (`tr_continue`) | `nsteps` |
 | `describe_state_schema` | `get_state` の JSON schema (31 個の `scalars` の単位つき) | なし |
 | `get_history` | 時間履歴 (`NGTSTP` ステップごとに 1 行, 単精度, 最大 10001 行) | `names` (省略で全列) |
 | `describe_history_schema` | `get_history` の列と単位 | なし |
 | `run_and_get_state` | init + set + run + get_state を一括 | `params`, `ntmax` |
+
+### 続きの計算 (`continue_run`) とパラメータのクラス
+
+`continue_run(nsteps)` は準備済みの計算を再準備せずに `nsteps` ステップ進めます. 前回の `run` / `continue_run` 以降に設定した
+**制御パラメータ** (`describe_parameters` の `class` が 1: `RIPE`, `PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`) は
+最初のステップから効き, `NT`・`T`・履歴は続きます. **構造パラメータ** (`class` 0: ほかのすべての名前と `eq:` 名, -1 は未知) を設定した
+あとは拒否され (エラー文字列に `[failure: kind=REFUSED ...]` と最後に設定した名前が入ります), 次の `run` が再準備します.
+準備前・失敗した計算のあとも拒否されます (負のステップ数は `trlib` が呼び出しの前に記録なしで拒否します). `continue_run(0)` は検査だけで何もしません. `run(0)` は
+ステップを進めませんがループの出口で `RIPS = RIPE` になるため, その前に設定した電流ランプが失われます (`run(0)` を設定と実行の間の
+動作確認に使わないでください). 複数回に分けた計算は 1 回の計算とビット単位では一致しません. `NT` は呼び出しをまたいで続くので,
+`NTEQIT` などの周期は準備からの数え方です. 呼び出しが `NTEQIT` の再計算で終わるとき, 履歴の最終行の q(0) は再計算の前の値
+(`tr2` の表示と同じ), スカラー `Q0` は再計算後の値です. 切れ目の次の行の `WPDOT`, `TAUE2`, `H98Y2` は 1 回の計算とずれます
+(状態には影響しません). 詳細は `python/trlib/README.md`.
 
 ### 出力の名前引きと時間履歴 (`get_state`, `get_history`)
 
