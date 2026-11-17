@@ -19,7 +19,7 @@ PYTHON_ROOT = HERE.parents[2]
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
-from trlib import Trlib, TrlibParamError  # noqa: E402
+from trlib import Trlib, TrlibError, TrlibParamError  # noqa: E402
 from trlib import _ffi  # noqa: E402
 from trlib.state import SCALAR_FIELDS  # noqa: E402
 
@@ -164,3 +164,34 @@ def test_an_unknown_name_leaves_the_value_as_it_was():
         assert lib.tr_get_scalar(b"NOSUCH", ctypes.byref(out)) == _ffi.TR_ERR_INVALID
         assert lib.tr_get_scalar(b"WPT ", ctypes.byref(out)) == _ffi.TR_ERR_INVALID
         assert out.value == -7.0
+
+
+class _WithoutScalarTable:
+    """The real library with the PR 2 symbols hidden: a libtrapi.so built at PR 1 (tr_last_error, no scalar table)."""
+
+    _HIDDEN = ("tr_scalar_count", "tr_scalar_name", "tr_get_scalar",
+               "tr_history_count", "tr_history_name", "tr_history_length", "tr_history_full", "tr_history_get")
+
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        if name in self._HIDDEN:
+            raise AttributeError(name)
+        return getattr(self._real, name)
+
+
+def test_get_state_on_a_library_without_the_scalar_table_holds_the_struct_scalars():
+    with Trlib() as t:
+        t.run(1)
+        with_table = t.get_state()
+        real = t._lib
+        t._lib = _WithoutScalarTable(real)
+        try:
+            state = t.get_state()               # used to raise TrlibError: the library does not export tr_scalar_count
+            assert tuple(state.scalars) == tuple(SCALAR_FIELDS)
+            assert all(state.scalars[k] == with_table.scalars[k] for k in SCALAR_FIELDS)
+            with pytest.raises(TrlibError):     # the by-name calls still say what is missing
+                t.get_scalar("T")
+        finally:
+            t._lib = real

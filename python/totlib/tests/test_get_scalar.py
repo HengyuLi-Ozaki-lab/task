@@ -72,3 +72,32 @@ def test_tot_get_scalar_refuses_a_bad_prefix_and_an_unknown_name():
         for bad in ("PNFT", "eq:PNFT", "fp:PNFT", "tr:NOSUCH", "tr:", "tr:PNFT ", "tr: PNFT"):
             with pytest.raises(TotlibError):
                 tot.get_scalar(bad)
+
+
+# A C name that the 128-character buffer cuts: "tr:T", 124 blanks, "X" read as "tr:T" before the check.
+_CUT_NAMES = [
+    b"tr:T" + b" " * 124 + b"X",
+    b"tr:T" + b" " * 124 + b"junk",
+    b"tr:T" + b" " * 200 + b"X",
+    b"tr:T" + b"A" * 130,
+]
+
+
+@pytest.mark.parametrize("name", _CUT_NAMES)
+def test_tot_get_scalar_refuses_a_name_cut_by_its_buffer(name):
+    with Tot() as tot:
+        v = ctypes.c_double(-1.0)
+        assert tot._lib.tot_get_scalar(b"tr:T", ctypes.byref(v)) == 0     # the uncut name is a scalar
+        v = ctypes.c_double(-1.0)
+        assert tot._lib.tot_get_scalar(name, ctypes.byref(v)) == 1
+        assert v.value == -1.0                                           # left alone
+
+
+@pytest.mark.parametrize("name", _CUT_NAMES)
+def test_tot_history_get_refuses_a_name_cut_by_its_buffer(name):
+    with Tot() as tot:
+        buf = (ctypes.c_double * 4)()
+        got = ctypes.c_int(-1)
+        assert tot._lib.tot_history_get(b"tr:T", buf, 4, ctypes.byref(got)) == 0
+        assert tot._lib.tot_history_get(name, buf, 4, ctypes.byref(got)) == 1
+        assert got.value == 0

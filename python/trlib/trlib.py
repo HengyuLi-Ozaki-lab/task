@@ -301,8 +301,10 @@ class Trlib:
         ierr = self._lib.tr_get_state(ctypes.byref(c))
         raise_for_ierr("tr_get_state", ierr)
         state = TrState.from_c(c)
-        # All the named scalars (the 14 of the struct are among them, read from the same globals).
-        state.scalars = {n: self.get_scalar(n) for n in self.scalar_names()}
+        # All the named scalars (the 14 of the struct are among them, read from the same globals). A library built
+        # before the scalar table (PR 1's) keeps the 14 that from_c filled.
+        if hasattr(self._lib, "tr_scalar_count") and hasattr(self._lib, "tr_get_scalar"):
+            state.scalars = {n: self.get_scalar(n) for n in self.scalar_names()}
         return state
 
     # --- outputs by name (PR 2 of #96) ----------------------------------
@@ -377,8 +379,11 @@ class Trlib:
         """The recorded columns by name, as ``{name: numpy.ndarray}`` of float64 (lists without numpy).
 
         ``names`` is one name, several, or ``None`` for every column of :meth:`history_names`. The values are
-        TR's single-precision history, so they agree with :meth:`get_scalar` to about 1e-7 (relative). An
-        unknown name raises :class:`TrlibParamError`.
+        TR's single-precision history. The last row agrees with :meth:`get_scalar` to about 1e-7 (relative) only
+        when the last step of the call was recorded (a multiple of ``NGTSTP``) and the buffer was not full: after
+        ``run(1)`` with the defaults ``history("T")["T"][-1]`` is 0 while ``get_scalar("T")`` is ``DT``, and
+        once :meth:`history_full` is true the history stays behind the state. An unknown name raises
+        :class:`TrlibParamError`.
         """
         if self._closed:
             raise TrlibError("history on closed Trlib")

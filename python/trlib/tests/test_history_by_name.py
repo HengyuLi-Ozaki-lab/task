@@ -395,3 +395,23 @@ def test_a_run_of_one_step_then_a_changed_parameter_restarts_at_t_zero():
         assert t.history_length() == 3
         h = t.history("T")["T"]
         assert h[0] == 0.0 and np.all(np.diff(h) > 0.0)
+
+
+def test_the_last_row_can_lag_the_state_when_the_last_step_was_not_recorded():
+    # The README's condition: the last row agrees with get_scalar only when the call's last step was recorded.
+    # NGTSTP 2 (the default): run(1) records no row, so T's last row is the state at t = 0 while get_scalar is DT.
+    with Trlib() as t:
+        t.run(1)
+        assert t.history("T")["T"][-1] == 0.0
+        assert t.get_scalar("T") == pytest.approx(t.get_state().scalars["T"]) and t.get_scalar("T") > 0.0
+
+
+def test_the_last_row_stays_behind_the_state_once_the_buffer_is_full():
+    with Trlib() as t:
+        t.set_param("NGTSTP", 1)
+        t.set_param("NTSTEP", 100000)
+        t.set_param("NGRSTP", 100000)
+        t.set_param("DT", 1.0e-4)
+        t.run(10100)
+        assert t.history_full()
+        assert t.history("T")["T"][-1] < t.get_scalar("T") - 1.0e-3

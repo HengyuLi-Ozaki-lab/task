@@ -610,8 +610,10 @@ CONTAINS
     ierr = tr_api_history_get(cname, buf, n, got)
   END FUNCTION tot_api_history_get
 
-  ! .TRUE. when the C string S (NUL-terminated, at most 128 characters) ends in a blank: tr_get_scalar refuses a name
-  ! with a blank, so tot's "tr:" names must too (c_string_to_fortran pads with blanks and hides them).
+  ! .TRUE. when the C string S (NUL-terminated) ends in a blank, or has no NUL within 128 characters: tr_get_scalar
+  ! refuses a name with a blank, so tot's "tr:" names must too (c_string_to_fortran pads with blanks and hides
+  ! them), and a name that the 128-character copy of c_string_to_fortran cuts is not the name that was sent
+  ! ("tr:T", 124 blanks and "X" was read as "tr:T").
   PURE FUNCTION c_string_ends_blank(s) RESULT(r)
     CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: s
     LOGICAL :: r
@@ -623,6 +625,7 @@ CONTAINS
           RETURN
        END IF
     END DO
+    r = .TRUE.          ! no NUL in 128 characters: the copy cut the name
   END FUNCTION c_string_ends_blank
 
 END MODULE tot_api

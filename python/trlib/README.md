@@ -158,7 +158,9 @@ includes the alpha power `PNFT`, and `P_fus = 5 PNFT` for D-T). They are current
 
 TR records a time history every `NGTSTP` steps (default 2): `Trlib.history(names=None)` returns `{name: numpy.ndarray}`
 for 47 columns (`Trlib.history_names()`; `T` is the time), `history_length()` the rows and `history_full()` whether the
-buffer is used up. The values are **single precision** (about 7 digits: the last row agrees with `get_scalar` to rel 1e-6).
+buffer is used up. The values are **single precision** (about 7 digits). The last row agrees with `get_scalar` to rel 1e-6 only when the last step of the call was
+recorded and the buffer was not yet full: with the defaults `run(1)` leaves `history("T")["T"][-1]` at 0 while
+`get_scalar("T")` is `DT` (no row was recorded), and once `history_full()` is true the history stays behind the state.
 The first row is the state at t = 0 and a row is recorded at every step that is a multiple of `NGTSTP`, so a `run` adds `n // NGTSTP` rows only when it starts on
 one (`run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1);
 `tr_prep` starts the history again, so the first `run` and every `run` after a changed parameter do. **The buffer holds
