@@ -384,6 +384,14 @@ CONTAINS
     ! Override NTMAX for this call so tr_loop steps exactly ntmax_in
     ! times. tr_loop increments NT internally; restoring NTMAX afterwards
     ! leaves the namelist-configured value intact for subsequent calls.
+    ! NT + ntmax_in must fit a default integer: past it NTMAX turned negative, the loop left at once and the call
+    ! reported success without a step.
+    IF (ntmax_in > HUGE(NT) - NT) THEN
+       WRITE(6, '(A,I0,A,I0,A)') 'XX tr_run: ', INT(ntmax_in), ' steps after step ', NT, &
+            ' would take the step counter past its largest value'
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
     ntmax_save = NTMAX
     NTMAX      = NT + ntmax_in
     CALL tr_loop(calc_ierr)
