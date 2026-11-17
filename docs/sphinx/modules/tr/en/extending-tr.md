@@ -41,7 +41,7 @@ plus a default in `tr/trinit.f90`.
 5. **Use from Python.** `tr.set_param("FOO", x)` works
    immediately. No C ABI change is needed because
    `tr_set_param` is string-keyed (verified at
-   `tr/tr_api.f90:165-169,177-220`).
+   `tr/tr_api.f90:177-181,189-232`).
 
 For array-valued parameters, the bounds-checked idiom at
 `tr/tr_param_registry.f90:166-171` is the template. The

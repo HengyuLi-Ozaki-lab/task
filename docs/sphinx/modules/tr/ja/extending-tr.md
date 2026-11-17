@@ -39,7 +39,7 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:141+`
 4. **リビルド.** `make -C tr libtrapi.so`.
 5. **Python から使う.** `tr.set_param("FOO", x)` で即座に
    動きます. `tr_set_param` は文字列キーで動作するため
-   (`tr/tr_api.f90:165-169,177-220` で確認), C ABI 変更は
+   (`tr/tr_api.f90:177-181,189-232` で確認), C ABI 変更は
    不要です.
 
 配列値パラメータについては, `tr/tr_param_registry.f90:166-171`
