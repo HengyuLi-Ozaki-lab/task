@@ -329,6 +329,48 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the box around it (ierr=103)", where an analytic solve said "EQCALC failed
   (ierr=103)". `validate()` still cannot
   see it for a load: the axis is known only once the file is read.
+- **EQ library: `MODELG = 8`'s reader returns an error where it ended the
+  process, and an axis search that ends at a point that is not finite says
+  so** (MS10-DP-ISSP/task-web-client#204). `EQJAEAR` (`eq/eq-qst.f90`) read
+  `KNAMEQ` and `KNAMEQ2` with no `IOSTAT` and stopped with `STOP` when the
+  psi map had no axis, so a short or malformed file, a grid outside 2 to 513
+  points a side (past the arrays, or a spacing divided by zero), and a map
+  without an axis or with an R or Z range that is empty or not finite
+  (which leaves no axis to find) ended the process (measured on the `-O0`
+  build with run-time checks; an index past an array may go on unseen
+  without them), and a falling R or Z range was taken as given (`GETRZ`,
+  which PL's field lookups go through, finds no point inside a falling
+  grid). Each now returns an error, and `eq_last_error` names the
+  file and the part, e.g. "EQ_READ: MODELG=8 load failed:
+  KNAMEQ2='eqdata2' ends before its row 11 of 41". `find_axis`
+  (`eq/eqsub.f90`) set `IERR=102` when Newton's method did not converge, in
+  a variable of its own, and its callers, `EQAXIS` (loads through `EQCALQ`,
+  the analytic solve) and `EQJAEAR`, went on from the search's last point.
+  That point is the best one the search found, and runs depend on going on
+  from it: with `MODELG = 9`, 23 of 60 runs (TR's defaults varied, and its
+  three fixtures) met such failures in their re-solves (IER 1 and 2), and 6
+  of them completed with finite results. So
+  `find_axis` returns 102 only when the point is not finite: "EQAXIS: the
+  search for the magnetic axis from (R, Z) = (...) did not converge (NEWTN
+  IER=n): it ended at a point that is not finite (ierr=102)", where a
+  g-eqdsk load whose psi is a ramp in R, and an analytic solve with `RIP = 0` or
+  `NZGMAX = 2`, said "ended at (R, Z) = (NaN, NaN), outside ...
+  (ierr=103)" and a `MODELG = 8` load ended the process (a map whose
+  spline is NaN, on the `-O0` build with run-time checks). From a finite
+  point both go on as before, and no run changes: the 60 TR runs end the
+  same way with the same scalars, bit for bit, before and after, and so do
+  70 analytic solves and a file load of task-web's six EQ presets, with
+  the shape, the current and the mesh varied (none of which meets a failed
+  search). Not changed: `find_xpoint1` and `find_xpoint2`, which
+  `MODELG = 8` calls for its X-points, keep their `IERR` to themselves the
+  same way; and a `MODELG = 8` map whose search fails at a finite point (a
+  ramp in R with a bump, a minimum of |grad psi| and no stationary point)
+  still ends the process further on, in `eqcalq.f90` (an index below an
+  array's bound, as on `0e83ad3d`). **A change of behaviour**: a
+  `MODELG = 8` file with a falling R or Z range is refused, where it was
+  read, and a search that ends at a point that is not finite reports
+  `ierr=102` where it reported 103 (task-web's wiki quotes 103 for
+  `RIP = 0` and `NZGMAX = 2`: task-web-client#205).
 - **TR documentation: `CDH` and `CNH` weigh `chi_NC`** (the neoclassical
   `AKNC`), not `chi_NCLASS`: NCLASS needs `MDNCLS`, which the registry does
   not take (HengyuLi-Ozaki-lab/task-web-client#43). Text and comments only.

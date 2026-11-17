@@ -50,7 +50,8 @@
 !
 !     ----- calculate position of magnetic axis -----
 !
-      CALL find_axis
+      CALL find_axis(IERR)
+      IF(IERR.NE.0) RETURN
 !
 !      WRITE(6,*) RAXIS,ZAXIS,PSIG(RAXIS,ZAXIS)
 !
@@ -80,9 +81,9 @@
 !        for the C API's eq_last_error: a file load with MDLEQF >= 10
 !        reads the box RGMIN..ZGMAX too (default 1.5..4.5 x -2..2 m), and
 !        a small device's axis lies outside it (task-web-client #187).
-!        The point is the axis when NEWTN converged; find_axis does not
-!        pass a failure on (its IERR=102 is its own), so it may be only
-!        where the search stopped.
+!        The point is the axis when NEWTN converged, and otherwise the
+!        best finite point it found (find_axis returns 102 for a point
+!        that is not finite, task-web-client #204).
          WRITE(KV,'(F16.4)') RAXIS,ZAXIS,RMIN,RMAX,ZMIN,ZMAX
          IF(MDLEQF.LT.10) THEN
             WRITE(EQ_ERRMSG,'(13A)',IOSTAT=IOS) &
@@ -294,16 +295,32 @@
 !
 !     ***** calculate position of magnetic axis *****
 !
-      SUBROUTINE find_axis
+      SUBROUTINE find_axis(IERR)
 
+!     IERR: 102, with EQ_ERRMSG saying so, when NEWTN did not converge
+!     and ended at a point that is not finite; 0 otherwise. NEWTN hands
+!     back the best point it found (IER=1: its step fell below 1e-3 of a
+!     full one; IER=2: more than ILMAX steps), and the callers go on from
+!     a finite one as they always did: TR's MODELG 9 re-solves meet such
+!     failures and complete (of 60 runs, TR's defaults varied and its
+!     three fixtures, 23 met failed searches, IER 1 and 2, and 6 of them
+!     completed with finite results; measured,
+!     task-web-client #204). A point that is not finite failed later at
+!     EQAXIS's window ("(NaN, NaN)", ierr=103) or went on into EQJAEAR's
+!     edge and separatrix; this routine's IERR=102 was its own variable.
+      USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
       USE eqlib
       USE plcomm
       USE eqcom0_mod
       USE eqcom1_mod
       USE eqcom2_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
+      INTEGER, INTENT(OUT) :: IERR
+      INTEGER :: IOS
+      CHARACTER(LEN=16) :: KV(2)
       EXTERNAL PSIGD
 
+      IERR=0
       DELT=1.D-8
       EPS=1.D-4
       ILMAX=40
@@ -318,6 +335,16 @@
          WRITE(6,'(A,I5,1P2E12.4)') &
               'XX EQAXIS: NEWTN ERROR: IER=',IER,RSAVE,ZSAVE
          WRITE(6,'(A)') 'XX EQAXIS: AXIS NOT FOUND:'
+         IF(IEEE_IS_FINITE(RAXIS).AND.IEEE_IS_FINITE(ZAXIS)) RETURN
+         WRITE(KV,'(F16.4)') RSAVE,ZSAVE
+         WRITE(EQ_ERRMSG,'(5A,I0,A)',IOSTAT=IOS) &
+              'EQAXIS: the search for the magnetic axis from (R, Z) = (', &
+              TRIM(ADJUSTL(KV(1))),', ',TRIM(ADJUSTL(KV(2))), &
+              ') did not converge (NEWTN IER=',IER, &
+              '): it ended at a point that is not finite (ierr=102)'
+         IF(IOS.NE.0) EQ_ERRMSG='EQAXIS: the search for the magnetic'// &
+              ' axis ended at a point that is not finite (ierr=102)'
+         WRITE(6,'(2A)') '   ',TRIM(EQ_ERRMSG)
          IERR=102
          RETURN
       ENDIF

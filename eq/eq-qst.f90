@@ -12,6 +12,7 @@
 !
       SUBROUTINE EQJAEAR(IERR)
 
+      USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
       USE libfio
       USE libbrent
       USE libspl1d
@@ -24,7 +25,9 @@
       INTEGER, INTENT(OUT) :: IERR
 
       integer:: ir,iz
+      INTEGER:: IOS,NRGF,NZGF
       LOGICAL:: LEX2
+      CHARACTER(LEN=16):: KPART,KR(4)
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE:: psi_temp
       DIMENSION PSIRG(NRGM,NZGM),PSIZG(NRGM,NZGM),PSIRZG(NRGM,NZGM)
       DIMENSION PSIx1(NRGM,NZGM),psix2(NRGM,NZGM),PSIx3(NRGM,NZGM)
@@ -42,10 +45,60 @@
       CALL FROPEN(neqdsk,KNAMEQ,0,MODEFR,'EQ',IERR)
       IF(IERR.NE.0) RETURN
 !
+!     Every READ of the two files has an IOSTAT, and a map without an
+!     axis returns: a short or malformed file, or a map with no axis, is
+!     an error return with its reason for the C API's eq_last_error,
+!     where it ended the process (a Fortran runtime error, a STOP:
+!     task-web-client #204).
       REWIND(neqdsk)
-      READ (neqdsk) NRGMAX,NZGMAX
-      write(6,*) 'nrgmax,nzgmax=',nrgmax,nzgmax
-      READ (neqdsk) rmin,rmax,zmin,zmax
+      READ (neqdsk,IOSTAT=IOS) NRGF,NZGF
+      IF(IOS.NE.0) THEN
+         CALL READ_FAILED('KNAMEQ',KNAMEQ,'grid counts')
+         RETURN
+      ENDIF
+!     The grid's arrays hold NRGM x NZGM points and the spacing divides
+!     by NRGMAX-1: counts outside 2..NRGM are no grid of this format.
+      IF(NRGF.LT.2.OR.NRGF.GT.NRGM.OR.NZGF.LT.2.OR.NZGF.GT.NZGM) THEN
+         CLOSE(neqdsk)
+         WRITE(EQ_ERRMSG,'(3A,I0,A,I0,A,I0,A,I0)',IOSTAT=IOS) &
+              'EQ_READ: MODELG=8 load failed: KNAMEQ=''',TRIM(KNAMEQ), &
+              ''' gives a grid of ',NRGF,' x ',NZGF, &
+              ' points, outside 2..',NRGM,' x 2..',NZGM
+         IF(IOS.NE.0) EQ_ERRMSG='EQ_READ: MODELG=8 load failed:'// &
+              ' KNAMEQ gives grid counts outside the arrays'
+         WRITE(6,'(2A)') 'XX ',TRIM(EQ_ERRMSG)
+         IERR=3
+         RETURN
+      ENDIF
+      write(6,*) 'nrgmax,nzgmax=',NRGF,NZGF
+      READ (neqdsk,IOSTAT=IOS) rmin,rmax,zmin,zmax
+      IF(IOS.NE.0) THEN
+         CALL READ_FAILED('KNAMEQ',KNAMEQ,'R and Z ranges')
+         RETURN
+      ENDIF
+!     A range that is empty (its spacing 0) or not finite is no grid,
+!     and a falling one loads but is no grid for the field lookups:
+!     GETRZ (eq/eqintf.f90) takes every point with R <= RG(1) or
+!     Z <= ZG(1) as outside, where it returns no poloidal field and no
+!     error, and PL looks the field up through it for MODELG 3, 5, 8.
+      IF(.NOT.(IEEE_IS_FINITE(rmin).AND.IEEE_IS_FINITE(rmax).AND. &
+               IEEE_IS_FINITE(zmin).AND.IEEE_IS_FINITE(zmax).AND. &
+               rmax.GT.rmin.AND.zmax.GT.zmin)) THEN
+         CLOSE(neqdsk)
+         WRITE(KR,'(ES11.4)',IOSTAT=IOS) rmin,rmax,zmin,zmax
+         WRITE(EQ_ERRMSG,'(11A)',IOSTAT=IOS) &
+              'EQ_READ: MODELG=8 load failed: KNAMEQ=''',TRIM(KNAMEQ), &
+              ''' gives R and Z ranges that are no grid: R from ', &
+              TRIM(ADJUSTL(KR(1))),' to ',TRIM(ADJUSTL(KR(2))), &
+              ', Z from ',TRIM(ADJUSTL(KR(3))),' to ',TRIM(ADJUSTL(KR(4)))
+         IF(IOS.NE.0) EQ_ERRMSG='EQ_READ: MODELG=8 load failed:'// &
+              ' KNAMEQ gives R and Z ranges that are no grid'
+         WRITE(6,'(2A)') 'XX ',TRIM(EQ_ERRMSG)
+         IERR=3
+         RETURN
+      ENDIF
+      NRGMAX=NRGF
+      NZGMAX=NZGF
       write(6,*) 'rmin,rmax=',rmin,rmax
       write(6,*) 'zmin,zmax=',zmin,zmax
       DR=(rmax-rmin)/(NRGMAX-1)
@@ -61,11 +114,20 @@
       ! Defensive zero-init (see PR #123 pattern): libeqapi.so finalize+reinit
       ! cycle can reuse heap chunks with stale values.
       psi_temp = 0.D0
-      READ(neqdsk) psi_temp
+      READ(neqdsk,IOSTAT=IOS) psi_temp
+      IF(IOS.NE.0) THEN
+         DEALLOCATE(psi_temp)
+         CALL READ_FAILED('KNAMEQ',KNAMEQ,'psi map')
+         RETURN
+      ENDIF
       psirz(1:nrgmax,1:nzgmax)=psi_temp(1:nrgmax,1:nzgmax)
       DEALLOCATE(psi_temp)
 
-      read (neqdsk) BtR
+      read (neqdsk,IOSTAT=IOS) BtR
+      IF(IOS.NE.0) THEN
+         CALL READ_FAILED('KNAMEQ',KNAMEQ,'BtR record')
+         RETURN
+      ENDIF
       write(6,*) 'read BtR=',BtR
       CLOSE(neqdsk)
 
@@ -93,9 +155,18 @@
       write(6,*) 'open 2'
       npsmax=41
       REWIND(neqdsk)
-      READ(neqdsk,*)
+      READ(neqdsk,*,IOSTAT=IOS)
+      IF(IOS.NE.0) THEN
+         CALL READ_FAILED('KNAMEQ2',KNAMEQ2,'header line')
+         RETURN
+      ENDIF
       DO nps=1,npsmax
-         READ(neqdsk,*) i,ttps(nps),ppps(nps)
+         READ(neqdsk,*,IOSTAT=IOS) i,ttps(nps),ppps(nps)
+         IF(IOS.NE.0) THEN
+            WRITE(KPART,'(A,I0,A)') 'row ',nps,' of 41'
+            CALL READ_FAILED('KNAMEQ2',KNAMEQ2,TRIM(KPART))
+            RETURN
+         ENDIF
       ENDDO
       CLOSE(neqdsk)
 
@@ -140,7 +211,14 @@
       SELECT CASE(icountmax)
       CASE(0)
          WRITE(6,*) 'XX NO MAG AXIS FOUND'
-         STOP
+         WRITE(EQ_ERRMSG,'(3A)',IOSTAT=IOS) &
+              'EQ_READ: MODELG=8 load failed: the psi map in KNAMEQ=''', &
+              TRIM(KNAMEQ),''' has no magnetic axis: no interior point'// &
+              ' where |grad psi| is below its four neighbours (ierr=102)'
+         IF(IOS.NE.0) EQ_ERRMSG='EQ_READ: MODELG=8 load failed:'// &
+              ' the psi map in KNAMEQ has no magnetic axis (ierr=102)'
+         IERR=102
+         RETURN
       CASE(1)
          RAXIS=rc_xp(1)
          ZAXIS=zc_xp(1)
@@ -208,7 +286,14 @@
 
 ! -----
       CALL setup_psig
-      CALL find_axis
+      CALL find_axis(IERR)
+      IF(IERR.NE.0) THEN
+!        find_axis's reason starts "EQAXIS: "; name the load instead, as
+!        this reader's other reasons do.
+         IF(EQ_ERRMSG(1:8).EQ.'EQAXIS: ') EQ_ERRMSG= &
+              'EQ_READ: MODELG=8 load failed: '//EQ_ERRMSG(9:)
+         RETURN
+      ENDIF
       WRITE(6,'(A,1P3E12.4)') 'RAXIS,ZAXIS,PSI_AXIS=', &
                                RAXIS,ZAXIS,PSIG(RAXIS,ZAXIS)
       IF(NXPOINT >= 1) THEN
@@ -340,6 +425,32 @@
       ENDDO
       ENDDO
       RETURN
+
+      CONTAINS
+
+!     A READ of KNAMEQ or KNAMEQ2 failed (IOS): close the file and give
+!     IERR 4 when it ends early, 3 when it cannot be read, and a reason
+!     naming the file and the part, for eq_last_error.
+      SUBROUTINE READ_FAILED(KVAR,KFILE,KWHAT)
+        CHARACTER(LEN=*),INTENT(IN):: KVAR,KFILE,KWHAT
+        INTEGER:: IOS_W
+        CLOSE(neqdsk)
+        IF(IOS.LT.0) THEN
+           IERR=4
+           WRITE(EQ_ERRMSG,'(7A)',IOSTAT=IOS_W) &
+                'EQ_READ: MODELG=8 load failed: ',KVAR,'=''', &
+                TRIM(KFILE),''' ends before its ',KWHAT
+        ELSE
+           IERR=3
+           WRITE(EQ_ERRMSG,'(7A)',IOSTAT=IOS_W) &
+                'EQ_READ: MODELG=8 load failed: ',KVAR,'=''', &
+                TRIM(KFILE),''' could not be read: its ',KWHAT
+        ENDIF
+        IF(IOS_W.NE.0) EQ_ERRMSG= &
+             'EQ_READ: MODELG=8 load failed: a file could not be read'
+        WRITE(6,'(2A)') 'XX ',TRIM(EQ_ERRMSG)
+      END SUBROUTINE READ_FAILED
+
       END
 
       SUBROUTINE RBB(X,RGB)
