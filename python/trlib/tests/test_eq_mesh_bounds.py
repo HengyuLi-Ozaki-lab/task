@@ -58,7 +58,7 @@ def test_modelg9_run_refuses_an_eq_mesh_size_over_its_maximum(name):
     assert "RUN refused" in p.stdout, p.stdout[-800:]
     assert "VALIDATE ['eq:%s']" % name in p.stdout, p.stdout[-800:]
     assert "XX tr_run: eq:%s" % name in p.stdout and "%d" % BOUNDS[name] in p.stdout, p.stdout[-800:]
-    assert "USABLE" in p.stdout
+    assert "USABLE" in p.stdout.splitlines()      # not "NOT USABLE"
 
 
 @pytest.mark.parametrize("name", ["NSGMAX", "NTGMAX"])
