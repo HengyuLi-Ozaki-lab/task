@@ -1,9 +1,10 @@
-"""``tr_run`` refuses a step count that takes the step counter NT past its largest value.
+"""``tr_run`` and ``tr_continue`` refuse a step count that takes the step counter NT past its largest value.
 
-``NTMAX = NT + ntmax_in`` overflowed a default integer: after ``tr_init(); tr_run(1)``, ``tr_run(2147483647)`` made
-NTMAX negative and the loop left at once (a pre-existing overflow, fixed in this PR). ``tr_run`` now returns
-``TR_ERR_INVALID`` with an ``XX tr_run`` line on unit 6, before it changes NTMAX. Only the refusal can be tested: a
-count that fits would run for two billion steps. Every case runs in a child process (it reads Fortran's unit 6).
+``NTMAX = NT + nsteps`` overflowed a default integer: ``tr_init(); tr_run(1); tr_continue(2147483647)`` made NTMAX
+negative, the loop left at once and the call reported success without a step. ``tr_continue`` now refuses
+(``TR_ERR_INVALID`` with a ``REFUSED`` record) before it takes in a pending control set or changes NTMAX; ``tr_run``,
+which had the same sum, returns ``TR_ERR_INVALID`` with an ``XX`` line. Only the refusals can be tested: a count that
+fits would run for two billion steps. Every case runs in a child process (it reads Fortran's unit 6).
 """
 from __future__ import annotations
 
@@ -30,6 +31,40 @@ def _child(body: str) -> subprocess.CompletedProcess:
         + textwrap.dedent(body)
     )
     return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=300)
+
+
+# (steps already run, count): the sum NT + count is past INT_MAX in each; INT_MAX - 1 after one step would be accepted
+# (the sum is INT_MAX) and run for two billion steps, so the accepted side of the bound is not run.
+@pytest.mark.parametrize("done,count", [(1, INT_MAX), (10, INT_MAX - 5)])
+def test_continue_refuses_a_count_that_overflows_nt(done, count):
+    p = _child('''
+        t = Trlib()
+        t.run(%d)
+        print("RC", t._lib.tr_continue(%d))
+        f = t.last_error()
+        print("KIND", f.kind, "|", f.detail)
+        print("NT", t.get_state().nt)
+    ''' % (done, count))
+    assert p.returncode == 0, p.stdout[-600:] + p.stderr[-1200:]
+    assert "RC 1" in p.stdout, p.stdout[-800:]
+    assert "KIND REFUSED |" in p.stdout and "step count" in p.stdout, p.stdout[-800:]
+    assert "XX tr_continue: " in p.stdout
+    assert "NT %d" % done in p.stdout        # nothing ran
+
+
+def test_a_refused_overflowing_continue_leaves_the_pending_controls_pending():
+    # tr_run prepares again after any set since its preparation; it would continue (NT 10) if the refused
+    # tr_continue had taken the set in.
+    p = _child('''
+        t = Trlib()
+        t.run(5)
+        t.set_param("PECTOT", 1.0)
+        print("RC", t._lib.tr_continue(%d))
+        t.run(5)
+        print("NT", t.get_state().nt)
+    ''' % INT_MAX)
+    assert p.returncode == 0, p.stdout[-600:] + p.stderr[-1200:]
+    assert "RC 1" in p.stdout and "NT 5" in p.stdout, p.stdout[-800:]
 
 
 def test_run_refuses_a_count_that_overflows_nt():

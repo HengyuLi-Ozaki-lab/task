@@ -1488,6 +1488,7 @@ CONTAINS
     INTEGER(C_INT), VALUE, INTENT(IN) :: nsteps
     INTEGER(C_INT) :: ierr
     INTEGER :: ntmax_save, calc_ierr, nviol, i
+    CHARACTER(LEN=160) :: step_text
     CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
     INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
     CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
@@ -1499,6 +1500,14 @@ CONTAINS
     END IF
     IF (nsteps < 0) THEN
        CALL refuse('the step count is negative')
+       RETURN
+    END IF
+    ! NT + nsteps must fit a default integer. Checked first, before anything is taken in: past it NTMAX turned
+    ! negative, the loop left at once and the call reported success without a step.
+    IF (nsteps > HUGE(NT) - NT) THEN
+       WRITE(step_text, '(A,I0,A,I0,A)') 'the step count ', INT(nsteps), ' after step ', NT, &
+            ' would take the step counter past its largest value'
+       CALL refuse(TRIM(step_text))
        RETURN
     END IF
     IF (.NOT. g_prepared) THEN

@@ -68,10 +68,14 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   - `tr_continue` refuses (`TR_ERR_INVALID`, a `REFUSED` record in `tr_last_error`, a line on unit 6 for each finding,
     nothing run): before a preparation; after a failed `tr_prep` or loop, until a `tr_run` prepares again; after a
     structural set since the preparation (the record names the last one: `tr_run` prepares again); for a negative
-    count; and for a value `tr_run`'s own checks refuse (with `MODELG` 9, a negative `RIPE`). `TrlibParamError` carries
+    count; for a count that would take the step counter `NT` past 2**31 - 1 (`NT + nsteps` overflowed: the loop left at
+    once and the call reported success without a step); and for a value `tr_run`'s own checks refuse (with `MODELG` 9, a
+    negative `RIPE`). `TrlibParamError` carries
     the record as `.failure`, except for a negative count: the C function refuses it with a record, but `Trlib` and
     `Tot` refuse a count outside 0 to 2**31 - 1 before the call, without one. `tr_continue(0)` makes the checks and does
     nothing else, and the control sets stay pending.
+  - `tr_run` has the same bound (a pre-existing overflow of `NT + ntmax_in`, fixed here): a count past `HUGE(NT) - NT` returns
+    `TR_ERR_INVALID` with an `XX tr_run` line, before `NTMAX` is changed.
   - `tr_run(0)` is unchanged and has a flaw `tr_continue(0)` avoids: the loop's exit sets `RIPS = RIPE` even with no step,
     so a ramp set before `run(0)` is lost (`RIPS` 1, `RIPE` 2: `run(0)` then `run(10)` ends at 1.0 MA, not 2.0). The
     docstrings of `run` in `tr_mcp` and `tot_mcp` called `ntmax=0` a valid no-op and a smoke test; they now say that `run(0)`
