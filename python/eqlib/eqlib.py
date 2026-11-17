@@ -291,14 +291,15 @@ class Eq:
                   8, 9 or 25 with ``KNAMEQ``, and ``KNAMEQ2`` too for
                   8, or 15, which reads the fixed file ``eqdb.dat``
                   instead).
-                * ``0`` runs the in-process analytic Grad-Shafranov
-                  solve (``EQCALC`` + ``EQCALQ``); use it with
+                * ``0`` runs the in-process Grad-Shafranov solve
+                  (``EQCALC`` + ``EQCALQ``); use it with
                   ``MODELG=2`` and the basic geometry parameters
                   (``RR``, ``RA``, ``BB``, ``RIP``, ``RKAP``,
                   ``RDLT``, ...) to produce a self-consistent
                   equilibrium without any external EQDSK file.
 
-                Other values return ``EQ_ERR_NOT_IMPL``.
+                A ``mode`` above 1 raises
+                :class:`EqlibNotImplementedError` (``EQ_ERR_NOT_IMPL``).
 
         On failure the exception message ends with the library's reason
         (:meth:`last_error`), e.g. which file could not be loaded.
@@ -483,12 +484,12 @@ class Eq:
 
         The geometry checks (the wall ``RB`` against ``RA``, the box
         ``RGMIN``..``ZGMAX`` with ``MDLEQF >= 10``, a negative ``RIP``)
-        are made for the analytic solve only (``run(0)``), going by
+        are made for the Grad-Shafranov solve only (``run(0)``), going by
         ``MODELG``: a file format (``MODELG`` 3/5/8/9/15/25) is taken to
         be loaded with ``run(1)``, which brings its own geometry (EQRTSK
         reads RA/RKAP/RDLT/RB from the TASK-native file; EQDSKR
         reconstructs RB = 1.1*RA), so the pre-run values say nothing
-        about it; every other ``MODELG`` is the analytic solve. The box
+        about it; every other ``MODELG`` is the Grad-Shafranov solve. The box
         is flagged where the solver fails or cuts the plasma
         (``eq_validate``'s comment in ``eq/eq_api.f90`` has the
         measurements); a box that leaves out part of the plasma

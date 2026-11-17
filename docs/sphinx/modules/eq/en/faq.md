@@ -18,12 +18,16 @@ menu commands of the legacy `eqx2` CLI:
 
 | `mode` | Purpose | Legacy CLI command | Required setup |
 |---|---|---|---|
-| `0` | **Analytic G-S solve** (`EQCALC` + post-processing) | `R` (Run) -> `F` (Fields) | `MODELG ∈ {0, 1, 2}`, analytic profile coefficients (`PP*`, `PJ*`, `FF*`, ...) |
-| `1` (default) | **Load EQDSK file** (`equnit::eq_load`) | `L` (Load) | `MODELG ∈ {3, 5, 8, 9, 25}`, `KNAMEQ` (filename); `MODELG = 15` reads `eqdb.dat` |
+| `0` | **Grad-Shafranov solve** (`EQCALC`, iterated to `EPSEQ`, + post-processing) | `R` (Run) -> `F` (Fields) | `MODELG ∈ {0, 1, 2}`, profile coefficients (`PP*`, `PJ*`, `FF*`, ...) |
+| `1` (default) | **Load an equilibrium file** (`equnit::eq_load`) | `L` (Load) | a file format: `MODELG` 3 or 9 (TASK/EQ), 5 or 25 (G-EQDSK) with `KNAMEQ` (filename), 8 (QST/JAEA) with `KNAMEQ` and `KNAMEQ2`; `MODELG = 15` reads `eqdb.dat` |
 
-`mode=1` is the default because it is the **standard EQDSK-driven
-workflow**. When you want to solve analytically (giving only the
-device parameters and analytic profile coefficients), use `mode=0`.
+`mode=1` is the default because it is the **standard file-driven
+workflow** (it fails with the default `MODELG=2`, which names no file
+format). When you want to solve the equilibrium (giving only the
+device parameters and profile coefficients), use `mode=0`. A negative
+`mode` raises `EqlibInvalidParamError`, a mode above 1
+`EqlibNotImplementedError` (a number that does not fit a C `int` raises
+`EqlibInvalidParamError` before the library is called).
 
 ```{note}
 The `run` of `tr`/`ti`/`wr`/`fp` takes a step count `ntmax`, but EQ
@@ -43,7 +47,7 @@ You are loading a `libeqapi.so` from before Phase L-3. Rebuild with
 
 ## Q5. `EqlibCalculationFailedError: ierr=3`
 
-The equilibrium iteration failed to converge, or the EQDSK file is
+The equilibrium iteration failed to converge, or the equilibrium file is
 inconsistent. Common causes:
 
 - The combination `RR`, `RA`, `BB`, `RIP` is physically implausible
@@ -52,11 +56,17 @@ inconsistent. Common causes:
   `1e-6` to `1e-4` and retry
 - `NLPMAX` (maximum iterations) is too small — increase it from the
   default `100`
-- The EQDSK file format does not match (version mismatch)
+- The load (`mode=1`) cannot open the file (it is not there); the
+  exception message ends with the reason (`eq.last_error()`). With
+  `MODELG` 3, 5, 8, 9 or 25, a file that is there but not of that format
+  gives no exception: their readers (`EQRTSK` for 3 and 9, `EQDSKR` for 5
+  and 25, `EQJAEAR` for 8) do not check their reads, and the process stops
+  with a Fortran runtime error (measured for `MODELG` 3, 5 and 8); the
+  reader of 15 (`eqdb.dat`) checks them and returns the error
 
 `validate()` catches grid dimensions, a missing load file (a blank `KNAMEQ` or one naming no file,
 `KNAMEQ2` for `MODELG=8`, `eqdb.dat` for `MODELG=15`) and, for the
-analytic solve, a wall inside the plasma, a negative current and a box
+Grad-Shafranov solve, a wall inside the plasma, a negative current and a box
 (`MDLEQF >= 10`) the solve cannot use up-front; physical consistency is
 only known after `run()`.
 

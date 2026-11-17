@@ -32,7 +32,7 @@ eq.set_params({"RR": 6.5, "BB": 5.3})          # 位置引数 mapping 形式
 
 ## 方法 C — 文字列パラメータ (`set_param_str`)
 
-EQDSK 系ファイル名は `CHARACTER(LEN=80)` で, **専用 API** が必須です.
+ファイル名 (`KNAMEQ` などの `KNAM*`) は `CHARACTER(LEN=80)` で, **専用 API** が必須です.
 `set_param` には渡せません.
 
 ```python
@@ -66,10 +66,10 @@ with Eq() as eq:
     if diags:
         raise SystemExit("fix the diagnostics before running")
 
-    eq.run()  # mode=1 (EQDSK 読み込み)
+    eq.run()  # mode=1 (ファイル読み込み. MODELG=3: TASK/EQ 形式)
 ```
 
-解析的に解く場合は `mode=0` を渡します:
+Grad-Shafranov 求解には `mode=0` を渡します:
 
 ```python
 with Eq() as eq:
@@ -77,7 +77,7 @@ with Eq() as eq:
     diags = eq.validate()
     if diags:
         raise SystemExit("fix the diagnostics before running")
-    eq.run(mode=0)  # EQCALC + EQCALQ で解析的に
+    eq.run(mode=0)  # EQCALC (EPSEQ まで反復) + EQCALQ
 ```
 
 診断コードは `tr` と共通の 5 種類:
@@ -96,7 +96,7 @@ with Eq() as eq:
 チェックします: `MODELG` 3, 5, 8, 9, 25 では `KNAMEQ` が空でなくファイルを指す
 こと (2 つのファイルを読む 8 では `KNAMEQ2` も), `MODELG` 15 では `KNAMEQ` の代わりに読む固定ファイル `eqdb.dat` があること
 (`MODELG` として報告). 名前は読み込みと同じく, `validate()` の時点の作業
-ディレクトリから探します. 解析解 (`run(mode=0)`.
+ディレクトリから探します. Grad-Shafranov 求解 (`run(mode=0)`.
 ファイル形式以外のすべての `MODELG` はこれで解く) ではさらに次をチェックします:
 
 - 壁がプラズマを囲む: `RB >= RA` (`INCONSISTENT_PAIR`);
