@@ -97,6 +97,9 @@ MODULE tr_api
   ! tr_loop of tr_run or tr_continue failed since then: tr_continue refuses on either (PR 3 of #96).
   INTEGER, SAVE :: g_prep_structural = -1
   LOGICAL, SAVE :: g_failed = .FALSE.
+  ! Whether this lifecycle has attempted a preparation (tr_run's tr_prep, failed or not). tr_init resets NT but not
+  ! T, so before it T is the previous lifecycle's: a refusal made earlier records time 0 (tr_continue's refuse).
+  LOGICAL, SAVE :: g_prep_attempted = .FALSE.
   ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
   ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
   INTEGER, SAVE :: g_first_nrmax = 0
@@ -162,6 +165,7 @@ CONTAINS
     g_initialized = .TRUE.
     g_prepared    = .FALSE.
     g_failed      = .FALSE.
+    g_prep_attempted = .FALSE.
     ! Library mode: tr_loop, tr_set_metric and tr_exec record their failures and
     ! tr_loop tests the periodic equilibrium solve. Only this entry sets it.
     tr_library_mode = .TRUE.
@@ -368,6 +372,7 @@ CONTAINS
        ! The first attempt fixes the mesh, failed or not: tr_prep can size
        ! bpsd's splines (tr_set_metric) and then fail later (tr_prof_impurity).
        IF (g_first_nrmax == 0) g_first_nrmax = NRMAX
+       g_prep_attempted = .TRUE.
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, T, 'tr_prep failed')
@@ -1558,7 +1563,12 @@ CONTAINS
 
     SUBROUTINE refuse(why)
       CHARACTER(LEN=*), INTENT(IN) :: why
-      CALL tr_failure_record(TRF_REFUSED, 0, NT, T, why)
+      ! T is the previous lifecycle's until this one has attempted a preparation: record time 0 then.
+      IF (g_prep_attempted) THEN
+         CALL tr_failure_record(TRF_REFUSED, 0, NT, T, why)
+      ELSE
+         CALL tr_failure_record(TRF_REFUSED, 0, NT, 0.0_rkind, why)
+      END IF
       WRITE(6, '(A)') 'XX tr_continue: '//why
       ierr = TR_ERR_INVALID
     END SUBROUTINE refuse
