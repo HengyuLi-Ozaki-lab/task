@@ -44,6 +44,13 @@ MODULE tr_api
   USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation, &
        tr_param_note_external_set
   USE eq_param_registry, ONLY: eq_param_set, eq_param_set_str
+  ! EQ's mesh sizes and the compile-time maxima of its arrays (the ones eq_validate checks, eq/eq_api.f90). Renamed:
+  ! TRCOMM has an NRMAX of its own.
+  USE eqcom0_mod, ONLY: eq_NRGM => NRGM, eq_NZGM => NZGM, eq_NPSM => NPSM, eq_NSGM => NSGM, eq_NTGM => NTGM, &
+                        eq_NUGM => NUGM, eq_NRM => NRM, eq_NTHM => NTHM, eq_NSUM => NSUM, eq_NRVM => NRVM
+  USE eqcom1_mod, ONLY: eq_NSGMAX => NSGMAX, eq_NTGMAX => NTGMAX, eq_NUGMAX => NUGMAX, eq_NRGMAX => NRGMAX, &
+                        eq_NZGMAX => NZGMAX, eq_NPSMAX => NPSMAX, eq_NRMAX => NRMAX, eq_NTHMAX => NTHMAX, &
+                        eq_NSUMAX => NSUMAX, eq_NRVMAX => NRVMAX
   USE libnf,             ONLY: nf_finalize
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
@@ -74,8 +81,9 @@ MODULE tr_api
   ! #189: at most 3 findings per active species (density sign / zero
   ! density / temperature), species bounded by TR_MAX_NSMAX.
   ! + RIPS, RIPE (current_for_eq); + the equation switches, NPSCMAX and three per particle source
-  ! (source_and_equation_violations; NPSCM = 10, tr/trcomm_const.f90); + NRMAX (mesh_violation)
-  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2 + 6 + 3 * 10 + 1
+  ! (source_and_equation_violations; NPSCM = 10, tr/trcomm_const.f90); + NRMAX (mesh_violation); + the ten EQ mesh sizes
+  ! (eq_mesh_violation)
+  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2 + 6 + 3 * 10 + 1 + 10
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
@@ -339,6 +347,7 @@ CONTAINS
        CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
        CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
        CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
+       CALL eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
        IF (nviol > 0) THEN
           DO i = 1, nviol
              WRITE(6, '(A)') 'XX tr_run: '//TRIM(vnames(i))//': '//TRIM(vmsgs(i))
@@ -570,6 +579,7 @@ CONTAINS
     !      source_and_equation_violations), also refused by tr_run.
     CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
     CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
+    CALL eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
     DO i = 1, nviol
        CALL push_diag(TRIM(vnames(i)), vcodes(i), TRIM(vmsgs(i)))
     END DO
@@ -1062,5 +1072,56 @@ CONTAINS
     END IF
     refused = .FALSE.
   END FUNCTION eq_name_refused
+
+  !-------------------------------------------------------------------
+  ! eq_mesh_violation : EQ's mesh sizes (set through "eq:" names) against the compile-time maxima of EQ's arrays.
+  !
+  ! The same ten bounds as eq_validate (eq/eq_api.f90, push_oor), which the TR route to EQ did not apply: with
+  ! MODELG 9, eq:NSGMAX=129 reached EQMESH, which wrote SIGM(129) past SIGM(NSGM=128) (eq/eqcalc.f90:63). The
+  ! limits are EQ's own parameters (eqcom0_mod), not copies. Which of them matter depends on MODELG:
+  !  - MODELG 9 solves the equilibrium itself (tr_set_metric: eq_prof, eq_calc): all ten.
+  !  - MODELG 3, 5, 8 load a file (eq_load); tr_set_metric sets EQ's NRMAX, NTHMAX and NSUMAX there, so the other
+  !    seven are held to their maxima.
+  !  - Any other MODELG does not use EQ's grid: nothing is checked.
+  ! Same contract as mesh_violation: appends (name, code, message) to the lists; the name carries the "eq:" prefix.
+  !-------------------------------------------------------------------
+  SUBROUTINE eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
+    INTEGER,                          INTENT(INOUT) :: nviol
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN), INTENT(INOUT) :: vnames(:)
+    INTEGER(C_INT),                   INTENT(INOUT) :: vcodes(:)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN),   INTENT(INOUT) :: vmsgs(:)
+    LOGICAL :: file_load, solve
+
+    solve     = (MODELG == 9)
+    file_load = (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8)
+    IF (.NOT. (solve .OR. file_load)) RETURN
+
+    CALL check('eq:NSGMAX', eq_NSGMAX, eq_NSGM)
+    CALL check('eq:NTGMAX', eq_NTGMAX, eq_NTGM)
+    CALL check('eq:NUGMAX', eq_NUGMAX, eq_NUGM)
+    CALL check('eq:NRGMAX', eq_NRGMAX, eq_NRGM)
+    CALL check('eq:NZGMAX', eq_NZGMAX, eq_NZGM)
+    CALL check('eq:NPSMAX', eq_NPSMAX, eq_NPSM)
+    CALL check('eq:NRVMAX', eq_NRVMAX, eq_NRVM)
+    IF (solve) THEN
+       CALL check('eq:NRMAX',  eq_NRMAX,  eq_NRM)
+       CALL check('eq:NTHMAX', eq_NTHMAX, eq_NTHM)
+       CALL check('eq:NSUMAX', eq_NSUMAX, eq_NSUM)
+    END IF
+
+  CONTAINS
+
+    SUBROUTINE check(name_str, requested, max_value)
+      CHARACTER(LEN=*), INTENT(IN) :: name_str
+      INTEGER, INTENT(IN)          :: requested, max_value
+      IF (requested <= max_value) RETURN
+      IF (nviol >= MIN(SIZE(vnames), SIZE(vcodes), SIZE(vmsgs))) RETURN
+      nviol = nviol + 1
+      vnames(nviol) = name_str
+      vcodes(nviol) = TR_DIAG_OUT_OF_RANGE
+      WRITE(vmsgs(nviol), '(A,I0,A,I0)') 'value ', requested, ' exceeds the compile-time maximum of EQ: ', max_value
+    END SUBROUTINE check
+
+  END SUBROUTINE eq_mesh_violation
 
 END MODULE tr_api

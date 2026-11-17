@@ -18,6 +18,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     pinned bpsd has k-yoshimi/bpsd#7 (it comes off with the `NRMAX` guard below). Under `MODELG` 9 this sets EQ's wall and grid without `tot`. `libtrapi.so` now links EQ's registry object.
     A mesh change of EQ between two preparations in one process needs the bpsd spline resize
     (k-yoshimi/bpsd#7); the regrid tests that need it run with `TRLIB_BPSD_REGRID_FIX=1`.
+  - `tr_run` refuses, and `tr_validate` reports, an `eq:` mesh size above the compile-time maximum of EQ's arrays (the bounds of
+    `eq_validate`, EQ's own parameters); `eq:NSGMAX` 129 under `MODELG` 9 used to end the process in `EQMESH`.
   - `tr_init` sets library mode (`tr/trfailure.f90`), `tr2` never does. In library mode the time loop returns the
     first failure instead of going on, and records it: `tr_last_error(tr_diag_entry_t*)` gives the kind
     (`EQ_FAILED` from the periodic `MODELG` 9 re-solve (`NTEQIT`) and from each exit of the q-scaling, with EQ's own

@@ -202,6 +202,12 @@ next `run` prepare again. Two kinds of `eq:` name are refused (`TrlibParamError`
   so `eq:` names are set before the process's first preparation attempt (a `run` that `tr_run`'s own checks refuse
   before `tr_prep` does not count). This guard comes off with the `NRMAX` guard below.
 
+`tr_run` also refuses (`TrlibParamError`, one `XX tr_run: eq:NAME` line) and `validate()` reports an EQ mesh size above
+the compile-time maximum of EQ's arrays: the ten that `eq_validate` checks (`eq:NSGMAX`, `NTGMAX`, `NUGMAX` 128;
+`NRGMAX`, `NZGMAX`, `NPSMAX` 513; `NRVMAX`, `NRMAX` 1001; `NTHMAX` 2049; `NSUMAX` 1343; `eq/eqcom0_mod.f90`) under
+`MODELG` 9, and the seven that TR does not set itself (all but `NRMAX`, `NTHMAX`, `NSUMAX`) under `MODELG` 3, 5 and 8.
+Before the check `eq:NSGMAX` 129 ended the process (`SIGM(129)` written past its 128 elements, `eq/eqcalc.f90:63`).
+
 The `eq:` guard closes only the direct route, and that is why every `eq:` name is refused after a preparation (any EQ
 input can move the count). Under `MODELG` 9 *any* input that moves EQ's plasma grid (`NRPMAX`, which depends on EQ's
 `RA`, `RB` and the solved axis and edge) needs a bpsd with k-yoshimi/bpsd#7: TR's `RA`, `RR` and other device inputs,
