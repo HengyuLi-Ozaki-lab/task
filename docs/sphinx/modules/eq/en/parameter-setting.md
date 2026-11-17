@@ -89,13 +89,18 @@ The diagnostic codes are the same five shared with `tr`:
 | `OUT_OF_RANGE`           | value outside the allowed range |
 | `INCONSISTENT_PAIR`      | inconsistency between related parameters |
 | `OUT_OF_RANGE_AFTER_DEP` | range violation after dependency resolution |
-| `FILE_MISSING`           | a file name that is needed is blank (`KNAMEQ`) |
+| `FILE_MISSING`           | the file a load reads is not there, or its name (`KNAMEQ`) is blank |
 | `MISSING_REQUIRED`       | a required parameter is unset |
 
 `eq_validate` checks **ten grid dimensions** (`NSGMAX`, `NTGMAX`,
 `NUGMAX`, `NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`,
-`NRVMAX`) against the compile-time maxima, and that `KNAMEQ` is not blank
-for `MODELG` 3, 5 and 8 (the file itself is opened by `run`). For the
+`NRVMAX`) against the compile-time maxima, and that the file a load
+(`run(mode=1)`) reads is there: `KNAMEQ`, not blank and naming a file, for
+`MODELG` 3, 5, 8, 9 and 25 (and `KNAMEQ2` for 8, which reads two files); for
+`MODELG` 15 the fixed file `eqdb.dat`, which
+it reads instead of `KNAMEQ` (reported as `MODELG`). A name is looked up as
+the load opens it, relative to the working directory at the time of
+`validate()`. For the
 analytic solve (`run(mode=0)`, which every `MODELG` but the file formats
 needs) it also checks:
 
@@ -116,4 +121,6 @@ needs) it also checks:
 `validate()` goes by `MODELG`: a file format (`MODELG` 3, 5, 8, 9, 15, 25)
 is taken to be loaded with `run(mode=1)`, which brings its own geometry, so
 these geometry checks are not made for it (nor for a file format solved
-with `run(mode=0)`).
+with `run(mode=0)`). A load with `MDLEQF >= 10` holds the axis it finds in
+the file to the box too; when the axis lies outside, the load fails and its
+error (`Eq.last_error()`) says where the axis search ended and names the box.

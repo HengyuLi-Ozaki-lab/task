@@ -8,7 +8,9 @@ temperature). The transport step divides by both, so a species whose
 density is identically zero (``PN=PNS=0``, the ``tr_init`` default for
 species 3 and 4) or negative, or whose temperature is non-positive at
 the centre or the edge, turns every scalar into NaN after one step.
-``PN=0`` with ``PNS>0`` runs finite and stays allowed.
+``PN=0`` with ``PNS>0`` is refused as well (task-web-client #190): the
+density then vanishes at the axis, and the run fails (a 2-step run of
+species 3 was finite, a 10-step one was not) or ends with NaN results.
 
 ``tr_run`` now returns ``TR_ERR_INVALID`` (``TrlibParamError``) before
 ``tr_prep`` with one ``XX tr_run:`` line per finding on unit 6, and
@@ -166,6 +168,31 @@ class TestSpeciesProfileChecks(unittest.TestCase):
         with self.assertRaises(TrlibParamError):
             self._run({"NSMAX": 3, "MDLUF": 4})
 
+    def test_zero_centre_density_with_edge_density_is_refused(self):
+        # PN=0, PNS>0 (#190): finite after 2 steps, a negative temperature at step 9.
+        with self.assertRaises(TrlibParamError):
+            self._run({**self.SPECIES_3, "PN[3]": 0.0})
+
+    def test_zero_centre_density_of_species_1_is_refused(self):
+        # It used to fail inside tr_prep (TrlibRunError, ierr=3).
+        with self.assertRaises(TrlibParamError):
+            self._run({"PN[1]": 0.0})
+
+    def test_zero_centre_density_of_species_2_is_refused(self):
+        with self.assertRaises(TrlibParamError):
+            self._run({"PN[2]": 0.0})
+
+    def test_zero_centre_density_on_tr_defaults_is_refused(self):
+        # TR's own defaults with PN(2)=0 used to complete, with WPT, Q0,
+        # the betas and TAUE NaN.
+        with _pushd(FIXTURES_DIR):
+            with Trlib() as tr:
+                tr.set_param("PN[2]", 0.0)
+                with self.assertRaises(TrlibParamError):
+                    tr.run(NTMAX)
+                diags = tr.validate()
+        self.assertEqual([(d.param, d.code) for d in diags], [("PN[2]", TrDiagCode.OUT_OF_RANGE)])
+
     def test_zero_density_of_species_2_is_refused_not_a_run_error(self):
         # NSMAX=2 with PN(2)=PNS(2)=0 used to fail inside tr_loop
         # (TrlibRunError, ierr=3); it is now refused up front like the
@@ -178,11 +205,6 @@ class TestSpeciesProfileChecks(unittest.TestCase):
     def test_species_3_with_profiles_runs_finite(self):
         state = self._run(self.SPECIES_3)
         self.assertEqual(state.nsmax, 3)
-        self.assertTrue(self._finite(state), state.scalars)
-
-    def test_zero_centre_density_with_edge_density_runs_finite(self):
-        # PN=0, PNS>0 gives a non-zero profile; allowed and finite.
-        state = self._run({**self.SPECIES_3, "PN[3]": 0.0})
         self.assertTrue(self._finite(state), state.scalars)
 
     def test_fixture_as_is_runs_finite(self):
@@ -243,6 +265,26 @@ class TestSpeciesProfileChecks(unittest.TestCase):
         self.assertEqual([d.param for d in diags], ["PN[3]"], diags)
         self.assertEqual(diags[0].code, TrDiagCode.OUT_OF_RANGE)
         self.assertIn("non-finite", diags[0].message)
+
+    def test_validate_zero_centre_density(self):
+        diags = self._validate({**self.SPECIES_3, "PN[3]": 0.0})
+        self.assertEqual([d.param for d in diags], ["PN[3]"], diags)
+        self.assertEqual(diags[0].code, TrDiagCode.OUT_OF_RANGE)
+        self.assertIn("zero centre density (PN = 0, PNS > 0)", diags[0].message)
+
+    def test_handle_stays_usable_after_a_zero_centre_density(self):
+        from trlib.tests.fixtures import tr_tst2_params as base
+        with _pushd(FIXTURES_DIR):
+            with Trlib() as tr:
+                base.apply(tr)
+                tr.set_param("NTMAX", float(NTMAX))
+                tr.set_param("PN[2]", 0.0)
+                with self.assertRaises(TrlibParamError):
+                    tr.run(NTMAX)
+                tr.set_param("PN[2]", 0.010)   # the fixture's value
+                tr.run(NTMAX)
+                state = tr.get_state()
+        self.assertTrue(self._finite(state), state.scalars)
 
     def test_validate_clean_when_species_3_has_profiles(self):
         diags = self._validate(self.SPECIES_3)

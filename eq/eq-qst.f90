@@ -24,6 +24,7 @@
       INTEGER, INTENT(OUT) :: IERR
 
       integer:: ir,iz
+      LOGICAL:: LEX2
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE:: psi_temp
       DIMENSION PSIRG(NRGM,NZGM),PSIZG(NRGM,NZGM),PSIRZG(NRGM,NZGM)
       DIMENSION PSIx1(NRGM,NZGM),psix2(NRGM,NZGM),PSIx3(NRGM,NZGM)
@@ -70,7 +71,25 @@
 
       neqdsk=22
       CALL FROPEN(neqdsk,KNAMEQ2,1,MODEFR,'EQ',IERR)
-      IF(IERR.NE.0) RETURN
+      IF(IERR.NE.0) THEN
+!        Name the second file for eq_last_error: EQ_READ's fallback
+!        names KNAMEQ, which was read (task-web-client #191).
+         INQUIRE(FILE=KNAMEQ2,EXIST=LEX2,IOSTAT=IOS)
+         IF(IOS.NE.0) LEX2=.FALSE.
+         IF(LEN_TRIM(KNAMEQ2).EQ.0) THEN
+            EQ_ERRMSG='EQ_READ: MODELG=8 load failed: its second file'// &
+                 ' KNAMEQ2 is blank'
+         ELSEIF(.NOT.LEX2) THEN
+            WRITE(EQ_ERRMSG,'(3A)',IOSTAT=IOS) &
+                 'EQ_READ: MODELG=8 load failed: its second file KNAMEQ2=''', &
+                 TRIM(KNAMEQ2),''' not found'
+         ELSE
+            WRITE(EQ_ERRMSG,'(3A,I0,A)',IOSTAT=IOS) &
+                 'EQ_READ: MODELG=8 load failed: its second file KNAMEQ2=''', &
+                 TRIM(KNAMEQ2),''' could not be opened (IERR=',IERR,')'
+         ENDIF
+         RETURN
+      ENDIF
       write(6,*) 'open 2'
       npsmax=41
       REWIND(neqdsk)

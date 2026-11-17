@@ -18,7 +18,7 @@ LLM クライアントから自然言語で操作するシナリオは {doc}`mcp
 `eq.run()` には 2 つの経路があります ({doc}`hello-world` 参照):
 
 - `mode=0`: 解析 Grad-Shafranov 解 (`MODELG=2`, EQDSK 不要)
-- `mode=1`: EQDSK ファイルを読込 (`MODELG ∈ {3, 5, 8}` + `KNAMEQ`)
+- `mode=1`: 平衡ファイルを読込 (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`. `MODELG = 15` は `eqdb.dat` を読む)
 
 ユーザが EQDSK ファイルパスを指定したか否かで自動的に切替えるラッパー.
 
@@ -203,7 +203,7 @@ def auto_setup(
         # 2. EQDSK 経由なら KNAMEQ を必須としてセット.
         #    eq_file が None なら KNAMEQ を明示的に空文字列にして
         #    validate の FILE_MISSING に拾わせる.
-        if params.get("MODELG") in (3, 5, 8):
+        if params.get("MODELG") in (3, 5, 8, 9, 25):
             eq.set_param_str("KNAMEQ", eq_file or "")
 
         # 3. validate でチェック
@@ -243,7 +243,7 @@ raxis=6.249  qaxis=0.596  qsurf=3.565
 
 ```text
 検出された問題 (1 件):
-  [FILE_MISSING] KNAMEQ: MODELG=3/5/8 requires non-blank KNAMEQ (eqdata file)
+  [FILE_MISSING] KNAMEQ: MODELG=3 loads the file KNAMEQ names, and KNAMEQ is blank
 RuntimeError: 修正が必要な問題が 1 件残っています
 ```
 

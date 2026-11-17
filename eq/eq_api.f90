@@ -128,7 +128,9 @@ CONTAINS
   !   mode == 1 : load equilibrium from the file pointed to by KNAMEQ,
   !               then run eq_bpsd_init / eqcalq / eq_bpsd_put via
   !               equnit::eq_load. Mirrors the legacy `L` command.
-  !               Requires MODELG ∈ {3, 5, 8} and a valid KNAMEQ.
+  !               Requires a file format, MODELG ∈ {3, 5, 8, 9, 25}
+  !               with a valid KNAMEQ (and KNAMEQ2 for 8), or 15 with
+  !               the fixed eqdb.dat.
   !   other     : EQ_ERR_NOT_IMPL (reserved for future modes).
   !-------------------------------------------------------------------
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
@@ -511,7 +513,9 @@ CONTAINS
   !                   NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX/NRVMAX
   !                   vs the eqcom0_mod compile-time maxima), and a
   !                   negative RIP for an analytic solve (see below).
-  !   FILE_MISSING  : MODELG in {3,5,8} requires non-blank KNAMEQ.
+  !   FILE_MISSING  : the files a load reads: KNAMEQ blank or not there
+  !                   for MODELG 3/5/8/9/25, KNAMEQ2 too for MODELG 8;
+  !                   for MODELG 15 the fixed file eqdb.dat not there.
   !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA, for an
   !                   analytic solve (the solver can abort or give a
   !                   wrong equilibrium).
@@ -520,11 +524,13 @@ CONTAINS
   !                   fails or cuts the plasma. Checked for an analytic
   !                   solve with MDLEQF >= 10 only; the file loads also
   !                   read the box then and are not checked (see the
-  !                   long comment at the check).
+  !                   long comment at the check): their failure says
+  !                   where the axis search ended and the box
+  !                   (eq_last_error).
   !
   ! validate() does not know the mode of the run to come, and goes by
   ! MODELG. The file formats (MODELG 3/5/8/9/15/25, what EQ_READ reads:
-  ! eq/eqfile.f90:178-195) are taken to be loaded, run(1): they bring
+  ! eq/eqfile.f90:180-216) are taken to be loaded, run(1): they bring
   ! their own geometry (EQRTSK reads RA/RKAP/RDLT/RB from the TASK-native
   ! file; EQDSKR reconstructs RB = 1.1*RA), so their pre-run
   ! RR/RA/RB/RKAP say nothing about the run and are not checked. Any
@@ -543,7 +549,8 @@ CONTAINS
     USE eqcom1_mod, ONLY: NSGMAX, NTGMAX, NUGMAX, NRGMAX, NZGMAX, &
                           NPSMAX, NRMAX, NTHMAX, NSUMAX, NRVMAX, &
                           RGMIN, RGMAX, ZGMIN, ZGMAX, MDLEQF
-    USE plcomm, ONLY: rkind, RR, RA, RB, RKAP, RIP
+    USE plcomm, ONLY: rkind, RR, RA, RB, RKAP, RIP, KNAMEQ2
+    USE equ_params, ONLY: eqfile
     TYPE(eq_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
@@ -578,13 +585,46 @@ CONTAINS
     CALL push_oor("NSUMAX", NSUMAX, NSUM)
     CALL push_oor("NRVMAX", NRVMAX, NRVM)
 
-    ! ---- FILE_MISSING: MODELG in {3,5,8} requires non-blank KNAMEQ.
-    !      eq_run(1) -> equnit_eq_load otherwise opens "" silently
-    !      and fills the post-load grid with garbage.
-    IF (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8) THEN
+    ! ---- FILE_MISSING: the files a load, run(1), reads (EQ_READ,
+    !      eq/eqfile.f90): KNAMEQ for MODELG 3, 5, 8, 9 and 25, and for
+    !      MODELG 8 KNAMEQ2 too (EQJAEAR, eq/eq-qst.f90), reported when
+    !      blank or naming no file; for MODELG 15 the fixed file
+    !      eqdb.dat (equ_params' eqfile: EQDSK in eq/equread.f90 does not
+    !      read KNAMEQ), reported as MODELG when it is not there. The load
+    !      fails on each of them too, and says which file, but only once
+    !      the run is made. A name is looked up as the load opens it,
+    !      relative to the working directory of the process at the time
+    !      of validate(). (task-web-client #191)
+    IF (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8 .OR. &
+        MODELG == 9 .OR. MODELG == 25) THEN
        IF (LEN_TRIM(KNAMEQ) == 0) THEN
-          CALL push_diag("KNAMEQ", EQ_DIAG_FILE_MISSING, &
-               "MODELG=3/5/8 requires non-blank KNAMEQ (eqdata file)")
+          WRITE(msgbuf, '(A,I0,A)', IOSTAT=ios) "MODELG=", MODELG, &
+               " loads the file KNAMEQ names, and KNAMEQ is blank"
+          CALL push_diag("KNAMEQ", EQ_DIAG_FILE_MISSING, msgbuf)
+       ELSE IF (.NOT. file_there(KNAMEQ)) THEN
+          WRITE(msgbuf, '(3A,I0,A)', IOSTAT=ios) "KNAMEQ='", TRIM(KNAMEQ), &
+               "' not found: MODELG=", MODELG, " loads it"
+          IF (ios /= 0) WRITE(msgbuf, '(A,I0,A)', IOSTAT=ios) &
+               "KNAMEQ not found: MODELG=", MODELG, " loads it (name unprintable)"
+          CALL push_diag("KNAMEQ", EQ_DIAG_FILE_MISSING, msgbuf)
+       END IF
+       IF (MODELG == 8) THEN
+          IF (LEN_TRIM(KNAMEQ2) == 0) THEN
+             msgbuf = "MODELG=8 loads the file KNAMEQ2 names too, and KNAMEQ2 is blank"
+             CALL push_diag("KNAMEQ2", EQ_DIAG_FILE_MISSING, msgbuf)
+          ELSE IF (.NOT. file_there(KNAMEQ2)) THEN
+             WRITE(msgbuf, '(3A)', IOSTAT=ios) "KNAMEQ2='", TRIM(KNAMEQ2), &
+                  "' not found: MODELG=8 loads it too"
+             IF (ios /= 0) msgbuf = "KNAMEQ2 not found: MODELG=8 loads it too (name unprintable)"
+             CALL push_diag("KNAMEQ2", EQ_DIAG_FILE_MISSING, msgbuf)
+          END IF
+       END IF
+    ELSE IF (MODELG == 15) THEN
+       IF (.NOT. file_there(eqfile)) THEN
+          WRITE(msgbuf, '(5A)', IOSTAT=ios) "MODELG=15 loads the fixed file '", &
+               TRIM(eqfile), "', not KNAMEQ, and '", TRIM(eqfile), "' is not there"
+          IF (ios /= 0) msgbuf = "MODELG=15 loads a fixed file, not KNAMEQ, and it is not there"
+          CALL push_diag("MODELG", EQ_DIAG_FILE_MISSING, msgbuf)
        END IF
     END IF
 
@@ -619,7 +659,7 @@ CONTAINS
 
     ! ---- OUT_OF_RANGE_AFTER_DEP: the box RGMIN/RGMAX/ZGMIN/ZGMAX,
     !      where the solver reads it: an analytic solve with MDLEQF >= 10.
-    !      It is read in one place, EQAXIS (eq/eqsub.f90:55-88, from
+    !      It is read in one place, EQAXIS (eq/eqsub.f90:57-121, from
     !      EQSETP and EQCALV; otherwise its window is RR +/- RB,
     !      +/- RKAP*RB), which asks two things of it: the magnetic axis
     !      must lie inside it (or the run fails, ierr=103), and RGMAX
@@ -663,13 +703,16 @@ CONTAINS
     !      scalars to 1e-11).
     !      The box is not the grid psi is tabulated on (EQTORZ: RR +/- RB).
     !      A file load (EQ_READ dispatch,
-    !      eq/eqfile.f90:178-195: MODELG=3/9 -> EQRTSK, a TASK-native file
+    !      eq/eqfile.f90:180-216: MODELG=3/9 -> EQRTSK, a TASK-native file
     !      carrying its own RG/ZG grids AND RA/RKAP/RDLT/RB; MODELG=5/25
     !      -> EQDSKR, grid rebuilt from the file's rdim/zdim; MODELG=8 ->
     !      EQJAEAR; MODELG=15 -> equread::eqdsk) sets the geometry itself,
     !      so the pre-run values say nothing about the loaded plasma. Not
     !      checked, hence a false negative for a load with MDLEQF >= 10,
-    !      which reads the box too (EQAXIS: run(1) fails, ierr=103). The
+    !      which reads the box too (EQAXIS: run(1) fails, ierr=103, and
+    !      eq_last_error says where the axis search ended and the box,
+    !      task-web-client #187): the axis it is held to is the one found
+    !      in the file's psi, known only once the file is read. The
     !      eq_mcp ITER01 fixture (RR=6.2, RA=2.0, MODELG=3,
     !      test_server.py::test_init_set_run_get_state_cycle_iter01) is far
     !      outside the default box yet clean: validate() must return [].
@@ -766,6 +809,18 @@ CONTAINS
       END DO
       diag(nlocal)%code = code_in
     END SUBROUTINE push_diag
+
+    !---------------------------------------------------------------
+    ! Helper: .TRUE. when a file of this name exists (relative to the
+    ! working directory), as the load would open it.
+    !---------------------------------------------------------------
+    LOGICAL FUNCTION file_there(fname)
+      CHARACTER(LEN=*), INTENT(IN) :: fname
+      INTEGER :: ios_q
+      file_there = .FALSE.
+      INQUIRE(FILE=TRIM(fname), EXIST=file_there, IOSTAT=ios_q)
+      IF (ios_q /= 0) file_there = .FALSE.
+    END FUNCTION file_there
 
   END FUNCTION eq_api_validate
 

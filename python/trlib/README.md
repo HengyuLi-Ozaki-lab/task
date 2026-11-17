@@ -222,7 +222,8 @@ for the zero-density case, `OUT_OF_RANGE` otherwise). `run()` also
 refuses `NSMAX` above the compile-time `NSM` (4), which `validate()`
 already reported. Raising `NSMAX` above a fixture's species count
 therefore needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the new
-species; `PN[ns]=0` with `PNS[ns]>0` is allowed. In the UFILE modes
+species. `PN[ns]=0` is refused with `PNS[ns]>0` too (task-web-client #190): the density then
+vanishes at the axis and the run fails or ends with NaN. In the UFILE modes
 `MDLUF=1/2/3` the species that `tr_prof` still takes from the namelist
 are not checked yet (follow-up issue).
 

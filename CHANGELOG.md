@@ -165,6 +165,20 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **TR library: `tr_run` and `validate()` refuse a zero centre density with
+  an edge density** (MS10-DP-ISSP/task-web-client#190). `PN = 0` with
+  `PNS > 0` for an active species (outside the UFILE modes `MDLUF` 1/2/3,
+  which the check leaves out) was let through as "runs finite", but the
+  density then vanishes at the axis and the run fails (`tr_prep`'s impurity
+  dilution goes negative on the TST-2 case with `PN(1)` or `PN(2)` at 0;
+  species 3 of TST-2 was finite after 2 steps and met a negative temperature
+  at step 9) or completes with `WPT`, `Q0`, the betas and `TAUE` NaN (TR's
+  defaults with `PN(2) = 0`). `validate()` now reports it as `PN[ns]`
+  (`OUT_OF_RANGE`), and `tr_run` returns `TR_ERR_INVALID` before `tr_prep`,
+  as for a negative density. **A change of behaviour**: such a run used to
+  be made. Not refused: a centre density far below the edge's, which fails
+  too (`PN(2)` = 1e-9, 1e-6 and 1e-4 end with `ierr=3` within 10 steps).
+
 - **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
   run re-preps the module, whoever set it (#253).** `tr_set_param` /
   `fp_set_param` / `ti_set_param` used to clear the module's private
@@ -261,6 +275,38 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   axis that leaves the box as it moves (with `RDLT = 0.4` it ends inward of
   `RR`), and a Z bound within rounding of 0. The EQ documentation now says
   what `validate()` checks.
+- **EQ library: `validate()` reports the file every load format reads, and
+  `MODELG = 15` returns an error where it ended the process**
+  (MS10-DP-ISSP/task-web-client#191). `FILE_MISSING` covered a blank
+  `KNAMEQ` for `MODELG` 3, 5 and 8 only; it now covers `MODELG` 3, 5, 8, 9
+  and 25, and a `KNAMEQ` that names no file too (looked up, as the load opens
+  it, relative to the working directory at the time of the call), and
+  `KNAMEQ2`, the second file `MODELG = 8` reads, the same way; a load that
+  cannot open `KNAMEQ2` names it, where it named `KNAMEQ`.
+  `MODELG = 15` reads the fixed file `eqdb.dat`, not `KNAMEQ`: `validate()`
+  reports it as `MODELG` when it is not there. Its reader, `eqdsk`
+  (`eq/equread.f90`), ended the process with `STOP` for a missing file, one
+  it could not open and a read error, and for a file that ended early it
+  ran a `BACKSPACE` on the closed unit (a Fortran runtime error) before a
+  `read(*,*)` of standard input, the stdio MCP servers' channel. It now
+  returns an error for each, reads no standard input, and `eq_last_error`
+  names `eqdb.dat` and the reason, e.g. "EQ_READ: MODELG=15 reads the fixed
+  file 'eqdb.dat', not KNAMEQ: 'eqdb.dat' not found". Not tested: a load of
+  a valid `eqdb.dat` (the repository has none); it cannot work through the
+  library as it is, since `eqdsk` then calls `equ_set_psi` with one of the
+  three arrays it takes (`eq/equintf.f90`), which this change leaves alone.
+- **EQ library: a load or solve whose magnetic axis lies outside its window
+  says where both are** (MS10-DP-ISSP/task-web-client#187). With
+  `MDLEQF >= 10` a file load holds the axis it finds in the file to the box
+  `RGMIN`..`ZGMAX` too (default 1.5..4.5 x -2..2 m), and a small device's
+  axis lies outside it: the load failed with "equnit::eq_load failed
+  (ierr=103)". `EQAXIS` now gives `eq_last_error` where the axis search ended
+  and the window, e.g. "EQAXIS: the search for the magnetic axis ended at
+  (R, Z) = (0.3871, 0.0000), outside the box RGMIN..RGMAX = [1.5000, 4.5000],
+  ZGMIN..ZGMAX = [-2.0000, 2.0000] that MDLEQF >= 10 holds the axis to: set
+  the box around it (ierr=103)", where an analytic solve said "EQCALC failed
+  (ierr=103)". `validate()` still cannot
+  see it for a load: the axis is known only once the file is read.
 - **TR documentation: `CDH` and `CNH` weigh `chi_NC`** (the neoclassical
   `AKNC`), not `chi_NCLASS`: NCLASS needs `MDNCLS`, which the registry does
   not take (HengyuLi-Ozaki-lab/task-web-client#43). Text and comments only.

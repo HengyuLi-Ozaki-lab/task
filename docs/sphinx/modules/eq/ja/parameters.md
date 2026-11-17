@@ -14,7 +14,7 @@
 
 | 条件 | 必須パラメータ | 理由 |
 |---|---|---|
-| `MODELG ∈ {3, 5, 8}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 未設定だと `validate()` が `FILE_MISSING` 診断を返し, `run()` は不正な平衡を出す |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 空かファイルが無いと `validate()` が `FILE_MISSING` 診断を返し, `run()` はそのファイル名を示して失敗する. `MODELG = 8` は `KNAMEQ2` も読む. `MODELG = 15` は代わりに固定ファイル `eqdb.dat` を読む (無ければ `MODELG` に `FILE_MISSING` 診断) |
 
 ```python
 eq.set_param("MODELG", 3)
@@ -290,8 +290,8 @@ $$F(\psi) = B_T R + \mathrm{FF}_0 (1-\psi^{P_{R0}})^{P_{F0}} + \cdots$$
 
 | 名前 | 型 | 既定値 | 意味 |
 |---|---|---|---|
-| `KNAMEQ`  | CHARACTER(80) | `'eqdata'`  | 平衡データファイル (`MODELG=3,5,8` で必須) |
-| `KNAMEQ2` | CHARACTER(80) | `'eqdata2'` | 追加平衡データ |
+| `KNAMEQ`  | CHARACTER(80) | `'eqdata'`  | 平衡データファイル (`MODELG=3,5,8,9,25` で必須) |
+| `KNAMEQ2` | CHARACTER(80) | `'eqdata2'` | 追加平衡データ (`MODELG=8` で必須) |
 | `KNAMWR`  | CHARACTER(80) | `'wrdata'`  | レイトレースデータ |
 | `KNAMWM`  | CHARACTER(80) | `'wmdata'`  | フルウェーブデータ |
 | `KNAMFP`  | CHARACTER(80) | `'fpdata'`  | Fokker-Planck データ |
