@@ -140,7 +140,7 @@ time=12 s; <detail>]`.
   flag) now gets the error instead.
 - Library mode only: a failing periodic re-solve (`NTEQIT`) ends the run with `EQ_FAILED`; the loop used to go on, and a
   checked build used to stop the process at an array bound.
-- Not library mode only: the two #228 fixes (`0aa63152`, `c630aa11`, #226's own) apply to `tr2` too, because
+- Not library mode only: the two #228 fixes (`7656ebbe`, `23541105`, #226's own) apply to `tr2` too, because
   `tr_set_metric` is shared. A failing `MODELG` 9 q-scaling now fails the preparation: where `tr2` used to go on
   after a failed solve (for example `RIPS` 0.81 or 0.84), its `R` now stops at `trmenu.f90:74`; and a second `R` in
   one `tr2` session under `MODELG` 9 adopts the equilibrium again, where it used to differ. `tr2`'s output is

@@ -1102,9 +1102,9 @@ Every listed name gets a test that its last row equals the final scalar of PR 2'
 ### F5. PR 1's gate review (2026-11-17): what the plan said and what is true
 
 - **`tr2` is not unchanged by PR 1.** The plan and the first drafts said "library mode only" and "`tr2` unchanged". The
-  #228 cherry-pick `c630aa11` makes `tr_set_metric` fail without a library-mode gate, so `tr2`'s `R` stops at
+  #228 cherry-pick `23541105` makes `tr_set_metric` fail without a library-mode gate, so `tr2`'s `R` stops at
   `trmenu.f90:74` where it used to run (`RIPS` 0.81 and 0.84 in that commit's table), and a second `R` in one `tr2`
-  session under `MODELG` 9 changes too (`0aa63152`, a fix). Both are #226's own commits. `tr2`'s output is unchanged
+  session under `MODELG` 9 changes too (`7656ebbe`, a fix). Both are #226's own commits. `tr2`'s output is unchanged
   on a single healthy `R`.
 - **`eq:` names reached the bpsd#7 overrun with no guard**, and some did nothing (`eq:RR`, `eq:RA`, `eq:RKAP`,
   `eq:RDLT`, `eq:BB`, `eq:RIP` under `MODELG` 9; `eq:KNAMEQ` always). They are refused at set time now; every `eq:`
