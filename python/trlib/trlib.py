@@ -382,7 +382,8 @@ class Trlib:
         TR's single-precision history. The last row agrees with :meth:`get_scalar` to about 1e-7 (relative) only
         when the last step of the call was recorded (a multiple of ``NGTSTP``) and the buffer was not full: after
         ``run(1)`` with the defaults ``history("T")["T"][-1]`` is 0 while ``get_scalar("T")`` is ``DT``, and
-        once :meth:`history_full` is true the history stays behind the state. An unknown name raises
+        recording stops at capacity (:meth:`history_full` is true), so the history lags the state once the run
+        advances past it; a history that fills exactly at the end of a call is still current. An unknown name raises
         :class:`TrlibParamError`.
         """
         if self._closed:

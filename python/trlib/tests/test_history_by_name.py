@@ -406,6 +406,21 @@ def test_the_last_row_can_lag_the_state_when_the_last_step_was_not_recorded():
         assert t.get_scalar("T") == pytest.approx(t.get_state().scalars["T"]) and t.get_scalar("T") > 0.0
 
 
+def test_a_history_that_fills_exactly_at_the_end_of_a_call_is_still_current():
+    # NGTSTP 1: run(10000) records rows 0..10000 = 10001 = NTM. Full and current at once; one more step is not recorded.
+    with Trlib() as t:
+        t.set_param("NGTSTP", 1)
+        t.set_param("NTSTEP", 100000)
+        t.set_param("NGRSTP", 100000)
+        t.set_param("DT", 1.0e-4)
+        t.run(10000)
+        assert t.history_full() and t.history_length() == 10001
+        assert t.history("T")["T"][-1] == pytest.approx(t.get_scalar("T"), rel=1e-6)
+        t.run(1)
+        assert t.history_length() == 10001
+        assert t.history("T")["T"][-1] < t.get_scalar("T") - 0.5e-4
+
+
 def test_the_last_row_stays_behind_the_state_once_the_buffer_is_full():
     with Trlib() as t:
         t.set_param("NGTSTP", 1)
