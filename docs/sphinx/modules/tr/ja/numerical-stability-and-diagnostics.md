@@ -83,7 +83,7 @@ ms 以下の `DT` が必要になるのはまれですが, ソース駆動の
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) の診断
 
-`tr_api_run` (`tr/tr_api.f90:251-269`) は内部の `tr_prep` /
+`tr_api_run` (`tr/tr_api.f90:303,318`) は内部の `tr_prep` /
 `tr_loop` のいずれからの **非ゼロ戻り値** もすべて
 `TR_ERR_CALC_FAILED` に集約します. ラッパは故意に下流の
 失敗クラス全部を 1 つの ABI コードに潰しているため, `ierr=3`
@@ -143,49 +143,43 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
 
 ### `validate()` 出力 (`TrDiagCode`) の物理的意味
 
-`tr.validate()` は診断のリストを返し, 各項目は `tr/tr_api.h:69-75`
-の enum (`python/trlib/_ffi.py:58-62` でミラー) の 5 つの
+`tr.validate()` は診断のリストを返し, 各項目は `tr/tr_api.h:76-82`
+の enum (`python/trlib/_ffi.py:74-78` でミラー) の 5 つの
 `TrDiagCode` 値のいずれかを持ちます. enum は 5 カテゴリを予約
-していますが, **現在の実装** の `tr_api_validate` が emit する
-のは `OUT_OF_RANGE` と `FILE_MISSING` の **2 つだけ** です.
-残り 3 つ (`INCONSISTENT_PAIR`, `OUT_OF_RANGE_AFTER_DEP`,
-`MISSING_REQUIRED`) は **将来カテゴリ用に予約済み** で, API 表面
-を安定させるために enum スロットだけが切られていますが, チェック
-本体はまだ配線されていません (`tr/tr_api.f90:394-407` に
-コメントあり).
-
-現状 emit される 2 カテゴリ:
+しており, `tr_api_validate` はそのうち 4 つを emit します.
+`MISSING_REQUIRED` は将来のカテゴリ用に予約されています
+(`tr/tr_api.f90:466`):
 
 - **`OUT_OF_RANGE`** — `tr_api_validate` がチェックする範囲を
   外れたパラメータ値. 例えば validate の `NSMAX` チェックは
   実行時の種数上限 `NSM = 4` (C ABI のコンパイル時上限
   `TR_MAX_NSMAX = 8` ではない) と比較するので, `NSMAX = 5` は
-  validate に到達しここで報告されます (`tr/tr_api.f90:431-432`).
+  validate に到達しここで報告されます (`tr/tr_api.f90:494`).
   注意: registry の宣言範囲を超える値 (例: `NSMAX > 8`) は
   validate が走る **前** に `set_param` で拒否されます
-  (`tr/tr_param_registry.f90:104-106`) ので, この診断リストには
+  (`tr/tr_param_registry.f90:154-156`) ので, この診断リストには
   現れません. validate の役割は registry が受理したが実行時には
-  使えない値を catch することです.
+  使えない値を catch することです. 同じコードで #189 の種ごとの
+  分布, 方程式のスイッチと粒子源 ({doc}`parameters` の 14 節),
+  `EXTERNAL_DRIVEN_I != 0` での `EXTERNAL_DRIVEN_RW <= 0`
+  (`tr/tr_api.f90:526-529`; 対ですが `INCONSISTENT_PAIR` ではなく
+  ここで報告) も報告されます.
+
+- **`OUT_OF_RANGE_AFTER_DEP`** — 自分の範囲は通るが他のパラメータ
+  が決める境界を通らない値: `NSMAX` 以下の種の `PN = PNS = 0` (#189), そのプロセスの最初の
+  準備の試み (失敗も含む) と異なる `NRMAX` (k-yoshimi/bpsd#7 まで TR のメッシュは 1 プロセスに 1 つ).
+
+- **`INCONSISTENT_PAIR`** — それぞれは通るが一緒には動かない
+  パラメータ: `MDLEQN = 1` なしの `MDLEQE` 1 か 2, 不純物密度
+  なし・UFILE なしの 2 種の水素系プラズマ以外での `MDLEQE = 2`
+  ({doc}`parameters` の 14 節).
 
 - **`FILE_MISSING`** — 必須ファイルパスが空, またはライブラリ
   が開けないファイルを指している. 典型例: `MODELG ∈ {3, 5, 7, 8}`
   かつ `KNAMEQ` が空.
 
-予約カテゴリ (現実装では emit されない):
-
-- **`INCONSISTENT_PAIR`** — 将来用に予約. 個別には範囲チェックを
-  通るが組み合わせで無効な構成になるパラメータ対を意図.
-  なお `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` の
-  チェックは現在ペアレベル診断ではなく `OUT_OF_RANGE` として
-  emit されています (`tr/tr_api.f90:448-454`).
-
-- **`OUT_OF_RANGE_AFTER_DEP`** — 将来用に予約. 宣言範囲は通る
-  が実行時に決まる境界 (例: 平衡 load 後の `NRMAX` が平衡格子で
-  頭打ちになる場合) と矛盾するパラメータを意図.
-
-- **`MISSING_REQUIRED`** — 将来用に予約. 必須パラメータが未設定
-  であることを示すためのカテゴリ (`OUT_OF_RANGE` とは区別される:
-  値ではなく **不在** が問題).
+`tr_run` は `FILE_MISSING` と `EXTERNAL_DRIVEN` の対を除いて同じ
+ものを拒否します. その 2 つは `validate()` だけが報告します.
 
 推奨ワークフローは `set_params()` の後 `run()` の前に
 `validate()` を呼ぶこと. 詳しくは {doc}`parameter-setting`

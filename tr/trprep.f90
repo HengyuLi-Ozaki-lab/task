@@ -472,7 +472,7 @@ CONTAINS
 
       SUBROUTINE TR_TABLE(NS,NEQ,NSW,IND,INDH,INDHD)
 
-      USE TRCOMM, ONLY : AME, AMM, MDLEQE, NEQMAX, NNS, NSMAX, NSS, NSV, PA, rkind
+      USE TRCOMM, ONLY : AME, AMM, MDLEQE, MDLEQU, NEQMAX, NNS, NSMAX, NSS, NSV, PA, rkind
       IMPLICIT NONE
       INTEGER,INTENT(IN)   :: NS, NSW
       INTEGER,INTENT(INOUT):: NEQ, IND, INDH, INDHD
@@ -508,7 +508,11 @@ CONTAINS
                      NNS(1)=1
                   ENDIF
                ELSEIF(MDLEQE.EQ.2) THEN
-                  NNS(1)=3
+!     The bulk-ion density: NEQ is the electron temperature here, and the
+!     electron rotation (MDLEQU 1) comes before species 2. A fixed 3 was
+!     the ion density only without the B_theta equation; with it (MDLEQB
+!     1) it dropped the electron temperature.
+                  NNS(1)=NEQ+1+MDLEQU
                ENDIF
             ENDIF
          ELSEIF(PA(NS).EQ.1.D0.OR.ABS(PA(NS)-2.D0).LT.0.5D0) THEN

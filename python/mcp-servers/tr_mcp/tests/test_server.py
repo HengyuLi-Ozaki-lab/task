@@ -449,5 +449,31 @@ class TestHeatingAndDiffusivityRegistry(unittest.TestCase):
             wrong_type, f"described with a type other than float: {wrong_type}")
 
 
+# The names of the PLATO case (NCLASS, the equations solved, the start current profile, particle
+# transport, the particle source) with the type the server must describe for each. The Fortran
+# registry accepting them is tested in
+# python/trlib/tests/test_registry_nclass_and_particle_source.py.
+NCLASS_AND_SOURCE_TYPES = {
+    "MDNCLS": "int", "MDLEQB": "int", "MDLEQN": "int", "MDLEQE": "int",
+    "PROFJ1": "float", "PROFJ2": "float", "AD0": "float", "AV0": "float", "CDP": "float", "CNP": "float",
+    "MDLPSC": "int", "NPSCMAX": "int", "PSCTOT": "float[NPSCM]", "PSCR0": "float[NPSCM]",
+    "PSCRW": "float[NPSCM]", "NSPSC": "int[NPSCM]",
+}
+
+
+class TestNclassAndParticleSourceRegistry(unittest.TestCase):
+    """The sixteen names are described, each with its type. One assertion
+    over the whole set, no ``subTest``."""
+
+    def test_the_names_are_described_with_their_types(self) -> None:
+        described = srv.handle_describe_parameters()["parameters"]
+        wrong = {
+            name: described.get(name, {}).get("type")
+            for name, kind in NCLASS_AND_SOURCE_TYPES.items()
+            if described.get(name, {}).get("type") != kind
+        }
+        self.assertFalse(wrong, f"missing or with another type: {wrong}")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

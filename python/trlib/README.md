@@ -153,14 +153,18 @@ is required — the wrapper forwards names verbatim.
 |---|---|---|
 | Geometry / device | `RR`, `RA`, `RKAP`, `RDLT`, `BB`, `PHIA` | scalar doubles |
 | Plasma (arrays, 1..NSMM) | `PA[i]`, `PZ[i]`, `PN[i]`, `PNS[i]`, `PT[i]`, `PTS[i]` | 1-origin index |
-| Plasma scalars | `NSMAX` | cast to INT |
+| Plasma scalars | `NSMAX`, `NRMAX` | cast to INT. `NRMAX` is TR's radial mesh, 3 to 500 (1 and 2 abort the solver; 500 is `TR_MAX_NRMAX`). Changing the TR or EQ mesh between preparations in one process needs bpsd with the spline-resize fix (k-yoshimi/bpsd#7) and, for a change of the EQ grid, `eq_bpsd_put` sizing its arrays again when the grid changes (a TASK-side fix that is not part of the registry change and may be absent from your tree). Without both, a later preparation on another grid writes out of bounds, so `tr_run` refuses, and `validate()` reports, an `NRMAX` other than the one of the process's first preparation attempt (failed or not; across `tr_finalize` and `tr_init` too): one mesh per process, as a task-web job or a test under `--forked` is |
 | Current | `RIPS`, `RIPE` | |
-| Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR` | int-typed coerced |
+| Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR`, `NTEQIT` | int-typed coerced. `NTEQIT` is the step interval of the EQ re-solve under `MODELG=9` (0 = never; negative refused) |
 | Transport switches | `MDLKAI`, `MDLETA`, `MDLAD`, `MDLAVK`, `CHP`, `CK0`, `CK1` | |
 | Transport arrays | `CDW[i]` | |
 | Transport weights | `CDH`, `CNH` | the weights of `chi_s = CDH*chi_turb + CNH*chi_NC` (`chi_NC` the neoclassical chi, `AKNC`); default 1 (neutral) |
-| Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF` | |
+| Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF`; `TPRST` | `TPRST` is the sawtooth period in s (must be > 0) |
 | Fusion model of `trx` | `MODEL_PNF` | 0 (default) leaves `MDLNF` in charge; 1 is D-T; 2, 3, 4, 12, 14 evaluate more reactions and pass nothing to the solve. Not together with `MDLNF`; see `docs/sphinx/modules/tr/en/parameters.md` for what it does not do yet |
+| NCLASS and particle transport | `MDNCLS`, `AD0`, `AV0`, `CDP`, `CNP` | `MDNCLS` ≠ 0 takes the neoclassical transport, the resistivity and the bootstrap current from NCLASS; with the default `MDLAD` 3 and with NCLASS, D_s = CDP·AD0·chi_turb + CNP·D_NC; `AV0` is the pinch of `MDLAD` 1, 2, 4 |
+| Equations solved | `MDLEQB`, `MDLEQN`, `MDLEQE` | B_theta evolved (1, default) or held (with `MODELG` 3 TR reloads psi from the equilibrium every step either way); densities held (0, default) or evolved; with densities evolved, 0/1/2 = electrons from quasi-neutrality / both solved / bulk ions from quasi-neutrality (2 only for two species, hydrogenic species 2, no impurity density, no UFILE) |
+| Start current profile | `PROFJ1`, `PROFJ2` | `MODELG` 2 only: `PROFJ1` ≤ 0 (default −2): j ∝ 1/eta; > 0: j ∝ (1 − rho^\|PROFJ1\|)^\|PROFJ2\| |
+| Particle source (gas puff) | `MDLPSC`, `NPSCMAX`; `PSCTOT[i]`, `PSCR0[i]`, `PSCRW[i]`, `NSPSC[i]` (i = 1..10) | `MDLPSC` 1: Gaussian sources of total rate `PSCTOT` [10^20/s] centred at `PSCR0` metres (RA·rho, not rho) into ion species `NSPSC`; moves the density only with `MDLEQN` 1. `tr_run` refuses values the solver cannot take (see `docs/sphinx/modules/tr/en/parameters.md` section 14) |
 | Heating / current drive | `PNBTOT`, `PNBR0`, `PNBRW`, `PNBENG`, `PNBRTG`; `PICTOT`, `PICR0`, `PICRW`, `PICNPR`, `PICCD`; `PECTOT`, `PECR0`, `PECRW`, `PECNPR`, `PECCD`; `PLHTOT`, `PLHR0`, `PLHRW`, `PLHNPR`, `PLHCD` | NBI, ICRF, ECRF and LH; the `*TOT` names are total input power in MW (default 0) |
 
 Unknown names return ierr=1 (raised as `TrlibParamError`).

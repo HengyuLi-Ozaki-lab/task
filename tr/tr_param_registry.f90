@@ -29,6 +29,15 @@
 !       ECRF                 (PECCD, PECR0, PECRW, PECNPR, PECTOT)
 !       LH                   (PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT)
 !
+! NCLASS, the equations solved and the particle source (the PLATO case
+! of Mochinaga et al., Plasma Fusion Res. 16, 1403093 (2021)):
+!   - neoclassical model     (MDNCLS)
+!   - equations solved       (MDLEQB, MDLEQN, MDLEQE)
+!   - current profile        (PROFJ1, PROFJ2)
+!   - particle transport     (AD0, AV0, CDP, CNP)
+!   - particle source        (MDLPSC, NPSCMAX, PSCTOT[i], PSCR0[i],
+!                             PSCRW[i], NSPSC[i])
+!
 ! Strings (KNAMEQ) are handled through a separate entry point:
 !   - tr_param_set_str("KNAMEQ", "eqdata.ITER01")
 !
@@ -40,11 +49,12 @@
 ! docs/superpowers/plans/2026-04-18-tr-library-L3-param-registry.md.
 
 MODULE tr_param_registry
+  USE tr_state, ONLY: TR_MAX_NRMAX
   USE trcomm, ONLY: rkind, &
        RR, RA, RKAP, RDLT, BB, PHIA, &
        NSMAX, PA, PZ, PN, PNS, PT, PTS, &
        RIPS, RIPE, &
-       DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, &
+       DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, NTEQIT, TPRST, NRMAX, &
        MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, CDH, CNH, &
        MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF, &
        model_pnf, &
@@ -55,6 +65,9 @@ MODULE tr_param_registry
        PECCD, PECR0, PECRW, PECNPR, PECTOT, &
        PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT, &
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_R0, EXTERNAL_DRIVEN_RW, &
+       MDNCLS, MDLEQB, MDLEQN, MDLEQE, PROFJ1, PROFJ2, &
+       AD0, AV0, CDP, CNP, &
+       MDLPSC, NPSCMAX, PSCTOT, PSCR0, PSCRW, NSPSC, &
        KNAMEQ
   IMPLICIT NONE
   PRIVATE
@@ -64,6 +77,9 @@ MODULE tr_param_registry
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
   INTEGER, SAVE :: g_generation = 0
+
+  ! Smallest NRMAX the solver runs on (measured: NRMAX 1 and 2 abort in a Fortran bounds check, 3 to 10 run).
+  INTEGER, PARAMETER :: NRMAX_MIN = 3
 
 CONTAINS
 
@@ -187,6 +203,19 @@ CONTAINS
     CASE ("MDLPEL"); MDLPEL = INT(value)
     CASE ("MDLJBS"); MDLJBS = INT(value)
     CASE ("MDLST");  MDLST  = INT(value)
+    CASE ("NTEQIT")
+       IF (value < 0.0_rkind) THEN; ierr = 1; ELSE; NTEQIT = INT(value); END IF
+    CASE ("TPRST")
+       IF (.NOT. value > 0.0_rkind) THEN; ierr = 1; ELSE; TPRST = value; END IF
+    CASE ("NRMAX")
+       ! TR's radial mesh. The state carries at most TR_MAX_NRMAX surfaces
+       ! (tr/tr_state.f90). Under MODELG 3, 5 and 8 it sets the EQ grid
+       ! that goes into bpsd.
+       IF (value < REAL(NRMAX_MIN, rkind) .OR. value > REAL(TR_MAX_NRMAX, rkind)) THEN
+          ierr = 1
+       ELSE
+          NRMAX = INT(value)
+       END IF
     CASE ("MDLNF");  MDLNF  = INT(value)
     ! Selects the multi-reaction fusion path ported from trx (P1 Task 6).
     ! 0 (default) = legacy MDLNF only; 1/2/3/4/12/14 additionally evaluate
@@ -230,6 +259,30 @@ CONTAINS
     CASE ("EXTERNAL_DRIVEN_I");  EXTERNAL_DRIVEN_I  = value
     CASE ("EXTERNAL_DRIVEN_R0"); EXTERNAL_DRIVEN_R0 = value
     CASE ("EXTERNAL_DRIVEN_RW"); EXTERNAL_DRIVEN_RW = value
+    ! --- NCLASS, equations, current profile, particle transport ----
+    !     The variables, their defaults (trinit.f90) and their namelist
+    !     entries (trparm.f90) already existed; only these CASE entries
+    !     were missing. Ranges are checked before a run (tr_api's
+    !     source_and_equation_violations), not here.
+    CASE ("MDNCLS"); MDNCLS = INT(value)   ! 0 off, else NCLASS (trcalc.f90)
+    CASE ("MDLEQB"); MDLEQB = INT(value)   ! 0/1: B_theta evolved
+    CASE ("MDLEQN"); MDLEQN = INT(value)   ! 0/1: densities evolved
+    CASE ("MDLEQE"); MDLEQE = INT(value)   ! with MDLEQN 1, 0/2: n_e/n_i by quasi-neutrality
+    CASE ("PROFJ1"); PROFJ1 = value        ! <= 0: j from 1/eta (trprof.f90)
+    CASE ("PROFJ2"); PROFJ2 = value
+    CASE ("AD0");    AD0    = value        ! particle diffusion factor
+    CASE ("AV0");    AV0    = value        ! inward pinch factor
+    CASE ("CDP");    CDP    = value        ! turbulent particle-diffusion weight
+    CASE ("CNP");    CNP    = value        ! neoclassical particle-diffusion weight
+    !     Particle source (trpsc.f90, MDLPSC 1: NPSCMAX Gaussians in
+    !     RA*rho, total rate PSCTOT [10^20/s] into ion species NSPSC);
+    !     arrays 1..NPSCM.
+    CASE ("MDLPSC");  MDLPSC  = INT(value)
+    CASE ("NPSCMAX"); NPSCMAX = INT(value)
+    CASE ("PSCTOT"); IF (idx < 1 .OR. idx > SIZE(PSCTOT)) THEN; ierr = 1; ELSE; PSCTOT(idx) = value; END IF
+    CASE ("PSCR0");  IF (idx < 1 .OR. idx > SIZE(PSCR0))  THEN; ierr = 1; ELSE; PSCR0(idx)  = value; END IF
+    CASE ("PSCRW");  IF (idx < 1 .OR. idx > SIZE(PSCRW))  THEN; ierr = 1; ELSE; PSCRW(idx)  = value; END IF
+    CASE ("NSPSC");  IF (idx < 1 .OR. idx > SIZE(NSPSC))  THEN; ierr = 1; ELSE; NSPSC(idx)  = INT(value); END IF
     CASE DEFAULT
        ierr = 1   ! unknown name
     END SELECT
@@ -270,7 +323,9 @@ CONTAINS
     CASE ("MODELG", "NSMAX", "MDLIMP", "NTMAX", "NTSTEP", "LMAXTR", &
           "NGTSTP", "NGRSTP", "MDLKAI", "MDLETA", "MDLAD", "MDLAVK", &
           "MDLNB", "MDLEC", "MDLLH", "MDLIC", "MDLPEL", "MDLJBS", &
-          "MDLST", "MDLNF", "MODEL_PNF", "MDLUF")
+          "MDLST", "MDLNF", "MODEL_PNF", "MDLUF", &
+          "MDNCLS", "MDLEQB", "MDLEQN", "MDLEQE", "MDLPSC", "NPSCMAX", &
+          "NSPSC", "NTEQIT", "NRMAX")
        refused = ABS(value) > REAL(HUGE(0), rkind)
     END SELECT
   END FUNCTION value_refused

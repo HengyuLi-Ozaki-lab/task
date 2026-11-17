@@ -1263,7 +1263,9 @@
       WRITE(6,602) RM(IONE),RM(IZEROX),RTN,RNN
 602   FORMAT(' ',' R-ONE,R-ZERO,RTN,RNN = ',4F8.3)
 
-      DO NR=1,IZEROX+2
+!     Two points past the mixing radius, within the mesh: IZEROX is NRMAX when q
+!     stays below 1 out to the edge.
+      DO NR=1,MIN(IZEROX+2,NRMAX)
          WRITE(6,'(A,I5,1P5E12.4)') 'NR,R,Q,B,Q,S=', &
                        NR,RM(NR),QP(NR),BP(NR),QONE(NR),SUML
       ENDDO

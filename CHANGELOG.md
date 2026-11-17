@@ -10,6 +10,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
+  re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
+  (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
+  so a later preparation on a larger mesh in the same process wrote out of bounds (NaN or SIGSEGV under `MODELG` 3):
+  until the pinned bpsd resizes them (k-yoshimi/bpsd#7), `tr_run` refuses, and `validate()` reports, an `NRMAX`
+  other than the one of the process's first preparation attempt (failed or not), across `tr_finalize` and `tr_init`
+  too, for every `MODELG`.
+- **TR registry: NCLASS, the equations solved, the start current profile, particle transport and the particle
+  source.** `tr_set_param` takes `MDNCLS`, `MDLEQB`, `MDLEQN`, `MDLEQE`, `PROFJ1`, `PROFJ2`, `AD0`, `AV0`, `CDP`,
+  `CNP`, `MDLPSC`, `NPSCMAX` and `PSCTOT[i]`, `PSCR0[i]`, `PSCRW[i]`, `NSPSC[i]` (i = 1..10); the variables,
+  defaults and namelist entries existed, so nothing changes at the defaults. They make the PLATO case of Mochinaga
+  et al., Plasma Fusion Res. 16, 1403093 (2021) (NCLASS, a gas puff, the densities evolved) settable through the
+  library and `tr_mcp`. `tr_run` refuses before `tr_prep`, and `validate()` reports, what the solver cannot take:
+  `MDLEQB`, `MDLEQN`, `MDLPSC` outside {0, 1}; `MDLEQE` outside {0, 1, 2}, 1 or 2 with `MDLEQN` 0, and 2 unless
+  `NSMAX` is 2, species 2 is H or D of charge 1, there is no impurity density and no UFILE (`tr/trexec.f90` adds the
+  other species to the bulk-ion density instead of subtracting them); with `MDLPSC` 1, `NPSCMAX` outside 0..10,
+  `NSPSC[i]` outside 2..NSMAX (only 2 with a UFILE, where `tr_prep` may change NSMAX), `PSCRW[i]` <= 0 or below
+  1e-10 m and `|PSCR0[i]|` above 1e10 m (measured before: an array bound, NaN, another value run without a word, or
+  a stop inside `tr_prep`). `PSCR0` is in metres (RA*rho). `trlib`'s `validate()` asks again when the findings
+  outnumber its first buffer of 32.
+  The integer names join `value_refused`. The M0904 fixture sets `MDNCLS` as its input does.
 - **MCP server `fp_mcp`: a `set_param_str` tool** (#231) sets `KNAMEQ`,
   the equilibrium file that `MODELG=3` loads, so an EQ to FP handoff (an
   equilibrium written by `eq_mcp`'s `save` tool) can be driven through
@@ -218,6 +239,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **TR: a sawtooth with q below 1 out to the edge read past the mesh.** `TRSAWT` (`tr/trcalc.f90`) printed its
+  profiles to two points past the mixing radius, which is `NRMAX` when q stays below 1 to the edge: a bounds-checking
+  build stopped the process ("Index '51' of dimension 1 of array 'rm' above upper bound of 50" on PLATO's shape at
+  150 kA with `MDLST` 1), others read beyond the arrays. The print stops at `NRMAX`.
+- **TR: `MDLEQE` 2 with `MDLEQB` 1 dropped the electron temperature equation.** `TR_TABLE` (`tr/trprep.f90`) took
+  equation 3 as the bulk-ion density, which it is only without the B_theta equation; with it, equation 3 is the
+  electron temperature, which was then left out of the solve (a PLATO case ran to Te0 117 eV instead of 228 eV). It
+  now takes the equation after the electron's temperature and rotation (`MDLEQU`), the bulk-ion density whenever the
+  temperatures are solved (`MDLEQT` 1, which the registry does not change). `MDLEQE` 0 and `MDLEQB` 0 are unchanged;
+  with the fix `MDLEQE` 2 and 0 reach the same steady state for a hydrogen plasma, as they did with `MDLEQB` 0.
+- **TR: a particle source far from every mesh point ended the run in NaN.** `TRPSCA` (`tr/trpsc.f90`) normalised the
+  Gaussian by its volume integral, which underflowed to 0 when the centre `PSCR0` lay many widths `PSCRW` from every
+  mesh point (outside the plasma, or narrower than the mesh spacing), so the source was infinite. The exponent is
+  now taken relative to its smallest value on the mesh: the source is unchanged where it was finite, and otherwise
+  the whole rate goes where the Gaussian is largest. No baseline case uses `MDLPSC` 1.
 - **EQ library: `validate()` holds the input to what the solve does with it**
   (HengyuLi-Ozaki-lab/task-web-client#37). With `MDLEQF >= 10` the box
   `RGMIN`..`ZGMAX` is read only by `EQAXIS`: the magnetic axis, which starts

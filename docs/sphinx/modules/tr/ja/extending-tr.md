@@ -15,7 +15,7 @@ walkthrough を扱います — スカラーパラメータ追加,
 
 ## Walkthrough A — 新規スカラーパラメータの追加
 
-TR のパラメータレジストリは `tr/tr_param_registry.f90:119+`
+TR のパラメータレジストリは `tr/tr_param_registry.f90:135+`
 の `SELECT CASE` 手書き dispatch を使っています. 新規
 パラメータ `FOO` の追加は dispatch の 1 個の新規 `CASE`
 行 + `tr/trinit.f90` のデフォルトで完了します.
@@ -26,7 +26,7 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:119+`
    にない場合), 該当する `tr/trcomm*.f90` モジュールに
    類似パラメータと並べて宣言する. 既存ならスキップ.
 2. **registry の case を追加する.**
-   `tr/tr_param_registry.f90:119` から始まる
+   `tr/tr_param_registry.f90:135` から始まる
    `SELECT CASE (TRIM(b))` ブロックに
    `CASE ("FOO"); FOO = value` のような行を追加.
    per-section のグループ化規約を保つため, 類似パラメータ
@@ -39,10 +39,10 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:119+`
 4. **リビルド.** `make -C tr libtrapi.so`.
 5. **Python から使う.** `tr.set_param("FOO", x)` で即座に
    動きます. `tr_set_param` は文字列キーで動作するため
-   (`tr/tr_api.f90:139-143,151-179` で確認), C ABI 変更は
+   (`tr/tr_api.f90:144-148,156-183` で確認), C ABI 変更は
    不要です.
 
-配列値パラメータについては, `tr/tr_param_registry.f90:144-149`
+配列値パラメータについては, `tr/tr_param_registry.f90:160-165`
 の bounds-check 付きイディオムをテンプレートに使います.
 既存の `PA[i]` / `PN[i]` / `PNS[i]` / `PT[i]` ケースが
 パターンを示しています: 各 `CASE` で `idx` を `SIZE(...)`
@@ -116,12 +116,12 @@ numbering 規約 (`tr/trcoef_turbulence.f90:393-399` の
    `double` (適切な C 型) を, やはり struct の末尾に追加.
 4. **`tr_api_get_state` 内で field を埋める.**
    `tr/tr_api.f90` には 3 ブロックある:
-   - **zero-init** が `:328-348` (新 field に compute-time
+   - **zero-init** が `:337-357` (新 field に compute-time
      ゼロベースラインがなければここにも追加).
-   - **scalar copy** が `:364-380` — AJRFT 先例はここ.
+   - **scalar copy** が `:373-389` — AJRFT 先例はここ.
      新スカラーはこのパターンに従う.
    - **per-radius / per-species profile loops** が
-     `:386-396` — 新配列 field は `RN` / `RT` / `AJ` /
+     `:395-405` — 新配列 field は `RN` / `RT` / `AJ` /
      `QP` の loop パターンに従う.
 5. **`TR_STATE_ABI_VERSION` を 2 箇所で bump する.**
    `tr/tr_api.h` の `#define` と `tr/tr_state.f90` の

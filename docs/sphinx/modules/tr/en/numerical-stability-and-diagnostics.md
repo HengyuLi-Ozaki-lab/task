@@ -93,7 +93,7 @@ cell) rather than a sign of an underlying numerical problem.
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) diagnosis
 
-`tr_api_run` (`tr/tr_api.f90:251-269`) returns
+`tr_api_run` (`tr/tr_api.f90:303,318`) returns
 `TR_ERR_CALC_FAILED` for **any** non-zero result code from the
 underlying `tr_prep` / `tr_loop` routines. The wrapper
 deliberately collapses the full set of downstream failure
@@ -161,55 +161,46 @@ against `TrState` attributes.
 
 `tr.validate()` returns a list of diagnostics, each carrying
 one of five `TrDiagCode` values from the enum at
-`tr/tr_api.h:69-75` (mirrored in `python/trlib/_ffi.py:58-62`).
-The enum reserves five categories, but the **current
-implementation** of `tr_api_validate` only emits two of them:
-`OUT_OF_RANGE` and `FILE_MISSING`. The other three
-(`INCONSISTENT_PAIR`, `OUT_OF_RANGE_AFTER_DEP`,
-`MISSING_REQUIRED`) are reserved for future categories — the
-slots exist in the enum so the API surface is stable, but the
-checks have not been wired up yet (`tr/tr_api.f90:394-407`
-documents this).
-
-The two currently-emitted categories:
+`tr/tr_api.h:76-82` (mirrored in `python/trlib/_ffi.py:74-78`).
+The enum reserves five categories; `tr_api_validate` emits four
+of them, and `MISSING_REQUIRED` is reserved for a later category
+(`tr/tr_api.f90:466`):
 
 - **`OUT_OF_RANGE`** — a parameter value sits outside the
   range that `tr_api_validate` checks. Validate's `NSMAX`
   check, for example, compares against the run-time species
   bound `NSM = 4` (not the compile-time C ABI bound
   `TR_MAX_NSMAX = 8`), so `NSMAX = 5` reaches `validate()`
-  and is reported here (`tr/tr_api.f90:431-432`). Note: values
+  and is reported here (`tr/tr_api.f90:494`). Note: values
   beyond the registry's own range — e.g. `NSMAX > 8` — are
   rejected by `set_param` *before* validate runs
-  (`tr/tr_param_registry.f90:104-106`), so you will not see
+  (`tr/tr_param_registry.f90:154-156`), so you will not see
   them in the diagnostic list. Validate's job is to catch the
   values the registry accepted but the run-time still cannot
-  use.
+  use. The same code covers the per-species profiles of #189,
+  the equation switches and the particle sources (section 14 of
+  {doc}`parameters`), and `EXTERNAL_DRIVEN_RW <= 0` with
+  `EXTERNAL_DRIVEN_I != 0` (`tr/tr_api.f90:526-529`), a pair
+  that is reported here rather than as `INCONSISTENT_PAIR`.
+
+- **`OUT_OF_RANGE_AFTER_DEP`** — a value that passes its own
+  range but not a bound another parameter sets: `PN = PNS = 0`
+  for a species up to `NSMAX` (#189), and an `NRMAX` other than
+  the one of the process's first preparation attempt, failed or
+  not (one TR mesh per process until k-yoshimi/bpsd#7).
+
+- **`INCONSISTENT_PAIR`** — parameters that each pass but
+  cannot run together: `MDLEQE` 1 or 2 without `MDLEQN = 1`,
+  and `MDLEQE = 2` outside a two-species hydrogenic plasma with
+  no impurity density and no UFILE (section 14 of
+  {doc}`parameters`).
 
 - **`FILE_MISSING`** — a required file path is empty or
   points at a file the library cannot open. Typical example:
   `MODELG ∈ {3, 5, 7, 8}` paired with empty `KNAMEQ`.
 
-The reserved categories (no emissions in the current
-implementation):
-
-- **`INCONSISTENT_PAIR`** — reserved for future use, intended
-  for pairs of parameters that individually pass range checks
-  but jointly form an invalid configuration. Note that the
-  `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` check
-  is currently emitted as `OUT_OF_RANGE` rather than as a
-  pair-level diagnostic
-  (`tr/tr_api.f90:448-454`).
-
-- **`OUT_OF_RANGE_AFTER_DEP`** — reserved for future use,
-  intended for parameters that pass their declared range but
-  conflict with a bound deduced at runtime (e.g. `NRMAX`
-  capped by the equilibrium grid).
-
-- **`MISSING_REQUIRED`** — reserved for future use, intended
-  to flag required parameters that were never set
-  (distinguished from `OUT_OF_RANGE` because the *absence* is
-  the problem, not the value).
+`tr_run` refuses the same findings except `FILE_MISSING` and the
+`EXTERNAL_DRIVEN` pair, which only `validate()` reports.
 
 The recommended workflow is to call `validate()` after
 `set_params()` and before `run()`, which is exactly what

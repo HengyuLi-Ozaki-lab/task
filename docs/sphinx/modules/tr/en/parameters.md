@@ -123,6 +123,8 @@ steady-state runs set both equal.
 |---|---|---|---|---|
 | `RIPS` | double | 3.0 | MA | plasma current at simulation start |
 | `RIPE` | double | 3.0 | MA | plasma current at simulation end |
+| `PROFJ1` | double | −2.0 | – | start current profile with `MODELG = 2` (only there): ≤ 0 takes j from the resistivity (j ∝ 1/η, constant E); > 0 takes j ∝ (1 − ρ^\|PROFJ1\|)^\|PROFJ2\| |
+| `PROFJ2` | double | 1.0 | – | exponent of that profile (with `PROFJ1` > 0; its absolute value is used) |
 
 ## 3. Plasma composition
 
@@ -200,6 +202,8 @@ Allowed values of `MDLIMP`:
 | `LMAXTR` | int    | 10    | — | maximum number of inner iterations |
 | `NGTSTP` | int    | 2     | — | save interval for time-evolution graphs |
 | `NGRSTP` | int    | 100   | — | save interval for radial-profile graphs |
+| `NRMAX`  | int    | 50    | — | TR's radial mesh, 3 to 500 (`TR_MAX_NRMAX`). One value per process: `tr_run` refuses an `NRMAX` other than the one of the process's first preparation, until bpsd resizes its splines (k-yoshimi/bpsd#7); a change of the EQ grid also needs `eq_bpsd_put` to size its arrays again |
+| `NTEQIT` | int    | 0     | — | step interval of the EQ re-solve under `MODELG = 9` (0 = never) |
 
 ## 7. Transport model
 
@@ -220,6 +224,11 @@ family models.
 | `CK1`    | double     | 12.0 | ion χ coefficient |
 | `CDH`    | double     | 1.0 | turbulent χ sum weight (χ_s = CDH·χ_turb + CNH·χ_NC, χ_NC the neoclassical χ `AKNC`) |
 | `CNH`    | double     | 1.0 | neoclassical χ sum weight (same sum) |
+| `MDNCLS` | int switch | 0   | 0: the neoclassical models of `MDLAD`, `MDLETA`, `MDLJBS`; else NCLASS for the neoclassical transport (particle and heat), the resistivity (from the first step on; the start profile takes `MDLETA`'s) and the bootstrap current, and `MDLAD`, `MDLAVK` and `MDLJBS` are not used |
+| `AD0`    | double     | 0.5 | particle diffusivity: with `MDLAD` 2, 3, 4 and with NCLASS a factor of χ_turb (with `MDDW = 0`, the default); with `MDLAD` 1 a constant D, weighted by mass and charge through `ALP` |
+| `AV0`    | double     | 0.0 | turbulent inward pinch factor (`MDLAD` 1, 2 and 4; not with `MDLAD` 3 or NCLASS) |
+| `CDP`    | double     | 1.0 | turbulent particle-diffusivity sum weight (D_s = CDP·D_turb + CNP·D_NC; with the default `MDLAD` 3 and with NCLASS, D_turb = AD0·χ_turb) |
+| `CNP`    | double     | 1.0 | neoclassical particle-diffusivity sum weight (same sum) |
 
 Selectable transport models for `MDLKAI` (representative values;
 families are organized in groups of 10):
@@ -283,6 +292,7 @@ the bootstrap-current Sauter model (`MDLJBS=5`) are active.
 | `MDLPEL` | int switch | 1 | pellet-injection model |
 | `MDLJBS` | int switch | 5 | bootstrap-current model |
 | `MDLST`  | int switch | 0 | sawtooth model |
+| `TPRST`  | double | 0.1 | sawtooth period [s], > 0 |
 | `MDLNF`  | int switch | 0 | fusion-reaction model |
 | `MODEL_PNF` | int switch | 0 | multi-reaction fusion model ported from `trx` (see below) |
 | `MDLUF`  | int switch | 0 | UFILE (experimental data) reader model |
@@ -446,3 +456,33 @@ This is set via **`set_param_str`**, not `set_param`.
 ```python
 tr.set_param_str("KNAMEQ", "eqdata.ITER01")
 ```
+
+## 14. Equations solved and the particle source
+
+Which equations TR solves (`TR_EQS_SELECT`, `tr/trprep.f90`) and the Gaussian particle sources of `tr/trpsc.f90`
+(a gas puff). The densities move only with `MDLEQN = 1`: a source with `MDLEQN = 0` adds nothing.
+
+| Name | Type | Default | Unit | Meaning |
+|---|---|---|---|---|
+| `MDLEQB` | int switch | 1 | – | 1: B_θ (the current profile) evolved; 0: held at the start profile (`PROFJ1`). With `MODELG = 3` TR reloads ψ from the equilibrium every step, so the current never evolves and `MDLEQB` changes nothing there (measured on a PLATO case) |
+| `MDLEQN` | int switch | 0 | – | 0: densities held at the start profiles; 1: evolved |
+| `MDLEQE` | int switch | 0 | – | with `MDLEQN = 1`: 0 solves the ion densities and takes the electrons from quasi-neutrality; 1 solves both; 2 solves the electrons and takes the bulk ions from quasi-neutrality, only for `NSMAX = 2` with a hydrogen or deuterium species 2 of charge 1, no impurity density (`MDLIMP = 0`, or `MDLIMP` 1–4 with `PNC` = `PNFE` = 0) and no UFILE (`tr/trexec.f90` adds the other species instead of subtracting them) |
+| `MDLPSC` | int switch | 0 | – | 0: no particle source; 1: `NPSCMAX` Gaussian sources |
+| `NPSCMAX` | int | 1 | – | number of sources, 0..10 (`NPSCM`) |
+| `PSCTOT[i]` | double[10] | 0.0 | 10²⁰ s⁻¹ | total rate of source i (its profile is normalised to it over the plasma volume; a source far from every mesh point puts it all where it is nearest) |
+| `PSCR0[i]` | double[10] | 0.0 | m | centre of source i, in metres of minor radius (RA·ρ), not in ρ |
+| `PSCRW[i]` | double[10] | 0.5 | m | width of source i: S ∝ exp(−((RA·ρ − PSCR0)/PSCRW)²); positive, at least 1e-10 m |
+| `NSPSC[i]` | int[10] | 2 | – | ion species source i feeds, 2..NSMAX; the electrons get PZ times as many |
+
+`tr_run` refuses, before the run, and `validate()` reports: `MDLEQB`, `MDLEQN` or `MDLPSC` outside {0, 1}; `MDLEQE`
+outside {0, 1, 2}, `MDLEQE` 1 or 2 with `MDLEQN = 0`, and `MDLEQE = 2` outside the case above; and with `MDLPSC = 1`,
+`NPSCMAX` outside 0..10, and for each source i ≤ `NPSCMAX` an `NSPSC[i]` outside 2..NSMAX, a `PSCRW[i]` ≤ 0 or
+below 1e-10 m, or a `|PSCR0[i]|` above 1e10 m. These indexed an array out of bounds, ended in NaN, ran as another value
+without a word, gave wrong densities, or stopped inside `tr_prep` (`MDLEQB = 2`, `MDLEQE` without `MDLEQN`); a
+negative width is the same Gaussian as its absolute value and is refused so that the sign means nothing. With a UFILE
+(`MDLUF ≠ 0`) `tr_prep` may change NSMAX (`TR_EQS_SELECT` adds carbon when the UFILE has an impurity), so a source
+must feed species 2 and `MDLEQE = 2` is refused: a deliberate restriction, since the species are known only in
+`tr_prep`.
+
+With NCLASS (`MDNCLS ≠ 0`), `MDLEQE = 1` (both densities solved, no quasi-neutrality) ended a PLATO case with a
+negative temperature within 100 steps of 10 µs; `MDLEQE` 0 and 2 run it.
