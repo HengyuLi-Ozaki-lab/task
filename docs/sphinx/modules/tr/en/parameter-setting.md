@@ -73,7 +73,9 @@ Checks currently performed: `NSMAX` above the compile-time maximum
 (`FILE_MISSING`); `EXTERNAL_DRIVEN_I != 0` with `EXTERNAL_DRIVEN_RW <= 0`
 (`OUT_OF_RANGE`); and, outside the UFILE modes (`MDLUF` not in 1/2/3),
 the namelist profile of every active species `1..NSMAX`: `PN`/`PNS`
-negative, both zero, non-finite, or `PT`/`PTS` non-positive are reported
+negative, both zero, non-finite, `PN` zero with `PNS` positive (the density
+vanishes at the axis: the run fails or ends with NaN, task-web-client #190), or `PT`/`PTS`
+non-positive are reported
 as `PN[ns]` / `PT[ns]` / `PTS[ns]` (`OUT_OF_RANGE_AFTER_DEP` for the
 both-zero case, `OUT_OF_RANGE` otherwise), because the transport step
 divides by them and the run would turn NaN (#189). `run()` refuses the

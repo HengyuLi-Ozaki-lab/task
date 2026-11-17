@@ -22,8 +22,8 @@ derived quantities) from Python via the `eqlib` wrapper. Unlike `tr`,
   (`FF*`), and it solves the equilibrium analytically. Used with
   `MODELG=2` (the default). No file required.
 - **`run(mode=1)`** — load an EQDSK-format (G-EQDSK) equilibrium data
-  file (`equnit::eq_load`). Requires `MODELG ∈ {3, 5, 8}` plus the
-  filename in `KNAMEQ`.
+  file (`equnit::eq_load`). Requires `MODELG ∈ {3, 5, 8, 9, 25}` plus the
+  filename in `KNAMEQ` (`MODELG = 15` reads the fixed `eqdb.dat`).
 
 Both produce, as scalar outputs, the magnetic-axis position (`raxis`,
 `zaxis`), axis safety factor (`qaxis`), surface safety factor
@@ -102,5 +102,5 @@ For input ↔ output relationships, see {doc}`appendix-sensitivity`.
 | **Time evolution** | yes (`run(ntmax)`) | none (`run(mode)`) |
 | **C ABI functions** | 5 + `validate` | **6** + `validate` |
 | **`set_param_str`** | (added in PR #172) | required from the very start |
-| **Required parameters** | `KNAMEQ` (when `MODELG=3,5,7,8`) | `KNAMEQ` (when `MODELG=3,5,8`) |
+| **Required parameters** | `KNAMEQ` (when `MODELG=3,5,7,8`) | `KNAMEQ` (when `MODELG=3,5,8,9,25`; `KNAMEQ2` too for 8) |
 | **Representative outputs** | `T`, `WPT`, `BETAN`, profiles[nrmax][nsmax] | `raxis`, `qaxis`, `betat`, profiles[npsmax] |

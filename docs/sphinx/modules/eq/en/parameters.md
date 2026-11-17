@@ -15,7 +15,7 @@ overridden** to obtain physically meaningful results.
 
 | Condition | Required parameter | Reason |
 |---|---|---|
-| `MODELG ∈ {3, 5, 8}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If unset, `validate()` returns a `FILE_MISSING` diagnostic and `run()` produces an invalid equilibrium. |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If it is blank or names no file, `validate()` returns a `FILE_MISSING` diagnostic and `run()` fails, naming the file. `MODELG = 8` reads `KNAMEQ2` too. `MODELG = 15` reads the fixed file `eqdb.dat` instead (a `FILE_MISSING` diagnostic for `MODELG` when it is not there). |
 
 ```python
 eq.set_param("MODELG", 3)
@@ -293,8 +293,8 @@ the physically natural choice (see {doc}`faq` Q1).
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
-| `KNAMEQ`  | CHARACTER(80) | `'eqdata'`  | equilibrium-data file (required for `MODELG=3,5,8`) |
-| `KNAMEQ2` | CHARACTER(80) | `'eqdata2'` | additional equilibrium data |
+| `KNAMEQ`  | CHARACTER(80) | `'eqdata'`  | equilibrium-data file (required for `MODELG=3,5,8,9,25`) |
+| `KNAMEQ2` | CHARACTER(80) | `'eqdata2'` | additional equilibrium data (required for `MODELG=8`) |
 | `KNAMWR`  | CHARACTER(80) | `'wrdata'`  | ray-tracing data |
 | `KNAMWM`  | CHARACTER(80) | `'wmdata'`  | full-wave data |
 | `KNAMFP`  | CHARACTER(80) | `'fpdata'`  | Fokker-Planck data |

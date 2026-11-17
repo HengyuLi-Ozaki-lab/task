@@ -27,7 +27,7 @@
 | `NZGMAX` | `state.nzgmax` | = | Z 格子点数 |
 | `NPSMAX` | `state.npsmax` | = | ψ-面サンプル数 |
 | `NRMAX`, `NTHMAX` | `state.nrmax`, `state.nthmax` | = | ψ-メッシュの解像度 |
-| `MODELG ∈ {3, 5, 8}` | 必須入力 | `KNAMEQ` のファイル存在が必要 | `KNAMEQ` が空なら `validate` で `FILE_MISSING`. ファイルが無ければ `run` で失敗 |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | 必須入力 | `KNAMEQ` のファイル存在が必要 | `KNAMEQ` が空かファイルが無ければ `validate` で `FILE_MISSING`, `run` でも失敗. `MODELG = 15` は固定の `eqdb.dat` を読む |
 | `MODELG = 2` | `KNAMEQ` 無視 | — | 解析的トロイダル経路では使わない |
 
 ## 2. 物理スケーリングとして既知の傾向

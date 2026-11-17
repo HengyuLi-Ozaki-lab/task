@@ -58,7 +58,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
 
 - **(1)–(3)**: Device parameters.
 - **(4) `MODELG=3`**: Selects the mode that loads the equilibrium data
-  from an EQDSK file. To use `mode=1` you need `MODELG ∈ {3, 5, 8}`.
+  from a file. To use `mode=1` you need `MODELG ∈ {3, 5, 8, 9, 25}` (or 15).
 - **(5) `set_param_str`**: String parameters require the **dedicated
   API** (see {doc}`parameter-setting`, method C).
 - **(6) `eq.run()`**: With no argument it runs `mode=1` (EQDSK load).
@@ -69,7 +69,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
 ```text
 Solving from analytic profiles?
   |- Yes -> mode=0 (MODELG=2, the default)
-  `- No  -> mode=1 (MODELG in {3, 5, 8} with KNAMEQ set)
+  `- No  -> mode=1 (MODELG in {3, 5, 8, 9, 25} with KNAMEQ set)
 ```
 
 For a fully runnable notebook, see {doc}`quickstart`.

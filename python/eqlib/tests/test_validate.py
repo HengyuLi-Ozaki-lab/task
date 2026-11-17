@@ -16,7 +16,10 @@ Tests cover:
 * clean-default state after ``Eq()`` returns an empty list;
 * OUT_OF_RANGE diagnostic fires for ``NRMAX`` above ``NRM=1001``;
 * FILE_MISSING diagnostic fires when ``MODELG=3`` and ``KNAMEQ`` is
-  blank;
+  blank, and for the files every load format reads (``KNAMEQ`` for
+  ``MODELG`` 3, 5, 8, 9 and 25, blank or naming no file, ``KNAMEQ2``
+  too for 8; the fixed ``eqdb.dat`` for ``MODELG`` 15:
+  ``TestEqValidateFileMissing``);
 * the wall check (``RB < RA``) is made for the analytic solve only
   (every ``MODELG`` but the file formats 3, 5, 8, 9, 15 and 25), not for
   a file load, which brings its own wall;
@@ -254,7 +257,9 @@ class TestEqValidate(unittest.TestCase):
         the analytic MODELG. MDLEQF=10 is set here so that the MODELG gate, not the
         MDLEQF gate, is what keeps this case clean. (A load with
         MDLEQF >= 10 still reads the box in EQAXIS: ITER01 then fails with
-        the default box, ierr=103, and validate() cannot see it.)"""
+        the default box, ierr=103, which validate() cannot see; the
+        failure says where the axis search ended and names the box,
+        test_load_errors.py.)"""
         with Eq() as eq:
             eq.set_params(MODELG=3.0, MDLEQF=10.0, RR=6.2, RA=2.0, RB=2.1)
             eq.set_param_str("KNAMEQ", "eqdata.ITER01")
@@ -659,6 +664,107 @@ class TestFFIBindings(unittest.TestCase):
         self.assertEqual(
             EqDiagCode.MISSING_REQUIRED, _ffi.EQ_DIAG_MISSING_REQUIRED
         )
+
+
+@unittest.skipUnless(
+    DEFAULT_SO.exists(),
+    f"libeqapi.so not built at {DEFAULT_SO}; run `make -C eq libeqapi.so`",
+)
+class TestEqValidateFileMissing(unittest.TestCase):
+    """FILE_MISSING covers the files every load format reads (task-web-client
+    #191): KNAMEQ for MODELG 3, 5, 8, 9 and 25, blank or naming no file,
+    KNAMEQ2 too for MODELG 8, and for MODELG 15 the fixed file eqdb.dat,
+    which it reads instead of KNAMEQ.
+    The load fails on each of them (test_load_errors.py); validate() says so
+    before the run. Each case runs in a scratch directory, the working
+    directory a load opens its file from."""
+
+    KNAMEQ_FORMATS = (3.0, 5.0, 8.0, 9.0, 25.0)
+
+    @staticmethod
+    def _file_missing(modelg, knameq=None, files=()):
+        with Eq() as eq, _in_tempdir() as tmp:
+            for name in files:
+                Path(tmp, name).write_bytes(b"x")
+            eq.set_param("MODELG", modelg)
+            if knameq is not None:
+                eq.set_param_str("KNAMEQ", knameq)
+            return [(d.param, d.message) for d in eq.validate()
+                    if d.code == EqDiagCode.FILE_MISSING]
+
+    def test_a_blank_knameq_is_reported_for_every_format_that_reads_it(self) -> None:
+        for modelg in self.KNAMEQ_FORMATS:
+            self.assertEqual(
+                self._file_missing(modelg, "", files=["eqdata2"]),
+                [("KNAMEQ", f"MODELG={int(modelg)} loads the file KNAMEQ names, and KNAMEQ is blank")],
+                f"MODELG={modelg}")
+
+    def test_a_knameq_that_names_no_file_is_reported(self) -> None:
+        for modelg in self.KNAMEQ_FORMATS:
+            self.assertEqual(
+                self._file_missing(modelg, "nofile.dat", files=["eqdata2"]),
+                [("KNAMEQ", f"KNAMEQ='nofile.dat' not found: MODELG={int(modelg)} loads it")],
+                f"MODELG={modelg}")
+
+    def test_the_default_knameq_is_looked_up_too(self) -> None:
+        # eq_init sets KNAMEQ='eqdata' (and KNAMEQ2='eqdata2'), which a fresh folder does not hold.
+        self.assertEqual(self._file_missing(3.0),
+                         [("KNAMEQ", "KNAMEQ='eqdata' not found: MODELG=3 loads it")])
+        self.assertEqual(self._file_missing(8.0),
+                         [("KNAMEQ", "KNAMEQ='eqdata' not found: MODELG=8 loads it"),
+                          ("KNAMEQ2", "KNAMEQ2='eqdata2' not found: MODELG=8 loads it too")])
+
+    def test_a_knameq_that_is_there_is_clean(self) -> None:
+        # eqdata2 is KNAMEQ2's default, which MODELG 8 reads too.
+        for modelg in self.KNAMEQ_FORMATS:
+            self.assertEqual(
+                self._file_missing(modelg, "eqdata.TST-2", files=["eqdata.TST-2", "eqdata2"]), [],
+                f"MODELG={modelg}")
+
+    def test_modelg_8_reads_knameq2_too(self) -> None:
+        # EQJAEAR opens KNAMEQ, then KNAMEQ2 (default eqdata2); the other formats do not.
+        self.assertEqual(self._file_missing(8.0, "eqdata.TST-2", files=["eqdata.TST-2"]),
+                         [("KNAMEQ2", "KNAMEQ2='eqdata2' not found: MODELG=8 loads it too")])
+        for modelg in (3.0, 5.0, 9.0, 25.0):
+            self.assertEqual(self._file_missing(modelg, "eqdata.TST-2", files=["eqdata.TST-2"]), [],
+                             f"MODELG={modelg}")
+
+    def test_a_blank_knameq2_is_reported_for_modelg_8(self) -> None:
+        with Eq() as eq, _in_tempdir() as tmp:
+            Path(tmp, "eqdata.TST-2").write_bytes(b"x")
+            eq.set_param("MODELG", 8.0)
+            eq.set_param_str("KNAMEQ", "eqdata.TST-2")
+            eq.set_param_str("KNAMEQ2", "")
+            found = [(d.param, d.message) for d in eq.validate()
+                     if d.code == EqDiagCode.FILE_MISSING]
+        self.assertEqual(found, [("KNAMEQ2", "MODELG=8 loads the file KNAMEQ2 names too, and KNAMEQ2 is blank")])
+
+    def test_the_longest_knameq_is_named_whole(self) -> None:
+        name = "k" * 80   # KNAMEQ holds 80 characters
+        self.assertEqual(self._file_missing(25.0, name),
+                         [("KNAMEQ", f"KNAMEQ='{name}' not found: MODELG=25 loads it")])
+        with Eq() as eq, _in_tempdir() as tmp:
+            Path(tmp, "eqdata.TST-2").write_bytes(b"x")
+            eq.set_param("MODELG", 8.0)
+            eq.set_param_str("KNAMEQ", "eqdata.TST-2")
+            eq.set_param_str("KNAMEQ2", name)
+            found = [(d.param, d.message) for d in eq.validate()]
+        self.assertEqual(found, [("KNAMEQ2", f"KNAMEQ2='{name}' not found: MODELG=8 loads it too")])
+
+    def test_modelg_15_reports_its_fixed_file_not_knameq(self) -> None:
+        # A blank KNAMEQ and one that is there change nothing: MODELG 15 reads eqdb.dat.
+        expected = [("MODELG", "MODELG=15 loads the fixed file 'eqdb.dat', not KNAMEQ, and "
+                               "'eqdb.dat' is not there")]
+        self.assertEqual(self._file_missing(15.0, ""), expected)
+        self.assertEqual(self._file_missing(15.0, "eqdata.TST-2", files=["eqdata.TST-2"]), expected)
+
+    def test_modelg_15_with_its_fixed_file_there_is_clean(self) -> None:
+        self.assertEqual(self._file_missing(15.0, "", files=["eqdb.dat"]), [])
+
+    def test_a_model_that_loads_no_file_does_not_look_for_one(self) -> None:
+        for modelg in (0.0, 1.0, 2.0, 4.0, 7.0, 26.0):
+            self.assertEqual(self._file_missing(modelg, ""), [], f"MODELG={modelg}")
+            self.assertEqual(self._file_missing(modelg, "nofile.dat"), [], f"MODELG={modelg}")
 
 
 if __name__ == "__main__":  # pragma: no cover

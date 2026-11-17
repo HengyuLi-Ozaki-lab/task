@@ -204,14 +204,16 @@ EQ も `tr` 同様 1 プロセス 1 インスタンスです ({doc}`faq` Q6). �
 
 ### `eqdata` ファイルへの依存
 
-`MODELG=3,5,8` で `KNAMEQ` を指定する場合, MCP サーバの **カレント
-ディレクトリ** にそのファイルがある必要があります. Claude Desktop から
+`MODELG=3,5,8,9,25` で `KNAMEQ` を指定する場合, MCP サーバの **カレント
+ディレクトリ** にそのファイルがある必要があります. 2 つのファイルを読む `MODELG=8` では
+`KNAMEQ2` も, `MODELG=15` では固定の `eqdb.dat` も同様です. Claude Desktop から
 起動するときは `cwd` を環境変数で固定するか, 絶対パスでファイルを
-指定してください.
+指定してください (名前が固定の `eqdb.dat` は絶対パスにできないので `cwd` を固定します).
 
 ### `validate` の積極利用
 
-`tr_mcp` にもありますが, `eq` では特に効果的です. 空の `KNAMEQ`,
+`tr_mcp` にもありますが, `eq` では特に効果的です. 読み込むファイルの欠落 (`KNAMEQ` が空かファイルが無い,
+`MODELG=8` の `KNAMEQ2`, `MODELG=15` の `eqdb.dat`),
 グリッド寸法 (`NRGMAX`, `NPSMAX` 等の 10 個) のコンパイル時最大値超過,
 解析解では壁がプラズマの内側にあること, 負の電流, ソルバーが使えない箱を
 **`run` を呼ばずに** 検出できます (`parameter-setting`). パラメータを大量に振る LLM ワーク
@@ -224,7 +226,7 @@ EQ も `tr` 同様 1 プロセス 1 インスタンスです ({doc}`faq` Q6). �
 | `libeqapi.so not found` | `make -C eq libeqapi.so` 後, `EQLIB_PATH` を絶対パスで設定 |
 | `ModuleNotFoundError: eqlib` | `PYTHONPATH` にリポジトリ `python/` を追加 |
 | `ModuleNotFoundError: mcp` | `pip install 'mcp>=1.2,<2'`. 仮想環境を確認 |
-| `EQDSK file missing` | `KNAMEQ` のファイルがカレントディレクトリにあるか確認 |
+| `EQDSK file missing` | `KNAMEQ` のファイルがカレントディレクトリにあるか確認 (`MODELG=8` では `KNAMEQ2` も, `MODELG=15` では `eqdb.dat`) |
 | `EqlibCalculationFailedError: ierr=3` | 入力パラメータの物理整合性, EPSEQ や NLPMAX を緩める |
 
 ## 参考資料

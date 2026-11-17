@@ -634,7 +634,13 @@ CONTAINS
   ! the first step (reproduced with the tst2 fixture: NSMAX=3 leaves
   ! species 3 at the tr_init defaults PN(3)=PNS(3)=0 -> WPT/BETA*/TAUE*
   ! = NaN; the same with PT(3)=0, PTS(3)=0 or PN(3)<0). PN(ns)=0 with
-  ! PNS(ns)>0 runs finite and stays allowed. A zero edge density of
+  ! PNS(ns)>0 is refused as well (task-web-client #190): the profile
+  ! then falls to zero at the axis (RN = 1e-7 at the first grid point
+  ! of the tst2 case with PN(2)=0, PNS(2)=1e-3), and the run fails
+  ! (tr_prep's impurity dilution goes negative; a negative temperature
+  ! at step 0, or at step 9 for species 3 of tst2, which a 2-step run
+  ! missed) or ends with WPT, Q0, the betas and TAUE NaN (TR's defaults
+  ! with PN(2)=0). A zero edge density of
   ! species 1 or 2 is refused: the edge transport divides by it (PNSS(1),
   ! PNSS(2), trcalc.f90). Non-finite values (the C setter accepts any
   ! double) are reported too. With MODELG 9, RIPS or RIPE < 0 is
@@ -680,6 +686,12 @@ CONTAINS
        ELSE IF (PN(ns) == 0.D0 .AND. PNS(ns) == 0.D0) THEN
           CALL add("PN", ns, TR_DIAG_OUT_OF_RANGE_AFTER_DEP, &
                "PN and PNS both 0 for a species <= NSMAX: zero density everywhere, NaN after one step; set PN/PNS or lower NSMAX")
+       ELSE IF (PN(ns) == 0.D0) THEN
+          ! PNS > 0 here: the profile falls to zero at the axis, where the transport divides by it
+          ! (task-web-client #190; see the header).
+          CALL add("PN", ns, TR_DIAG_OUT_OF_RANGE, &
+               "zero centre density (PN = 0, PNS > 0) for active species: the density vanishes at the axis; " // &
+               "the run fails or produces NaN")
        ELSE IF (ns <= 2 .AND. PNS(ns) == 0.D0) THEN
           ! The edge terms of the transport divide by the edge density of the electrons and of the
           ! bulk ions (PNSS(1), PNSS(2) in trcalc.f90): the run ends with WPT, the betas and TAUE NaN.
