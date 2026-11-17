@@ -97,9 +97,10 @@ MODULE tr_api
   ! tr_loop of tr_run or tr_continue failed since then: tr_continue refuses on either (PR 3 of #96).
   INTEGER, SAVE :: g_prep_structural = -1
   LOGICAL, SAVE :: g_failed = .FALSE.
-  ! Whether this lifecycle has attempted a preparation (tr_run's tr_prep, failed or not). tr_init resets NT but not
-  ! T, so before it T is the previous lifecycle's: a refusal made earlier records time 0 (tr_continue's refuse).
-  LOGICAL, SAVE :: g_prep_attempted = .FALSE.
+  ! Whether this lifecycle has completed a preparation (a tr_prep that returned 0). tr_init resets NT but not T, and a
+  ! tr_prep that fails early returns before it resets T (tr/trprep.f90:79, T at :145), so until one succeeds T is the
+  ! previous lifecycle's: a failure or refusal record made before then carries time 0 (record_time).
+  LOGICAL, SAVE :: g_time_started = .FALSE.
   ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
   ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
   INTEGER, SAVE :: g_first_nrmax = 0
@@ -165,7 +166,7 @@ CONTAINS
     g_initialized = .TRUE.
     g_prepared    = .FALSE.
     g_failed      = .FALSE.
-    g_prep_attempted = .FALSE.
+    g_time_started = .FALSE.
     ! Library mode: tr_loop, tr_set_metric and tr_exec record their failures and
     ! tr_loop tests the periodic equilibrium solve. Only this entry sets it.
     tr_library_mode = .TRUE.
@@ -372,15 +373,15 @@ CONTAINS
        ! The first attempt fixes the mesh, failed or not: tr_prep can size
        ! bpsd's splines (tr_set_metric) and then fail later (tr_prof_impurity).
        IF (g_first_nrmax == 0) g_first_nrmax = NRMAX
-       g_prep_attempted = .TRUE.
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
-          CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, T, 'tr_prep failed')
+          CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, record_time(), 'tr_prep failed')
           g_failed = .TRUE.
           ierr = TR_ERR_CALC_FAILED
           RETURN
        END IF
        g_prepared = .TRUE.
+       g_time_started = .TRUE.
        g_failed   = .FALSE.
        g_prep_generation = tr_param_generation()
        g_prep_structural = tr_param_structural_generation()
@@ -1563,12 +1564,7 @@ CONTAINS
 
     SUBROUTINE refuse(why)
       CHARACTER(LEN=*), INTENT(IN) :: why
-      ! T is the previous lifecycle's until this one has attempted a preparation: record time 0 then.
-      IF (g_prep_attempted) THEN
-         CALL tr_failure_record(TRF_REFUSED, 0, NT, T, why)
-      ELSE
-         CALL tr_failure_record(TRF_REFUSED, 0, NT, 0.0_rkind, why)
-      END IF
+      CALL tr_failure_record(TRF_REFUSED, 0, NT, record_time(), why)
       WRITE(6, '(A)') 'XX tr_continue: '//why
       ierr = TR_ERR_INVALID
     END SUBROUTINE refuse
@@ -1602,5 +1598,16 @@ CONTAINS
     END IF
     cls = INT(tr_param_class(TRIM(fname)), C_INT)
   END FUNCTION tr_api_param_class
+
+  ! record_time : the time a failure or refusal record carries: T, or 0 until this lifecycle has completed a
+  ! preparation (T is then the previous lifecycle's; see g_time_started).
+  FUNCTION record_time() RESULT(tm)
+    REAL(rkind) :: tm
+    IF (g_time_started) THEN
+       tm = T
+    ELSE
+       tm = 0.0_rkind
+    END IF
+  END FUNCTION record_time
 
 END MODULE tr_api

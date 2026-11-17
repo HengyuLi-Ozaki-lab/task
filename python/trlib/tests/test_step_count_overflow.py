@@ -8,7 +8,7 @@ which had the same sum, returns ``TR_ERR_INVALID`` with an ``XX`` line. Only the
 fits would run for two billion steps.
 
 ``tr_init`` resets NT but not T, so ``tr_init(); tr_run(10); tr_finalize(); tr_init(); tr_continue(1)`` recorded the
-previous lifecycle's T in its REFUSED record. A refusal made before this lifecycle attempted a preparation records
+previous lifecycle's T in its REFUSED record. A refusal made before this lifecycle completed a preparation (a failed `tr_prep` that returns early leaves the previous T too) records
 time 0.
 
 Every case runs in a child process (it reads Fortran's unit 6).
@@ -125,3 +125,24 @@ def test_a_refusal_after_a_preparation_records_the_current_time():
     ''')
     assert p.returncode == 0, p.stdout[-600:] + p.stderr[-1200:]
     assert "REC REFUSED 10 True True" in p.stdout, p.stdout[-800:]
+
+
+def test_a_refusal_after_a_preparation_that_failed_early_records_time_zero():
+    # MODEL_PNF 5 makes tr_prep fail inside set_usigmav_nf, before it resets T (tr/trprep.f90:79, T at :145): the
+    # first lifecycle's T is still in place. Neither the failed run's record nor the refusal after it may carry it.
+    p = _child('''
+        with Trlib() as t:
+            t.run(10)
+        t = Trlib()
+        t.set_param("MODEL_PNF", 5)
+        try:
+            t.run(1); print("RUN 0")
+        except TrlibRunError as e:
+            print("RUN", e.failure.kind, e.failure.nt, e.failure.time)
+        print("RC", t._lib.tr_continue(1))
+        f = t.last_error()
+        print("REC", f.kind, f.nt, f.time)
+    ''')
+    assert p.returncode == 0, p.stdout[-600:] + p.stderr[-1200:]
+    assert "RUN PREP_FAILED 0 0.0" in p.stdout, p.stdout[-800:]
+    assert "RC 1" in p.stdout and "REC REFUSED 0 0.0" in p.stdout, p.stdout[-800:]

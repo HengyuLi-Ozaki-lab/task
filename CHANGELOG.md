@@ -74,7 +74,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     the record as `.failure`, except for a negative count: the C function refuses it with a record, but `Trlib` and
     `Tot` refuse a count outside 0 to 2**31 - 1 before the call, without one. `tr_continue(0)` makes the checks and does
     nothing else, and the control sets stay pending.
-  - A refusal made before this lifecycle has attempted a preparation records time 0: `tr_init` resets `NT` but not `T`, so
+  - A refusal made before this lifecycle has completed a preparation, and a `PREP_FAILED` record made then, carry time 0: `tr_init` resets `NT` but not `T`, so
     `tr_init(); tr_run(10); tr_finalize(); tr_init(); tr_continue(1)` used to record the previous lifecycle's `T`.
   - `tr_run` has the same bound (a pre-existing overflow of `NT + ntmax_in`, fixed here): a count past `HUGE(NT) - NT` returns
     `TR_ERR_INVALID` with an `XX tr_run` line, before `NTMAX` is changed.
