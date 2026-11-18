@@ -670,7 +670,7 @@ CONTAINS
 
     ! ---- OUT_OF_RANGE_AFTER_DEP: the box RGMIN/RGMAX/ZGMIN/ZGMAX,
     !      where the solver reads it: an analytic solve with MDLEQF >= 10.
-    !      It is read in one place, EQAXIS (eq/eqsub.f90:57-121, from
+    !      It is read in one place, EQAXIS (eq/eqsub.f90:58-121, from
     !      EQSETP and EQCALV; otherwise its window is RR +/- RB,
     !      +/- RKAP*RB), which asks two things of it: the magnetic axis
     !      must lie inside it (or the run fails, ierr=103), and RGMAX

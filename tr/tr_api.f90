@@ -526,6 +526,9 @@ CONTAINS
   !                 particle sources (see source_and_equation_violations).
   !   OUT_OF_RANGE_AFTER_DEP: an NRMAX other than the process's first
   !                 (see mesh_violation).
+  !   INCONSISTENT_PAIR, reported only (tr_run does not refuse it):
+  !                 PN(1) or PNS(1) away from the ions' charge density
+  !                 (see quasi_neutrality, task-web-client #200).
   !
   ! Future category (a follow-up PR): MISSING_REQUIRED.
   !
@@ -541,7 +544,7 @@ CONTAINS
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
-    INTEGER :: nviol, i
+    INTEGER :: nviol, nspc, i
     CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
     INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
     CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
@@ -575,6 +578,7 @@ CONTAINS
     !      the UFILE modes 1/2/3). Same
     !      findings that make tr_run refuse; here they are diagnostics.
     CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+    nspc = nviol
     ! ---- The equation switches and the particle source (see
     !      source_and_equation_violations), also refused by tr_run.
     CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
@@ -591,6 +595,15 @@ CONTAINS
     IF (EXTERNAL_DRIVEN_I /= 0.D0 .AND. EXTERNAL_DRIVEN_RW <= 0.D0) THEN
        CALL push_diag("EXTERNAL_DRIVEN_RW", TR_DIAG_OUT_OF_RANGE, &
             "non-positive width with non-zero EXTERNAL_DRIVEN_I; profile cannot be normalized (silent no-op)")
+    END IF
+
+    ! ---- #200: INCONSISTENT_PAIR, a diagnostic only (tr_run runs it), and
+    !      not beside a finding of species_profile_violations (a species
+    !      profile, or RIPS/RIPE below 0 with MODELG 9), which tr_run
+    !      refuses already.
+    IF (nspc == 0) THEN
+       CALL quasi_neutrality("PN[1]", PN, "centre")
+       CALL quasi_neutrality("PNS[1]", PNS, "edge")
     END IF
 
     ndiag = nlocal
@@ -643,6 +656,40 @@ CONTAINS
       END DO
       diag(nlocal)%code = code_in
     END SUBROUTINE push_diag
+
+    !---------------------------------------------------------------
+    ! #200: the electrons' density (dens(1)) against the ions' charge
+    ! density, sum PZ(s)*dens(s) for s = 2..NSMAX, at the centre (PN)
+    ! or the edge (PNS). TR takes them equal: trprof dilutes the main
+    ! ions by the impurity model's charge, which it takes in proportion
+    ! to the electrons, and nothing makes the namelist densities agree.
+    ! Measured on TR's defaults (PN(1) = 0.5): PN(2) from 0.005 to 0.05
+    ! fails at step 0 (NEGATIVE TEMPERATURE), at 0.1 and 0.4 completes,
+    ! and PN(1) = 0.4 with PN(2) = 0.5 completes. So a difference above
+    ! 1e-3 of the larger is reported and not refused: a run that does
+    ! not fail still runs. Not checked in the UFILE modes (MDLUF 1, 2,
+    ! 3), where the densities come from the UFILE. The caller skips it
+    ! after a finding of species_profile_violations, so every density
+    ! here is finite and not negative, and NSMAX >= 2 (the registry's
+    ! range). A charge sum that overflows (PN near 1e308) is reported.
+    !---------------------------------------------------------------
+    SUBROUTINE quasi_neutrality(name_str, dens, kplace)
+      USE trcomm, ONLY : PZ
+      USE tr_state, ONLY : TR_DIAG_INCONSISTENT_PAIR
+      CHARACTER(LEN=*), INTENT(IN) :: name_str, kplace
+      REAL(rkind),      INTENT(IN) :: dens(:)
+      CHARACTER(LEN=TR_DIAG_MSG_LEN) :: m
+      REAL(rkind) :: zni
+      INTEGER :: nsa, ios
+      IF (MDLUF == 1 .OR. MDLUF == 2 .OR. MDLUF == 3) RETURN
+      nsa = MIN(NSMAX, SIZE(dens), SIZE(PZ), TR_MAX_NSMAX)
+      zni = SUM(PZ(2:nsa) * dens(2:nsa))
+      IF (IEEE_IS_FINITE(zni) .AND. ABS(dens(1) - zni) <= 1.D-3 * MAX(ABS(dens(1)), ABS(zni))) RETURN
+      WRITE(m, '(3A,ES9.2,A,ES9.2,A)', IOSTAT=ios) "not quasi-neutral at the ", kplace, ": electrons ", &
+           dens(1), ", ions' charge sum PZ*n ", zni, " (1e20/m3); TR takes them equal"
+      IF (ios /= 0) m = "not quasi-neutral: the electrons' density differs from the ions' charge density"
+      CALL push_diag(name_str, TR_DIAG_INCONSISTENT_PAIR, m)
+    END SUBROUTINE quasi_neutrality
 
   END FUNCTION tr_api_validate
 

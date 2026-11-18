@@ -197,17 +197,39 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   defaults with `PN(2) = 0`). `validate()` now reports it as `PN[ns]`
   (`OUT_OF_RANGE`), and `tr_run` returns `TR_ERR_INVALID` before `tr_prep`,
   as for a negative density. **A change of behaviour**: such a run used to
-  be made. Not refused: a centre density far below the edge's, which fails
-  too (`PN(2)` = 1e-9, 1e-6 and 1e-4 end with `ierr=3` within 10 steps).
+  be made. Not refused: a centre density near zero, which fails too when it
+  is far below the edge's (on TR's defaults, with the plasma kept
+  quasi-neutral, `PN/PNS` = 2e-3 and below end with `ierr=3`; 0.01
+  completes). This entry first said `PN(2)` = 1e-9, 1e-6 and 1e-4 showed
+  that; those runs lowered the ions alone, under electrons at 0.5, so they
+  were far below the electrons as well (the next entry,
+  task-web-client#200) and do not tell the two causes apart.
+
+- **TR library: `validate()` reports densities that are not quasi-neutral**
+  (MS10-DP-ISSP/task-web-client#200). TR takes the electrons' density equal
+  to the ions' charge density, `PN(1) = sum PZ(s)*PN(s)` over `s = 2..NSMAX`
+  (`trprof` dilutes the main ions by the impurity model's charge, which it
+  takes in proportion to the electrons), and nothing made the namelist agree.
+  `validate()` now reports a difference above 1e-3 of the larger, at the
+  centre as `PN[1]` and at the edge as `PNS[1]` (`INCONSISTENT_PAIR`), outside
+  the UFILE modes `MDLUF` 1/2/3 and not beside a finding of the
+  species-profile checks. `tr_run` does not refuse it: on TR's defaults
+  (`PN(1) = 0.5`), `PN(2)` from 0.005 to 0.05 fails at step 0 (`NEGATIVE
+  TEMPERATURE AT STEP 0`), and 0.1 and 0.4 complete. **A change of
+  behaviour** for a caller of
+  `validate()`: a configuration it passed may now return these findings
+  (two tests of the species checks had species 3 without its electrons).
+  The measured limits are in the TR parameter documentation (section 3); no
+  lower bound on a positive centre density or on `PN/PNS` is checked.
 
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and
   `RIPS` = 0, which returned RC 0 with about 10 non-finite scalars, fail with `NONFINITE` at nt 1 (task-web's
   `non_finite` flag no longer sees them). On flat 9 MA ITER `MODELG` 9 with `NTEQIT` 50 and heating, the run stops
-  at t = 12 s (code 103, the axis leaves the plasma), where it printed `XX EQAXIS` lines to 37 s. `tr2` is
-  unchanged by this entry (its loop does not test the re-solve); see the #228 entry under Fixed for what changed in
-  `tr2`'s `R`.
+  at t = 12 s (code 102, the axis search ends at a point that is not finite), where it printed `XX EQAXIS` lines
+  to 37 s. `tr2` is unchanged by this entry (its loop does not test the re-solve); see the #228 entry under Fixed
+  for what changed in `tr2`'s `R`.
 - **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
   run re-preps the module, whoever set it (#253).** `tr_set_param` /
   `fp_set_param` / `ti_set_param` used to clear the module's private
@@ -363,6 +385,56 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the box around it (ierr=103)", where an analytic solve said "EQCALC failed
   (ierr=103)". `validate()` still cannot
   see it for a load: the axis is known only once the file is read.
+- **EQ library: `MODELG = 8`'s reader returns an error where it ended the
+  process, and an axis search that ends at a point that is not finite says
+  so** (MS10-DP-ISSP/task-web-client#204). `EQJAEAR` (`eq/eq-qst.f90`) read
+  `KNAMEQ` and `KNAMEQ2` with no `IOSTAT` and stopped with `STOP` when the
+  psi map had no axis, so a short or malformed file, a grid outside 2 to 513
+  points a side (past the arrays, or a spacing divided by zero), and a map
+  without an axis or with an R or Z range that is empty or not finite
+  (which leaves no axis to find) ended the process (measured on the `-O0`
+  build with run-time checks; an index past an array may go on unseen
+  without them), and a falling R or Z range was taken as given (`GETRZ`,
+  which PL's field lookups go through, finds no point inside a falling
+  grid). Each now returns an error, and `eq_last_error` names the
+  file and the part, e.g. "EQ_READ: MODELG=8 load failed:
+  KNAMEQ2='eqdata2' ends before its row 11 of 41". `find_axis`
+  (`eq/eqsub.f90`) set `IERR=102` when Newton's method did not converge, in
+  a variable of its own, and its callers, `EQAXIS` (loads through `EQCALQ`,
+  the analytic solve) and `EQJAEAR`, went on from the search's last point.
+  That point is the best one the search found, and runs depend on going on
+  from it: with `MODELG = 9`, 23 of 60 runs (TR's defaults varied, and its
+  three fixtures) met such failures in their re-solves (IER 1 and 2), and 6
+  of them completed with finite results. So
+  `find_axis` returns 102 only when the point is not finite: "EQAXIS: the
+  search for the magnetic axis from (R, Z) = (...) did not converge (NEWTN
+  IER=n): it ended at a point that is not finite (ierr=102)", where a
+  g-eqdsk load whose psi is a ramp in R, and an analytic solve with `RIP = 0` or
+  `NZGMAX = 2`, said "ended at (R, Z) = (NaN, NaN), outside ...
+  (ierr=103)" and a `MODELG = 8` load ended the process (a map whose
+  spline is NaN, on the `-O0` build with run-time checks). From a finite
+  point both go on as before, and no run changes (on `0e83ad3d`): the 60
+  TR runs end the same way with the same scalars, bit for bit, before and
+  after, and so do 70 analytic solves and a file load of task-web's six EQ
+  presets, with the shape, the current and the mesh varied (none of which
+  meets a failed search). Not changed: `find_xpoint1` and `find_xpoint2`, which
+  `MODELG = 8` calls for its X-points, keep their `IERR` to themselves the
+  same way; and a `MODELG = 8` map whose search fails at a finite point (a
+  ramp in R with a bump, a minimum of |grad psi| and no stationary point)
+  still ends the process further on, in `eqcalq.f90` (an index below an
+  array's bound, as on `0e83ad3d`). **A change of behaviour**: a
+  `MODELG = 8` file with a falling R or Z range is refused, where it was
+  read, and a search that ends at a point that is not finite reports
+  `ierr=102` where it reported 103 (task-web's wiki quotes 103 for
+  `RIP = 0` and `NZGMAX = 2`: task-web-client#205). Under TR's `MODELG = 9`,
+  whose q-scaling and library-mode re-solves record EQ's status since fork
+  PR #25, such a search ends the run with `EQ_FAILED` 102 where it ended
+  with 103, the outcome the same. Measured 2026-11-18: `RIPS` 0, 0.3 and
+  100 MA on TR's other defaults, and 10 MA with `RKAP` 2, or with `RKAP`
+  1.6 and `RDLT` 0.3; the flat 9 MA ITER case of the entry "TR library: a
+  run that ends on an EQ failure or a non-finite state fails in library
+  mode" under Changed, at nt 600, t = 12 s. 0.5 MA, whose search ends at a
+  finite point outside the box, stays 103.
 - **TR documentation: `CDH` and `CNH` weigh `chi_NC`** (the neoclassical
   `AKNC`), not `chi_NCLASS`: NCLASS needs `MDNCLS`, which the registry does
   not take (HengyuLi-Ozaki-lab/task-web-client#43). Text and comments only.

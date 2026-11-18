@@ -155,6 +155,25 @@ The default species layout (`trinit.f90`):
 | 5 | C (low ionization) | 12 | 2 | 0 | 0 |
 | 6 | C (high ionization) | 12 | 4 | 0 | 0 |
 
+**Quasi-neutrality.** TR takes the electrons' density equal to the ions'
+charge density, `PN[1] = Σ PZ[s]·PN[s]` over `s = 2..NSMAX`, and the same
+for `PNS` (`trprof` dilutes the main ions by the impurity model's charge,
+which it takes in proportion to the electrons). Nothing makes the namelist
+agree: `validate()` reports a difference above 1e-3 of the larger as
+`INCONSISTENT_PAIR` on `PN[1]` or `PNS[1]`, and `tr_run` does not refuse it
+(task-web-client #200). Measured on TR's defaults, one process per case,
+10 steps: ions far below the electrons fail at once (`PN[1] = 0.5` with
+`PN[2]` from 0.005 to 0.05: `NEGATIVE TEMPERATURE AT STEP 0`), `PN[2]` = 0.1
+and 0.4 complete, and so does `PN[1] = 0.4` with `PN[2] = 0.5`. A
+quasi-neutral centre density far below the edge's fails too: `PN[1] = PN[2]`
+at 1e-4 (`PN/PNS` = 2e-3) and below ends with `ierr=3`, from 5e-4 (0.01) it
+completes. On the TST-2 case (`MDLIMP = 3`), whose impurity charge grows as
+the mean density falls, `PN[1] = PN[2] = 0.002` fails in `tr_prep`
+(`negative DILUTE`) and 0.005 completes. Beyond the refusal of a zero or
+negative centre density (#189, task-web-client #190), no lower bound on a positive centre
+density, or on `PN/PNS`, is checked: such a run fails at once, in `tr_prep`
+or within its first ten steps.
+
 ## 4. Initial profile shape
 
 The initial density / temperature profiles are given by:

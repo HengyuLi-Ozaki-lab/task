@@ -78,4 +78,9 @@ with Trlib() as tr:
 `run()` も `tr_prep` 前に同じ条件で拒否 (`TrlibParamError`) し, コンパイル時
 上限を超える `NSMAX` も拒否するので, fixture の粒子種数を超えて `NSMAX`
 を上げる場合は追加種の `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` を設定して
-ください.
+ください. 報告だけで拒否はしないもの: イオンの電荷密度 (`s = 2..NSMAX` の
+`Σ PZ[s]·PN[s]`, `PNS` も同様) から大きい方の 1e-3 を超えて離れた `PN[1]`
+または `PNS[1]` (`INCONSISTENT_PAIR`, task-web-client #200; UFILE モードと, 種ごとの
+分布のチェック (`MODELG = 9` での負の `RIPS`, `RIPE` を含む) の指摘があるときは報告しない).
+このため追加種があるときは, `validate()` に指摘させないには `PN[1]` をその電荷密度
+`PZ[ns]·PN[ns]` だけ, `PNS[1]` を `PZ[ns]·PNS[ns]` だけ上げてください.

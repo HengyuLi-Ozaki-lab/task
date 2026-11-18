@@ -116,12 +116,12 @@ numbering 規約 (`tr/trcoef_turbulence.f90:393-399` の
    `double` (適切な C 型) を, やはり struct の末尾に追加.
 4. **`tr_api_get_state` 内で field を埋める.**
    `tr/tr_api.f90` には 3 ブロックある:
-   - **zero-init** が `:337-357` (新 field に compute-time
+   - **zero-init** が `:400-420` (新 field に compute-time
      ゼロベースラインがなければここにも追加).
-   - **scalar copy** が `:373-389` — AJRFT 先例はここ.
+   - **scalar copy** が `:436-452` — AJRFT 先例はここ.
      新スカラーはこのパターンに従う.
    - **per-radius / per-species profile loops** が
-     `:395-405` — 新配列 field は `RN` / `RT` / `AJ` /
+     `:458-468` — 新配列 field は `RN` / `RT` / `AJ` /
      `QP` の loop パターンに従う.
 5. **`TR_STATE_ABI_VERSION` を 2 箇所で bump する.**
    `tr/tr_api.h` の `#define` と `tr/tr_state.f90` の
