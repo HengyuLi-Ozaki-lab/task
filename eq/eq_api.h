@@ -210,7 +210,9 @@ int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
                       limit; a device), or no non-empty file exists
                       afterwards. What is then at the path (usually a short
                       file) is left in place and must not be loaded: the
-                      loader does not guard its READs.
+                      load returns EQ_ERR_CALC_FAILED where a read of it
+                      fails, and what reads without an error is not that
+                      equilibrium either.
    EQ_OK              otherwise.
    "Successful eq_run" is what this API's own entry points saw. In the mono
    image (libtotapi_mono.so) the sibling modules change the equilibrium
