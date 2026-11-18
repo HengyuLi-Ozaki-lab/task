@@ -30,7 +30,7 @@ These are determined without solving the equilibrium.
 | `NPSMAX` | `state.npsmax` | = | number of ψ-surface samples |
 | `NRMAX`, `NTHMAX` | `state.nrmax`, `state.nthmax` | = | resolution of the ψ mesh |
 | `MODELG ∈ {3, 5, 8, 9, 25}` | required input | the file referenced by `KNAMEQ` must exist | `validate` returns `FILE_MISSING` for a blank `KNAMEQ` or a missing file, which also fails in `run`; `MODELG = 15` reads the fixed `eqdb.dat` |
-| `MODELG = 2` | `KNAMEQ` ignored | — | analytic toroidal path does not use it |
+| `MODELG = 2` | `KNAMEQ` ignored | — | the Grad-Shafranov solve (`run(mode=0)`) does not read it |
 
 ## 2. Trends known as physical scaling
 
@@ -109,7 +109,7 @@ In practice, the defaults are sufficient for many cases.
 
 | Input | Effect |
 |---|---|
-| `MODELG=2` (analytic) | `KNAMEQ` not needed; solves with built-in profiles |
+| `MODELG=2` (toroidal, the default) | `KNAMEQ` not needed; `run(mode=0)` solves from the profile coefficients |
 | `MODELG=3` (TASK/EQ) | `KNAMEQ` required; reads a TASK-native equilibrium |
 | `MODELG=5` (EQDSK) | `KNAMEQ` required; G-EQDSK standard format |
 | `MDLEQF=0` (default) | supply $P, J_\text{tor}, T, V_\varphi$ + $I_p$ |
