@@ -34,10 +34,12 @@ class TrlibStateError(TrlibError):
 class TrFailure:
     """The first failure of a ``tr_run``, as ``tr_last_error`` reports it.
 
-    ``kind`` is ``NONE`` (no failure), ``EQ_FAILED`` (an equilibrium solve of
-    ``MODELG=9``: the initial q-scaling or the periodic re-solve), ``NONFINITE``
+    ``kind`` is ``NONE`` (no failure), ``EQ_FAILED`` (the load of the equilibrium
+    file of ``MODELG`` 3, 5 or 8, or an equilibrium solve of ``MODELG=9``: the
+    initial q-scaling or the periodic re-solve), ``NONFINITE``
     (Q0, the stored energy or a central temperature is not finite),
-    ``TR_CHECK`` (negative temperature), ``PREP_FAILED`` or ``OTHER`` (``REFUSED``
+    ``TR_CHECK`` (negative temperature), ``PREP_FAILED`` (the preparation, e.g.
+    the VMEC file of ``MODELG=7`` it could not open) or ``OTHER`` (``REFUSED``
     is reserved for ``tr_continue``, PR 3); ``code`` is the Fortran status, ``nt`` the step and ``time`` the
     time in seconds; ``detail`` says what failed.
     """

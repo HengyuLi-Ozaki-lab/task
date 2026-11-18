@@ -222,6 +222,24 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   The measured limits are in the TR parameter documentation (section 3); no
   lower bound on a positive centre density or on `PN/PNS` is checked.
 
+- **TR library: `validate()` reports a `KNAMEQ` that names no file, and `MODELG = 8`'s `KNAMEQ2`; a `MODELG = 7` run
+  whose VMEC file is missing or cannot be opened fails** (MS10-DP-ISSP/task-web-client#201). `validate()` reported a
+  blank `KNAMEQ` only, for `MODELG` 3, 5, 7 and 8. It now also reports a `KNAMEQ` that names no file (`FILE_MISSING`,
+  as EQ's `validate()` does since task-web-client#191; a name is looked up relative to the working directory at the
+  time of the call), and for `MODELG` 8 a blank `KNAMEQ2`: TR hands EQ its own, which `tr_set_param_str` does not
+  set, so through the library `MODELG = 8` always gets that finding; `eq:KNAMEQ2`, which `tr_set_metric` overwrote,
+  is refused like `eq:KNAMEQ`. With `MODELG = 7`, `tr_set_metric` went on after `pl_vmec` failed, the next call
+  setting `ierr` again: a run whose VMEC file was missing completed with 10 non-finite scalars (TR's defaults,
+  `NTMAX` 2); it now fails in the preparation, and so does `tr2`'s `R`, which returns to the menu. A VMEC file that
+  opens but does not read still ends the process (`pl/plvmec.f90` reads it without `IOSTAT` and has `STOP`s). The
+  failure record says why: `PREP_FAILED` "pl_vmec (ierr=7) could not open KNAMEQ='...'" for `MODELG` 7, and for 3, 5
+  and 8, where it was `PREP_FAILED` "tr_prep failed", `EQ_FAILED` "eq_load: " and EQ's reason, which for a file
+  `EQ_READ` could not read names it. `tr_last_error` keeps 102 characters of detail, so a name is whole there up to
+  about 50 characters (60 for `MODELG` 7); `validate()` names it whole. **A change of behaviour**: `validate()`
+  returns these findings for configurations it passed (the default `KNAMEQ = 'eqdata'` too, when the working
+  directory holds no such file); `eq:KNAMEQ2` raises; the `MODELG = 7` run fails where it completed; the record of a
+  failed load changes kind.
+
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and

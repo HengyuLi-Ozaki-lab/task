@@ -16,7 +16,7 @@
 
 | 条件 | 必須パラメータ | 理由 |
 |---|---|---|
-| `MODELG ∈ {3, 5, 7, 8}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 未設定だと `tr_validate()` が `FILE_MISSING` 診断を返し, `run()` 時に `tr_prep` が失敗する |
+| `MODELG ∈ {3, 5, 7, 8}` | **`KNAMEQ`** (文字列) | 平衡データファイル名 (`MODELG = 7` では VMEC ファイル). 空かファイルが無いと `tr_validate()` がそのファイル名を示す `FILE_MISSING` 診断を返し, `run()` は失敗する. `MODELG = 8` は `KNAMEQ2` も読むが, `tr_set_param_str` でも `eq:KNAMEQ2` でも設定できない (namelist で設定しない限り空) |
 
 `KNAMEQ` は `set_param_str` 経由で指定します:
 

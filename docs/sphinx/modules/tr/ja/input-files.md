@@ -24,7 +24,7 @@ pull が走ります (`tr/trbpsd.f90:213`). この 4 値はすべて
 - `MODELG = 5` → `EQDSKR` (community EQDSK 形式)
 - `MODELG = 8` → `EQJAEAR`
 
-dispatch テーブルは `eq/eqfile.f90:108-115` にあります.
+dispatch テーブルは `eq/eqfile.f90:180-216` にあります.
 つまり `MODELG = 9` は no-op alias ではなく, `MODELG = 3`
 と同じ `EQRTSK` reader を実際に呼びます.
 

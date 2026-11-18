@@ -119,10 +119,10 @@ first failure is kept; `tr_init` and every `tr_run` clear the record (`kind == "
 
 | kind | meaning |
 |---|---|
-| `EQ_FAILED` | an equilibrium solve of `MODELG = 9` failed: the initial q-scaling (`tr_set_metric`) or the periodic re-solve (`NTEQIT`); `code` is the failing step's: EQ's (102 an axis search that ended at a point that is not finite, 103 one that ended outside its window, 110/111/112 below), bpsd's, or -1 and -2 for the q-scaling itself (a scale factor zero or not finite, no agreement) |
+| `EQ_FAILED` | the load of the equilibrium file of `MODELG` 3, 5 or 8 failed (`detail` is `eq_load:` and EQ's reason, which for a file `EQ_READ` could not read names it), or an equilibrium solve of `MODELG = 9` failed: the initial q-scaling (`tr_set_metric`) or the periodic re-solve (`NTEQIT`); `code` is the failing step's: EQ's (102 an axis search that ended at a point that is not finite, 103 one that ended outside its window, 110/111/112 below), bpsd's, or -1 and -2 for the q-scaling itself (a scale factor zero or not finite, no agreement) |
 | `NONFINITE` | Q0, the stored energy or a central temperature is not finite (`code` -3) |
 | `TR_CHECK` | `TRCHCK`: a negative temperature |
-| `PREP_FAILED`, `OTHER` | the preparation failed; any other non-zero status of the loop |
+| `PREP_FAILED`, `OTHER` | the preparation failed (for `MODELG = 7`, a VMEC file `pl_vmec` could not open: `detail` names `KNAMEQ`); any other non-zero status of the loop |
 | `REFUSED` | reserved for `tr_continue` (PR 3 of the plan); nothing records it yet (`tr_run` refuses before the run by returning `TR_ERR_INVALID`, with no record) |
 
 EQ's own codes 102 and 103 (`EQAXIS`), 110 (a flux-surface extremum at the edge of the contour array), 111 and 112
@@ -192,8 +192,8 @@ A name that starts with `eq:` (`eq:RB`, `eq:NSGMAX`, `eq:NRMAX`, ...) goes to EQ
 and grid through `set_param` / `set_param_str`; an unknown name raises `TrlibParamError`, and an accepted one makes the
 next `run` prepare again. Two kinds of `eq:` name are refused (`TrlibParamError`, one line on unit 6):
 
-- `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` do nothing through TR: under `MODELG` 9
-  EQ's copy is overwritten from TR's device, and TR passes its own `KNAMEQ` to EQ. Set `RR`, `RA`, ... (TR's) instead;
+- `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` do nothing through TR:
+  under `MODELG` 9 EQ's copy is overwritten from TR's device, and TR passes its own `KNAMEQ` and `KNAMEQ2` to EQ. Set `RR`, `RA`, ... (TR's) instead;
   for `eq:RIP` set `RIPS` and `RIPE`, which TR passes to EQ as `RIP`.
   Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, its `NTHMAX` is fixed at 64 and its `NSUMAX` at 0
   (`tr_set_metric`, `tr/trmetric.f90`).
