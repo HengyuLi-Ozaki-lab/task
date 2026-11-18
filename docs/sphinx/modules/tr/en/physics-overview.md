@@ -26,10 +26,10 @@ The equations are assembled and solved implicitly per time step.
 Source-term and transport-coefficient assembly happens in
 `tr/trcalc.f90:TRCALC` (which combines beam, RF, fusion, ohmic,
 radiation, and other contributions). The implicit-step solver
-calls live at `tr/trexec.f90:67-99`: `BANDRD` at line 69 and the
+calls live at `tr/trexec.f90:68-100`: `BANDRD` at line 70 and the
 LAPACK band-solver path `DGBTRF` / `DGBTRS` / `DGBSV` at lines
-81 / 86 / 96 (the `'Solve matrix equation'` comment block at
-line 65 sits just above this).
+82 / 87 / 97 (the `'Solve matrix equation'` comment block at
+line 66 sits just above this).
 
 This page deliberately does NOT write the differential equations
 in symbolic form. For derivations consult a transport textbook.
@@ -63,8 +63,8 @@ in symbolic form. For derivations consult a transport textbook.
   profile arrays (density / temperature / current). The
   *transport coefficients* are recomputed each inner iteration
   from the current profiles (Codex round-3 verified this in
-  `tr/trexec.f90`: inner-loop entry at line 56, matrix solve at
-  62-99, profile update at 160-282, `TRCALC` recompute at 298).
+  `tr/trexec.f90`: inner-loop entry at line 57, matrix solve at
+  63-100, profile update at 161-283, `TRCALC` recompute at 300).
   Heating sources, NB beam deposition, RF power profiles, and
   similar drivers enter as source terms also recomputed each
   step.
@@ -88,7 +88,7 @@ defaults are:
 | `MDLEQU` | Rotation | 0 (OFF) | |
 | `MDLEQZ` | Impurity | 0 (OFF) | |
 | `MDLEQ0` | Neutral | 0 (OFF) | |
-| `MDLEQE` | Electron-density handling — 0 / 1 / 2 mode (not boolean) | 0 (OFF) | each mode maps to a distinct electron / ion density-equation handling (`tr/trprep.f90:497-505`, `tr/trexec.f90:180-201`); only meaningful when `MDLEQN = 1` (`tr/trprep.f90:292-293`). For per-mode behaviour consult those source locations. |
+| `MDLEQE` | Electron-density handling — 0 / 1 / 2 mode (not boolean) | 0 (OFF) | each mode maps to a distinct electron / ion density-equation handling (`tr/trprep.f90:497-505`, `tr/trexec.f90:181-202`); only meaningful when `MDLEQN = 1` (`tr/trprep.f90:292-293`). For per-mode behaviour consult those source locations. |
 
 **The default ON set is `{MDLEQB, MDLEQT}`** — out of the box,
 TR evolves current and temperature only; particles, rotation,
@@ -133,7 +133,7 @@ against `tr/trinit.f90` and `tr/tr_param_registry.f90`:
 
 **Selectors exposed in the public parameter registry** (settable
 at runtime from `tr.set_param`,
-`tr/tr_param_registry.f90:53-59,184-187`):
+`tr/tr_param_registry.f90:53-59,185-188`):
 
 - **`MDLKAI` — turbulent heat transport.** Selects the
   turbulent (anomalous) heat-transport model. Options include
@@ -190,7 +190,7 @@ phenomenological models, not first-principles MHD:
 - **Sawtooth oscillation.** `MDLST` selector
   (`tr/trinit.f90:393-403`). The mixing is implemented in
   `TRSAWT` (header at `tr/trcalc.f90:1180`, called from
-  `tr/trloop.f90:59-65`), with the temperature / density / `q`
+  `tr/trloop.f90:61-67`), with the temperature / density / `q`
   redistribution step at `tr/trcalc.f90:1235-1258`. This is a
   phenomenological reconnection / mixing model, not a kink-mode
   solve.

@@ -8,8 +8,8 @@
 
 ## エントリ層 (`tr_api.f90`)
 
-C から呼ばれる関数は **7 つ**: 標準の 5 関数 + `tr_set_param_str` (文字列用)
-+ `tr_validate` (PR #172 の事前検証).
+C から呼ばれる関数は **8 つ**: 標準の 5 関数 + `tr_set_param_str` (文字列用)
++ `tr_validate` (PR #172 の事前検証) + `tr_last_error` (直近の失敗の記録).
 
 | C シンボル | Fortran 側 | 行数 (目安) | 役割 |
 |---|---|---|---|
@@ -20,6 +20,7 @@ C から呼ばれる関数は **7 つ**: 標準の 5 関数 + `tr_set_param_str`
 | `tr_get_state`     | `tr_api_get_state`     | ~40 | `TRCOMM` のスカラーと `RN/RT/AJ/QP` を C 構造体にコピー |
 | `tr_finalize`      | `tr_api_finalize`      | ~10 | `DEALLOCATE_TRCOMM` + `g_*` フラグリセット |
 | `tr_validate`      | `tr_api_validate`      | ~50 | 登録パラメータの値域 + `KNAMEQ` ファイル存在チェック |
+| `tr_last_error`    | `tr_api_last_error`    | ~10 | 直近の `tr_run` の最初の失敗 (種別, Fortran コード, `nt=.. t=.. s: 詳細`). `trfailure.f90` による |
 
 すべて `BIND(C, NAME="tr_xxx")` で C ABI シンボルを固定しています.
 Fortran 側の名前が `tr_api_*` なのは, 既存の `SUBROUTINE tr_init`
@@ -70,7 +71,7 @@ END FUNCTION
 - **特別なガード (`NSMAX`)**: `NSMAX=1` は `tr_prof_impurity` の零除算 →
   Fortran 側 `STOP` を誘発しホストプロセスを abort させるため,
   レジストリで早期に `[2, 8]` の範囲外を拒否しています
-  (`tr_param_registry.f90:145-154` のコメント参照).
+  (`tr_param_registry.f90:146-155` のコメント参照).
 
 登録済みパラメータの全リストは {doc}`parameters` にあります.
 
@@ -127,6 +128,17 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! 軸上 Zeff
 ```
 
 物理的意味は {doc}`state` の表を参照.
+
+## ライブラリモードと失敗 (`trfailure.f90`)
+
+`tr_init` は*ライブラリモード*を設定し, 失敗の記録を消去します. `tr2` はこのモードを設定しません. ライブラリモードでは
+`tr_loop` が, 周期的な `MODELG = 9` の平衡再計算 (`NTEQIT`) と, 各ステップ後の Q0・蓄積エネルギー・中心温度の非有限値を検査し,
+最初の失敗で記録 (`EQ_FAILED`, `NONFINITE`, `TR_CHECK`, `PREP_FAILED`, `OTHER`) を残して実行を終えます.
+`tr_set_metric` の q スケーリングと `TRCHCK` も各自の失敗を記録します. `tr2` のループは従来どおり `eq_calc` の結果を検査せず, 健全な `R` が 1 回の場合の出力は変わりません. ただし #228 の 2 コミット (`tr_set_metric` の q スケーリング, #226 自身のもの) は `tr2` にも適用されます: q スケーリングの失敗は, 従来は先へ進んでいた `R` を失敗させ, `MODELG` 9 での 2 回目の `R` は平衡を再び採用します.
+**挙動の変更:** `MODELG` 0, 4, 25 および `RIPS = 0` は, 非有限のスカラーを持つ RC 0 を返していましたが, `NONFINITE` で失敗します.
+
+`tr_set_param` / `tr_set_param_str` の名前 `eq:NAME` は EQ のレジストリ (`eq_param_set`) に渡されます. このため
+`libtrapi.so` は `eq_param_registry.o` をリンクし, 受理された設定の後の `tr_run` は再度準備を行います. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` は TR 経由では何もしないため拒否され, プロセスの最初の準備の試行の後は, 固定された bpsd が k-yoshimi/bpsd#7 を持つまで, すべての `eq:` 名が拒否されます. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です. このガードは bpsd#7 の溢れへの直接の経路だけを塞ぎます: `MODELG` 9 では EQ のプラズマ格子を動かす入力はすべてその bpsd を必要とします (`python/trlib/README.md` 参照). TOT の `eq:` ディスパッチャはガードされません.
 
 (reinit-constraints)=
 ## 再初期化の制約

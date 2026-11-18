@@ -16,13 +16,17 @@ Usage::
 from __future__ import annotations
 
 import ctypes
+import re
 import weakref
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import List, Optional
 
 from . import _ffi
-from .errors import TrlibError, TrlibParamError, TrlibStateError, raise_for_ierr
+from .errors import (
+    TrFailure, TrlibError, TrlibParamError, TrlibRunError, TrlibStateError,
+    raise_for_ierr,
+)
 from .state import TrState
 
 
@@ -255,7 +259,39 @@ class Trlib:
                 "(tr_run takes a C int)"
             )
         ierr = self._lib.tr_run(count)
+        if ierr == _ffi.TR_ERR_CALC_FAILED:
+            # The library records the first failure of the run: say what it was.
+            try:
+                failure = self.last_error()
+            except TrlibError:  # a library built before tr_last_error
+                failure = None
+            raise TrlibRunError(f"tr_run({ntmax}): ierr={ierr}", failure=failure)
         raise_for_ierr(f"tr_run({ntmax})", ierr)
+
+    def last_error(self) -> TrFailure:
+        """The first failure of the last :meth:`run`, or ``kind == "NONE"``.
+
+        Cleared at the start of every ``run``. Older builds without
+        ``tr_last_error`` raise :class:`TrlibError`.
+        """
+        if self._closed:
+            raise TrlibError("last_error on closed Trlib")
+        try:
+            fn = self._lib.tr_last_error
+        except AttributeError as exc:
+            raise TrlibError(
+                "libtrapi.so does not export tr_last_error; "
+                "rebuild the shared library."
+            ) from exc
+        e = _ffi.TrDiagEntry()
+        fn(ctypes.byref(e))
+        kind = e.param.decode("ascii", errors="replace").rstrip("\x00")
+        msg = e.msg.decode("ascii", errors="replace").rstrip("\x00")
+        nt, time, detail = 0, 0.0, msg
+        m = re.match(r"nt=(-?\d+) t=\s*(\S+) s: (.*)$", msg)
+        if m:
+            nt, time, detail = int(m.group(1)), float(m.group(2)), m.group(3)
+        return TrFailure(kind=kind, code=int(e.code), nt=nt, time=time, detail=detail)
 
     def get_state(self) -> TrState:
         """Copy the current simulation state into a :class:`TrState`."""

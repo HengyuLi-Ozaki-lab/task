@@ -71,7 +71,7 @@ arrays.
 | `eq/eqcom1_mod.f90` | `QQPS(NPSM)`; also `QQPS_FROM_FILE` and `EQ_ERRMSG`, added by the second follow-up |
 | `eq/eq-eqdsk.f90:62`   | `read (neqdsk,2020) (QQPS(i),i=1,NPSMAX)`: the **g-eqdsk text** reader `EQDSKR`, the only code that reads a q column; it now also sets `QQPS_FROM_FILE` |
 | `eq/eqfile.f90` (`EQ_READ`) | Sends exactly `MODELG=5`/`25` to `EQDSKR`, then calls `EQCALQ`; clears the flag before every load |
-| `eq/equnit.f90:91`     | `eq_load` calls `EQCALQ` again after every load |
+| `eq/equnit.f90:122`     | `eq_load` calls `EQCALQ` again after every load |
 | `eq/eqcalc.f90` (`EQLOOP`) | Every re-solve (`EQCALC`, the menu's `C`) comes through here; clears the flag |
 | `eq/eqcalq.f90` (`EQCALQ`) | The `QQPS` fill |
 | `eq/eq_api_common.f:186` | `QQPS_OUT(I) = QQPS(I)`: the C ABI getter |

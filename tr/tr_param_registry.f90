@@ -74,6 +74,7 @@ MODULE tr_param_registry
   PUBLIC :: tr_param_set
   PUBLIC :: tr_param_generation
   PUBLIC :: tr_param_set_str
+  PUBLIC :: tr_param_note_external_set
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
   INTEGER, SAVE :: g_generation = 0
@@ -421,5 +422,15 @@ CONTAINS
     INTEGER,          INTENT(OUT) :: idx
     CALL parse_array_subscript(full_name, base, idx)
   END SUBROUTINE parse_array_subscript_pub
+
+  !-------------------------------------------------------------------
+  ! tr_param_note_external_set : a set that did not go through this
+  ! registry changed what the next preparation reads (an "eq:" name
+  ! taken by EQ's registry). Advances the mutation counter so that
+  ! tr_api_run prepares again.
+  !-------------------------------------------------------------------
+  SUBROUTINE tr_param_note_external_set()
+    g_generation = g_generation + 1
+  END SUBROUTINE tr_param_note_external_set
 
 END MODULE tr_param_registry

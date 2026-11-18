@@ -205,6 +205,10 @@ Allowed values of `MDLIMP`:
 | `NRMAX`  | int    | 50    | — | TR's radial mesh, 3 to 500 (`TR_MAX_NRMAX`). One value per process: `tr_run` refuses an `NRMAX` other than the one of the process's first preparation, until bpsd resizes its splines (k-yoshimi/bpsd#7); a change of the EQ grid also needs `eq_bpsd_put` to size its arrays again |
 | `NTEQIT` | int    | 0     | — | step interval of the EQ re-solve under `MODELG = 9` (0 = never) |
 
+A name `eq:NAME` (`eq:RB`, `eq:NRMAX`, ...) in `set_param` is set in EQ's registry, so `MODELG = 9` takes EQ's wall and grid
+without `tot`; an unknown one is refused, and the next `run` prepares again. A failed `MODELG = 9` solve ends a library
+run with a failure record (`tr_last_error`; see `python/trlib/README.md`).
+
 ## 7. Transport model
 
 Heat- and particle-transport coefficients and model selector. `MDLKAI`

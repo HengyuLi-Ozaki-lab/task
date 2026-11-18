@@ -23,10 +23,10 @@ TR は flux-surface 平均化された格子上で 1 次元の半径方向輸送
 方程式の組立と陰的時間ステップ求解は時間ステップごとに行います.
 ソース項と輸送係数の組立は `tr/trcalc.f90:TRCALC` で
 (beam, RF, 核融合, ohmic, 放射等の寄与をまとめている),
-陰的ステップのソルバ呼び出しは `tr/trexec.f90:67-99` に
-あります: `BANDRD` が line 69, LAPACK バンドソルバ経路の
-`DGBTRF` / `DGBTRS` / `DGBSV` が line 81 / 86 / 96 です
-(line 65 の `'Solve matrix equation'` コメントブロックは
+陰的ステップのソルバ呼び出しは `tr/trexec.f90:68-100` に
+あります: `BANDRD` が line 70, LAPACK バンドソルバ経路の
+`DGBTRF` / `DGBTRS` / `DGBSV` が line 82 / 87 / 97 です
+(line 66 の `'Solve matrix equation'` コメントブロックは
 そのすぐ上にあります).
 
 このページでは微分方程式の symbolic 表現は意図的に書きません.
@@ -58,8 +58,8 @@ TR は flux-surface 平均化された格子上で 1 次元の半径方向輸送
   プロファイル配列 (密度 / 温度 / 電流). **輸送係数** は
   inner iteration ごとに現在のプロファイルから再計算
   されます (Codex round-3 で `tr/trexec.f90` を確認:
-  inner loop entry が line 56, matrix solve が 62-99,
-  profile update が 160-282, `TRCALC` 再計算が 298). 加熱源,
+  inner loop entry が line 57, matrix solve が 63-100,
+  profile update が 161-283, `TRCALC` 再計算が 300). 加熱源,
   NB beam deposition, RF パワープロファイル等の駆動も
   各ステップで再計算されてソース項として入ります.
 
@@ -82,7 +82,7 @@ TR は 7 個の輸送方程式スイッチ (`MDLEQ*` 群) を持ち,
 | `MDLEQU` | 回転 | 0 (OFF) | |
 | `MDLEQZ` | 不純物 | 0 (OFF) | |
 | `MDLEQ0` | 中性粒子 | 0 (OFF) | |
-| `MDLEQE` | 電子密度の扱い — 0 / 1 / 2 モード (boolean ではない) | 0 (OFF) | 各モードが異なる電子 / イオン密度方程式の扱いに対応 (`tr/trprep.f90:497-505`, `tr/trexec.f90:180-201`); `MDLEQN = 1` のときのみ意味を持つ (`tr/trprep.f90:292-293`). モードごとの挙動はソースを参照. |
+| `MDLEQE` | 電子密度の扱い — 0 / 1 / 2 モード (boolean ではない) | 0 (OFF) | 各モードが異なる電子 / イオン密度方程式の扱いに対応 (`tr/trprep.f90:497-505`, `tr/trexec.f90:181-202`); `MDLEQN = 1` のときのみ意味を持つ (`tr/trprep.f90:292-293`). モードごとの挙動はソースを参照. |
 
 **箱から出してそのままの状態 (デフォルト ON 集合) は
 `{MDLEQB, MDLEQT}`** — TR は電流と温度だけを発展させ,
@@ -127,7 +127,7 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
 
 **公開 parameter registry に露出されている選択肢** (実行時に
 `tr.set_param` から設定可能,
-`tr/tr_param_registry.f90:53-59,184-187`):
+`tr/tr_param_registry.f90:53-59,185-188`):
 
 - **`MDLKAI` — 乱流熱輸送.** 乱流 (anomalous) 熱輸送モデル
   を選択. 選択肢は CDBM, IFS-PPPL, GLF23, mixed Bohm /
@@ -182,7 +182,7 @@ TR の輸送係数は複数の独立なソースから来ており, それぞれ
 - **Sawtooth 振動.** `MDLST` selector
   (`tr/trinit.f90:393-403`). 混合は `TRSAWT` で実装
   (header が `tr/trcalc.f90:1180`,
-  `tr/trloop.f90:59-65` から呼ばれる) され,
+  `tr/trloop.f90:61-67` から呼ばれる) され,
   温度 / 密度 / `q` の再分配ステップは
   `tr/trcalc.f90:1235-1258` にあります. 現象論的な
   reconnection / mixing モデルで, kink モードを解いている
