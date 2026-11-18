@@ -2,6 +2,7 @@
 
 MODULE trexec
 
+  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK
   PRIVATE
   PUBLIC tr_exec,tr_eval,tr_coef_decide
 
@@ -20,7 +21,7 @@ CONTAINS
      &   DR, DVRHO, DVRHOG, EPSLTR, LDAB, LMAXTR, MDLEQB, MDLEQE, &
      &   MDLEQN, MDLPCK, MDLUF, MDTC, MLM, NEQMAX, NFM, &
      &   NRAMAX, NRMAX, NROMAX, NSM, NSMAX, NSS, NST, NSV, &
-     &   NTUM, &
+     &   NTUM, NT, &
      &   PA, PZ, PZC, PZFE, RDP, RHOA, RIP, RIPU, &
      &   RMU0, RN, RT, RU, RW, T, TTRHO, TTRHOG, &
      &   VLOOP, VSEC, X, XV, Y, YV, Z, ZV ,NEQMAXM, DIPDT, &
@@ -288,6 +289,7 @@ CONTAINS
          CALL TRATOTN
          CALL TRATOG
          IERR=1
+         CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
          RETURN
       END IF
 
@@ -359,6 +361,7 @@ CONTAINS
          CALL TRATOTN
          CALL TRATOG
          IERR=1
+         CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
          RETURN
       ENDIF
 

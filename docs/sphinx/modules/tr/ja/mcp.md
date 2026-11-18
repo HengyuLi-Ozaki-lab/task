@@ -309,6 +309,12 @@ MCP サーバの標準エラー出力が LLM クライアントに渡ります.
 | `invalid parameter` (`run` から) | 発展できないプロファイルを持つ active 粒子種 (`PN`/`PNS` が負・両方 0・非有限, `PN` が 0 で `PNS` が正 (task-web-client #190), `PT`/`PTS` が 0 以下, #189) か, コンパイル時上限を超える `NSMAX`. `validate` が該当の `PN[ns]` / `PT[ns]` / `PTS[ns]` を列挙 |
 | `calculation failed` | `DT` と平衡入力の整合性. `finalize` → `init` でリセット |
 
+`run` が失敗すると, ライブラリの失敗記録がエラー文字列に入ります:
+`[failure: kind=EQ_FAILED code=103 nt=600 time=12 s; <詳細>]` (`kind` は `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
+`PREP_FAILED`, `OTHER` のいずれか (`REFUSED` は `tr_continue` (計画の PR 3) 用に予約されており, まだ記録されません). `python/trlib/README.md` 参照). `MODELG` 0, 4, 25 および `RIPS = 0` は,
+従来は非有限のスカラーを持つ状態を返していましたが, 今は同じ形 (`NONFINITE`, nt 1) で失敗します. `set_param` の名前
+`eq:NAME` は EQ のレジストリに渡されます (`describe_parameters` の `eq_names` 行に記載). `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` は拒否されます (TR 自身の名前を設定してください. `eq:RIP` は `RIPS` と `RIPE`). また, プロセスの最初の準備の試行の後は, すべての `eq:` 名が拒否されます (固定された bpsd が k-yoshimi/bpsd#7 を持つまで). このガードは直接の経路だけを塞ぎます: `MODELG` 9 では, EQ のプラズマ格子を動かす入力 (TR の `RA`, `RR` などの装置入力, `MODELG`, `eq:` 名, `NTEQIT` 再計算間のずれ) はすべて k-yoshimi/bpsd#7 を持つ bpsd を必要とし, TOT の `eq:` ディスパッチャはガードされません. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です.
+
 詳細は `python/mcp-servers/tr_mcp/README.md` の §8 FAQ を参照してください.
 
 ## 参考資料

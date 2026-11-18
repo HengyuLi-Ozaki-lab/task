@@ -10,10 +10,14 @@
 !                        and returns EQ_OK. Does NOT touch the legacy
 !                        eq COMMON blocks so existing eq / pl / ak
 !                        binaries keep bit-identical behavior.
-!   eq_run            -> L-3: mode=1 loads equilibrium via
+!   eq_run            -> mode=0 solves the fixed-boundary Grad-Shafranov
+!                        equation numerically from the parameters
+!                        (EQCALC, then EQCALQ; no file).
+!                        mode=1 loads the equilibrium file via
 !                        equnit::eq_load using the current MODELG +
-!                        KNAMEQ. Other modes still return
-!                        EQ_ERR_NOT_IMPL.
+!                        KNAMEQ (MODELG=15 reads the fixed eqdb.dat).
+!                        A mode above 1 returns EQ_ERR_NOT_IMPL, a
+!                        negative one EQ_ERR_INVALID.
 !   eq_set_param      -> delegates to eq_param_registry::eq_param_set
 !                        (Phase L-3 real dispatch).
 !   eq_set_param_str  -> delegates to eq_param_registry::eq_param_set_str
@@ -102,7 +106,7 @@ CONTAINS
     ! these defaults MUST be set here -- otherwise NRMAX/NTHMAX stay 0
     ! and equnit::eq_load's save/restore of those counters around
     ! eqload() leaves the post-load grid sized 0, which then corrupts
-    ! the heap inside SPL2D in eqcalq (eqcalq.f90:1041). Callers can
+    ! the heap inside SPL2D in eqcalq (the SPL2D calls sized by NTHMAX and NRMAX, eqcalq.f90:1164 and :1168). Callers can
     ! still override MODELG / KNAMEQ / etc. afterwards via
     ! eq_set_param / eq_set_param_str.
     CALL equnit_eq_init
@@ -115,12 +119,18 @@ CONTAINS
   END FUNCTION eq_api_init
 
   !-------------------------------------------------------------------
-  ! eq_run : dispatch on `mode` to the analytic or file-load path.
+  ! eq_run : dispatch on `mode` to the Grad-Shafranov solve or the file load.
+  ! Before the dispatch below, an uninitialised library returns
+  ! EQ_ERR_NOT_INIT and a negative mode EQ_ERR_INVALID.
   !
-  !   mode == 0 : run the analytic Grad-Shafranov solver (EQCALC).
+  !   mode == 0 : solve the fixed-boundary Grad-Shafranov equation
+  !               numerically, without an equilibrium file: EQCALC
+  !               iterates until the relative change of PSI is below
+  !               EPSEQ (at most NLPMAX times, else EQ_ERR_CALC_FAILED),
+  !               then EQCALQ computes the flux-surface quantities.
   !               Mirrors the legacy `eqx2` CLI's `R` command and is
   !               the natural run path when MODELG=2 (the default,
-  !               analytic toroidal geometry). EQCALC reads
+  !               toroidal geometry). EQCALC reads
   !               PP*/PJ*/FF*/PT*/PV* coefficients from the EQCOMM
   !               module and solves the fixed-boundary Grad-Shafranov
   !               problem; callers set those via eq_set_param
@@ -192,7 +202,7 @@ CONTAINS
        g_has_equilibrium = .TRUE.
        ierr = EQ_OK
     CASE (1)
-       ! EQDSK-based load via equnit::eq_load(MODELG, KNAMEQ, ierr).
+       ! Equilibrium-file load via equnit::eq_load(MODELG, KNAMEQ, ierr).
        ! MODELG and KNAMEQ come from plcomm_parm; callers are expected
        ! to set them via eq_set_param / eq_set_param_str beforehand.
        knameq_local = KNAMEQ
@@ -631,8 +641,9 @@ CONTAINS
     ! ---- INCONSISTENT_PAIR: the wall must enclose the plasma (RB >=
     !      RA) in an analytic solve. Measured: a large device (RR=6.2,
     !      RA=2.0) run through MODELG=2 mode=0 with RB left at the
-    !      small-tokamak default (1.2) aborts the process (EQMAGS cannot
-    !      trace a surface and a later zminmax call reads YA(:,0));
+    !      small-tokamak default (1.2) fails the run (EQMAGS cannot trace
+    !      a surface; EQCALQP returns ierr=111 and eq_last_error says so;
+    !      before that it read YA(:,0) in zminmax and ended the process);
     !      RB=0.8 with RA=1.0 runs but gives a different equilibrium
     !      than an enclosing wall (PVOL 57.97 against 59.16, the same for
     !      every MODELG solved), because the solve and its R-Z grid use the
@@ -692,8 +703,8 @@ CONTAINS
     !      the box as it moves (RDLT=0.4 with RGMIN=RR fails, ierr=103),
     !      and a Z bound inside the axis's rounding (ZGMIN=-1e-14 fails).
     !      After the solve EQCALQP overwrites the four with the traced
-    !      plasma extent for any MDLEQF (eqcalq.f90:603-613; EQCALQV
-    !      again for MDLEQF < 10, 977-988), so for MDLEQF < 10 they are
+    !      plasma extent for any MDLEQF (eqcalq.f90:630-640; EQCALQV
+    !      again for MDLEQF < 10, 1026-1037), so for MDLEQF < 10 they are
     !      outputs only. With MDLEQF >= 10 a validate() after a run reads
     !      the traced RGMAX, 3e-4 below RR+RA at the defaults: the edge is
     !      flagged, rightly once an input has changed, since the next

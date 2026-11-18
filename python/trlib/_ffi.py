@@ -232,6 +232,13 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     except AttributeError:  # pragma: no cover - only on pre-#143 builds
         pass
 
+    # tr_last_error: the first failure of the last tr_run (kind, code, nt, time).
+    try:
+        lib.tr_last_error.restype = ctypes.c_int
+        lib.tr_last_error.argtypes = [ctypes.POINTER(TrDiagEntry)]
+    except AttributeError:  # pragma: no cover - only on builds before tr_last_error
+        pass
+
     lib.tr_finalize.restype = ctypes.c_int
     lib.tr_finalize.argtypes = []
 

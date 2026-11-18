@@ -41,19 +41,30 @@ MODULE tr_api
        AJRFT, &
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_RW, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
-  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation
+  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation, &
+       tr_param_note_external_set
+  USE eq_param_registry, ONLY: eq_param_set, eq_param_set_str
+  ! EQ's mesh sizes and the compile-time maxima of its arrays (the ones eq_validate checks, eq/eq_api.f90). Renamed:
+  ! TRCOMM has an NRMAX of its own.
+  USE eqcom0_mod, ONLY: eq_NRGM => NRGM, eq_NZGM => NZGM, eq_NPSM => NPSM, eq_NSGM => NSGM, eq_NTGM => NTGM, &
+                        eq_NUGM => NUGM, eq_NRM => NRM, eq_NTHM => NTHM, eq_NSUM => NSUM, eq_NRVM => NRVM
+  USE eqcom1_mod, ONLY: eq_NSGMAX => NSGMAX, eq_NTGMAX => NTGMAX, eq_NUGMAX => NUGMAX, eq_NRGMAX => NRGMAX, &
+                        eq_NZGMAX => NZGMAX, eq_NPSMAX => NPSMAX, eq_NRMAX => NRMAX, eq_NTHMAX => NTHMAX, &
+                        eq_NSUMAX => NSUMAX, eq_NRVMAX => NRVMAX
   USE libnf,             ONLY: nf_finalize
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE trinit,            ONLY: trinit_fortran => tr_init
   USE trprep,            ONLY: tr_prep
   USE trloop,            ONLY: tr_loop
+  USE trbpsd,            ONLY: tr_eq_init
+  USE trfailure
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, &
             tr_api_set_param, tr_api_set_param_str, tr_api_finalize, &
             tr_api_validate, &
-            tr_check_bpsd_pull
+            tr_check_bpsd_pull, tr_api_last_error
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -70,8 +81,9 @@ MODULE tr_api
   ! #189: at most 3 findings per active species (density sign / zero
   ! density / temperature), species bounded by TR_MAX_NSMAX.
   ! + RIPS, RIPE (current_for_eq); + the equation switches, NPSCMAX and three per particle source
-  ! (source_and_equation_violations; NPSCM = 10, tr/trcomm_const.f90); + NRMAX (mesh_violation)
-  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2 + 6 + 3 * 10 + 1
+  ! (source_and_equation_violations; NPSCM = 10, tr/trcomm_const.f90); + NRMAX (mesh_violation); + the ten EQ mesh sizes
+  ! (eq_mesh_violation)
+  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2 + 6 + 3 * 10 + 1 + 10
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
@@ -81,6 +93,8 @@ MODULE tr_api
   ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
   ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
   INTEGER, SAVE :: g_first_nrmax = 0
+  ! The same fact seen from the eq: names: once this process has made a preparation attempt (g_first_nrmax /= 0), an
+  ! eq: set is refused (eq_name_refused), for the same bpsd reason. Both come off together with 61ff3cdf's guard.
 
   ! #246: layout query, callable before tr_init.
   PUBLIC :: tr_api_state_abi_version, tr_api_state_size
@@ -133,8 +147,15 @@ CONTAINS
        RETURN
     END IF
 
+    ! The MODELG=9 flag "adopt EQ's psi_p" is saved module state that a
+    ! run clears; a new lifecycle starts from its initial value (#228).
+    tr_eq_init    = .TRUE.
     g_initialized = .TRUE.
     g_prepared    = .FALSE.
+    ! Library mode: tr_loop, tr_set_metric and tr_exec record their failures and
+    ! tr_loop tests the periodic equilibrium solve. Only this entry sets it.
+    tr_library_mode = .TRUE.
+    CALL tr_failure_clear()      ! a new lifecycle starts with no failure on record
     ierr = TR_OK
   END FUNCTION tr_api_init
 
@@ -146,7 +167,7 @@ CONTAINS
     REAL(C_DOUBLE), VALUE,                INTENT(IN) :: value
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=64) :: fname
-    INTEGER :: i, n
+    INTEGER :: i, n, eq_rc
 
     IF (.NOT. g_initialized) THEN
        ierr = TR_ERR_NOT_INIT
@@ -166,6 +187,26 @@ CONTAINS
     IF (i > LEN(fname)) THEN
        IF (c_str_overflows(name, LEN(fname) + 1)) THEN
           ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
+
+    ! An "eq:" name belongs to EQ's registry (the same one tot's "eq:"
+    ! names reach). A set that EQ takes changes what the next preparation
+    ! reads, so TR prepares again before its next run.
+    IF (n > 3) THEN
+       IF (fname(1:3) == 'eq:') THEN
+          IF (eq_name_refused('tr_set_param', fname(4:n))) THEN
+             ierr = TR_ERR_INVALID
+             RETURN
+          END IF
+          CALL eq_param_set(fname(4:n), REAL(value, rkind), eq_rc)
+          IF (eq_rc /= 0) THEN
+             ierr = TR_ERR_INVALID
+          ELSE
+             CALL tr_param_note_external_set()
+             ierr = TR_OK
+          END IF
           RETURN
        END IF
     END IF
@@ -231,6 +272,23 @@ CONTAINS
        END IF
     END IF
 
+    ! "eq:" names go to EQ's string setter, as in tr_api_set_param.
+    IF (LEN_TRIM(fname) > 3) THEN
+       IF (fname(1:3) == 'eq:') THEN
+          IF (eq_name_refused('tr_set_param_str', fname(4:LEN_TRIM(fname)))) THEN
+             ierr = TR_ERR_INVALID
+             RETURN
+          END IF
+          IF (eq_param_set_str(fname(4:LEN_TRIM(fname)), TRIM(fvalue)) /= 0) THEN
+             ierr = TR_ERR_INVALID
+          ELSE
+             CALL tr_param_note_external_set()
+             ierr = TR_OK
+          END IF
+          RETURN
+       END IF
+    END IF
+
     IF (tr_param_set_str(TRIM(fname), TRIM(fvalue)) /= 0) THEN
        ierr = TR_ERR_INVALID
     ELSE
@@ -257,6 +315,7 @@ CONTAINS
     INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
     CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
 
+    CALL tr_failure_clear()      ! the record of the last failure belongs to one tr_run
     IF (.NOT. g_initialized) THEN
        ierr = TR_ERR_NOT_INIT
        RETURN
@@ -288,6 +347,7 @@ CONTAINS
        CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
        CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
        CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
+       CALL eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
        IF (nviol > 0) THEN
           DO i = 1, nviol
              WRITE(6, '(A)') 'XX tr_run: '//TRIM(vnames(i))//': '//TRIM(vmsgs(i))
@@ -300,6 +360,7 @@ CONTAINS
        IF (g_first_nrmax == 0) g_first_nrmax = NRMAX
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
+          CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, T, 'tr_prep failed')
           ierr = TR_ERR_CALC_FAILED
           RETURN
        END IF
@@ -315,6 +376,8 @@ CONTAINS
     CALL tr_loop(calc_ierr)
     NTMAX      = ntmax_save
     IF (calc_ierr /= 0) THEN
+       ! A failure that tr_loop's callees did not record is kept as OTHER.
+       CALL tr_failure_record(TRF_OTHER, calc_ierr, NT, T, 'tr_loop returned a non-zero status')
        ierr = TR_ERR_CALC_FAILED
        RETURN
     END IF
@@ -429,6 +492,7 @@ CONTAINS
     ! does not try to OPEN an already-open unit (SCRATCH would auto-
     ! delete on program exit but a same-process re-init would fail).
     CLOSE(7, IOSTAT=ierr)
+    tr_eq_init    = .TRUE.
     g_initialized = .FALSE.
     g_prepared    = .FALSE.
     ierr = TR_OK
@@ -519,6 +583,7 @@ CONTAINS
     !      source_and_equation_violations), also refused by tr_run.
     CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
     CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
+    CALL eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
     DO i = 1, nviol
        CALL push_diag(TRIM(vnames(i)), vcodes(i), TRIM(vmsgs(i)))
     END DO
@@ -961,5 +1026,149 @@ CONTAINS
     TYPE(tr_state_c) :: probe
     n = C_SIZEOF(probe)
   END FUNCTION tr_api_state_size
+
+  !-------------------------------------------------------------------
+  ! tr_last_error : the first failure of the last tr_run.
+  !
+  ! param = the kind (NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED,
+  ! OTHER; REFUSED is reserved for tr_continue and not recorded yet), code =
+  ! the Fortran status, msg = "nt=<step> t=<time> s: <what failed>" (for
+  ! EQ_FAILED the text ends with EQ's EQ_ERRMSG). Cleared at the start of every tr_run. Always TR_OK.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_last_error(e) RESULT(ierr) BIND(C, NAME="tr_last_error")
+    TYPE(tr_diag_entry_c), INTENT(OUT) :: e
+    INTEGER(C_INT) :: ierr
+    INTEGER :: kind, code, nt_rec, i, n
+    REAL(rkind) :: time
+    CHARACTER(LEN=TR_FAILURE_DETAIL_LEN) :: detail
+    INTEGER :: ios
+    CHARACTER(LEN=TR_FAILURE_DETAIL_LEN + 40) :: full
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: pname
+    CHARACTER(LEN=TR_DIAG_MSG_LEN) :: msg
+    CALL tr_failure_get(kind, code, nt_rec, time, detail)
+    SELECT CASE (kind)
+    CASE (TRF_NONE);        pname = 'NONE'
+    CASE (TRF_EQ_FAILED);   pname = 'EQ_FAILED'
+    CASE (TRF_NONFINITE);   pname = 'NONFINITE'
+    CASE (TRF_TR_CHECK);    pname = 'TR_CHECK'
+    CASE (TRF_PREP_FAILED); pname = 'PREP_FAILED'
+    CASE (TRF_REFUSED);     pname = 'REFUSED'
+    CASE DEFAULT;           pname = 'OTHER'
+    END SELECT
+    msg = ''
+    ! The message is cut at the C buffer (TR_DIAG_MSG_LEN - 1 characters), and the write cannot abort on a long detail.
+    IF (kind /= TRF_NONE) THEN
+       WRITE(full, '(A,I0,A,ES14.7,A,A)', IOSTAT=ios) 'nt=', nt_rec, ' t=', time, ' s: ', TRIM(detail)
+       IF (ios /= 0) full = 'a failure whose record does not fit'
+       msg = full                    ! cut to the C buffer by the assignment
+    END IF
+    ! Zero-fill, then copy and NUL-terminate, as tr_validate's push_diag does.
+    DO i = 1, TR_DIAG_PARAM_LEN
+       e%param(i) = C_NULL_CHAR
+    END DO
+    n = MIN(LEN_TRIM(pname), TR_DIAG_PARAM_LEN - 1)
+    DO i = 1, n
+       e%param(i) = pname(i:i)
+    END DO
+    DO i = 1, TR_DIAG_MSG_LEN
+       e%msg(i) = C_NULL_CHAR
+    END DO
+    n = MIN(LEN_TRIM(msg), TR_DIAG_MSG_LEN - 1)
+    DO i = 1, n
+       e%msg(i) = msg(i:i)
+    END DO
+    e%code = INT(code, C_INT)
+    ierr = TR_OK
+  END FUNCTION tr_api_last_error
+
+  !-------------------------------------------------------------------
+  ! eq_name_refused : true (and one line on unit 6) when an "eq:" name must not be set through TR.
+  !
+  ! nm is the name without its "eq:" prefix, who the calling routine.
+  !  - EQ's RR, RA, RKAP, RDLT, BB, RIP and KNAMEQ do nothing here: under MODELG 9 eq_bpsd_get overwrites the first
+  !    six from TR's device, and TR passes its own KNAMEQ to eq_load (tr/trmetric.f90); under MODELG 3/5/8
+  !    tr_set_metric sets EQ's NRMAX, NTHMAX and NSUMAX. The message names TR's own parameter.
+  !  - Once the process has made its first preparation attempt (g_first_nrmax /= 0) every eq: name is refused: a
+  !    change of EQ's grid writes past bpsd's splines until the pinned bpsd has k-yoshimi/bpsd#7 (see mesh_violation).
+  !-------------------------------------------------------------------
+  FUNCTION eq_name_refused(who, nm) RESULT(refused)
+    CHARACTER(LEN=*), INTENT(IN) :: who, nm
+    LOGICAL :: refused
+    CHARACTER(LEN=LEN(nm)) :: up
+    INTEGER :: i, k
+    up = nm
+    DO i = 1, LEN(up)
+       k = IACHAR(up(i:i))
+       IF (k >= IACHAR('a') .AND. k <= IACHAR('z')) up(i:i) = ACHAR(k - 32)
+    END DO
+    refused = .TRUE.
+    SELECT CASE (TRIM(up))
+    CASE ('RIP')
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//" is not settable through TR: set RIPS and RIPE (TR's), "// &
+            'which TR passes to EQ as RIP'
+       RETURN
+    CASE ('RR', 'RA', 'RKAP', 'RDLT', 'BB', 'KNAMEQ')
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' is not settable through TR: set '//TRIM(up)// &
+            " (TR's), which TR passes to EQ"
+       RETURN
+    END SELECT
+    IF (g_first_nrmax /= 0) THEN
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' refused: until the pinned bpsd has k-yoshimi/bpsd#7 an EQ '// &
+            "grid change in one process corrupts memory, so eq: names are set before the process's first run"
+       RETURN
+    END IF
+    refused = .FALSE.
+  END FUNCTION eq_name_refused
+
+  !-------------------------------------------------------------------
+  ! eq_mesh_violation : EQ's mesh sizes (set through "eq:" names) against the compile-time maxima of EQ's arrays.
+  !
+  ! The same ten bounds as eq_validate (eq/eq_api.f90, push_oor), which the TR route to EQ did not apply: with
+  ! MODELG 9, eq:NSGMAX=129 reached EQMESH, which wrote SIGM(129) past SIGM(NSGM=128) (eq/eqcalc.f90:63). The
+  ! limits are EQ's own parameters (eqcom0_mod), not copies. Which of them matter depends on MODELG:
+  !  - MODELG 9 solves the equilibrium itself (tr_set_metric: eq_prof, eq_calc): all ten.
+  !  - MODELG 3, 5, 8 load a file (eq_load); tr_set_metric sets EQ's NRMAX, NTHMAX and NSUMAX there, so the other
+  !    seven are held to their maxima.
+  !  - Any other MODELG does not use EQ's grid: nothing is checked.
+  ! Same contract as mesh_violation: appends (name, code, message) to the lists; the name carries the "eq:" prefix.
+  !-------------------------------------------------------------------
+  SUBROUTINE eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
+    INTEGER,                          INTENT(INOUT) :: nviol
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN), INTENT(INOUT) :: vnames(:)
+    INTEGER(C_INT),                   INTENT(INOUT) :: vcodes(:)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN),   INTENT(INOUT) :: vmsgs(:)
+    LOGICAL :: file_load, solve
+
+    solve     = (MODELG == 9)
+    file_load = (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8)
+    IF (.NOT. (solve .OR. file_load)) RETURN
+
+    CALL check('eq:NSGMAX', eq_NSGMAX, eq_NSGM)
+    CALL check('eq:NTGMAX', eq_NTGMAX, eq_NTGM)
+    CALL check('eq:NUGMAX', eq_NUGMAX, eq_NUGM)
+    CALL check('eq:NRGMAX', eq_NRGMAX, eq_NRGM)
+    CALL check('eq:NZGMAX', eq_NZGMAX, eq_NZGM)
+    CALL check('eq:NPSMAX', eq_NPSMAX, eq_NPSM)
+    CALL check('eq:NRVMAX', eq_NRVMAX, eq_NRVM)
+    IF (solve) THEN
+       CALL check('eq:NRMAX',  eq_NRMAX,  eq_NRM)
+       CALL check('eq:NTHMAX', eq_NTHMAX, eq_NTHM)
+       CALL check('eq:NSUMAX', eq_NSUMAX, eq_NSUM)
+    END IF
+
+  CONTAINS
+
+    SUBROUTINE check(name_str, requested, max_value)
+      CHARACTER(LEN=*), INTENT(IN) :: name_str
+      INTEGER, INTENT(IN)          :: requested, max_value
+      IF (requested <= max_value) RETURN
+      IF (nviol >= MIN(SIZE(vnames), SIZE(vcodes), SIZE(vmsgs))) RETURN
+      nviol = nviol + 1
+      vnames(nviol) = name_str
+      vcodes(nviol) = TR_DIAG_OUT_OF_RANGE
+      WRITE(vmsgs(nviol), '(A,I0,A,I0)') 'value ', requested, ' exceeds the compile-time maximum of EQ: ', max_value
+    END SUBROUTINE check
+
+  END SUBROUTINE eq_mesh_violation
 
 END MODULE tr_api

@@ -10,9 +10,9 @@ focuses on `tr`-specific aspects.
 
 ## Entry layer (`tr_api.f90`)
 
-There are **7 functions** called from C: the standard 5 functions +
+There are **8 functions** called from C: the standard 5 functions +
 `tr_set_param_str` (for strings) + `tr_validate` (the pre-run
-validation added in PR #172).
+validation added in PR #172) + `tr_last_error` (the record of the last failure).
 
 | C symbol | Fortran-side | LOC (approx) | Role |
 |---|---|---|---|
@@ -23,6 +23,7 @@ validation added in PR #172).
 | `tr_get_state`     | `tr_api_get_state`     | ~40 | Copies the `TRCOMM` scalars and `RN/RT/AJ/QP` into the C struct |
 | `tr_finalize`      | `tr_api_finalize`      | ~10 | `DEALLOCATE_TRCOMM` + reset of `g_*` flags |
 | `tr_validate`      | `tr_api_validate`      | ~50 | Range checks for registered parameters + `KNAMEQ` file-existence check |
+| `tr_last_error`    | `tr_api_last_error`    | ~10 | The first failure of the last `tr_run` (kind, Fortran code, `nt=.. t=.. s: detail`), from `trfailure.f90` |
 
 All are bound with `BIND(C, NAME="tr_xxx")` to fix the C ABI symbol
 name. The Fortran-side names use the `tr_api_*` prefix to avoid a
@@ -77,7 +78,7 @@ END FUNCTION
   in `tr_prof_impurity`, which would induce a Fortran-side `STOP` and
   abort the host process. The registry rejects values outside
   `[2, 8]` early
-  (see comments at `tr_param_registry.f90:145-154`).
+  (see comments at `tr_param_registry.f90:146-155`).
 
 The full list of registered parameters is in {doc}`parameters`.
 
@@ -135,6 +136,18 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! axis Zeff
 ```
 
 For physical meanings, see the table in {doc}`state`.
+
+## Library mode and failures (`trfailure.f90`)
+
+`tr_init` sets *library mode* and clears the failure record; `tr2` never sets it. In library mode `tr_loop` tests the
+periodic `MODELG = 9` equilibrium re-solve (`NTEQIT`) and a non-finite Q0, stored energy or central temperature after
+each step, and ends the run at the first failure with the record (`EQ_FAILED`, `NONFINITE`, `TR_CHECK`, `PREP_FAILED`,
+`OTHER`); `tr_set_metric`'s q-scaling and `TRCHCK` record theirs. `tr2`'s loop calls `eq_calc` untested as before, and its output is unchanged on a single healthy `R`; the two #228 commits (`tr_set_metric`'s q-scaling, #226's own) apply to `tr2` too: a failed q-scaling now fails its `R` where it used to run on, and a second `R` under `MODELG` 9 adopts the equilibrium again.
+**Changes of behaviour:** `MODELG` 0, 4, 25 and `RIPS = 0` returned RC 0 with non-finite scalars and now fail with
+`NONFINITE`.
+
+A name `eq:NAME` in `tr_set_param` / `tr_set_param_str` is sent to EQ's registry (`eq_param_set`); `libtrapi.so` links
+`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` dispatcher is not guarded.
 
 (reinit-constraints)=
 ## Re-initialisation constraints
