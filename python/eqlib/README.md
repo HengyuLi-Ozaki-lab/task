@@ -219,7 +219,7 @@ change is required — names are forwarded verbatim.
 | Radial profile | `PROFR0`, `PROFR1`, `PROFR2` | |
 | Convergence | `EPSEQ`, `EPSNW`, `DELNW`, `NLPMAX`, `NLPNW` | |
 | Domain | `RGMIN`, `RGMAX`, `ZGMIN`, `ZGMAX`, `ZLIMP`, `ZLIMM`, `FRBIN` | |
-| Model switches | `MODELG`, `MODELQ`, `IDEBUG`, `MODEFR`, `MODEFW`, `MDLEQF`, `MDLEQC`, `MDLEQA`, `MDLEQX`, `MDLEQV`, `NPRINT` | int (cast via INT(value)) |
+| Model switches | `MODELG`, `MODELQ`, `IDEBUG`, `MODEFR`, `MODEFW`, `MDLEQF`, `MDLEQC`, `MDLEQA`, `MDLEQX`, `MDLEQV`, `NPRINT` | int (cast via INT(value)); `MODEFR` takes 0 only (1 would read a file name from standard input) |
 | Mesh sizes | `NRMAX`, `NTHMAX`, `NSUMAX`, `NSGMAX`, `NTGMAX`, `NUGMAX`, `NRGMAX`, `NZGMAX`, `NPSMAX`, `NRVMAX`, `NTVMAX`, `NPFCMAX` | int |
 | 1-D arrays (0-origin) | `PSIB[0..5]` | **Bare `"PSIB"` rejected — always pass `[i]`** |
 | 1-D arrays (1-origin) | `RIPFC[1..10]`, `RPFC[1..10]`, `ZPFC[1..10]`, `WPFC[1..10]` | PF-coil descriptors |

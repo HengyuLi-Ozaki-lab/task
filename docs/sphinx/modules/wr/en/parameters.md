@@ -197,7 +197,7 @@ Specify per-ray initial conditions (1-origin) when `NRAYMAX>1`.
 | `MODELG`     | int | 2 | geometry model (same as `tr`/`eq`) |
 | `MODELQ`     | int | 0 | q-profile control |
 | `MODEFW`     | int | 0 | wave model (W-related) |
-| `MODEFR`     | int | 0 | radial model |
+| `MODEFR`     | int | 0 | file-read mode of `FROPEN` for the EQ load of `MODELG` 3, 5 and 8; only 0 is taken (1 would read the file name from standard input) |
 | `IDEBUG`     | int | 0 | debug output |
 | `MODELP[i]`  | int[] | -- | wave model of species i |
 | `MODELV[i]`  | int[] | -- | velocity-distribution model of species i |

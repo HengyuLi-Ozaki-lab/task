@@ -240,6 +240,28 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   directory holds no such file); `eq:KNAMEQ2` raises; the `MODELG = 7` run fails where it completed; the record of a
   failed load changes kind.
 
+- **EQ and WR libraries: `set_param` takes `MODEFR` = 0 only** (MS10-DP-ISSP/task-web-client#202). `MODEFR` is
+  `FROPEN`'s `MODEP` for every load (`lib/libfio.f90`): with 1 it reads the file name from standard input, which for
+  the stdio MCP servers is the protocol's channel, and other values are no mode (`FROPEN`'s `IERR` 3). Measured: a
+  `MODELG = 3` load through eqlib with `MODEFR = 1` took the next line of standard input as the file name and failed
+  naming `KNAMEQ`, the file that was there; through wrlib the same. EQ's and WR's registries now refuse every value
+  but 0 (after `INT`), and so do EQ's `eq:` names through TR and TOT. **A change of behaviour**: `set_param("MODEFR",
+  1)` raises, where it was taken.
+
+- **TR library: `validate()` reports a `KNAMEQ` that names no file, and `KNAMEQ2` for `MODELG = 8`; a `MODELG = 7`
+  run whose VMEC file cannot be read fails** (MS10-DP-ISSP/task-web-client#201). `validate()` reported a blank
+  `KNAMEQ` only, for `MODELG` 3, 5, 7 and 8. It now also reports a `KNAMEQ` that names no file, and for `MODELG` 8 a
+  `KNAMEQ2` that is blank or names no file (`FILE_MISSING`, as EQ's `validate()` does since task-web-client#191; a
+  name is looked up relative to the working directory at the time of the call). `tr_set_param_str` does not set
+  `KNAMEQ2`, so through the library `MODELG = 8` always gets that finding. With `MODELG = 7`, `tr_set_metric` went on
+  after `pl_vmec` failed, the next call setting `ierr` again: a run whose VMEC file was missing completed with 10
+  non-finite scalars (TR's defaults, `NTMAX` 2); it now fails in the preparation. The failure record names the file:
+  `PREP_FAILED` "tr_set_metric: pl_vmec could not read KNAMEQ='...' (ierr=7)" for `MODELG` 7, and for 3, 5 and 8,
+  where it was `PREP_FAILED` "tr_prep failed", `EQ_FAILED` "tr_set_metric: eq_load" with `EQ_READ`'s reason after it.
+  **A change of behaviour**: `validate()` returns these findings for configurations it passed (the default `KNAMEQ =
+  'eqdata'` too, when the working directory holds no such file); the `MODELG = 7` run fails where it completed; the
+  record of a failed load changes kind.
+
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and
