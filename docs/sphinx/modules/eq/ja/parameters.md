@@ -14,7 +14,7 @@
 
 | 条件 | 必須パラメータ | 理由 |
 |---|---|---|
-| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 空かファイルが無いと `validate()` が `FILE_MISSING` 診断を返し, `run()` はそのファイル名を示して失敗する. `MODELG = 8` は `KNAMEQ2` も読む. `MODELG = 15` は代わりに固定ファイル `eqdb.dat` を読む (無ければ `MODELG` に `FILE_MISSING` 診断) |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 空かファイルが無いと `validate()` が `FILE_MISSING` 診断を返し, `run()` はそのファイル名を示して失敗する. `MODELG = 8` は `KNAMEQ2` も読む. 代わりに固定ファイル `eqdb.dat` を読む `MODELG = 15` は `run()` が拒否する (読み込みルーチンが `equ_set_psi` に 3 つの配列のうち 1 つしか渡さず, 正しい形式のファイルの読み込みはプロセスを終わらせていた). `validate()` は `MODELG` の `OUT_OF_RANGE` として報告する |
 
 ```python
 eq.set_param("MODELG", 3)
@@ -218,7 +218,7 @@ $$F(\psi) = B_T R + \mathrm{FF}_0 (1-\psi^{P_{R0}})^{P_{F0}} + \cdots$$
 | `MDLEQV` | int switch | 3 | 真空領域での $\psi$ 外挿次数 |
 | `NPRINT` | int switch | 0 | 出力詳細度 |
 | `IDEBUG` | int switch | 0 | デバッグ出力フラグ |
-| `MODEFR` | int switch | 0 | `FROPEN` の読み込みモード: 0 は `KNAMEQ` のファイルを読む. 1 は unit 5 からファイル名を尋ねる |
+| `MODEFR` | int switch | 0 | `FROPEN` の読み込みモード. 受け付けるのは `KNAMEQ` のファイルを読む 0 だけ: unit 5 (標準入力) からファイル名を尋ねる 1 も, その他の値も `set_param` が拒否する |
 | `MODEFW` | int switch | 0 | `FWOPEN` の書き込みモード: 0 は既存ファイルを上書き, 3 は既存ファイルを拒否. 1, 2, 4〜7 は unit 5 を読むことがあり, `eq_save` は 0 と 3 のみ受け付ける |
 
 `MODELG` の許容値:

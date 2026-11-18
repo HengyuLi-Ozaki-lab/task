@@ -21,7 +21,7 @@ TASK/EQ (**MHD 平衡** ソルバ: EQDSK 形式の平衡データ, または解�
   $F(\psi)$ 係数 (`FF*`) を与えて解析的に解きます.
   `MODELG=2` (既定) で使用. ファイル不要.
 - **`run(mode=1)`** — EQDSK 形式 (G-EQDSK) の平衡データファイル読み込み
-  (`equnit::eq_load`). `MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ` ファイル名指定が必要 (`MODELG = 15` は固定の `eqdb.dat`).
+  (`equnit::eq_load`). `MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ` ファイル名指定が必要 (固定の `eqdb.dat` を読む `MODELG = 15` は拒否される).
 
 両方とも出力としては磁気軸位置 (`raxis`, `zaxis`), 中心 q (`qaxis`),
 表面 q (`qsurf`), プラズマ $\beta$ (`betat`, `betap`), プラズマ体積

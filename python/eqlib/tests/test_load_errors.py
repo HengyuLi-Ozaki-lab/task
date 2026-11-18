@@ -98,10 +98,14 @@ def test_an_analytic_solve_whose_axis_leaves_the_box_says_so():
     assert message.endswith("(ierr=103)")
 
 
-# --- task-web-client #191: MODELG=15 reads the fixed eqdb.dat, and returns where it STOPped ---
+# --- task-web-client #191, #203: MODELG=15 (the fixed eqdb.dat) is refused before the load ---
 
-# One child process per case: a STOP ends the process that meets it (under --forked it ends the
-# pytest session too), and the child's standard input carries a line that the load must leave.
+# EQDSK (eq/equread.f90) passes equ_set_psi one of the three arrays it takes, so the load of a
+# well-formed eqdb.dat ended the process (SIGSEGV in equ_set_psi, eq/equintf.f90); a missing,
+# short or unreadable file returned an error (#191). run(1) now refuses MODELG 15 whatever the
+# files. One child process per case: the well-formed file ends the process that loads it on a
+# build without the refusal. The child then loads a TASK file in the same session, and its
+# standard input carries a line that the runs must leave.
 _MODELG15_CHILD = r"""
 import sys
 import eqlib
@@ -112,8 +116,11 @@ with eqlib.Eq() as e:
         try:
             e.run(1)
             print("LOADED", flush=True)
-        except eqlib.EqlibCalculationFailedError as exc:
-            print("REFUSED", exc, flush=True)
+        except eqlib.EqlibError as exc:
+            print("REFUSED", type(exc).__name__, exc, flush=True)
+    e.set_param("MODELG", 3)
+    e.run(1)
+    print("LOADED MODELG=3", flush=True)
 print("STDIN", repr(sys.stdin.read()), flush=True)
 """
 
@@ -141,19 +148,38 @@ def _record(payload: bytes) -> bytes:
     return struct.pack("<i", len(payload)) + payload + struct.pack("<i", len(payload))
 
 
-@pytest.mark.parametrize("eqdb, reason", [
-    (None, "'eqdb.dat' not found"),
-    (_record(b"EQD" + b" " * 110), "'eqdb.dat' ends before the equilibrium does"),
-    (b"", "'eqdb.dat' ends before the equilibrium does"),
-    (b"not an eqdb file\n", "'eqdb.dat' could not be read"),
-], ids=["missing", "header-only", "empty", "garbage"])
-def test_modelg_15_returns_an_error_and_the_process_lives(tmp_path, eqdb, reason):
-    # KNAMEQ names a file that is there; MODELG 15 reads eqdb.dat all the same.
+def _eqdb_well_formed() -> bytes:
+    """An eqdb.dat that EQDSK's two READs take whole: a header record, then a 3 x 3 grid,
+    nv = nsu = 3, zeros elsewhere and the 950 trailing values (eq/equread.f90)."""
+    import struct
+    i = lambda *v: struct.pack(f"<{len(v)}i", *v)
+    d = lambda *v: struct.pack(f"<{len(v)}d", *v)
+    body = (i(3, 3) + d(0.1, 0.3, 0.5) + d(-0.2, 0.0, 0.2) + d(*[0.0] * 9)
+            + i(3) + d(*[0.0] * 18)                      # pds fds vlv qqv prv xxx, 3 each
+            + d(*[0.0] * 6) + d(*[0.0] * 6) + i(0, 0, 0, 0) + d(*[0.0] * 18)
+            + i(3) + d(*[0.0] * 9)                       # nsu; rsu zsu csu
+            + i(0) + d(0.0, 0.0, 0.0) + i(0) + i(0) + d(*[0.0] * 5) + i(*[0] * 8)
+            + d(*[0.0] * 21) + i(*[0] * 5) + d(*[0.0] * 950))
+    return _record(b"EQD" + b" " * 110) + _record(body)
+
+
+_MODELG15_REFUSED = ("REFUSED EqlibInvalidParamError eq_run(1): rc=1: eq_run(1): MODELG=15 is refused: "
+                     "its reader (EQDSK, eq/equread.f90) passes equ_set_psi one of its three arrays, "
+                     "so a load of eqdb.dat ends the process")
+
+
+@pytest.mark.parametrize("eqdb", [
+    None,
+    _record(b"EQD" + b" " * 110),
+    b"",
+    b"not an eqdb file\n",
+    _eqdb_well_formed(),
+], ids=["missing", "header-only", "empty", "garbage", "well-formed"])
+def test_modelg_15_is_refused_and_the_process_lives(tmp_path, eqdb):
+    # KNAMEQ names a file that is there; MODELG 15 reads eqdb.dat, and is refused whatever it holds.
     proc, lines = _load_modelg15(tmp_path, eqdb)
-    expected = ("REFUSED eq_run(1): rc=3: EQ_READ: MODELG=15 reads the fixed file 'eqdb.dat', "
-                f"not KNAMEQ: {reason}")
-    assert lines == [expected, expected, "STDIN 'a line\\n'"], (proc.returncode, proc.stdout[-500:],
-                                                                 proc.stderr[-500:])
+    assert lines == [_MODELG15_REFUSED, _MODELG15_REFUSED, "LOADED MODELG=3", "STDIN 'a line\\n'"], (
+        proc.returncode, proc.stdout[-500:], proc.stderr[-500:])
     assert proc.returncode == 0
 
 
@@ -183,3 +209,158 @@ def test_modelg_8_without_its_second_file_names_knameq2(tmp_path):
 def test_modelg_8_with_a_blank_knameq2_says_so(tmp_path):
     assert _load_modelg8_first_file_only(tmp_path, knameq2="") == (
         "eq_run(1): rc=3: EQ_READ: MODELG=8 load failed: its second file KNAMEQ2 is blank")
+
+
+# --- task-web-client #204: MODELG=8's reader returns an error where it ended the process ------
+
+# One child process per case: the reader used to end the process that met a short or malformed
+# file (a Fortran runtime error, exit status 2) or a map without an axis (STOP, exit status 0,
+# no error returned); under --forked that ends the pytest session.
+_MODELG8_CHILD = r"""
+import eqlib
+with eqlib.Eq() as e:
+    e.set_param("MODELG", 8)
+    e.set_param_str("KNAMEQ", "jaea.dat")
+    try:
+        e.run(1)
+        print("LOADED", flush=True)
+    except eqlib.EqlibCalculationFailedError as exc:
+        print("REFUSED", exc, flush=True)
+"""
+
+
+def _jaea_first_file(nr=3, nz=3, psi=None, box=(0.1, 0.5, -0.3, 0.3), records=4):
+    """KNAMEQ in EQJAEAR's layout: the grid counts, the R and Z ranges, psi (R fastest), BtR.
+
+    ``records`` keeps only the first records; ``psi`` defaults to a map of zeros of the grid's size.
+    """
+    import struct
+    psi = [0.0] * (nr * nz) if psi is None else list(psi)
+    parts = [_record(struct.pack("<2i", nr, nz)), _record(struct.pack("<4d", *box)),
+             _record(struct.pack(f"<{len(psi)}d", *psi)), _record(struct.pack("<d", 1.0))]
+    return b"".join(parts[:records])
+
+
+def _jaea_table(rows=41, bad_row=None):
+    """KNAMEQ2: a header line and ``rows`` rows of (index, T, p); ``bad_row`` is not numbers."""
+    return "header\n" + "".join("x y z\n" if i == bad_row else f"{i} 1.0 0.0\n"
+                                for i in range(1, rows + 1))
+
+
+def _load_modelg8(tmp_path, first: bytes, table: str):
+    import subprocess
+    import sys
+    (tmp_path / "jaea.dat").write_bytes(first)
+    (tmp_path / "eqdata2").write_text(table)
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(_HERE.parents[2])] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+    proc = subprocess.run([sys.executable, "-c", _MODELG8_CHILD], cwd=tmp_path, env=env,
+                          capture_output=True, text=True, errors="replace", timeout=60,
+                          stdin=subprocess.DEVNULL)
+    lines = [l for l in proc.stdout.splitlines() if l.startswith(("REFUSED", "LOADED"))]
+    return proc, lines
+
+
+_M8 = "eq_run(1): rc=3: EQ_READ: MODELG=8 load failed: "
+
+
+@pytest.mark.parametrize("first, table, reason", [
+    (b"", _jaea_table(), "KNAMEQ='jaea.dat' ends before its grid counts"),
+    (_jaea_first_file(records=1), _jaea_table(), "KNAMEQ='jaea.dat' ends before its R and Z ranges"),
+    (_jaea_first_file(records=2), _jaea_table(), "KNAMEQ='jaea.dat' ends before its psi map"),
+    (_jaea_first_file(psi=[0.0] * 4), _jaea_table(), "KNAMEQ='jaea.dat' could not be read: its psi map"),
+    (_jaea_first_file(records=3), _jaea_table(), "KNAMEQ='jaea.dat' ends before its BtR record"),
+    (_jaea_first_file(nr=1000), _jaea_table(),
+     "KNAMEQ='jaea.dat' gives a grid of 1000 x 3 points, outside 2..513 x 2..513"),
+    (_jaea_first_file(nz=1), _jaea_table(),
+     "KNAMEQ='jaea.dat' gives a grid of 3 x 1 points, outside 2..513 x 2..513"),
+    (_jaea_first_file(box=(0.5, 0.5, -0.3, 0.3)), _jaea_table(),
+     "KNAMEQ='jaea.dat' gives R and Z ranges that are no grid: R from 5.0000E-01 to 5.0000E-01, "
+     "Z from -3.0000E-01 to 3.0000E-01"),
+    (_jaea_first_file(box=(0.5, 0.1, -0.3, 0.3)), _jaea_table(),
+     "KNAMEQ='jaea.dat' gives R and Z ranges that are no grid: R from 5.0000E-01 to 1.0000E-01, "
+     "Z from -3.0000E-01 to 3.0000E-01"),
+    (_jaea_first_file(box=(0.1, 0.5, 0.3, -0.3)), _jaea_table(),
+     "KNAMEQ='jaea.dat' gives R and Z ranges that are no grid: R from 1.0000E-01 to 5.0000E-01, "
+     "Z from 3.0000E-01 to -3.0000E-01"),
+    (_jaea_first_file(box=(0.1, 0.5, -0.3, float("inf"))), _jaea_table(),
+     "KNAMEQ='jaea.dat' gives R and Z ranges that are no grid: R from 1.0000E-01 to 5.0000E-01, "
+     "Z from -3.0000E-01 to Infinity"),
+    (_jaea_first_file(), "", "KNAMEQ2='eqdata2' ends before its header line"),
+    (_jaea_first_file(), _jaea_table(rows=10), "KNAMEQ2='eqdata2' ends before its row 11 of 41"),
+    (_jaea_first_file(), _jaea_table(bad_row=5), "KNAMEQ2='eqdata2' could not be read: its row 5 of 41"),
+    # A 21 x 21 map of zeros: interior points to search, none where |grad psi| is below its neighbours.
+    (_jaea_first_file(nr=21, nz=21), _jaea_table(),
+     "the psi map in KNAMEQ='jaea.dat' has no magnetic axis: no interior point where |grad psi| "
+     "is below its four neighbours (ierr=102)"),
+], ids=["knameq-empty", "knameq-counts-only", "knameq-no-psi", "knameq-psi-short", "knameq-no-btr",
+        "knameq-grid-1000", "knameq-grid-1", "knameq-r-empty", "knameq-r-falling", "knameq-z-falling",
+        "knameq-z-infinite", "knameq2-empty", "knameq2-10-rows", "knameq2-bad-row", "map-without-axis"])
+def test_modelg_8_returns_an_error_and_the_process_lives(tmp_path, first, table, reason):
+    # Measured on 0e83ad3d (-O0 with run-time checks): nine ended the process with a Fortran
+    # runtime error, exit status 2 (the 1000-point grid at an index past the arrays' 513, which
+    # only the checks catch); the 3 x 1 grid and the map without an axis at STOP, exit status 0
+    # with no error returned. The empty and the falling R range and the falling and the infinite
+    # Z range, on a 3 x 3 map, reached that STOP too, as any 3 x 3 map does (no interior point to
+    # search): they are refused now before the grid is built, which is what these four cases show.
+    proc, lines = _load_modelg8(tmp_path, first, table)
+    assert lines == ["REFUSED " + _M8 + reason], (proc.returncode, proc.stdout[-500:], proc.stderr[-500:])
+    assert proc.returncode == 0
+
+
+def _psi_map_whose_spline_is_nan(nr=21, nz=21):
+    """A ramp in R with a bump, and one corner value NaN.
+
+    The search on the grid values finds one interior minimum of |grad psi| (R = 1.15 m, Z = 0),
+    away from the corner; the spline through the values, which the Newton search runs on, is NaN
+    everywhere, so the search ends at a point that is not finite.
+    """
+    import math
+    box = (0.5, 1.5, -0.5, 0.5)
+    psi = []
+    for j in range(nz):
+        z = box[2] + (box[3] - box[2]) * j / (nz - 1)
+        for i in range(nr):
+            r = box[0] + (box[1] - box[0]) * i / (nr - 1)
+            psi.append((r - 1.0) + 0.1 * math.exp(-((r - 1.0) ** 2 + z ** 2) / 0.2 ** 2))
+    psi[0] = float("nan")
+    return _jaea_first_file(nr=nr, nz=nz, psi=psi, box=box)
+
+
+def test_modelg_8_axis_search_that_ends_at_nan_is_an_error(tmp_path):
+    # find_axis's IERR=102 was its own variable: EQJAEAR went on from the search's last point,
+    # here not finite, and on 0e83ad3d the load ended the process (eqcalq.f90, an index -1 below
+    # the bound, exit status 2). A search that fails at a finite point goes on as it did.
+    proc, lines = _load_modelg8(tmp_path, _psi_map_whose_spline_is_nan(), _jaea_table())
+    assert len(lines) == 1, (proc.returncode, proc.stdout[-500:], proc.stderr[-500:])
+    assert lines[0].startswith(
+        "REFUSED " + _M8 + "the search for the magnetic axis from (R, Z) = "
+        "(1.1500, 0.0000) did not converge (NEWTN IER="), lines[0]
+    assert lines[0].endswith("): it ended at a point that is not finite (ierr=102)"), lines[0]
+    assert proc.returncode == 0
+
+
+@pytest.mark.skipif(not (_FIXTURES / "eqdata.ITER01").exists(), reason="fixture eqdata.ITER01 missing")
+def test_a_file_load_whose_axis_search_does_not_converge_says_so(tmp_path):
+    # EQAXIS (the MODELG 3/5/25 loads, through EQCALQ, and the analytic solve) returns
+    # find_axis's 102. A g-eqdsk whose psi is a ramp in R has no axis, and the search ends at NaN;
+    # on 0e83ad3d the load went on and failed with "ended at (R, Z) = (NaN, NaN), outside ...
+    # (ierr=103)".
+    # The ITER01 load and the g-eqdsk writer are test_qqps_psi_surface's (no fixture of its own).
+    import numpy as np
+    from eqlib.tests.test_qqps_psi_surface import _load_iter01, _write_geqdsk
+    with eqlib.Eq() as e:
+        st = _load_iter01(e)
+        ramp = 10.0 * np.add.outer(np.array(st.rg) - st.scalars["raxis"], 0.0 * np.array(st.zg))
+        _write_geqdsk(tmp_path / "g_ramp", st, ramp, lambda s: 1.0 + s)
+        e.set_param("MODELG", 5)
+        e.set_param_str("KNAMEQ", "g_ramp")
+        with pytest.raises(eqlib.EqlibCalculationFailedError) as err:
+            e.run(1)
+    message = str(err.value)
+    assert message.startswith(
+        "eq_run(1): rc=3: EQAXIS: the search for the magnetic axis from (R, Z) = "
+        f"({st.scalars['raxis']:.4f}, "), message
+    assert "did not converge (NEWTN IER=" in message, message
+    assert message.endswith("): it ended at a point that is not finite (ierr=102)"), message

@@ -164,7 +164,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODEL_PROF":  {"type": "int",        "group": "modules", "description": "profile model selector"},
     "MODEL_NPROF": {"type": "int",        "group": "modules", "description": "density-profile model selector"},
     "MODEFW":      {"type": "int",        "group": "modules", "description": "FW model selector"},
-    "MODEFR":      {"type": "int",        "group": "modules", "description": "FR model selector"},
+    "MODEFR":      {"type": "int",        "group": "modules", "description": "file-read mode of FROPEN for the EQ load of MODELG 3, 5 and 8: only 0 is taken (1 would ask for a file name on unit 5, the server's channel)"},
     "IDEBUG":      {"type": "int",        "group": "modules", "description": "debug verbosity level"},
     "MODELP":      {"type": "int[NSM]",   "group": "modules", "description": "plasma model per species"},
     "MODELV":      {"type": "int[NSM]",   "group": "modules", "description": "velocity-distribution model per species"},
