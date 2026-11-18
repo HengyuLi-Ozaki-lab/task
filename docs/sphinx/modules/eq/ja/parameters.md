@@ -14,7 +14,7 @@
 
 | 条件 | 必須パラメータ | 理由 |
 |---|---|---|
-| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 空かファイルが無いと `validate()` が `FILE_MISSING` 診断を返し, `run()` はそのファイル名を示して失敗する. `MODELG = 8` は `KNAMEQ2` も読む. `MODELG = 15` は代わりに固定ファイル `eqdb.dat` を読む (無ければ `MODELG` に `FILE_MISSING` 診断) |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 空かファイルが無いと `validate()` が `FILE_MISSING` 診断を返し, `run()` はそのファイル名を示して失敗する. `MODELG = 8` は `KNAMEQ2` も読む. 代わりに固定ファイル `eqdb.dat` を読む `MODELG = 15` は `run()` が拒否する (読み込みルーチンが `equ_set_psi` に 3 つの配列のうち 1 つしか渡さず, 正しい形式のファイルの読み込みはプロセスを終わらせていた). `validate()` は `MODELG` の `OUT_OF_RANGE` として報告する |
 
 ```python
 eq.set_param("MODELG", 3)

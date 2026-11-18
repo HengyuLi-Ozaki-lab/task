@@ -96,11 +96,10 @@ The diagnostic codes are the same five shared with `tr`:
 `NUGMAX`, `NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`,
 `NRVMAX`) against the compile-time maxima, and that the file a load
 (`run(mode=1)`) reads is there: `KNAMEQ`, not blank and naming a file, for
-`MODELG` 3, 5, 8, 9 and 25 (and `KNAMEQ2` for 8, which reads two files); for
-`MODELG` 15 the fixed file `eqdb.dat`, which
-it reads instead of `KNAMEQ` (reported as `MODELG`). A name is looked up as
+`MODELG` 3, 5, 8, 9 and 25 (and `KNAMEQ2` for 8, which reads two files). A name is looked up as
 the load opens it, relative to the working directory at the time of
-`validate()`. For the
+`validate()`. `MODELG` 15, whose load `run(mode=1)` refuses, is reported as
+`OUT_OF_RANGE` on `MODELG`. For the
 analytic solve (`run(mode=0)`, which every `MODELG` but the file formats
 needs) it also checks:
 

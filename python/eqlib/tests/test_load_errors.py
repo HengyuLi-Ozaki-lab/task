@@ -98,10 +98,14 @@ def test_an_analytic_solve_whose_axis_leaves_the_box_says_so():
     assert message.endswith("(ierr=103)")
 
 
-# --- task-web-client #191: MODELG=15 reads the fixed eqdb.dat, and returns where it STOPped ---
+# --- task-web-client #191, #203: MODELG=15 (the fixed eqdb.dat) is refused before the load ---
 
-# One child process per case: a STOP ends the process that meets it (under --forked it ends the
-# pytest session too), and the child's standard input carries a line that the load must leave.
+# EQDSK (eq/equread.f90) passes equ_set_psi one of the three arrays it takes, so the load of a
+# well-formed eqdb.dat ended the process (SIGSEGV in equ_set_psi, eq/equintf.f90); a missing,
+# short or unreadable file returned an error (#191). run(1) now refuses MODELG 15 whatever the
+# files. One child process per case: the well-formed file ends the process that loads it on a
+# build without the refusal. The child then loads a TASK file in the same session, and its
+# standard input carries a line that the runs must leave.
 _MODELG15_CHILD = r"""
 import sys
 import eqlib
@@ -112,8 +116,11 @@ with eqlib.Eq() as e:
         try:
             e.run(1)
             print("LOADED", flush=True)
-        except eqlib.EqlibCalculationFailedError as exc:
-            print("REFUSED", exc, flush=True)
+        except eqlib.EqlibError as exc:
+            print("REFUSED", type(exc).__name__, exc, flush=True)
+    e.set_param("MODELG", 3)
+    e.run(1)
+    print("LOADED MODELG=3", flush=True)
 print("STDIN", repr(sys.stdin.read()), flush=True)
 """
 
@@ -141,19 +148,38 @@ def _record(payload: bytes) -> bytes:
     return struct.pack("<i", len(payload)) + payload + struct.pack("<i", len(payload))
 
 
-@pytest.mark.parametrize("eqdb, reason", [
-    (None, "'eqdb.dat' not found"),
-    (_record(b"EQD" + b" " * 110), "'eqdb.dat' ends before the equilibrium does"),
-    (b"", "'eqdb.dat' ends before the equilibrium does"),
-    (b"not an eqdb file\n", "'eqdb.dat' could not be read"),
-], ids=["missing", "header-only", "empty", "garbage"])
-def test_modelg_15_returns_an_error_and_the_process_lives(tmp_path, eqdb, reason):
-    # KNAMEQ names a file that is there; MODELG 15 reads eqdb.dat all the same.
+def _eqdb_well_formed() -> bytes:
+    """An eqdb.dat that EQDSK's two READs take whole: a header record, then a 3 x 3 grid,
+    nv = nsu = 3, zeros elsewhere and the 950 trailing values (eq/equread.f90)."""
+    import struct
+    i = lambda *v: struct.pack(f"<{len(v)}i", *v)
+    d = lambda *v: struct.pack(f"<{len(v)}d", *v)
+    body = (i(3, 3) + d(0.1, 0.3, 0.5) + d(-0.2, 0.0, 0.2) + d(*[0.0] * 9)
+            + i(3) + d(*[0.0] * 18)                      # pds fds vlv qqv prv xxx, 3 each
+            + d(*[0.0] * 6) + d(*[0.0] * 6) + i(0, 0, 0, 0) + d(*[0.0] * 18)
+            + i(3) + d(*[0.0] * 9)                       # nsu; rsu zsu csu
+            + i(0) + d(0.0, 0.0, 0.0) + i(0) + i(0) + d(*[0.0] * 5) + i(*[0] * 8)
+            + d(*[0.0] * 21) + i(*[0] * 5) + d(*[0.0] * 950))
+    return _record(b"EQD" + b" " * 110) + _record(body)
+
+
+_MODELG15_REFUSED = ("REFUSED EqlibInvalidParamError eq_run(1): rc=1: eq_run(1): MODELG=15 is refused: "
+                     "its reader (EQDSK, eq/equread.f90) passes equ_set_psi one of its three arrays, "
+                     "so a load of eqdb.dat ends the process")
+
+
+@pytest.mark.parametrize("eqdb", [
+    None,
+    _record(b"EQD" + b" " * 110),
+    b"",
+    b"not an eqdb file\n",
+    _eqdb_well_formed(),
+], ids=["missing", "header-only", "empty", "garbage", "well-formed"])
+def test_modelg_15_is_refused_and_the_process_lives(tmp_path, eqdb):
+    # KNAMEQ names a file that is there; MODELG 15 reads eqdb.dat, and is refused whatever it holds.
     proc, lines = _load_modelg15(tmp_path, eqdb)
-    expected = ("REFUSED eq_run(1): rc=3: EQ_READ: MODELG=15 reads the fixed file 'eqdb.dat', "
-                f"not KNAMEQ: {reason}")
-    assert lines == [expected, expected, "STDIN 'a line\\n'"], (proc.returncode, proc.stdout[-500:],
-                                                                 proc.stderr[-500:])
+    assert lines == [_MODELG15_REFUSED, _MODELG15_REFUSED, "LOADED MODELG=3", "STDIN 'a line\\n'"], (
+        proc.returncode, proc.stdout[-500:], proc.stderr[-500:])
     assert proc.returncode == 0
 
 

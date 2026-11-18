@@ -19,7 +19,7 @@ menu commands of the legacy `eqx2` CLI:
 | `mode` | Purpose | Legacy CLI command | Required setup |
 |---|---|---|---|
 | `0` | **Analytic G-S solve** (`EQCALC` + post-processing) | `R` (Run) -> `F` (Fields) | `MODELG ∈ {0, 1, 2}`, analytic profile coefficients (`PP*`, `PJ*`, `FF*`, ...) |
-| `1` (default) | **Load EQDSK file** (`equnit::eq_load`) | `L` (Load) | `MODELG ∈ {3, 5, 8, 9, 25}`, `KNAMEQ` (filename); `MODELG = 15` reads `eqdb.dat` |
+| `1` (default) | **Load EQDSK file** (`equnit::eq_load`) | `L` (Load) | `MODELG ∈ {3, 5, 8, 9, 25}`, `KNAMEQ` (filename); `MODELG = 15` (`eqdb.dat`) is refused |
 
 `mode=1` is the default because it is the **standard EQDSK-driven
 workflow**. When you want to solve analytically (giving only the
@@ -55,7 +55,7 @@ inconsistent. Common causes:
 - The EQDSK file format does not match (version mismatch)
 
 `validate()` catches grid dimensions, a missing load file (a blank `KNAMEQ` or one naming no file,
-`KNAMEQ2` for `MODELG=8`, `eqdb.dat` for `MODELG=15`) and, for the
+`KNAMEQ2` for `MODELG=8`), the refused `MODELG=15` and, for the
 analytic solve, a wall inside the plasma, a negative current and a box
 (`MDLEQF >= 10`) the solve cannot use up-front; physical consistency is
 only known after `run()`.

@@ -15,7 +15,7 @@ overridden** to obtain physically meaningful results.
 
 | Condition | Required parameter | Reason |
 |---|---|---|
-| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If it is blank or names no file, `validate()` returns a `FILE_MISSING` diagnostic and `run()` fails, naming the file. `MODELG = 8` reads `KNAMEQ2` too. `MODELG = 15` reads the fixed file `eqdb.dat` instead (a `FILE_MISSING` diagnostic for `MODELG` when it is not there). |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If it is blank or names no file, `validate()` returns a `FILE_MISSING` diagnostic and `run()` fails, naming the file. `MODELG = 8` reads `KNAMEQ2` too. `MODELG = 15`, which reads the fixed file `eqdb.dat` instead, is refused by `run()` (its reader passes `equ_set_psi` one of the three arrays it takes, and the load of a well-formed file ended the process); `validate()` reports it as `OUT_OF_RANGE` on `MODELG`. |
 
 ```python
 eq.set_param("MODELG", 3)

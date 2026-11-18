@@ -18,8 +18,9 @@ Tests cover:
 * FILE_MISSING diagnostic fires when ``MODELG=3`` and ``KNAMEQ`` is
   blank, and for the files every load format reads (``KNAMEQ`` for
   ``MODELG`` 3, 5, 8, 9 and 25, blank or naming no file, ``KNAMEQ2``
-  too for 8; the fixed ``eqdb.dat`` for ``MODELG`` 15:
-  ``TestEqValidateFileMissing``);
+  too for 8: ``TestEqValidateFileMissing``), and ``MODELG`` 15, whose
+  load ``run(1)`` refuses, is reported as ``OUT_OF_RANGE`` whatever the
+  files;
 * the wall check (``RB < RA``) is made for the analytic solve only
   (every ``MODELG`` but the file formats 3, 5, 8, 9, 15 and 25), not for
   a file load, which brings its own wall;
@@ -673,8 +674,9 @@ class TestFFIBindings(unittest.TestCase):
 class TestEqValidateFileMissing(unittest.TestCase):
     """FILE_MISSING covers the files every load format reads (task-web-client
     #191): KNAMEQ for MODELG 3, 5, 8, 9 and 25, blank or naming no file,
-    KNAMEQ2 too for MODELG 8, and for MODELG 15 the fixed file eqdb.dat,
-    which it reads instead of KNAMEQ.
+    KNAMEQ2 too for MODELG 8. MODELG 15, which reads the fixed file eqdb.dat
+    instead of KNAMEQ, is refused by run(1) (task-web-client #203) and
+    reported as OUT_OF_RANGE, with or without the file.
     The load fails on each of them (test_load_errors.py); validate() says so
     before the run. Each case runs in a scratch directory, the working
     directory a load opens its file from."""
@@ -751,15 +753,22 @@ class TestEqValidateFileMissing(unittest.TestCase):
             found = [(d.param, d.message) for d in eq.validate()]
         self.assertEqual(found, [("KNAMEQ2", f"KNAMEQ2='{name}' not found: MODELG=8 loads it too")])
 
-    def test_modelg_15_reports_its_fixed_file_not_knameq(self) -> None:
-        # A blank KNAMEQ and one that is there change nothing: MODELG 15 reads eqdb.dat.
-        expected = [("MODELG", "MODELG=15 loads the fixed file 'eqdb.dat', not KNAMEQ, and "
-                               "'eqdb.dat' is not there")]
-        self.assertEqual(self._file_missing(15.0, ""), expected)
-        self.assertEqual(self._file_missing(15.0, "eqdata.TST-2", files=["eqdata.TST-2"]), expected)
-
-    def test_modelg_15_with_its_fixed_file_there_is_clean(self) -> None:
-        self.assertEqual(self._file_missing(15.0, "", files=["eqdb.dat"]), [])
+    def test_modelg_15_is_reported_whatever_the_files(self) -> None:
+        # run(1) refuses MODELG 15: its reader passes equ_set_psi one of the three arrays it takes
+        # (task-web-client #203). The one finding, OUT_OF_RANGE on MODELG, is the same with or
+        # without eqdb.dat, with a blank KNAMEQ or one that is there.
+        expected = [("MODELG", int(EqDiagCode.OUT_OF_RANGE),
+                     "MODELG=15 cannot be loaded: its reader passes equ_set_psi one of its three"
+                     " arrays; run(1) refuses it")]
+        for knameq, files in (("", ()), ("", ("eqdb.dat",)),
+                              ("eqdata.TST-2", ("eqdata.TST-2", "eqdb.dat"))):
+            with Eq() as eq, _in_tempdir() as tmp:
+                for name in files:
+                    Path(tmp, name).write_bytes(b"x")
+                eq.set_param("MODELG", 15.0)
+                eq.set_param_str("KNAMEQ", knameq)
+                found = [(d.param, int(d.code), d.message) for d in eq.validate()]
+            self.assertEqual(found, expected, (knameq, files))
 
     def test_a_model_that_loads_no_file_does_not_look_for_one(self) -> None:
         for modelg in (0.0, 1.0, 2.0, 4.0, 7.0, 26.0):

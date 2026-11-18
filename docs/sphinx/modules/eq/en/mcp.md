@@ -215,16 +215,15 @@ several at once, launch them in separate processes.
 ### Dependence on the `eqdata` file
 
 When `MODELG=3,5,8,9,25` and `KNAMEQ` is set, the file must exist in the
-**current directory** of the MCP server; so must `KNAMEQ2` for `MODELG=8`, which reads two files, and
-the fixed `eqdb.dat` for `MODELG=15`. When launching from Claude
+**current directory** of the MCP server; so must `KNAMEQ2` for `MODELG=8`, which reads two files. When launching from Claude
 Desktop, either pin the `cwd` via an environment variable or specify
-absolute paths (not possible for `eqdb.dat`, whose name is fixed: pin the `cwd`).
+absolute paths. `MODELG=15`, which reads the fixed `eqdb.dat`, is refused by `run`.
 
 ### Use `validate` aggressively
 
 It is also available in `tr_mcp` but is particularly effective in
-`eq`. It detects a missing load file (`KNAMEQ` blank or naming no file, `KNAMEQ2` for `MODELG=8`, `eqdb.dat`
-for `MODELG=15`), compile-time-max overflow of grid
+`eq`. It detects a missing load file (`KNAMEQ` blank or naming no file, `KNAMEQ2` for `MODELG=8`), the refused
+`MODELG=15`, compile-time-max overflow of grid
 sizes (`NRGMAX`, `NPSMAX`, … ten in total) and, for the analytic solve,
 a wall inside the plasma, a negative current and a box the solve cannot
 use **without calling `run`** (`parameter-setting`). In an LLM workflow that varies many parameters,
@@ -237,7 +236,7 @@ this directly saves tokens and retries.
 | `libeqapi.so not found` | run `make -C eq libeqapi.so`, then set `EQLIB_PATH` to the absolute path |
 | `ModuleNotFoundError: eqlib` | add the repo's `python/` to `PYTHONPATH` |
 | `ModuleNotFoundError: mcp` | `pip install 'mcp>=1.2,<2'`; check the virtualenv |
-| `EQDSK file missing` | confirm the file referenced by `KNAMEQ` is in the current directory (`KNAMEQ2` too for `MODELG=8`; `eqdb.dat` for `MODELG=15`) |
+| `EQDSK file missing` | confirm the file referenced by `KNAMEQ` is in the current directory (`KNAMEQ2` too for `MODELG=8`) |
 | `EqlibCalculationFailedError: ierr=3` | check the physical consistency of inputs; relax `EPSEQ` or raise `NLPMAX` |
 
 ## References

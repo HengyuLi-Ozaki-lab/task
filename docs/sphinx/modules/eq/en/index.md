@@ -23,7 +23,7 @@ derived quantities) from Python via the `eqlib` wrapper. Unlike `tr`,
   `MODELG=2` (the default). No file required.
 - **`run(mode=1)`** — load an EQDSK-format (G-EQDSK) equilibrium data
   file (`equnit::eq_load`). Requires `MODELG ∈ {3, 5, 8, 9, 25}` plus the
-  filename in `KNAMEQ` (`MODELG = 15` reads the fixed `eqdb.dat`).
+  filename in `KNAMEQ` (`MODELG = 15`, the fixed `eqdb.dat`, is refused).
 
 Both produce, as scalar outputs, the magnetic-axis position (`raxis`,
 `zaxis`), axis safety factor (`qaxis`), surface safety factor
