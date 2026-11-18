@@ -8,7 +8,10 @@
  * a C binary that never saw libeq.a.
  *
  * The run is eq_run(0), the Grad-Shafranov solve (EQCALC, then EQCALQ),
- * which needs no equilibrium file: it must return EQ_OK.
+ * which needs no equilibrium file: it must return EQ_OK, and the state
+ * read after it must hold EQCALQ's results: the magnetic axis that
+ * EQAXIS finds (EQCALQ starts its search at RR, so raxis must have moved
+ * off RR) and qaxis > 0 (both read 0 before any run).
  *
  * Usage:
  *   EQLIB_PATH=/path/to/libeqapi.so ./test_run_so   (EQLIB_PATH optional,
@@ -16,7 +19,8 @@
  *
  * Return values:
  *   0      = OK
- *   1..9   = step that failed
+ *   1..10  = step that failed (10: raxis not > 0 or still RR_SET, or
+ *            qaxis not > 0)
  *   90     = dlopen failed
  *   91     = dlsym failed (one of the 6 entry points missing)
  *   92 = eq_state_abi_version / eq_state_size missing (library predates #246)
@@ -28,6 +32,10 @@
 #include <dlfcn.h>
 
 #include "eq_api.h"
+
+/* The major radius set before the run; EQCALQ starts the axis search
+ * there (eqcalq.f90, RAXIS=RR before EQAXIS). */
+#define RR_SET 3.0
 
 typedef int (*eq_init_fn)(void);
 typedef int (*eq_run_fn)(int);
@@ -96,7 +104,7 @@ int main(void) {
     eq_state_t st;
 
     rc = f_init();                                 if (rc != 0) { dlclose(h); return 1; }
-    rc = f_set_param("RR",     3.0);               if (rc != 0) { dlclose(h); return 2; }
+    rc = f_set_param("RR",     RR_SET);            if (rc != 0) { dlclose(h); return 2; }
     rc = f_set_param("BB",     3.0);               if (rc != 0) { dlclose(h); return 3; }
     rc = f_set_param("RIP",    1.0);               if (rc != 0) { dlclose(h); return 4; }
     rc = f_set_param("MDLEQF", 0.0);               if (rc != 0) { dlclose(h); return 5; }
@@ -114,6 +122,16 @@ int main(void) {
 
     memset(&st, 0xAA, sizeof(st));
     rc = f_get_state(&st);                   if (rc != 0) { dlclose(h); return 6; }
+    /* eq_get_state zeroes the struct before it copies the state, so the
+     * 0xAA fill does not survive; raxis is exactly RR_SET if EQAXIS did
+     * not move the axis, and qaxis is 0 if EQCALQ did not run. */
+    if (!(st.raxis > 0.0) || st.raxis == RR_SET || !(st.qaxis > 0.0)) {
+        fprintf(stderr, "eq_run(0) left raxis=%g qaxis=%g\n",
+                st.raxis, st.qaxis);
+        f_finalize();
+        dlclose(h);
+        return 10;
+    }
 
     rc = f_finalize();                       if (rc != 0) { dlclose(h); return 8; }
 
