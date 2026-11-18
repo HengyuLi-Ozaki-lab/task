@@ -2,8 +2,9 @@
 
 1. One process, one EQ grid. bpsd sizes its splines at the first get and keeps that size (k-yoshimi/bpsd#7), so an
    ``eq:`` set after the process's first preparation attempt (``tr_run``'s tr_prep, failed or not) could change
-   EQ's grid and write out of bounds: EQ_FAILED 103 from a spline written past its end (measured: eq:NRMAX 30
-   then 60 across lifecycles, eq:RB 2.0 then 1.2 on one handle, on a bpsd without the fix). ``tr_set_param`` and
+   EQ's grid and write out of bounds: EQ_FAILED from a spline written past its end (103, measured on fork PR #25's
+   build: eq:NRMAX 30 then 60 across lifecycles, eq:RB 2.0 then 1.2 on one handle, on a bpsd without the fix; the
+   axis search now reports a non-finite end point as 102). ``tr_set_param`` and
    ``tr_set_param_str`` refuse every ``eq:`` name from then on, across ``tr_finalize`` and ``tr_init``, with one
    line on unit 6. The guard comes off together with the NRMAX guard of 61ff3cdf.
 2. Names that do nothing. Under MODELG 9 ``eq_bpsd_get`` overwrites EQ's RR, RA, RKAP, RDLT, BB and RIP (TR's RIPS and RIPE) from TR's

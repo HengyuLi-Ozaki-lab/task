@@ -227,9 +227,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and
   `RIPS` = 0, which returned RC 0 with about 10 non-finite scalars, fail with `NONFINITE` at nt 1 (task-web's
   `non_finite` flag no longer sees them). On flat 9 MA ITER `MODELG` 9 with `NTEQIT` 50 and heating, the run stops
-  at t = 12 s (code 103, the axis leaves the plasma), where it printed `XX EQAXIS` lines to 37 s. `tr2` is
-  unchanged by this entry (its loop does not test the re-solve); see the #228 entry under Fixed for what changed in
-  `tr2`'s `R`.
+  at t = 12 s (code 102, the axis search ends at a point that is not finite), where it printed `XX EQAXIS` lines
+  to 37 s. `tr2` is unchanged by this entry (its loop does not test the re-solve); see the #228 entry under Fixed
+  for what changed in `tr2`'s `R`.
 - **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
   run re-preps the module, whoever set it (#253).** `tr_set_param` /
   `fp_set_param` / `ti_set_param` used to clear the module's private
@@ -413,11 +413,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `NZGMAX = 2`, said "ended at (R, Z) = (NaN, NaN), outside ...
   (ierr=103)" and a `MODELG = 8` load ended the process (a map whose
   spline is NaN, on the `-O0` build with run-time checks). From a finite
-  point both go on as before, and no run changes: the 60 TR runs end the
-  same way with the same scalars, bit for bit, before and after, and so do
-  70 analytic solves and a file load of task-web's six EQ presets, with
-  the shape, the current and the mesh varied (none of which meets a failed
-  search). Not changed: `find_xpoint1` and `find_xpoint2`, which
+  point both go on as before, and no run changes (on `0e83ad3d`): the 60
+  TR runs end the same way with the same scalars, bit for bit, before and
+  after, and so do 70 analytic solves and a file load of task-web's six EQ
+  presets, with the shape, the current and the mesh varied (none of which
+  meets a failed search). Not changed: `find_xpoint1` and `find_xpoint2`, which
   `MODELG = 8` calls for its X-points, keep their `IERR` to themselves the
   same way; and a `MODELG = 8` map whose search fails at a finite point (a
   ramp in R with a bump, a minimum of |grad psi| and no stationary point)
@@ -426,7 +426,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `MODELG = 8` file with a falling R or Z range is refused, where it was
   read, and a search that ends at a point that is not finite reports
   `ierr=102` where it reported 103 (task-web's wiki quotes 103 for
-  `RIP = 0` and `NZGMAX = 2`: task-web-client#205).
+  `RIP = 0` and `NZGMAX = 2`: task-web-client#205). Under TR's `MODELG = 9`,
+  whose q-scaling and library-mode re-solves record EQ's status since fork
+  PR #25, such a search ends the run with `EQ_FAILED` 102 where it ended
+  with 103, the outcome the same. Measured 2026-11-18: `RIPS` 0, 0.3 and
+  100 MA on TR's other defaults, and 10 MA with `RKAP` 2, or with `RKAP`
+  1.6 and `RDLT` 0.3; the flat 9 MA ITER case of the entry "TR library: a
+  run that ends on an EQ failure or a non-finite state fails in library
+  mode" under Changed, at nt 600, t = 12 s. 0.5 MA, whose search ends at a
+  finite point outside the box, stays 103.
 - **TR documentation: `CDH` and `CNH` weigh `chi_NC`** (the neoclassical
   `AKNC`), not `chi_NCLASS`: NCLASS needs `MDNCLS`, which the registry does
   not take (HengyuLi-Ozaki-lab/task-web-client#43). Text and comments only.
