@@ -268,6 +268,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **EQ: a load of a file that is not of the format `MODELG` names returns an error where it ended the process**
+  (the library-reachable abort of `CLAUDE.md`, #142). `EQRTSK` (`MODELG` 3 and 9), `EQDSKR` (5 and 25) and `EQJAEAR`
+  (8) did not check their reads: `run(1)` with a file of another format, or one cut short, ended the host process
+  with a Fortran runtime error (exit status 2; e.g. `eqdata.ITER01` with `MODELG` 5 at `eq/eq-eqdsk.f90:31`, "Bad
+  value during integer read"), and a grid size read from such a file was a loop bound before anything checked it
+  (a formatted read of a binary file can give `NRGMAX` 0; `eqdata.ITER01` read as a QST/JAEA file gives
+  -858993459). Each read now goes to an error branch that closes the unit and returns `IERR` 9, each size is checked
+  before it is used (`EQ_READ_SIZE`, `eq/eqfile.f90`: at most its array; at least 2 for `NRGMAX`, `NZGMAX`,
+  `NPSMAX`, `NSGMAX`, `NTGMAX` and `NRVMAX` and 1 for `NTVMAX`, below which `run(0)` ends the process (`EQSAVE` can
+  write less, e.g. after a G-EQDSK load with less set); at least 0 for the rest), and `eq_last_error` names the file
+  and the format, e.g. "EQ_READ: MODELG=5 load of KNAMEQ='eqdata.ITER01' failed: it does not read as a G-EQDSK file
+  (Bad value during integer read)". The sizes of a file's first records go to locals, so a file that fails there
+  changes no parameter; one that fails later leaves what was read, but `EQ_READ` puts every grid size back (`NRGMAX`
+  to `NTVMAX`) when it fails, as one that fits its array can still be wrong for the next solve. `EQJAEAR`'s second
+  file (`KNAMEQ2`) is read the same way, and where its psi has no magnetic axis it returns `IERR` 10, where it ran
+  `STOP`. In `EQRTSK` a file that ends before its last record (`HJTRZ`) is an error too; a last record that does not
+  read (too short for its list, or cut inside) still leaves `HJTRZ` 0 and loads. A file that reads, with sizes in
+  those ranges, loads as before. `fp_mcp`'s descriptions of `KNAMEQ` said such a file ends the server process; it fails
+  the run now. Not changed: the callers of the load that drop a nonzero `IERR`, as they did for a missing file
+  (`wrx/wrprep.f90`; `wm`, `wmx` and `wmseki`, which return on `IERR` 1 only; `fp/fpprep.f90` under MPI, on rank 0
+  only; the test programs `eq/pltest.f` and `eq/trtest.f`).
 - **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
   and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
   `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first

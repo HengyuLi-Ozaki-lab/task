@@ -48,7 +48,7 @@
 !     what was written to the unit (#227 item 3). After a 9 what is at
 !     the path is left as it is. It cannot be taken for the equilibrium
 !     that was to be saved (usually it is a short file) and must not be
-!     loaded: EQRTSK does not guard its READs. A caller cannot tell success from failure by
+!     loaded (the load fails, or gives something else). A caller cannot tell success from failure by
 !     looking for the file afterwards: a repeat save to a path that
 !     already holds a previous, non-empty file looks identical.
       IERR_OUT=0
@@ -171,11 +171,17 @@
       INTEGER :: IOS
       LOGICAL :: LEX
       CHARACTER(LEN=40) :: KREASON
+      INTEGER :: NSIZE0(11)
 
 !     A load replaces the equilibrium: QQPS is no longer an earlier
 !     g-eqdsk file's q column (EQDSKR sets the flag again for a new one).
       QQPS_FROM_FILE=.FALSE.
       EQ_ERRMSG=' '
+!     A load that fails leaves the grid sizes as they were (put back
+!     below): a reader that fails part-way can have set some from the
+!     file, small enough for its arrays but not for the next solve.
+      NSIZE0=(/NRGMAX,NZGMAX,NPSMAX,NSGMAX,NTGMAX,NUGMAX,NRMAX,NTHMAX, &
+               NSUMAX,NRVMAX,NTVMAX/)
       IERR=0
       IF(MODELG.EQ.3.OR.MODELG.EQ.9) THEN
          CALL EQRTSK(IERR)
@@ -228,11 +234,77 @@
                  TRIM(KNAMEQ),''' not found'
          ENDIF
       ENDIF
+      IF(IERR.NE.0) THEN
+         NRGMAX=NSIZE0(1)
+         NZGMAX=NSIZE0(2)
+         NPSMAX=NSIZE0(3)
+         NSGMAX=NSIZE0(4)
+         NTGMAX=NSIZE0(5)
+         NUGMAX=NSIZE0(6)
+         NRMAX=NSIZE0(7)
+         NTHMAX=NSIZE0(8)
+         NSUMAX=NSIZE0(9)
+         NRVMAX=NSIZE0(10)
+         NTVMAX=NSIZE0(11)
+      ENDIF
 
       RETURN
       END
 !
+!     ***** CHECK A SIZE READ FROM AN EQUILIBRIUM FILE *****
+!
+!     The readers of KNAMEQ check a size so before a read or a loop
+!     uses it as a bound. IERR=0 when NMIN <= N <= NMAX; otherwise
+!     IERR=1, and KMSG names the size and the range.
+!
+      SUBROUTINE EQ_READ_SIZE(KNAME,N,NMIN,NMAX,KMSG,IERR)
+
+      IMPLICIT NONE
+      CHARACTER(LEN=*), INTENT(IN)    :: KNAME
+      INTEGER,          INTENT(IN)    :: N,NMIN,NMAX
+      CHARACTER(LEN=*), INTENT(INOUT) :: KMSG
+      INTEGER,          INTENT(OUT)   :: IERR
+      INTEGER :: IST
+
+      IERR=0
+      IF(N.GE.NMIN.AND.N.LE.NMAX) RETURN
+      WRITE(KMSG,'(2A,I0,A,I0,A,I0)',IOSTAT=IST) TRIM(KNAME),'=',N, &
+           ' is not in ',NMIN,'..',NMAX
+      IERR=1
+      RETURN
+      END
+!
+!     ***** THE REASON A READER OF KNAMEQ FAILED *****
+!
+!     Sets EQ_ERRMSG (eq_last_error): KNAMEQ does not read as KFORMAT
+!     ('a TASK/EQ file', ...), then KMSG: the message of the read that
+!     failed, or what EQ_READ_SIZE said.
+!
+      SUBROUTINE EQ_READ_FAILED(KFORMAT,KMSG)
+
+      USE plcomm, ONLY: MODELG,KNAMEQ
+      USE eqcom1_mod, ONLY: EQ_ERRMSG
+      IMPLICIT NONE
+      CHARACTER(LEN=*), INTENT(IN) :: KFORMAT,KMSG
+      CHARACTER(LEN=12) :: KMODELG
+      INTEGER :: IST
+
+      WRITE(KMODELG,'(I0)',IOSTAT=IST) MODELG
+      EQ_ERRMSG='EQ_READ: MODELG='//TRIM(KMODELG)//' load of KNAMEQ='''// &
+           TRIM(KNAMEQ)//''' failed: it does not read as '//KFORMAT// &
+           ' ('//TRIM(KMSG)//')'
+      RETURN
+      END
+!
 !     ***** LOAD TASK/EQ DATA *****
+!
+!     IERR: FROPEN's (1 to 8) when the file was not opened; 9 when a
+!     read failed or a size is beyond its array (EQ_READ_FAILED gives
+!     the reason), where the process used to end: a file of another
+!     format reads as garbage, or not at all. The first two records go
+!     to locals, so a file that fails there changes nothing; one that
+!     fails later leaves what was read before, but for the grid sizes,
+!     which EQ_READ puts back.
 !
       SUBROUTINE EQRTSK(IERR)
 
@@ -246,41 +318,88 @@
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
       DIMENSION DERIV(NRVM)
+      INTEGER :: NSIZE(8)
+!     NSGMAX..NTVMAX: their arrays bound them above; below, a solve
+!     needs NSGMAX, NTGMAX and NRVMAX at least 2 and NTVMAX at least 1
+!     (run(0) ends the process under these). EQSAVE can write less,
+!     e.g. after a load that does not read them (a G-EQDSK file) with
+!     less set; a solve after loading that would end the process.
+      INTEGER, PARAMETER :: NSIZEM(8)= &
+           (/NSGM,NTGM,NUGM,NRM,NTHM,NSUM,NRVM,NTVM/)
+      INTEGER, PARAMETER :: NSIZEL(8)=(/2,2,0,0,0,0,2,1/)
+      CHARACTER(LEN=6), PARAMETER :: KSIZE(8)=(/'NSGMAX','NTGMAX', &
+           'NUGMAX','NRMAX ','NTHMAX','NSUMAX','NRVMAX','NTVMAX'/)
+      CHARACTER(LEN=120) :: KMSG
       EXTERNAL EQFBND
 
       CALL FROPEN(21,KNAMEQ,0,MODEFR,'EQ',IERR)
       IF(IERR.NE.0) RETURN
 
-      READ(21) RR,BB,RIP
-      READ(21) NRGMAX,NZGMAX
-      READ(21) (RG(NRG),NRG=1,NRGMAX)
-      READ(21) (ZG(NZG),NZG=1,NZGMAX)
-      READ(21) ((PSIRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
-      READ(21) NPSMAX
-      READ(21) (PSIPS(NPS),NPS=1,NPSMAX)
-      READ(21) (PPPS(NPS),NPS=1,NPSMAX)
-      READ(21) (TTPS(NPS),NPS=1,NPSMAX)
-      READ(21) (TEPS(NPS),NPS=1,NPSMAX)
-      READ(21) (OMPS(NPS),NPS=1,NPSMAX)
+      KMSG=' '
+      READ(21,ERR=900,END=900,IOMSG=KMSG) RR1,BB1,RIP1
+      READ(21,ERR=900,END=900,IOMSG=KMSG) NRG1,NZG1
+      CALL EQ_READ_SIZE('NRGMAX',NRG1,2,NRGM,KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      CALL EQ_READ_SIZE('NZGMAX',NZG1,2,NZGM,KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      RR=RR1
+      BB=BB1
+      RIP=RIP1
+      NRGMAX=NRG1
+      NZGMAX=NZG1
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (RG(NRG),NRG=1,NRGMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (ZG(NZG),NZG=1,NZGMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) &
+           ((PSIRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) NPS1
+      CALL EQ_READ_SIZE('NPSMAX',NPS1,2,NPSM,KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      NPSMAX=NPS1
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (PSIPS(NPS),NPS=1,NPSMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (PPPS(NPS),NPS=1,NPSMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (TTPS(NPS),NPS=1,NPSMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (TEPS(NPS),NPS=1,NPSMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (OMPS(NPS),NPS=1,NPSMAX)
 
-      READ(21) NSGMAX,NTGMAX,NUGMAX,NRMAX,NTHMAX,NSUMAX,NRVMAX,NTVMAX
-      READ(21) ((PSI(NTG,NSG),NTG=1,NTGMAX),NSG=1,NSGMAX)
-      READ(21) ((DELPSI(NTG,NSG),NTG=1,NTGMAX),NSG=1,NSGMAX)
-      READ(21) ((HJT(NTG,NSG),NTG=1,NTGMAX),NSG=1,NSGMAX)
-      READ(21) RAXIS,ZAXIS,PSITA,PSIPA,PSI0
-      READ(21) (PSIPNV(NRV),NRV=1,NRVMAX)
-      READ(21) (PSIPV(NRV),NRV=1,NRVMAX)
-      READ(21) (PSITV(NRV),NRV=1,NRVMAX)
-      READ(21) (QPV(NRV),NRV=1,NRVMAX)
-      READ(21) (TTV(NRV),NRV=1,NRVMAX)
-      READ(21) RA,RKAP,RDLT,RB,FRBIN
-      READ(21) PJ0,PJ1,PJ2,PROFJ0,PROFJ1,PROFJ2
-      READ(21) PP0,PP1,PP2,PROFP0,PROFP1,PROFP2
-      READ(21) PT0,PT1,PT2,PROFTP0,PROFTP1,PROFTP2
-      READ(21) PV0,PV1,PV2,PROFV0,PROFV1,PROFV2
-      READ(21) PROFR0,PROFR1,PROFR2
+!     NSGMAX,NTGMAX,NUGMAX,NRMAX,NTHMAX,NSUMAX,NRVMAX,NTVMAX
+      READ(21,ERR=900,END=900,IOMSG=KMSG) NSIZE
+      DO I=1,8
+         CALL EQ_READ_SIZE(KSIZE(I),NSIZE(I),NSIZEL(I),NSIZEM(I),KMSG,IST)
+         IF(IST.NE.0) GOTO 900
+      ENDDO
+      NSGMAX=NSIZE(1)
+      NTGMAX=NSIZE(2)
+      NUGMAX=NSIZE(3)
+      NRMAX=NSIZE(4)
+      NTHMAX=NSIZE(5)
+      NSUMAX=NSIZE(6)
+      NRVMAX=NSIZE(7)
+      NTVMAX=NSIZE(8)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) &
+           ((PSI(NTG,NSG),NTG=1,NTGMAX),NSG=1,NSGMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) &
+           ((DELPSI(NTG,NSG),NTG=1,NTGMAX),NSG=1,NSGMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) &
+           ((HJT(NTG,NSG),NTG=1,NTGMAX),NSG=1,NSGMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) RAXIS,ZAXIS,PSITA,PSIPA,PSI0
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (PSIPNV(NRV),NRV=1,NRVMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (PSIPV(NRV),NRV=1,NRVMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (PSITV(NRV),NRV=1,NRVMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (QPV(NRV),NRV=1,NRVMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) (TTV(NRV),NRV=1,NRVMAX)
+      READ(21,ERR=900,END=900,IOMSG=KMSG) RA,RKAP,RDLT,RB,FRBIN
+      READ(21,ERR=900,END=900,IOMSG=KMSG) PJ0,PJ1,PJ2,PROFJ0,PROFJ1,PROFJ2
+      READ(21,ERR=900,END=900,IOMSG=KMSG) PP0,PP1,PP2,PROFP0,PROFP1,PROFP2
+      READ(21,ERR=900,END=900,IOMSG=KMSG) &
+           PT0,PT1,PT2,PROFTP0,PROFTP1,PROFTP2
+      READ(21,ERR=900,END=900,IOMSG=KMSG) PV0,PV1,PV2,PROFV0,PROFV1,PROFV2
+      READ(21,ERR=900,END=900,IOMSG=KMSG) PROFR0,PROFR1,PROFR2
 !      READ(21) PTS,PN0,HM
-      READ(21,ERR=1000) ((HJTRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
+!     A last record that does not read (one too short for the list, or
+!     a file cut inside it) leaves HJTRZ 0, as it did; a file that ends
+!     before it is cut short.
+      READ(21,ERR=1000,END=900,IOMSG=KMSG) &
+           ((HJTRZ(NRG,NZG),NRG=1,NRGMAX),NZG=1,NZGMAX)
 
       CALL EQMESH
       EPSZ=1.D-8
@@ -333,6 +452,11 @@
 !
 !     WRITE(6,*) 'HJTRZ=',HJTRZ(10,10)
 
+      RETURN
+
+  900 CLOSE(21,IOSTAT=IST)
+      CALL EQ_READ_FAILED('a TASK/EQ file',KMSG)
+      IERR=9
       RETURN
       END
 !
