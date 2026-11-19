@@ -487,6 +487,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   terminal shows that line and no longer the library's output. Where
   `fstat` gives a descriptor no identity (Windows for a pipe or a console)
   the merged layout is not recognised and fd 1 goes to stderr as usual.
+- **CI: the pytest job no longer installs valgrind.** No step runs it, and
+  it was the job's only download from the Ubuntu mirrors: valgrind and the
+  libc6-dbg it needs, which must match libc6 exactly and so upgraded six
+  glibc packages when the image's glibc was behind the archive's (35.5 MB
+  in all). With it gone the job installs nothing (the image has gfortran,
+  gcc and make) and its tests always run on the image's glibc; before,
+  they ran on the archive's newest, or on the image's when the index fetch
+  had failed (on 2026-11-19 the two Python versions of one run planned
+  different ones). The download is what ran a job into the 10-minute
+  limit at 163 kB/s on 2026-11-19 and what failed both pytest jobs in the
+  mirror outage the same day.
+- **CI: the install steps run apt only for a package the runner image
+  lacks, and try it three times.** The four "Install Fortran/C build deps"
+  steps (the pytest and mono build jobs, `regen-baselines.yml`,
+  `clean-tree-build.yml`) call `.github/scripts/apt-install.sh`, which skips
+  apt altogether when the image has every package (it has gfortran, gcc,
+  make and jq) and otherwise runs `apt-get update` and `apt-get install` of
+  the missing ones up to three times, 30 s and 60 s apart, starting none
+  after its first 4 minutes: that retries an error that comes back fast
+  (apt's own three retries of a download, its default since apt 2.3, are
+  1, 2 and 4 s apart). On 2026-11-19 both pytest jobs of a pull request
+  failed in that step, with security.ubuntu.com answering 503 and
+  azure.archive.ubuntu.com unreachable for at least four minutes, while the
+  mono build job, which had nothing to download, passed; in such an outage
+  one attempt takes minutes (about 4 for the 3.11 job), and the step now
+  fails after one or two.
+  `clean-tree-build.yml` also runs when the script changes.
 - **tot docs and `tot_mcp`: string parameters and the tool count** (#274).
   The tot Sphinx pages showed `tot.set_param_str("fp:KNAMEQ", ...)` and
   `("wr:KNAMEQ", ...)`, which tot refuses: it passes string values on for
