@@ -166,6 +166,17 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   terminal shows that line and no longer the library's output. Where
   `fstat` gives a descriptor no identity (Windows for a pipe or a console)
   the merged layout is not recognised and fd 1 goes to stderr as usual.
+- **CI: the pytest job no longer installs valgrind.** No step runs it, and
+  it was the job's only download from the Ubuntu mirrors: valgrind and the
+  libc6-dbg it needs, which must match libc6 exactly and so upgraded six
+  glibc packages when the image's glibc was behind the archive's (35.5 MB
+  in all). With it gone the job installs nothing (the image has gfortran,
+  gcc and make) and its tests always run on the image's glibc; before,
+  they ran on the archive's newest, or on the image's when the index fetch
+  had failed (on 2026-11-19 the two Python versions of one run planned
+  different ones). The download is what ran a job into the 10-minute
+  limit at 163 kB/s on 2026-11-19 and what failed both pytest jobs in the
+  mirror outage the same day.
 - **CI: the install steps run apt only for a package the runner image
   lacks, and try it three times.** The four "Install Fortran/C build deps"
   steps (the pytest and mono build jobs, `regen-baselines.yml`,

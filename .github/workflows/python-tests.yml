@@ -61,8 +61,14 @@ jobs:
         # X11 is intentionally NOT installed: each lib*api.so excludes
         # graphics archives (see fp/Makefile:318), so X11 is never
         # linked into the .so files we build here.
+        #
+        # Nor is valgrind: no step runs it (PR #139 used it to find the
+        # species_kid write named above). It was this step's only download,
+        # and as its libc6-dbg must match libc6 exactly it also upgraded the
+        # image's glibc to the archive's newest (35.5 MB in all); a mirror
+        # outage on 2026-11-19 failed the step on it.
         run: |
-          bash .github/scripts/apt-install.sh gfortran gcc make valgrind
+          bash .github/scripts/apt-install.sh gfortran gcc make
           gfortran --version | head -1
 
       - name: Clone BPSD (patched fork k-yoshimi/bpsd@develop)
