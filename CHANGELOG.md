@@ -527,13 +527,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     `MDLEQF` 1 to 4 and 6 to 9 are unchanged.
   - **Reference data.** The equivalence baseline of `tot_ht6m_short`, whose
     equilibrium CI solves with the standalone `tot` before the test, moves
-    by at most 7.3e-6 relative. Data made earlier with the old T:
+    by at most 7.3e-6 relative. It and its fallback eqdata
+    `python/totlib/tests/fixtures/eqdata-HT6M` are regenerated on the CI
+    compiler (`regen-baselines.yml`); the eqdata differs only in T and what
+    is computed from it. Data made earlier with the old T:
     - the baselines `test_run/baselines/eq_iter01`, `eq_tst2`, `eq_jt60`
       (standalone solves; `eq_jt60` with `MDLEQA` 1), and `tr_iter01`,
       `tr_tst2`, which run on those equilibria;
     - the committed `eqdata.ITER01` / `eqdata.TST-2` under
       `python/eqlib/tests/fixtures/` and `python/trlib/tests/fixtures/`,
-      and `python/totlib/tests/fixtures/eqdata-HT6M` / `eqdata.demo2014`.
+      and `python/totlib/tests/fixtures/eqdata.demo2014`.
     A test that loads one of those committed files (MODELG 3) is unchanged:
     the load path does not compute T. In CI, `tot_ht6m_short` loads the file
     CI has just solved instead. A fresh standalone solve of any of these
