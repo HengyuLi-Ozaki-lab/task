@@ -16,6 +16,7 @@ CONTAINS
       SUBROUTINE tr_init
 
       USE trcomm
+      USE libnf, ONLY: nf_last_error, nf_error_count, nf_reset_log
       IMPLICIT NONE
       INTEGER NS, NPSC
 
@@ -413,6 +414,42 @@ CONTAINS
 !                    6:ON (DHe3) with particle source
 
       MDLNF  = 0
+
+!        model_pnf : ADDITIVE MULTI-REACTION FUSION PATH (P1, ported
+!                    from trx).  Reset here and not only at its
+!                    declaration: a declaration initialiser is static
+!                    and is not re-run by tr_api_init, so without this
+!                    a second in-process session would inherit the
+!                    first one's value and silently run the new path.
+
+      model_pnf = 0
+
+!                    nnfmax survives finalize.  set_usigmav_nf assigns it on
+!                    every prepare, but nothing resets it in the window
+!                    between a finalize and the next tr_prep -- so without
+!                    this line the next session's
+!                    ALLOCATE_TRCOMM sizes the trcomm_nf arrays from the
+!                    dead session's reaction count -- ~125 KB at the
+!                    default -- giving the default path a different heap
+!                    history than a first session had.  That is the hazard
+!                    the bit-exactness note in trcomm_nf names, and
+!                    Two tests fail without this line:
+!                    test_session_state_is_released_and_reset_across_a_cycle
+!                    and test_model_pnf_is_reset_by_init.
+!
+!                    nf_last_error and nf_error_count do NOT survive
+!                    finalize -- nf_finalize zeroes both.  They are reset
+!                    here as defence in depth for the window a caller can
+!                    reach by driving libnf directly through the .so
+!                    between a finalize and the next init, and against a
+!                    future re-init path that skips finalize.  nf_reset_log
+!                    re-arms the per-site logging latches; tr_prep calls it
+!                    too, which is what covers trmenu's repeated R runs.
+
+      nnfmax         = 0
+      nf_last_error  = 0
+      nf_error_count = 0
+      CALL nf_reset_log
 
 !     ==== NBI HEATING PARAMETERS ====
 

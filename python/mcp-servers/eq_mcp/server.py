@@ -22,6 +22,8 @@ wrx_mcp):
 
 * ``set_param_str`` — string parameters such as ``KNAMEQ`` (the equilibrium
   file path) routed through :py:meth:`eqlib.Eq.set_param_str`.
+* ``get_psi_rz`` — the 2-D PSI(R,Z) field with the RG/ZG grid, through
+  :py:meth:`eqlib.Eq.get_psi_rz` (needs numpy).
 * ``validate`` — pre-run cross-parameter validation (Issue #143)
   exposing :py:meth:`eqlib.Eq.validate`. Returns a list of
   ``{param, code, message}`` dicts; an empty list means the current
@@ -52,6 +54,7 @@ server's log.
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 from pathlib import Path
@@ -336,6 +339,39 @@ STATE = _ServerState()
 # =====================================================================
 # Helpers — parameter application.
 # =====================================================================
+def _short(text: str, limit: int) -> str:
+    """``text`` for an error message: its start, when it is longer than ``limit``."""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _number(key: str, value: Any) -> float:
+    """``value`` as the float the library is given for ``key``.
+
+    Raises :class:`EqlibError` for what ``float()`` does not take (a string
+    that is no number, ``None``), for an integer too large for a float
+    (``float()`` raises ``OverflowError``), and for a number that is not
+    finite: ``float()`` also takes ``"nan"``, ``"inf"`` and ``"1e309"``,
+    and no parameter has such a value.
+    """
+    key = _short(key, 80)
+    if isinstance(value, int) and abs(value) >= 10**30:
+        shown = "an integer of more than 30 digits"   # Python does not print one of 4300
+    else:
+        shown = _short(repr(value), 60)
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        reason = _short(str(exc), 80)                 # float() repeats the string it refuses
+        raise EqlibError(
+            f"invalid numeric value for '{key}': {shown} ({reason})"
+        ) from exc
+    if not math.isfinite(coerced):
+        raise EqlibError(
+            f"invalid numeric value for '{key}': {shown} (not finite)"
+        )
+    return coerced
+
+
 def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
     """Apply a bulk ``params`` dict, returning the list of applied keys.
 
@@ -369,12 +405,12 @@ def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
                 )
             for i, v in enumerate(value, start=1):
                 key = f"{name}[{i}]"
-                eq.set_param(key, float(v))
+                eq.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, dict):
             for idx, v in value.items():
                 key = f"{name}[{int(idx)}]"
-                eq.set_param(key, float(v))
+                eq.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, bool):
             # bool is a subclass of int; reject as ambiguous.
@@ -387,7 +423,7 @@ def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
             eq.set_param_str(name, value)
             applied.append(name)
         elif isinstance(value, (int, float)):
-            eq.set_param(name, float(value))
+            eq.set_param(name, _number(name, value))
             applied.append(name)
         else:
             raise EqlibError(
@@ -443,7 +479,7 @@ def handle_init() -> str:
 def handle_set_param(name: str, value: float) -> str:
     try:
         eq = STATE.ensure_open()
-        eq.set_param(name, float(value))
+        eq.set_param(name, _number(name, value))
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_eqlib_error(exc) from exc
@@ -478,6 +514,28 @@ def handle_save(path: str, overwrite: bool = False) -> str:
             hint = "exists and is not a regular file"
         raise ToolError(f"save: {path} {hint}")  # type: ignore[call-arg]
     return f"saved equilibrium to {path}"
+
+
+def handle_get_psi_rz() -> Dict[str, Any]:
+    try:
+        eq = STATE.ensure_open()
+        psi = eq.get_psi_rz()  # numpy ndarray shape (nrg, nzg)
+        state = eq.get_state()
+        nrg = int(psi.shape[0])
+        nzg = int(psi.shape[1])
+        # state.rg / state.zg are already trimmed to nrgmax / nzgmax by
+        # EqState.from_c(); a plain list copy is sufficient.
+        rg = list(state.rg)
+        zg = list(state.zg)
+        return {
+            "nrg": nrg,
+            "nzg": nzg,
+            "rg": rg,
+            "zg": zg,
+            "psi_rz": psi.tolist(),
+        }
+    except Exception as exc:
+        raise _wrap_eqlib_error(exc) from exc
 
 
 def handle_set_params(params: Dict[str, SupportedValue]) -> str:
@@ -596,7 +654,7 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 12 eq tools."""
+    """Build and return a FastMCP server instance with the 13 eq tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -693,6 +751,9 @@ def build_server() -> Any:
         * a dict ``{index: value}`` (sparse array; use this for the
           0-origin ``PSIB`` because lists implicitly start at 1)
         * a string (for KNAMEQ and similar string-valued parameters)
+
+        Every number must be finite: NaN and the infinities are refused,
+        also as a string in a list or a dict (``"nan"``, ``"1e309"``).
         """
         return handle_set_params(params)
 
@@ -729,6 +790,20 @@ def build_server() -> Any:
         VPS, RST). Schema also available via `describe_state_schema`.
         """
         return handle_get_state()
+
+    @mcp.tool()
+    def get_psi_rz() -> Dict[str, Any]:
+        """Return the 2-D PSI(R,Z) field plus the RG/ZG grid coordinates.
+
+        Output shape:
+            ``{"nrg": int, "nzg": int, "rg": list[float], "zg": list[float],
+               "psi_rz": list[list[float]]}``  (psi_rz indexed [i_r][i_z],
+            runtime active grid only — default 33×33)
+
+        Note: PSI is populated by ``run()``; calling get_psi_rz before run
+        returns whatever is in the buffer (typically zeros on a fresh init).
+        """
+        return handle_get_psi_rz()
 
     @mcp.tool()
     def validate() -> List[Dict[str, Any]]:
@@ -823,6 +898,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "set_params",
                 "run",
                 "get_state",
+                "get_psi_rz",
                 "validate",
                 "finalize",
                 "describe_parameters",

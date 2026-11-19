@@ -423,5 +423,57 @@ class TestIntegration(unittest.TestCase):
             )
 
 
+# The names the server must describe: PECTOT/PICTOT (total EC/IC input
+# power, MW) and CDH/CNH (the weights of chi_s = CDH*chi_turb +
+# CNH*chi_NC, the neoclassical AKNC). The Fortran registry accepting them is tested in
+# python/trlib/tests/test_registry_heating_and_diffusivity.py.
+HEATING_AND_DIFFUSIVITY_NAMES = ("PECTOT", "PICTOT", "CDH", "CNH")
+
+
+class TestHeatingAndDiffusivityRegistry(unittest.TestCase):
+    """PECTOT, PICTOT, CDH and CNH are in the parameter table the server
+    describes. One assertion over the whole set, no ``subTest``: pytest's
+    ``--forked`` mode reports a failing ``subTest`` as passed."""
+
+    def test_all_four_names_are_described_as_float(self) -> None:
+        described = srv.handle_describe_parameters()["parameters"]
+        missing = sorted(set(HEATING_AND_DIFFUSIVITY_NAMES) - set(described))
+        self.assertFalse(
+            missing, f"missing from describe_parameters: {missing}")
+        wrong_type = {
+            name: described[name]["type"]
+            for name in HEATING_AND_DIFFUSIVITY_NAMES
+            if described[name]["type"] != "float"
+        }
+        self.assertFalse(
+            wrong_type, f"described with a type other than float: {wrong_type}")
+
+
+# The names of the PLATO case (NCLASS, the equations solved, the start current profile, particle
+# transport, the particle source) with the type the server must describe for each. The Fortran
+# registry accepting them is tested in
+# python/trlib/tests/test_registry_nclass_and_particle_source.py.
+NCLASS_AND_SOURCE_TYPES = {
+    "MDNCLS": "int", "MDLEQB": "int", "MDLEQN": "int", "MDLEQE": "int",
+    "PROFJ1": "float", "PROFJ2": "float", "AD0": "float", "AV0": "float", "CDP": "float", "CNP": "float",
+    "MDLPSC": "int", "NPSCMAX": "int", "PSCTOT": "float[NPSCM]", "PSCR0": "float[NPSCM]",
+    "PSCRW": "float[NPSCM]", "NSPSC": "int[NPSCM]",
+}
+
+
+class TestNclassAndParticleSourceRegistry(unittest.TestCase):
+    """The sixteen names are described, each with its type. One assertion
+    over the whole set, no ``subTest``."""
+
+    def test_the_names_are_described_with_their_types(self) -> None:
+        described = srv.handle_describe_parameters()["parameters"]
+        wrong = {
+            name: described.get(name, {}).get("type")
+            for name, kind in NCLASS_AND_SOURCE_TYPES.items()
+            if described.get(name, {}).get("type") != kind
+        }
+        self.assertFalse(wrong, f"missing or with another type: {wrong}")
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

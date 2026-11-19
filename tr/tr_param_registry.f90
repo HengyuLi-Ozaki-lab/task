@@ -14,9 +14,9 @@
 !   - plasma scalars/arrays  (NSMAX, PA[i], PZ[i], PN[i], PNS[i], PT[i], PTS[i])
 !   - time evolution         (DT, NTMAX, NTSTEP, EPSLTR, LMAXTR)
 !   - transport switches     (MDLKAI, MDLETA, MDLAD, MDLAVK, CDW[i], CHP,
-!                             CK0, CK1)
+!                             CK0, CK1, CDH, CNH)
 !   - module switches        (MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL,
-!                             MDLJBS, MDLST, MDLNF, MDLUF)
+!                             MDLJBS, MDLST, MDLNF, MODEL_PNF, MDLUF)
 !
 ! L-6 additions (tr_iter01 / tr_tst2 UNREGISTERED_KEYS):
 !   - geometry selector      (MODELG)
@@ -25,9 +25,18 @@
 !   - graphics step counters (NGTSTP, NGRSTP)
 !   - heating / current drive
 !       NBI                  (PNBR0, PNBRW, PNBENG, PNBRTG)
-!       ICRF                 (PICCD, PICR0, PICRW, PICNPR)
-!       ECRF                 (PECCD, PECR0, PECRW, PECNPR)
+!       ICRF                 (PICCD, PICR0, PICRW, PICNPR, PICTOT)
+!       ECRF                 (PECCD, PECR0, PECRW, PECNPR, PECTOT)
 !       LH                   (PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT)
+!
+! NCLASS, the equations solved and the particle source (the PLATO case
+! of Mochinaga et al., Plasma Fusion Res. 16, 1403093 (2021)):
+!   - neoclassical model     (MDNCLS)
+!   - equations solved       (MDLEQB, MDLEQN, MDLEQE)
+!   - current profile        (PROFJ1, PROFJ2)
+!   - particle transport     (AD0, AV0, CDP, CNP)
+!   - particle source        (MDLPSC, NPSCMAX, PSCTOT[i], PSCR0[i],
+!                             PSCRW[i], NSPSC[i])
 !
 ! Strings (KNAMEQ) are handled through a separate entry point:
 !   - tr_param_set_str("KNAMEQ", "eqdata.ITER01")
@@ -40,29 +49,38 @@
 ! docs/superpowers/plans/2026-04-18-tr-library-L3-param-registry.md.
 
 MODULE tr_param_registry
+  USE tr_state, ONLY: TR_MAX_NRMAX
   USE trcomm, ONLY: rkind, &
        RR, RA, RKAP, RDLT, BB, PHIA, &
        NSMAX, PA, PZ, PN, PNS, PT, PTS, &
        RIPS, RIPE, &
-       DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, &
-       MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, &
+       DT, NTMAX, NTSTEP, EPSLTR, LMAXTR, NTEQIT, TPRST, NRMAX, &
+       MDLKAI, MDLETA, MDLAD, MDLAVK, CDW, CHP, CK0, CK1, CDH, CNH, &
        MDLNB, MDLEC, MDLLH, MDLIC, MDLPEL, MDLJBS, MDLST, MDLNF, MDLUF, &
+       model_pnf, &
        MODELG, MDLIMP, NGTSTP, NGRSTP, &
        PROFN1, PROFN2, PNC, &
        PNBTOT, PNBR0, PNBRW, PNBENG, PNBRTG, &
-       PICCD, PICR0, PICRW, PICNPR, &
-       PECCD, PECR0, PECRW, PECNPR, &
+       PICCD, PICR0, PICRW, PICNPR, PICTOT, &
+       PECCD, PECR0, PECRW, PECNPR, PECTOT, &
        PLHCD, PLHR0, PLHRW, PLHNPR, PLHTOT, &
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_R0, EXTERNAL_DRIVEN_RW, &
+       MDNCLS, MDLEQB, MDLEQN, MDLEQE, PROFJ1, PROFJ2, &
+       AD0, AV0, CDP, CNP, &
+       MDLPSC, NPSCMAX, PSCTOT, PSCR0, PSCRW, NSPSC, &
        KNAMEQ
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: tr_param_set
   PUBLIC :: tr_param_generation
   PUBLIC :: tr_param_set_str
+  PUBLIC :: tr_param_note_external_set
   PUBLIC :: parse_array_subscript_pub   ! exported for unit-test only
 
   INTEGER, SAVE :: g_generation = 0
+
+  ! Smallest NRMAX the solver runs on (measured: NRMAX 1 and 2 abort in a Fortran bounds check, 3 to 10 run).
+  INTEGER, PARAMETER :: NRMAX_MIN = 3
 
 CONTAINS
 
@@ -106,6 +124,14 @@ CONTAINS
 
     ierr = 0
     CALL parse_array_subscript(name, b, idx)
+
+    ! A value no parameter takes is refused before the name is looked
+    ! at: one that is not finite, and for an integer parameter one
+    ! beyond the default integer (value_refused, below).
+    IF (value_refused(b, value)) THEN
+       ierr = 1
+       RETURN
+    END IF
 
     SELECT CASE (TRIM(b))
     ! --- geometry / device scalars ---------------------------------
@@ -164,6 +190,12 @@ CONTAINS
     CASE ("CHP");    CHP   = value
     CASE ("CK0");    CK0   = value
     CASE ("CK1");    CK1   = value
+    ! chi_s = CDH*chi_turb + CNH*chi_NC (neoclassical, AKNC) sum weights
+    ! (trcoef_neoclassical.f90:192, ENTRY TRCFDW_AKDW). Variables
+    ! already existed in trcomm_param/trinit with 1.0 (neutral) defaults;
+    ! only the registry CASE entries were missing.
+    CASE ("CDH");    CDH   = value
+    CASE ("CNH");    CNH   = value
     ! --- module switches -------------------------------------------
     CASE ("MDLNB");  MDLNB  = INT(value)
     CASE ("MDLEC");  MDLEC  = INT(value)
@@ -172,7 +204,32 @@ CONTAINS
     CASE ("MDLPEL"); MDLPEL = INT(value)
     CASE ("MDLJBS"); MDLJBS = INT(value)
     CASE ("MDLST");  MDLST  = INT(value)
+    CASE ("NTEQIT")
+       IF (value < 0.0_rkind) THEN; ierr = 1; ELSE; NTEQIT = INT(value); END IF
+    CASE ("TPRST")
+       IF (.NOT. value > 0.0_rkind) THEN; ierr = 1; ELSE; TPRST = value; END IF
+    CASE ("NRMAX")
+       ! TR's radial mesh. The state carries at most TR_MAX_NRMAX surfaces
+       ! (tr/tr_state.f90). Under MODELG 3, 5 and 8 it sets the EQ grid
+       ! that goes into bpsd.
+       IF (value < REAL(NRMAX_MIN, rkind) .OR. value > REAL(TR_MAX_NRMAX, rkind)) THEN
+          ierr = 1
+       ELSE
+          NRMAX = INT(value)
+       END IF
     CASE ("MDLNF");  MDLNF  = INT(value)
+    ! Selects the multi-reaction fusion path ported from trx (P1 Task 6).
+    ! 0 (default) = legacy MDLNF only; 1/2/3/4/12/14 additionally evaluate
+    ! the ported reaction set.  Not range-checked here: the value is
+    ! validated where it is consumed, by set_usigmav_nf, which returns
+    ! ierr_nf=2 for anything else and which tr_prep propagates.
+    ! One name, uppercase like every other entry (the CASE compare is
+    ! literal): a second, lowercase spelling would be a second parameter
+    ! name to every reader of this file, and a parameter reference that
+    ! keeps one file per name cannot hold two that differ only in case
+    ! on macOS or Windows.  The variable keeps the lowercase name it has
+    ! in trx; Fortran does not tell the two apart.
+    CASE ("MODEL_PNF"); model_pnf = INT(value)
     CASE ("MDLUF");  MDLUF  = INT(value)
     ! --- heating / current-drive scalars ---------------------------
     !     NBI
@@ -186,11 +243,13 @@ CONTAINS
     CASE ("PICR0");  PICR0  = value
     CASE ("PICRW");  PICRW  = value
     CASE ("PICNPR"); PICNPR = value
+    CASE ("PICTOT"); PICTOT = value
     !     ECRF
     CASE ("PECCD");  PECCD  = value
     CASE ("PECR0");  PECR0  = value
     CASE ("PECRW");  PECRW  = value
     CASE ("PECNPR"); PECNPR = value
+    CASE ("PECTOT"); PECTOT = value
     !     LH
     CASE ("PLHCD");  PLHCD  = value
     CASE ("PLHR0");  PLHR0  = value
@@ -201,10 +260,76 @@ CONTAINS
     CASE ("EXTERNAL_DRIVEN_I");  EXTERNAL_DRIVEN_I  = value
     CASE ("EXTERNAL_DRIVEN_R0"); EXTERNAL_DRIVEN_R0 = value
     CASE ("EXTERNAL_DRIVEN_RW"); EXTERNAL_DRIVEN_RW = value
+    ! --- NCLASS, equations, current profile, particle transport ----
+    !     The variables, their defaults (trinit.f90) and their namelist
+    !     entries (trparm.f90) already existed; only these CASE entries
+    !     were missing. Ranges are checked before a run (tr_api's
+    !     source_and_equation_violations), not here.
+    CASE ("MDNCLS"); MDNCLS = INT(value)   ! 0 off, else NCLASS (trcalc.f90)
+    CASE ("MDLEQB"); MDLEQB = INT(value)   ! 0/1: B_theta evolved
+    CASE ("MDLEQN"); MDLEQN = INT(value)   ! 0/1: densities evolved
+    CASE ("MDLEQE"); MDLEQE = INT(value)   ! with MDLEQN 1, 0/2: n_e/n_i by quasi-neutrality
+    CASE ("PROFJ1"); PROFJ1 = value        ! <= 0: j from 1/eta (trprof.f90)
+    CASE ("PROFJ2"); PROFJ2 = value
+    CASE ("AD0");    AD0    = value        ! particle diffusion factor
+    CASE ("AV0");    AV0    = value        ! inward pinch factor
+    CASE ("CDP");    CDP    = value        ! turbulent particle-diffusion weight
+    CASE ("CNP");    CNP    = value        ! neoclassical particle-diffusion weight
+    !     Particle source (trpsc.f90, MDLPSC 1: NPSCMAX Gaussians in
+    !     RA*rho, total rate PSCTOT [10^20/s] into ion species NSPSC);
+    !     arrays 1..NPSCM.
+    CASE ("MDLPSC");  MDLPSC  = INT(value)
+    CASE ("NPSCMAX"); NPSCMAX = INT(value)
+    CASE ("PSCTOT"); IF (idx < 1 .OR. idx > SIZE(PSCTOT)) THEN; ierr = 1; ELSE; PSCTOT(idx) = value; END IF
+    CASE ("PSCR0");  IF (idx < 1 .OR. idx > SIZE(PSCR0))  THEN; ierr = 1; ELSE; PSCR0(idx)  = value; END IF
+    CASE ("PSCRW");  IF (idx < 1 .OR. idx > SIZE(PSCRW))  THEN; ierr = 1; ELSE; PSCRW(idx)  = value; END IF
+    CASE ("NSPSC");  IF (idx < 1 .OR. idx > SIZE(NSPSC))  THEN; ierr = 1; ELSE; NSPSC(idx)  = INT(value); END IF
     CASE DEFAULT
        ierr = 1   ! unknown name
     END SELECT
   END FUNCTION tr_param_set_impl
+
+  !-------------------------------------------------------------------
+  ! value_refused : .TRUE. for a value that the setter does not take.
+  !
+  !   - Not finite (NaN, +Infinity, -Infinity): for every name.
+  !   - For an integer parameter, a value outside -HUGE(0) .. HUGE(0).
+  !     INT() of a value beyond the default integer is
+  !     processor-dependent (measured with gfortran on arm64: the
+  !     nearest end of the integer range, and 0 for NaN), and what it
+  !     leaves is then a mesh count or a model switch. The bound is the
+  !     range every compiler converts alike: -HUGE(0) - 1 and the
+  !     fractions just above HUGE(0) are refused with the rest.
+  !
+  ! This is asked when the value is set, not with the checks that are
+  ! made together before a run (issue #143): once converted, the value
+  ! that was given is gone, and no later check can tell a count that
+  ! was asked for from what the conversion left.
+  !
+  ! The names are the integer parameters of tr_param_set_impl above: a new
+  ! integer CASE there goes into this list too
+  ! (python/trlib/tests/test_param_values.py holds the list to the
+  ! integer CASEs of the setter, read from this file, and to the names
+  ! the MCP server declares as integers).
+  !-------------------------------------------------------------------
+  FUNCTION value_refused(b, value) RESULT(refused)
+    USE, INTRINSIC :: ieee_arithmetic, ONLY: ieee_is_finite
+    CHARACTER(LEN=*), INTENT(IN) :: b
+    REAL(rkind),      INTENT(IN) :: value
+    LOGICAL :: refused
+
+    refused = .NOT. ieee_is_finite(value)
+    IF (refused) RETURN
+    SELECT CASE (TRIM(b))
+    CASE ("MODELG", "NSMAX", "MDLIMP", "NTMAX", "NTSTEP", "LMAXTR", &
+          "NGTSTP", "NGRSTP", "MDLKAI", "MDLETA", "MDLAD", "MDLAVK", &
+          "MDLNB", "MDLEC", "MDLLH", "MDLIC", "MDLPEL", "MDLJBS", &
+          "MDLST", "MDLNF", "MODEL_PNF", "MDLUF", &
+          "MDNCLS", "MDLEQB", "MDLEQN", "MDLEQE", "MDLPSC", "NPSCMAX", &
+          "NSPSC", "NTEQIT", "NRMAX")
+       refused = ABS(value) > REAL(HUGE(0), rkind)
+    END SELECT
+  END FUNCTION value_refused
 
   !-------------------------------------------------------------------
   ! tr_param_set_str : string-valued parameter setter.
@@ -226,6 +351,13 @@ CONTAINS
     INTEGER :: ierr
 
     ierr = 0
+    ! A value longer than the variable is refused, not cut
+    ! (KNAMEQ is CHARACTER(LEN=80)): the first 80 characters of a
+    ! longer path are another file's name.
+    IF (LEN_TRIM(value) > LEN(KNAMEQ)) THEN
+       ierr = 1
+       RETURN
+    END IF
     SELECT CASE (TRIM(ADJUSTL(name)))
     CASE ("KNAMEQ"); KNAMEQ = TRIM(value)
     CASE DEFAULT
@@ -239,29 +371,48 @@ CONTAINS
   !   "RR"      -> base="RR",  idx=0       (scalar form)
   !   "PN[1]"   -> base="PN",  idx=1       (1-origin subscript)
   !   "CDW[12]" -> base="CDW", idx=12
-  !   malformed -> base=<full>, idx=-1     (caller returns ierr=1)
+  !   malformed -> base=" ", idx=-1        (no CASE matches a blank
+  !                                         name: the caller returns
+  !                                         ierr=1, for a scalar too)
+  !
+  ! Malformed: one bracket without the other, an empty subscript, text
+  ! after the closing bracket, a subscript that is not an unsigned
+  ! whole number of at most nine digits, with or without blanks around
+  ! it ("[zz]", "[ ]", "[1,2]",
+  ! "[2 3]", "[/]": the list-directed READ that was here took several
+  ! of these, and a failed READ left base = NAME, which set a scalar,
+  ! whose CASE never looks at idx), and a name that does not fit into
+  ! BASE (cut short, "RR" followed by blanks and anything else was the
+  ! name "RR").
   !-------------------------------------------------------------------
   SUBROUTINE parse_array_subscript(full_name, base, idx)
     CHARACTER(LEN=*), INTENT(IN)  :: full_name
     CHARACTER(LEN=*), INTENT(OUT) :: base
     INTEGER,          INTENT(OUT) :: idx
-    INTEGER :: lb, rb, ios
+    INTEGER :: lb, rb, n, i, k
+    CHARACTER(LEN=LEN(full_name)) :: sub
     base = ' '
-    idx  = 0
+    idx  = -1                         ! malformed, until shown otherwise
     lb = INDEX(full_name, '[')
     rb = INDEX(full_name, ']')
     IF (lb == 0 .AND. rb == 0) THEN
+       IF (LEN_TRIM(ADJUSTL(full_name)) > LEN(base)) RETURN
        base = TRIM(ADJUSTL(full_name))
+       idx  = 0
        RETURN
     END IF
-    IF (lb == 0 .OR. rb == 0 .OR. rb <= lb + 1) THEN
-       base = TRIM(ADJUSTL(full_name))   ! malformed; caller returns ierr=1
-       idx  = -1
-       RETURN
-    END IF
+    IF (lb == 0 .OR. rb == 0 .OR. rb <= lb + 1) RETURN
+    IF (rb /= LEN_TRIM(full_name) .OR. lb - 1 > LEN(base)) RETURN
+    sub = ADJUSTL(full_name(lb+1:rb-1))
+    n = LEN_TRIM(sub)
+    IF (n == 0 .OR. n > 9) RETURN     ! nine digits fit a default integer
+    IF (VERIFY(sub(1:n), '0123456789') /= 0) RETURN
+    k = 0
+    DO i = 1, n
+       k = 10 * k + (IACHAR(sub(i:i)) - IACHAR('0'))
+    END DO
+    idx  = k
     base = full_name(1:lb-1)
-    READ(full_name(lb+1:rb-1), *, IOSTAT=ios) idx
-    IF (ios /= 0) idx = -1
   END SUBROUTINE parse_array_subscript
 
   ! Public alias for unit testing only.
@@ -271,5 +422,15 @@ CONTAINS
     INTEGER,          INTENT(OUT) :: idx
     CALL parse_array_subscript(full_name, base, idx)
   END SUBROUTINE parse_array_subscript_pub
+
+  !-------------------------------------------------------------------
+  ! tr_param_note_external_set : a set that did not go through this
+  ! registry changed what the next preparation reads (an "eq:" name
+  ! taken by EQ's registry). Advances the mutation counter so that
+  ! tr_api_run prepares again.
+  !-------------------------------------------------------------------
+  SUBROUTINE tr_param_note_external_set()
+    g_generation = g_generation + 1
+  END SUBROUTINE tr_param_note_external_set
 
 END MODULE tr_param_registry

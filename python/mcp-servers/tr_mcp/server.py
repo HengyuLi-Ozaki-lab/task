@@ -38,6 +38,7 @@ server's log.
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 from pathlib import Path
@@ -119,6 +120,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELG": {"type": "int",   "group": "geometry",     "description": "equilibrium/geometry selector"},
     # --- plasma arrays (1..NSMM) ------------------------------------
     "NSMAX":  {"type": "int",   "group": "plasma",       "description": "number of species"},
+    "NRMAX":  {"type": "int",   "group": "plasma",       "description": "TR radial mesh points"},
     "PA":     {"type": "float[NSMM]", "group": "plasma", "description": "atomic mass per species (1-origin)"},
     "PZ":     {"type": "float[NSMM]", "group": "plasma", "description": "charge number per species"},
     "PN":     {"type": "float[NSMM]", "group": "plasma", "description": "initial density per species [10^20 m^-3]"},
@@ -137,6 +139,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "NTSTEP": {"type": "int",   "group": "time",         "description": "output cadence"},
     "EPSLTR": {"type": "float", "group": "time",         "description": "convergence tolerance"},
     "LMAXTR": {"type": "int",   "group": "time",         "description": "max inner-iteration count"},
+    "NTEQIT": {"type": "int",   "group": "time",         "description": "EQ re-solve interval in steps under MODELG=9 (0 = never)"},
     "NGTSTP": {"type": "int",   "group": "time",         "description": "graphics-output cadence (steps)"},
     "NGRSTP": {"type": "int",   "group": "time",         "description": "graphics-output cadence (radial)"},
     # --- transport coefficients ------------------------------------
@@ -148,6 +151,8 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "CHP":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
     "CK0":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
     "CK1":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
+    "CDH":    {"type": "float", "group": "transport",    "description": "turbulent heat-diffusivity sum weight"},
+    "CNH":    {"type": "float", "group": "transport",    "description": "neoclassical heat-diffusivity sum weight"},
     # --- module switches -------------------------------------------
     "MDLNB":  {"type": "int", "group": "modules", "description": "NBI heating module"},
     "MDLEC":  {"type": "int", "group": "modules", "description": "ECRF heating module"},
@@ -156,6 +161,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MDLPEL": {"type": "int", "group": "modules", "description": "pellet injection module"},
     "MDLJBS": {"type": "int", "group": "modules", "description": "bootstrap-current model"},
     "MDLST":  {"type": "int", "group": "modules", "description": "sawtooth model"},
+    "TPRST":  {"type": "float", "group": "modules", "description": "sawtooth period [s]"},
     "MDLNF":  {"type": "int", "group": "modules", "description": "neutron/fusion module"},
     "MDLUF":  {"type": "int", "group": "modules", "description": "UFILE I/O mode"},
     # --- heating / current-drive scalars ---------------------------
@@ -168,15 +174,35 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "PICR0":  {"type": "float", "group": "icrf", "description": "ICRF deposition center"},
     "PICRW":  {"type": "float", "group": "icrf", "description": "ICRF deposition width"},
     "PICNPR": {"type": "float", "group": "icrf", "description": "ICRF parallel index"},
+    "PICTOT": {"type": "float", "group": "icrf", "description": "ICRF total input power [MW]"},
     "PECCD":  {"type": "float", "group": "ecrf", "description": "ECRF CD efficiency"},
     "PECR0":  {"type": "float", "group": "ecrf", "description": "ECRF deposition center"},
     "PECRW":  {"type": "float", "group": "ecrf", "description": "ECRF deposition width"},
     "PECNPR": {"type": "float", "group": "ecrf", "description": "ECRF parallel index"},
+    "PECTOT": {"type": "float", "group": "ecrf", "description": "ECRF total input power [MW]"},
     "PLHCD":  {"type": "float", "group": "lh",   "description": "LH CD efficiency"},
     "PLHR0":  {"type": "float", "group": "lh",   "description": "LH deposition center"},
     "PLHRW":  {"type": "float", "group": "lh",   "description": "LH deposition width"},
     "PLHNPR": {"type": "float", "group": "lh",   "description": "LH parallel index"},
     "PLHTOT": {"type": "float", "group": "lh",   "description": "LH total power [MW]"},
+    # --- NCLASS, equations solved, current profile, particle transport
+    "MDNCLS": {"type": "int",   "group": "transport", "description": "neoclassical transport, resistivity and bootstrap current: 0 = the MDLAD/MDLETA/MDLJBS models, else NCLASS"},
+    "MDLEQB": {"type": "int",   "group": "modules",   "description": "B_theta (current) equation: 1 = evolved, 0 = held at the start profile (MODELG 3 reloads psi from EQ every step)"},
+    "MDLEQN": {"type": "int",   "group": "modules",   "description": "density equations: 0 = densities held, 1 = evolved"},
+    "MDLEQE": {"type": "int",   "group": "modules",   "description": "with MDLEQN 1: 0 = electrons from quasi-neutrality, 1 = both solved, 2 = bulk ions from quasi-neutrality (2 only with NSMAX 2, species 2 H or D, no impurity, no UFILE)"},
+    "PROFJ1": {"type": "float", "group": "current",   "description": "start current profile, MODELG 2 only: <= 0 j from the resistivity (j ~ 1/eta), > 0 j ~ (1 - rho^|PROFJ1|)^|PROFJ2|"},
+    "PROFJ2": {"type": "float", "group": "current",   "description": "start current profile exponent, with PROFJ1 > 0"},
+    "AD0":    {"type": "float", "group": "transport", "description": "particle diffusivity: a factor of chi_turb (MDLAD 2-4, NCLASS) or a constant D (MDLAD 1)"},
+    "AV0":    {"type": "float", "group": "transport", "description": "turbulent inward pinch factor (MDLAD 1, 2, 4)"},
+    "CDP":    {"type": "float", "group": "transport", "description": "turbulent particle-diffusivity sum weight"},
+    "CNP":    {"type": "float", "group": "transport", "description": "neoclassical particle-diffusivity sum weight"},
+    # --- particle source (gas puff), arrays 1..NPSCM = 10 -------------
+    "MDLPSC":  {"type": "int",          "group": "fueling", "description": "particle source: 0 = none, 1 = Gaussian sources"},
+    "NPSCMAX": {"type": "int",          "group": "fueling", "description": "number of particle sources (0..10)"},
+    "PSCTOT":  {"type": "float[NPSCM]", "group": "fueling", "description": "total rate of each source [10^20 /s]"},
+    "PSCR0":   {"type": "float[NPSCM]", "group": "fueling", "description": "centre of each source [m] (minor radius RA*rho, not rho)"},
+    "PSCRW":   {"type": "float[NPSCM]", "group": "fueling", "description": "width of each source [m], at least 1e-10"},
+    "NSPSC":   {"type": "int[NPSCM]",   "group": "fueling", "description": "ion species each source feeds (2..NSMAX; the electrons follow)"},
     # --- string parameter (set via set_param_str under the hood) ----
     "KNAMEQ": {"type": "str", "group": "io", "description": "equilibrium data file name"},
 }
@@ -240,6 +266,39 @@ STATE = _ServerState()
 # =====================================================================
 # Helpers — parameter application.
 # =====================================================================
+def _short(text: str, limit: int) -> str:
+    """``text`` for an error message: its start, when it is longer than ``limit``."""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _number(key: str, value: Any) -> float:
+    """``value`` as the float the library is given for ``key``.
+
+    Raises :class:`TrlibError` for what ``float()`` does not take (a string
+    that is no number, ``None``), for an integer too large for a float
+    (``float()`` raises ``OverflowError``), and for a number that is not
+    finite: ``float()`` also takes ``"nan"``, ``"inf"`` and ``"1e309"``,
+    and no parameter has such a value.
+    """
+    key = _short(key, 80)
+    if isinstance(value, int) and abs(value) >= 10**30:
+        shown = "an integer of more than 30 digits"   # Python does not print one of 4300
+    else:
+        shown = _short(repr(value), 60)
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        reason = _short(str(exc), 80)                 # float() repeats the string it refuses
+        raise TrlibError(
+            f"invalid numeric value for '{key}': {shown} ({reason})"
+        ) from exc
+    if not math.isfinite(coerced):
+        raise TrlibError(
+            f"invalid numeric value for '{key}': {shown} (not finite)"
+        )
+    return coerced
+
+
 def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str]:
     """Apply a bulk ``params`` dict, returning the list of applied keys.
 
@@ -281,13 +340,7 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
                         f"unsupported value type for '{key}': "
                         f"bool (use 0/1)"
                     )
-                try:
-                    coerced = float(v)
-                except (TypeError, ValueError) as exc:
-                    raise TrlibError(
-                        f"invalid numeric value for '{key}': {v!r} ({exc})"
-                    ) from exc
-                tr.set_param(key, coerced)
+                tr.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, dict):
             for idx, v in value.items():
@@ -309,13 +362,7 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
                         f"invalid index for '{name}': {idx!r} ({exc})"
                     ) from exc
                 key = f"{name}[{int_idx}]"
-                try:
-                    coerced = float(v)
-                except (TypeError, ValueError) as exc:
-                    raise TrlibError(
-                        f"invalid numeric value for '{key}': {v!r} ({exc})"
-                    ) from exc
-                tr.set_param(key, coerced)
+                tr.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, str):
             # String-valued (e.g. KNAMEQ). Requires libtrapi.so with L-6
@@ -324,13 +371,7 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
             tr.set_param_str(name, value)
             applied.append(name)
         elif isinstance(value, (int, float)):
-            try:
-                coerced = float(value)
-            except (TypeError, ValueError) as exc:
-                raise TrlibError(
-                    f"invalid numeric value for '{name}': {value!r} ({exc})"
-                ) from exc
-            tr.set_param(name, coerced)
+            tr.set_param(name, _number(name, value))
             applied.append(name)
         else:
             raise TrlibError(
@@ -351,6 +392,13 @@ def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
         msg = f"library not initialized (call init first): {exc}"
     elif isinstance(exc, TrlibRunError):
         msg = f"calculation failed: {exc}"
+        failure = getattr(exc, "failure", None)
+        if failure is not None and failure.kind != "NONE":
+            # The library's record of what failed (tr_last_error), in the same string.
+            msg += (
+                f" [failure: kind={failure.kind} code={failure.code} "
+                f"nt={failure.nt} time={failure.time:g} s; {failure.detail}]"
+            )
     elif isinstance(exc, TrlibNotImplementedError):
         msg = f"not implemented in this libtrapi.so build: {exc}"
     elif isinstance(exc, TrlibInitError):
@@ -386,7 +434,7 @@ def handle_init() -> str:
 def handle_set_param(name: str, value: float) -> str:
     try:
         tr = STATE.ensure_open()
-        tr.set_param(name, float(value))
+        tr.set_param(name, _number(name, value))
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -440,6 +488,25 @@ def handle_get_state() -> Dict[str, Any]:
 
 
 def handle_finalize() -> str:
+    """Finalize the TR backend, mirroring ``eq_mcp.server.handle_finalize``.
+
+    #227 item 2: this used to mark the :class:`Trlib` handle closed *without*
+    calling ``tr_finalize``, as a workaround for a SIGABRT (~40% of calls) in
+    the Fortran cleanup path.  That left ``g_initialized`` set in
+    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (``tr_api_init`` in tr_api.f90 --
+    "already initialized, just return OK") a subsequent ``init`` became a
+    no-op that did **not** restore defaults.  It also disagreed with
+    ``handle_run_and_get_state``, which needs a real finalize for its
+    fresh-init contract and therefore kept calling the very path this one
+    avoided.
+
+    The underlying crash was a double ``DEALLOCATE`` and is fixed on this tree:
+    ``DEALLOCATE_TRCOMM`` now returns early when nothing is allocated
+    (tr/trcomm.f90).  Measured on the merged tree, gfortran-15/macOS:
+    init+close 40/40 clean, init+run+close 40/40 clean, and an explicit double
+    ``tr_finalize`` 30/30 clean (the second call returns TR_OK via the
+    not-initialized guard).  So both lifecycle paths now use the honest one.
+    """
     try:
         STATE.close()
         return "tr library finalized"
@@ -452,6 +519,21 @@ def handle_describe_parameters() -> Dict[str, Any]:
         "module": "tr",
         "count": len(PARAMETER_REGISTRY),
         "array_syntax": "Use NAME[i] (1-origin) for array elements, e.g. PN[1].",
+        "eq_names": (
+            "A name 'eq:NAME' (e.g. eq:RB, eq:NSGMAX) is passed to the "
+            "library as is and set in EQ's registry; it is not listed "
+            "here, and the library refuses an unknown one. TR prepares "
+            "again before its next run. eq:RR, RA, RKAP, RDLT, BB, RIP and "
+            "KNAMEQ are refused (set TR's own), and so is every eq: name "
+            "after the process's first preparation attempt (until the "
+            "pinned bpsd has k-yoshimi/bpsd#7; for eq:RIP set RIPS and "
+            "RIPE). That guard closes only the direct route: under MODELG "
+            "9 any input that moves EQ's plasma grid (TR's RA, RR and "
+            "other device inputs, MODELG, the eq: names, the drift "
+            "between NTEQIT re-solves) needs a bpsd with "
+            "k-yoshimi/bpsd#7. Under MODELG 3/5/8 EQ's NRMAX is TR's "
+            "NRMAX + 1, NTHMAX is 64 and NSUMAX is 0."
+        ),
         "parameters": PARAMETER_REGISTRY,
     }
 
@@ -556,6 +638,9 @@ def build_server() -> Any:
         * a list/tuple (1-origin array, all elements applied)
         * a dict ``{index: value}`` (1-origin sparse array)
         * a string (for KNAMEQ and similar string-valued parameters)
+
+        Every number must be finite: NaN and the infinities are refused,
+        also as a string in a list or a dict (``"nan"``, ``"1e309"``).
 
         **Non-transactional**: keys are applied in iteration order and
         a failure on key ``N`` leaves keys ``0..N-1`` already written

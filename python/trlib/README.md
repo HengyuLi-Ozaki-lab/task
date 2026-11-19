@@ -109,6 +109,43 @@ wrapper from different commits used to fail silently (fields written
 past the struct, or appended fields read as `0.0`). A wrapper older
 than #246 does not ask, so keep the two from the same commit.
 
+## Failures: `tr_last_error`, `TrFailure`, `Trlib.last_error()`
+
+`tr_init` puts the library in **library mode** (`tr2` never is). In it, the time loop returns the first failure
+instead of going on, and the C call `tr_last_error(tr_diag_entry_t*)` reports it (`param` = kind, `code`, and
+`msg` = `nt=<step> t=<time> s: <what failed>`). `Trlib.last_error()` returns it as a `TrFailure(kind, code, nt, time,
+detail)`, and `TrlibRunError.failure` carries it when `run` raises (`None` when the `.so` predates `tr_last_error`). The
+first failure is kept; `tr_init` and every `tr_run` clear the record (`kind == "NONE"`).
+
+| kind | meaning |
+|---|---|
+| `EQ_FAILED` | an equilibrium solve of `MODELG = 9` failed: the initial q-scaling (`tr_set_metric`) or the periodic re-solve (`NTEQIT`); `code` is EQ's (103 axis out of plasma, 110/111/112 below) |
+| `NONFINITE` | Q0, the stored energy or a central temperature is not finite (`code` -3) |
+| `TR_CHECK` | `TRCHCK`: a negative temperature |
+| `PREP_FAILED`, `OTHER` | the preparation failed; any other non-zero status of the loop |
+| `REFUSED` | reserved for `tr_continue` (PR 3 of the plan); nothing records it yet (`tr_run` refuses before the run by returning `TR_ERR_INVALID`, with no record) |
+
+EQ's own codes 110 (a flux-surface extremum at the edge of the contour array), 111 and 112 (`EQMAGS` could not trace
+the surface in the loop, or the edge surface) come with a reason in EQ's `EQ_ERRMSG` (`libtrapi.so` does not export
+`eq_last_error`): an `EQ_FAILED` record appends it to `detail` as `<where>: <EQ's reason>` when EQ set one (EQCALC's
+codes may leave it empty). The message of `tr_last_error` is cut at 127 characters, so a long reason is cut there.
+
+`tr_mcp` puts the record in the error string of a failed `run`: `... [failure: kind=EQ_FAILED code=103 nt=600
+time=12 s; <detail>]`.
+
+### Changes of behaviour
+
+- Library mode only: `MODELG` 0, 4 or 25, and `RIPS = 0`, used to return RC 0 with about ten non-finite scalars; they now fail with
+  `NONFINITE` at nt 1. A client that tested for non-finite scalars after a successful `run` (task-web's `non_finite`
+  flag) now gets the error instead.
+- Library mode only: a failing periodic re-solve (`NTEQIT`) ends the run with `EQ_FAILED`; the loop used to go on, and a
+  checked build used to stop the process at an array bound.
+- Not library mode only: the two #228 fixes (`7656ebbe`, `23541105`, #226's own) apply to `tr2` too, because
+  `tr_set_metric` is shared. A failing `MODELG` 9 q-scaling now fails the preparation: where `tr2` used to go on
+  after a failed solve (for example `RIPS` 0.81 or 0.84), its `R` now stops at `trmenu.f90:74`; and a second `R` in
+  one `tr2` session under `MODELG` 9 adopts the equilibrium again, where it used to differ. `tr2`'s output is
+  unchanged on a single `R` that succeeds (`tr.ITER01` with `MODELG` 9, `NTEQIT` 50 and 0: byte-identical).
+
 ## API reference
 
 ### `Trlib(lib_path: str | None = None)`
@@ -139,11 +176,47 @@ Snapshot current TRCOMM scalars and `[0:nrmax][0:nsmax]` profile
 arrays into a `TrState` dataclass. Trailing padding (up to
 `TR_MAX_NRMAX=500` / `TR_MAX_NSMAX=8`) is ignored.
 
+### `Trlib.last_error() -> TrFailure`
+
+The first failure of the last `run` (see above), or `kind == "NONE"`. Raises `TrlibError` for a library without
+`tr_last_error`.
+
 ### `Trlib.close() -> None`
 
 Idempotent. The context manager calls this automatically.
 
 ## Supported parameters
+
+A name that starts with `eq:` (`eq:RB`, `eq:NSGMAX`, `eq:NRMAX`, ...) goes to EQ's registry, so `MODELG` 9 sets EQ's wall
+and grid through `set_param` / `set_param_str`; an unknown name raises `TrlibParamError`, and an accepted one makes the
+next `run` prepare again. Two kinds of `eq:` name are refused (`TrlibParamError`, one line on unit 6):
+
+- `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` do nothing through TR: under `MODELG` 9
+  EQ's copy is overwritten from TR's device, and TR passes its own `KNAMEQ` to EQ. Set `RR`, `RA`, ... (TR's) instead;
+  for `eq:RIP` set `RIPS` and `RIPE`, which TR passes to EQ as `RIP`.
+  Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, its `NTHMAX` is fixed at 64 and its `NSUMAX` at 0
+  (`tr_set_metric`, `tr/trmetric.f90`).
+- every `eq:` name, once this process has made its first preparation attempt (failed or not; across `tr_finalize`
+  and `tr_init` too): until the pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change in one process corrupts memory
+  (`EQ_FAILED` 103 from a spline written past its end, measured with `eq:NRMAX` 30 then 60 and `eq:RB` 2.0 then 1.2),
+  so `eq:` names are set before the process's first preparation attempt (a `run` that `tr_run`'s own checks refuse
+  before `tr_prep` does not count). This guard comes off with the `NRMAX` guard below.
+
+`tr_run` also refuses (`TrlibParamError`, one `XX tr_run: eq:NAME` line) and `validate()` reports an EQ mesh size above
+the compile-time maximum of EQ's arrays: the ten that `eq_validate` checks (`eq:NSGMAX`, `NTGMAX`, `NUGMAX` 128;
+`NRGMAX`, `NZGMAX`, `NPSMAX` 513; `NRVMAX`, `NRMAX` 1001; `NTHMAX` 2049; `NSUMAX` 1343; `eq/eqcom0_mod.f90`) under
+`MODELG` 9, and the seven that TR does not set itself (all but `NRMAX`, `NTHMAX`, `NSUMAX`) under `MODELG` 3, 5 and 8.
+Before the check `eq:NSGMAX` 129 ended the process (`SIGM(129)` written past its 128 elements, `eq/eqcalc.f90:63`).
+
+The `eq:` guard closes only the direct route, and that is why every `eq:` name is refused after a preparation (any EQ
+input can move the count). Under `MODELG` 9 *any* input that moves EQ's plasma grid (`NRPMAX`, which depends on EQ's
+`RA`, `RB` and the solved axis and edge) needs a bpsd with k-yoshimi/bpsd#7: TR's `RA`, `RR` and other device inputs,
+`MODELG` itself (`MODELG` 9 then the `tst2` defaults: 50 to 51 points; its test is gated on `TRLIB_BPSD_REGRID_FIX=1`),
+the `eq:` names, and the drift of `NRPMAX` between `NTEQIT` re-solves inside one run (47 and 48 in `tr.ITER01` with
+`MODELG` 9). Measured on an unpatched bpsd: `MODELG` 9 with `RA` 0.5 in one lifecycle, then `RA` 1.0 in the next, fails
+with `EQ_FAILED` 103 at q-scaling iteration 2, with no `eq:` name set and TR's `NRMAX` unchanged. The protection
+against the overrun is bpsd#7 itself. TOT's `eq:` dispatcher (`dispatch_eq` in `tot/tot_param_registry.f90`) calls
+`eq_param_set` directly, so this guard does not apply in `totlib` or the mono build.
 
 The registry below reflects `tr/tr_param_registry.f90` at Phase L-3.
 Add to it by extending that Fortran `SELECT CASE`; no Python change
@@ -153,12 +226,19 @@ is required — the wrapper forwards names verbatim.
 |---|---|---|
 | Geometry / device | `RR`, `RA`, `RKAP`, `RDLT`, `BB`, `PHIA` | scalar doubles |
 | Plasma (arrays, 1..NSMM) | `PA[i]`, `PZ[i]`, `PN[i]`, `PNS[i]`, `PT[i]`, `PTS[i]` | 1-origin index |
-| Plasma scalars | `NSMAX` | cast to INT |
+| Plasma scalars | `NSMAX`, `NRMAX` | cast to INT. `NRMAX` is TR's radial mesh, 3 to 500 (1 and 2 abort the solver; 500 is `TR_MAX_NRMAX`). Changing the TR or EQ mesh between preparations in one process needs bpsd with the spline-resize fix (k-yoshimi/bpsd#7) and, for a change of the EQ grid, `eq_bpsd_put` sizing its arrays again when the grid changes (that second fix is in this tree, `eq/eqbpsd.f90`). The bpsd fix is not in every bpsd: without it a later preparation on another grid writes out of bounds, so `tr_run` refuses, and `validate()` reports, an `NRMAX` other than the one of the process's first preparation attempt (failed or not; across `tr_finalize` and `tr_init` too): one mesh per process, as a task-web job or a test under `--forked` is. The guard comes off once the pinned bpsd has the fix. A change of the EQ grid with TR's `NRMAX` unchanged by an `eq:` name is refused after the first preparation (above); one by a change of `MODELG` between lifecycles passes both guards but still needs the bpsd fix, and its regrid test is skipped unless `TRLIB_BPSD_REGRID_FIX=1` is set with such a bpsd. The tests that change TR's `NRMAX` or set an `eq:` name after a preparation stay skipped while the guards are in place |
 | Current | `RIPS`, `RIPE` | |
-| Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR` | int-typed coerced |
+| Time evolution | `DT`, `NTMAX`, `NTSTEP`, `EPSLTR`, `LMAXTR`, `NTEQIT` | int-typed coerced. `NTEQIT` is the step interval of the EQ re-solve under `MODELG=9` (0 = never; negative refused) |
 | Transport switches | `MDLKAI`, `MDLETA`, `MDLAD`, `MDLAVK`, `CHP`, `CK0`, `CK1` | |
 | Transport arrays | `CDW[i]` | |
-| Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF` | |
+| Transport weights | `CDH`, `CNH` | the weights of `chi_s = CDH*chi_turb + CNH*chi_NC` (`chi_NC` the neoclassical chi, `AKNC`); default 1 (neutral) |
+| Module switches | `MDLNB`, `MDLEC`, `MDLLH`, `MDLIC`, `MDLPEL`, `MDLJBS`, `MDLST`, `MDLNF`, `MDLUF`; `TPRST` | `TPRST` is the sawtooth period in s (must be > 0) |
+| Fusion model of `trx` | `MODEL_PNF` | 0 (default) leaves `MDLNF` in charge; 1 is D-T; 2, 3, 4, 12, 14 evaluate more reactions and pass nothing to the solve. Not together with `MDLNF`; see `docs/sphinx/modules/tr/en/parameters.md` for what it does not do yet |
+| NCLASS and particle transport | `MDNCLS`, `AD0`, `AV0`, `CDP`, `CNP` | `MDNCLS` ≠ 0 takes the neoclassical transport, the resistivity and the bootstrap current from NCLASS; with the default `MDLAD` 3 and with NCLASS, D_s = CDP·AD0·chi_turb + CNP·D_NC; `AV0` is the pinch of `MDLAD` 1, 2, 4 |
+| Equations solved | `MDLEQB`, `MDLEQN`, `MDLEQE` | B_theta evolved (1, default) or held (with `MODELG` 3 TR reloads psi from the equilibrium every step either way); densities held (0, default) or evolved; with densities evolved, 0/1/2 = electrons from quasi-neutrality / both solved / bulk ions from quasi-neutrality (2 only for two species, hydrogenic species 2, no impurity density, no UFILE) |
+| Start current profile | `PROFJ1`, `PROFJ2` | `MODELG` 2 only: `PROFJ1` ≤ 0 (default −2): j ∝ 1/eta; > 0: j ∝ (1 − rho^\|PROFJ1\|)^\|PROFJ2\| |
+| Particle source (gas puff) | `MDLPSC`, `NPSCMAX`; `PSCTOT[i]`, `PSCR0[i]`, `PSCRW[i]`, `NSPSC[i]` (i = 1..10) | `MDLPSC` 1: Gaussian sources of total rate `PSCTOT` [10^20/s] centred at `PSCR0` metres (RA·rho, not rho) into ion species `NSPSC`; moves the density only with `MDLEQN` 1. `tr_run` refuses values the solver cannot take (see `docs/sphinx/modules/tr/en/parameters.md` section 14) |
+| Heating / current drive | `PNBTOT`, `PNBR0`, `PNBRW`, `PNBENG`, `PNBRTG`; `PICTOT`, `PICR0`, `PICRW`, `PICNPR`, `PICCD`; `PECTOT`, `PECR0`, `PECRW`, `PECNPR`, `PECCD`; `PLHTOT`, `PLHR0`, `PLHRW`, `PLHNPR`, `PLHCD` | NBI, ICRF, ECRF and LH; the `*TOT` names are total input power in MW (default 0) |
 
 Unknown names return ierr=1 (raised as `TrlibParamError`).
 
@@ -215,7 +295,8 @@ for the zero-density case, `OUT_OF_RANGE` otherwise). `run()` also
 refuses `NSMAX` above the compile-time `NSM` (4), which `validate()`
 already reported. Raising `NSMAX` above a fixture's species count
 therefore needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the new
-species; `PN[ns]=0` with `PNS[ns]>0` is allowed. In the UFILE modes
+species. `PN[ns]=0` is refused with `PNS[ns]>0` too (task-web-client #190): the density then
+vanishes at the axis and the run fails or ends with NaN. In the UFILE modes
 `MDLUF=1/2/3` the species that `tr_prof` still takes from the namelist
 are not checked yet (follow-up issue).
 

@@ -21,7 +21,7 @@ string parameters) on top of the standard five.
 | `eq_run`            | `eq_api_run`            | switches behaviour by `mode` (no time evolution) |
 | `eq_get_state`      | `eq_api_get_state`      | copies EQCOMM scalars and ψ-surface profiles into the C structure |
 | `eq_finalize`       | `eq_api_finalize`       | re-arms the SAVE flag via `eq_bpsd_reset` |
-| `eq_validate`       | `eq_api_validate`       | grid-dimension + `KNAMEQ` file-existence checks |
+| `eq_validate`       | `eq_api_validate`       | grid dimensions, the files a load reads (`KNAMEQ`, `KNAMEQ2` for `MODELG=8`, `eqdb.dat` for `MODELG=15`), and for the Grad-Shafranov solve the wall, the current's sign and the box (`parameter-setting`) |
 | `eq_save`           | `eq_api_save`           | writes the equilibrium of the last `eq_run` to the file named by `KNAMEQ` (`EQSAVE`); an error when the file was not opened or is shorter than what was written |
 
 All are bound to fixed C ABI symbols via `BIND(C, NAME="eq_xxx")`.
@@ -32,25 +32,29 @@ All are bound to fixed C ABI symbols via `BIND(C, NAME="eq_xxx")`.
 
 | `mode` | Behaviour | Legacy CLI |
 |---|---|---|
-| 0 | `EQCALC` (analytic G-S solve) + `EQCALQ` (post-processing) | `R` -> `F` |
+| 0 | `EQCALC` (the Grad-Shafranov solve) + `EQCALQ` (post-processing) | `R` -> `F` |
 | 1 (default) | `equnit::eq_load` — read the file in `KNAMEQ` and build the equilibrium | `L` |
 | 2+ | (for future expansion) — `EqlibNotImplementedError` | — |
+| negative | `EQ_ERR_INVALID` — `EqlibInvalidParamError` | — |
 
 The argument has a different meaning from `tr`'s `tr_run(ntmax)`, so
 do not confuse the two.
 
 ```{note}
-`mode=0` is for `MODELG ∈ {0, 1, 2}` (analytic geometries). It solves
-the Grad-Shafranov equation analytically from the device parameters
+`mode=0` is for `MODELG ∈ {0, 1, 2}` (geometries without a file). It solves
+the fixed-boundary Grad-Shafranov equation numerically from the device parameters
 (`RR`, `RA`, `BB`, `RIP`) and the pressure / current profile
-coefficients (`PP*`, `PJ*`, `FF*`, ...). It corresponds to the `R`
+coefficients (`PP*`, `PJ*`, `FF*`, ...): `EQCALC` iterates until the
+relative change of ψ is below `EPSEQ`, at most `NLPMAX` times. It corresponds to the `R`
 (Run) command of the legacy `eqx2` CLI: `EQCALC` builds the
 equilibrium and then `EQCALQ` runs the flux-surface-average
 post-processing that fills the diagnostic quantities `qaxis`,
 `qsurf`, `betat`, `betap`, `pvol`, etc.
 
-`mode=1` is for `MODELG ∈ {3, 5, 8}` (file-based geometries) and
-loads the EQDSK file named by `KNAMEQ`.
+`mode=1` is for `MODELG ∈ {3, 5, 8, 9, 25}` (file-based geometries) and
+loads the file named by `KNAMEQ` (`EQ_READ` in `eqfile.f90`: 3 and 9 a
+TASK/EQ file, 5 and 25 a G-EQDSK file, 8 a QST/JAEA pair, which reads
+`KNAMEQ2` too; `MODELG = 15` reads the fixed `eqdb.dat`).
 ```
 
 ### C structure layout (`eq_state_t`)
@@ -97,7 +101,7 @@ provided. That is the reason for the **6th** function `eq_set_param_str`
 in the C ABI.
 
 `tr` later added `tr_set_param_str` as well, but `eq` has needed it
-from the start in order to handle EQDSK filenames.
+from the start in order to handle equilibrium filenames.
 
 ## Source layout inside the library
 
@@ -109,11 +113,11 @@ The ≈32 `.f90` files in `eq/` group by role as follows.
 | **Main solver**         | `eqcalq.f90`, `eqcalc.f90`, `eqcalv.f90`, `equnit.f90` | Grad-Shafranov iteration, free-boundary calculation |
 | **Profiles**            | `eqfunc.f90`, `eqsub.f90`, `eqsplf.f90`, `eqgetp.f90` | evaluation of $p(\psi)$, $F(\psi)$, $q(\psi)$ |
 | **Common modules**      | `eqcom0_mod.f90` … `eqcom3_mod.f90`, `equcom.f90` | global state (COMMON blocks lifted into MODULE) |
-| **I/O**                 | `eqfile.f90`, `equread.f90`, `eq-eqdsk.f90`, `eqgout.f90` | EQDSK reader, result output |
+| **I/O**                 | `eqfile.f90`, `equread.f90`, `eq-eqdsk.f90`, `eq-qst.f90`, `eqgout.f90` | equilibrium-file readers (TASK/EQ, G-EQDSK, QST/JAEA, `eqdb.dat`), result output |
 | **BPSD bridge**         | `eqbpsd.f90`, `eqintf.f90`, `equintf.f90` | inter-module data bridging |
 | **Graphics**            | `eq_graphics_stubs.f90`, `eqgsub.f90` | stubbed out in the library build |
 | **Interactive menu**    | `eqmenu.f90` | only used by the `eqx2` CLI (unused in the library) |
-| **Other**               | `eq-qst.f90`, `eqlib.f90`, `eqrppl.f90` | helper routines |
+| **Other**               | `eqlib.f90`, `eqrppl.f90` | helper routines |
 
 ## F90 modernisation (F-1 through F-5)
 

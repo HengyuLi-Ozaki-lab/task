@@ -10,6 +10,9 @@ Mirrors the ``enum tr_error`` codes declared in ``tr/tr_api.h``:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Optional
+
 
 class TrlibError(Exception):
     """Base class for all trlib errors."""
@@ -27,8 +30,35 @@ class TrlibStateError(TrlibError):
     """Library not initialized (ierr == 2)."""
 
 
+@dataclass(frozen=True)
+class TrFailure:
+    """The first failure of a ``tr_run``, as ``tr_last_error`` reports it.
+
+    ``kind`` is ``NONE`` (no failure), ``EQ_FAILED`` (an equilibrium solve of
+    ``MODELG=9``: the initial q-scaling or the periodic re-solve), ``NONFINITE``
+    (Q0, the stored energy or a central temperature is not finite),
+    ``TR_CHECK`` (negative temperature), ``PREP_FAILED`` or ``OTHER`` (``REFUSED``
+    is reserved for ``tr_continue``, PR 3); ``code`` is the Fortran status, ``nt`` the step and ``time`` the
+    time in seconds; ``detail`` says what failed.
+    """
+
+    kind: str
+    code: int
+    nt: int
+    time: float
+    detail: str
+
+
 class TrlibRunError(TrlibError):
-    """Calculation or get_state failed (ierr == 3)."""
+    """Calculation or get_state failed (ierr == 3).
+
+    ``failure`` is the library's record of what failed (a :class:`TrFailure`),
+    or ``None`` when it was not read (a failure other than ``tr_run``'s).
+    """
+
+    def __init__(self, *args, failure: Optional[TrFailure] = None):
+        super().__init__(*args)
+        self.failure = failure
 
 
 class TrlibNotImplementedError(TrlibError):

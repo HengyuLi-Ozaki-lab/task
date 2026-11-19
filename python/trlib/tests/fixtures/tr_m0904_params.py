@@ -33,6 +33,7 @@ SCALARS = {
     "NTMAX":   50,
     "RIPS":    2.0,
     "RIPE":    3.0,
+    "MDNCLS":  1,
 }
 
 ARRAYS = {
@@ -45,12 +46,10 @@ ARRAYS = {
 # No STRINGS dict: MODELG=2 is analytic geometry, no KNAMEQ required.
 
 # Namelist keys NOT registered in tr/tr_param_registry.f90.
-# MDNCLS (NCLASS toggle) and PNBCD (NBI current-drive switch) have no
-# CASE entry in the registry today; pre-audit found grep returns 0 in
-# tr_param_registry.f90. They appear in tr_m0904.in but cannot be set
-# via the float-only ABI in this build.
+# PNBCD (NBI current-drive switch) has no CASE entry in the registry; it
+# appears in tr_m0904.in but cannot be set through the library. MDNCLS
+# (NCLASS) has had one since the PLATO registry names and is set above.
 UNREGISTERED_KEYS = (
-    "MDNCLS",
     "PNBCD",
 )
 

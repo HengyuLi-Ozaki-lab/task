@@ -7,21 +7,22 @@
 ## 必須・推奨パラメータ
 
 ほとんどのパラメータは既定値があるため最小構成では何も指定しなくても
-`run()` できます. ただし **特定の条件で必須** になるものと, **物理的に
+`run(mode=0)` (Grad-Shafranov 求解) できます. `run()` (`mode=1`) には
+`MODELG` でファイル形式を指定する必要があり, 既定の 2 では失敗します. ただし **特定の条件で必須** になるものと, **物理的に
 意味のある結果を得るには上書きすべき** ものがあります.
 
 ### 必須 (条件付き)
 
 | 条件 | 必須パラメータ | 理由 |
 |---|---|---|
-| `MODELG ∈ {3, 5, 8}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 未設定だと `validate()` が `FILE_MISSING` 診断を返し, `run()` は不正な平衡を出す |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (文字列) | 平衡データファイル名. 空かファイルが無いと `validate()` が `FILE_MISSING` 診断を返し, `run()` はそのファイル名を示して失敗する. `MODELG = 8` は `KNAMEQ2` も読む. `MODELG = 15` は代わりに固定ファイル `eqdb.dat` を読む (無ければ `MODELG` に `FILE_MISSING` 診断) |
 
 ```python
 eq.set_param("MODELG", 3)
 eq.set_param_str("KNAMEQ", "eqdata.ITER01")
 ```
 
-`MODELG=2` (解析的トロイダル幾何, 既定) なら `KNAMEQ` 不要なので
+`MODELG=2` (トロイダル形状, 既定. `run(mode=0)` で解く) なら `KNAMEQ` 不要なので
 **厳密な意味で必須なパラメータはありません**.
 
 ### 強く推奨 (既定値が generic すぎる)
@@ -189,7 +190,7 @@ $$F(\psi) = B_T R + \mathrm{FF}_0 (1-\psi^{P_{R0}})^{P_{F0}} + \cdots$$
 | `NTHMAX` | int | 64  | 磁束座標のポロイダルメッシュ |
 | `NSUMAX` | int | 65  | 境界点数 |
 | `NRVMAX` | int | 50  | 面平均の半径メッシュ |
-| `NTVMAX` | int | 200 | 面平均のポロイダルメッシュ |
+| `NTVMAX` | int | 400 | 面平均のポロイダルメッシュ |
 | `NPFCMAX` | int | 0  | PF コイル数 |
 
 ## 10. 反復・収束 (Iteration / convergence)
@@ -197,7 +198,7 @@ $$F(\psi) = B_T R + \mathrm{FF}_0 (1-\psi^{P_{R0}})^{P_{F0}} + \cdots$$
 | 名前 | 型 | 既定値 | 意味 |
 |---|---|---|---|
 | `EPSEQ`  | double | 1×10⁻⁶ | 平衡反復の収束判定 |
-| `NLPMAX` | int    | 20     | 平衡反復の最大数 |
+| `NLPMAX` | int    | 100    | 平衡反復の最大数 |
 | `EPSNW`  | double | 1×10⁻² | Newton 法の収束判定 |
 | `DELNW`  | double | 1×10⁻² | Newton 法での微分の刻み幅 |
 | `NLPNW`  | int    | 20     | Newton 法の最大反復数 |
@@ -227,12 +228,15 @@ $$F(\psi) = B_T R + \mathrm{FF}_0 (1-\psi^{P_{R0}})^{P_{F0}} + \cdots$$
 |---|---|
 | 0 | Slab geometry (平板近似) |
 | 1 | Cylindrical geometry (円柱近似) |
-| 2 (既定) | Toroidal geometry (解析的トロイダル) |
-| 3 | TASK/EQ 出力ファイル経路 (`KNAMEQ` 必要) |
-| 4 | VMEC 出力経路 |
-| 5 | EQDSK ファイル経路 (`KNAMEQ` 必要) |
-| 6 | Boozer 座標出力 |
-| 8 | (TASK 内専用パス, `KNAMEQ` 必要) |
+| 2 (既定) | Toroidal geometry (`run(mode=0)` で解く) |
+| 3 | TASK/EQ 形式のファイル, `run(mode=1)` で読み込む (`KNAMEQ` 必要) |
+| 4 | VMEC 出力経路 (`run(mode=1)` では読み込まない) |
+| 5 | G-EQDSK 形式のファイル, `run(mode=1)` で読み込む (`KNAMEQ` 必要) |
+| 6 | Boozer 座標出力 (`run(mode=1)` では読み込まない) |
+| 8 | QST/JAEA 形式の 2 ファイル, `run(mode=1)` で読み込む (`KNAMEQ` と `KNAMEQ2` 必要) |
+| 9 | TASK/EQ 形式のファイル, 3 と同じ読み込みルーチン (`EQRTSK`) で読む (`KNAMEQ` 必要) |
+| 15 | 固定ファイル `eqdb.dat`, `run(mode=1)` が読む (`KNAMEQ` ではない) |
+| 25 | G-EQDSK 形式のファイル, 5 と同じ読み込みルーチン (`EQDSKR`) で読む (`KNAMEQ` 必要) |
 
 `MDLEQF` の許容値:
 
@@ -290,8 +294,8 @@ $$F(\psi) = B_T R + \mathrm{FF}_0 (1-\psi^{P_{R0}})^{P_{F0}} + \cdots$$
 
 | 名前 | 型 | 既定値 | 意味 |
 |---|---|---|---|
-| `KNAMEQ`  | CHARACTER(80) | `'eqdata'`  | 平衡データファイル (`MODELG=3,5,8` で必須) |
-| `KNAMEQ2` | CHARACTER(80) | `'eqdata2'` | 追加平衡データ |
+| `KNAMEQ`  | CHARACTER(80) | `'eqdata'`  | 平衡データファイル (`MODELG=3,5,8,9,25` で必須) |
+| `KNAMEQ2` | CHARACTER(80) | `'eqdata2'` | 追加平衡データ (`MODELG=8` で必須) |
 | `KNAMWR`  | CHARACTER(80) | `'wrdata'`  | レイトレースデータ |
 | `KNAMWM`  | CHARACTER(80) | `'wmdata'`  | フルウェーブデータ |
 | `KNAMFP`  | CHARACTER(80) | `'fpdata'`  | Fokker-Planck データ |

@@ -54,9 +54,9 @@ _MAX_C_STRING_BYTES = 63              # intentional: tot_api_set_param name
                                        # the same param-name conventions
                                        # apply across modules.
 _MAX_C_STRING_VALUE_BYTES = 256       # value buffer is CHARACTER(LEN=256);
-                                       # tot_api_set_param_str DO loop reads
-                                       # up to LEN(fvalue) chars so full 256
-                                       # OK (accommodates long KNAMEQ paths)
+                                       # the eq: and tr: registries refuse a
+                                       # KNAMEQ of more than 80 characters
+                                       # (rc 1): a long path is not cut
 
 
 def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
@@ -64,8 +64,8 @@ def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
 
     ``max_bytes`` is the Fortran buffer size minus 1 (for NUL). Names
     use the default; values passed to ``set_param_str`` use
-    ``_MAX_C_STRING_VALUE_BYTES`` (e.g. file-path values up to 255
-    bytes fit the 256-byte Fortran buffer).
+    ``_MAX_C_STRING_VALUE_BYTES`` (the Fortran buffer holds 256 bytes;
+    the modules' file-name parameters hold 80 characters and refuse more).
     """
     if not isinstance(s, str):
         raise TotlibInvalidParamError(

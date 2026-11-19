@@ -32,7 +32,7 @@ eq.set_params({"RR": 6.5, "BB": 5.3})          # 位置引数 mapping 形式
 
 ## 方法 C — 文字列パラメータ (`set_param_str`)
 
-EQDSK 系ファイル名は `CHARACTER(LEN=80)` で, **専用 API** が必須です.
+ファイル名 (`KNAMEQ` などの `KNAM*`) は `CHARACTER(LEN=80)` で, **専用 API** が必須です.
 `set_param` には渡せません.
 
 ```python
@@ -66,10 +66,10 @@ with Eq() as eq:
     if diags:
         raise SystemExit("fix the diagnostics before running")
 
-    eq.run()  # mode=1 (EQDSK 読み込み)
+    eq.run()  # mode=1 (ファイル読み込み. MODELG=3: TASK/EQ 形式)
 ```
 
-解析的に解く場合は `mode=0` を渡します:
+Grad-Shafranov 求解には `mode=0` を渡します:
 
 ```python
 with Eq() as eq:
@@ -77,7 +77,7 @@ with Eq() as eq:
     diags = eq.validate()
     if diags:
         raise SystemExit("fix the diagnostics before running")
-    eq.run(mode=0)  # EQCALC + EQCALQ で解析的に
+    eq.run(mode=0)  # EQCALC (EPSEQ まで反復) + EQCALQ
 ```
 
 診断コードは `tr` と共通の 5 種類:
@@ -87,9 +87,34 @@ with Eq() as eq:
 | `OUT_OF_RANGE`           | 値が許容範囲外 |
 | `INCONSISTENT_PAIR`      | 関連パラメータ対の不整合 |
 | `OUT_OF_RANGE_AFTER_DEP` | 依存パラメータ評価後の範囲逸脱 |
-| `FILE_MISSING`           | 指定されたファイルが存在しない (`KNAMEQ` など) |
+| `FILE_MISSING`           | 読み込みが読むファイルが無い, またはその名前 (`KNAMEQ`) が空 |
 | `MISSING_REQUIRED`       | 必須パラメータが未設定 |
 
 `eq_validate` は **10 個のグリッド寸法** (`NSGMAX`, `NTGMAX`, `NUGMAX`,
-`NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`, `NRVMAX`) と,
-必要な幾何モードでの `KNAMEQ` / `KNAMPF` ファイル存在をチェックします.
+`NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`, `NRVMAX`) を
+コンパイル時の上限と比べ, 読み込み (`run(mode=1)`) が読むファイルがあることを
+チェックします: `MODELG` 3, 5, 8, 9, 25 では `KNAMEQ` が空でなくファイルを指す
+こと (2 つのファイルを読む 8 では `KNAMEQ2` も), `MODELG` 15 では `KNAMEQ` の代わりに読む固定ファイル `eqdb.dat` があること
+(`MODELG` として報告). 名前は読み込みと同じく, `validate()` の時点の作業
+ディレクトリから探します. Grad-Shafranov 求解 (`run(mode=0)`.
+ファイル形式以外のすべての `MODELG` はこれで解く) ではさらに次をチェックします:
+
+- 壁がプラズマを囲む: `RB >= RA` (`INCONSISTENT_PAIR`);
+- プラズマ電流が負でない: `RIP >= 0` (`OUT_OF_RANGE`. 負の電流は `run(0)`
+  が拒否します);
+- `MDLEQF >= 10` でソルバーが箱 `RGMIN`..`ZGMAX` を読むとき
+  (`OUT_OF_RANGE_AFTER_DEP`): `RR` が `RGMIN`..`RGMAX` の中にある (磁気軸は
+  そこから出発し, 箱の中になければならない), `RGMAX` が外縁 `RR + RA` より
+  小さくない (小さいと解はそこでプラズマを切る. 磁気軸より小さければ失敗する), `ZGMIN < 0 < ZGMAX`
+  (磁気軸は `Z = 0` にある). プラズマのそれ以外の部分は箱の外にあっても
+  結果は同じです. 事前に見えない失敗が二つあります: 磁気軸は解く間に動く
+  (シャフラノフシフトで外へ, 三角度で内へ. `RDLT = 0.4` では `RR` より内側で
+  止まるので `RGMIN = RR` は失敗する) ことと, 丸め誤差の範囲 (`1e-14`) で
+  0 に近い Z の境界は 0 と同じく失敗することです.
+
+`validate()` は `MODELG` で判断します: ファイル形式 (`MODELG` 3, 5, 8, 9, 15,
+25) は `run(mode=1)` で読み込むものとみなし, 幾何はファイルから得るので,
+これらの幾何チェックは行いません (ファイル形式を `run(mode=0)` で解く場合も
+行いません). `MDLEQF >= 10` の読み込みも, ファイルから求めた磁気軸を箱に
+収めようとします. 軸が箱の外にあると読み込みは失敗し, そのエラー
+(`Eq.last_error()`) が軸の探索の終点と箱を示します.

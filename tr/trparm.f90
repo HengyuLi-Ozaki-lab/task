@@ -62,6 +62,7 @@ CONTAINS
            EPSLTR, LMAXTR, CHP, CK0, CK1, CKALFA, CKBETA, CKGUMA, &
            TPRST, &
            MDLST, MDLNF, IZERO, MODELG, NTEQIT, MDEDGE, MDLIMP, &
+             model_pnf, &
            MDLXP, MDLUF, MDNCLS, MDLWLD, MDLFLX, MDLER, MDCD05, &
            PNBTOT, PNBR0, PNBRW, PNBVY, PNBVW, PNBENG, PNBRTG, MDLNB, &
            NRNBMAX, &
@@ -93,6 +94,7 @@ CONTAINS
                     EPSLTR,LMAXTR,CHP,CK0,CK1,CKALFA,CKBETA,CKGUMA, &
                     TPRST,CDW, &
                     MDLST,MDLNF,IZERO,MODELG,NTEQIT,MDEDGE,MDLIMP, &
+                    model_pnf, &
                     MDLXP,MDLUF,MDNCLS,MDLWLD,MDLFLX,MDLER,MDCD05, &
                     PNBTOT,PNBR0,PNBRW,PNBVY,PNBVW,PNBENG,PNBRTG,MDLNB, &
                     NRNBMAX, &

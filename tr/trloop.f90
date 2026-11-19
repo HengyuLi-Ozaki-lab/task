@@ -19,12 +19,14 @@ CONTAINS
                         PI, DT, &
                         DIPDT, RIP, RIPS, RIPE, &
                         Q0, QP, QPINV, RG, TST, TPRST, &
-                        RDPVRHOG, TTRHOG, ARRHOG
+                        RDPVRHOG, TTRHOG, ARRHOG, T, WPT, RT, NSMAX
       USE TRCOM1, ONLY : NTAMAX
       USE trbpsd, ONLY: tr_bpsd_put, tr_bpsd_get
       USE trexec
       USE libitp
       USE equnit
+      USE trfailure
+      USE, INTRINSIC :: ieee_arithmetic, ONLY: ieee_is_finite
       USE trregress, ONLY : tr_regress_dump_if_enabled
       IMPLICIT NONE
       INTEGER,INTENT(OUT):: IERR
@@ -69,23 +71,51 @@ CONTAINS
       if(ierr.ne.0) GOTO 9000
       NT=NT+1
 
-!     *** SET GEOMETRY VIA TASK/EQ ***
+!     Refresh metric-derived quantities on the current metric and record a
+!     CONSISTENT snapshot BEFORE updating the equilibrium, so the recorded Ip
+!     is not the transient (new metric x not-yet-re-equilibrated psi_p) state.
+      call tr_bpsd_get(IERR)
+      if(ierr.ne.0) return
+      CALL tr_eval(NT,IERR)
+      IF(IERR.NE.0) GOTO 9000
+
+!     Library mode only: a state that is no longer finite ends the run here,
+!     with a record, instead of being stepped on (tr2 never does this).
+      IF(tr_library_mode) THEN
+         IF(.NOT.(ieee_is_finite(Q0) .AND. ieee_is_finite(WPT) .AND. &
+                  ALL(ieee_is_finite(RT(1,1:NSMAX))))) THEN
+            CALL tr_failure_record(TRF_NONFINITE, -3, NT, T, &
+                 'Q0, WPT or a central temperature is not finite')
+            IERR=-3
+            GOTO 9000
+         ENDIF
+      ENDIF
+
+!     *** SET GEOMETRY VIA TASK/EQ (metric update for the NEXT step) ***
 
       IF(NTEQIT.NE.0) THEN
          IF(MOD(NT,NTEQIT).EQ.0) THEN
-            if(modelg.eq.8) THEN
-!               call equ_calc
-            endif
             IF(modelg.eq.9) THEN
-               call eq_calc
-            endif
+               IF(tr_library_mode) THEN
+!                 Library mode: the outcome of the periodic re-solve is tested,
+!                 and a failed one ends the run (tr2 below does not test it).
+                  call eq_calc(ierr)
+                  IF(ierr.NE.0) THEN
+                     CALL tr_failure_record(TRF_EQ_FAILED, ierr, NT, T, &
+                          'eq_calc in tr_loop (NTEQIT)')
+                     GOTO 9000
+                  ENDIF
+               ELSE
+                  call eq_calc
+               ENDIF
+               call tr_bpsd_get(IERR)
+               if(ierr.ne.0) return
+!              Re-prepare transport coefficients on the updated metric
+               CALL TRCALC(IERR)
+               IF(IERR.NE.0) GOTO 9000
+            ENDIF
          ENDIF
       ENDIF
-      call tr_bpsd_get(IERR)
-      if(ierr.ne.0) return
-
-      CALL tr_eval(NT,IERR)
-      IF(IERR.NE.0) GOTO 9000
 
 !     *** READING DATA FROM UFILES FOR NEXT STEP ***
 

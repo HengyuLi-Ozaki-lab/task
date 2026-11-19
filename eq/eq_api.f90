@@ -2,7 +2,7 @@
 !
 ! Phase L-2/L-3: C ABI entry points for libeqapi.
 !
-! Ten BIND(C) functions are exposed (eq_validate, eq_save and the layout
+! Eleven BIND(C) functions are exposed (eq_validate, eq_save and the layout
 ! queries eq_state_abi_version / eq_state_size are described where they
 ! are defined, at the end of the module):
 !
@@ -30,6 +30,8 @@
 !   eq_finalize       -> clears the initialized flag. No COMMON cleanup
 !                        yet (the legacy binaries rely on implicit
 !                        static storage).
+!   eq_last_error     -> copies the reason the most recent eq_run failed
+!                        (eqcom1_mod::EQ_ERRMSG) into a C buffer.
 !
 ! Name-collision resolution: equnit.f already defines MODULE equnit
 ! with PUBLIC eq_init. The C-visible symbol also has to be named
@@ -52,7 +54,8 @@ MODULE eq_api
                       EQ_MAX_NRM,  EQ_MAX_NTHM, EQ_MAX_NSUM, &
                       eq_diag_entry_c, &
                       EQ_DIAG_PARAM_LEN, EQ_DIAG_MSG_LEN, &
-                      EQ_DIAG_OUT_OF_RANGE, EQ_DIAG_FILE_MISSING
+                      EQ_DIAG_OUT_OF_RANGE, EQ_DIAG_FILE_MISSING, &
+                      EQ_DIAG_INCONSISTENT_PAIR, EQ_DIAG_OUT_OF_RANGE_AFTER_DEP
   USE eq_param_registry, ONLY: eq_param_set, eq_param_set_str
   ! Rename equnit::eq_init / eq_load away from the C-visible eq_init /
   ! eq_run symbols.
@@ -62,11 +65,13 @@ MODULE eq_api
   ! them to equnit_eq_load without going through a COMMON-block bridge.
   ! MODEFW: eq_api_save looks at it before it lets EQSAVE open a file.
   USE plcomm, ONLY: MODELG, KNAMEQ, MODEFW
+  ! QQPS provenance flag and the failure reason eq_last_error returns.
+  USE eqcom1_mod, ONLY: QQPS_FROM_FILE, EQ_ERRMSG
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: eq_api_init, eq_api_run, eq_api_get_state, &
             eq_api_set_param, eq_api_set_param_str, eq_api_finalize, &
-            eq_api_validate, eq_api_save
+            eq_api_validate, eq_api_save, eq_api_last_error
 
   ! Error codes. Must match eq_api.h.
   INTEGER(C_INT), PARAMETER :: EQ_OK              = 0
@@ -101,10 +106,13 @@ CONTAINS
     ! these defaults MUST be set here -- otherwise NRMAX/NTHMAX stay 0
     ! and equnit::eq_load's save/restore of those counters around
     ! eqload() leaves the post-load grid sized 0, which then corrupts
-    ! the heap inside SPL2D in eqcalq (eqcalq.f90:1041). Callers can
+    ! the heap inside SPL2D in eqcalq (the SPL2D calls sized by NTHMAX and NRMAX, eqcalq.f90:1164 and :1168). Callers can
     ! still override MODELG / KNAMEQ / etc. afterwards via
     ! eq_set_param / eq_set_param_str.
     CALL equnit_eq_init
+    ! A new session starts without a g-eqdsk q column or a failure.
+    QQPS_FROM_FILE = .FALSE.
+    EQ_ERRMSG = ' '
     g_initialized = .TRUE.
     g_has_equilibrium = .FALSE.
     ierr = EQ_OK
@@ -130,13 +138,17 @@ CONTAINS
   !   mode == 1 : load equilibrium from the file pointed to by KNAMEQ,
   !               then run eq_bpsd_init / eqcalq / eq_bpsd_put via
   !               equnit::eq_load. Mirrors the legacy `L` command.
-  !               Requires MODELG ∈ {3, 5, 8} and a valid KNAMEQ.
-  !   other     : EQ_ERR_NOT_IMPL (reserved for future modes).
+  !               Requires a file format, MODELG ∈ {3, 5, 8, 9, 25}
+  !               with a valid KNAMEQ (and KNAMEQ2 for 8), or 15 with
+  !               the fixed eqdb.dat.
+  !   mode > 1  : EQ_ERR_NOT_IMPL (reserved for future modes);
+  !   mode < 0  : EQ_ERR_INVALID.
   !-------------------------------------------------------------------
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
+    USE plcomm, ONLY: RIP
     INTEGER(C_INT), VALUE, INTENT(IN) :: mode
     INTEGER(C_INT) :: ierr
-    INTEGER :: calc_ierr, load_ierr
+    INTEGER :: calc_ierr, load_ierr, ios
     CHARACTER(LEN=80) :: knameq_local
     ! Contract: NOT_INIT takes precedence over INVALID (mirrors tr_api_run).
     ! So callers that hit an uninitialised library always see the same
@@ -145,14 +157,29 @@ CONTAINS
        ierr = EQ_ERR_NOT_INIT
        RETURN
     END IF
+    ! eq_last_error reports on this run only.
+    EQ_ERRMSG = ' '
     IF (mode < 0) THEN
+       WRITE(EQ_ERRMSG, '(A,I0)', IOSTAT=ios) &
+            'eq_run: mode must be 0 or 1, got ', mode
        ierr = EQ_ERR_INVALID
        RETURN
     END IF
 
     SELECT CASE (mode)
     CASE (0)
-       ! Analytic Grad-Shafranov solve via EQCALC, then post-process
+       ! A negative plasma current: the solve converges, but QAXIS and QSURF come out as the wall's q
+       ! (FNPSIP, eqsplf.f90, clamps PSIT as if it grew outward), BETAT and BETAP 0, PVOL negative and
+       ! RAAVE NaN, without a message; clamping both ways leaves most of it wrong, so the solve does not
+       ! treat the sign. Refused here, before any work. EQCALC itself, and the coupled path (equnit's
+       ! eq_calc, TR's MODELG 9, which TR refuses itself), are left as they are.
+       IF (RIP < 0.D0) THEN
+          WRITE(EQ_ERRMSG, '(A,1PE11.4,A)', IOSTAT=ios) 'eq_run: RIP =', RIP, &
+               ' MA is negative; the analytic solve does not treat the sign of the current: give its magnitude'
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
+       ! The Grad-Shafranov solve via EQCALC, then post-process
        ! via EQCALQ to populate the ψ-surface profile + scalar
        ! diagnostics (qaxis/qsurf/betat/betap/pvol). EQCALC alone
        ! solves the fixed-boundary GS equation but doesn't compute the
@@ -163,11 +190,13 @@ CONTAINS
        g_has_equilibrium = .FALSE.
        CALL EQCALC(calc_ierr)
        IF (calc_ierr /= 0) THEN
+          CALL note_failure('EQCALC', calc_ierr)
           ierr = EQ_ERR_CALC_FAILED
           RETURN
        END IF
        CALL EQCALQ(calc_ierr)
        IF (calc_ierr /= 0) THEN
+          CALL note_failure('EQCALQ', calc_ierr)
           ierr = EQ_ERR_CALC_FAILED
           RETURN
        END IF
@@ -181,15 +210,31 @@ CONTAINS
        g_has_equilibrium = .FALSE.
        CALL equnit_eq_load(MODELG, knameq_local, load_ierr)
        IF (load_ierr /= 0) THEN
+          CALL note_failure('equnit::eq_load', load_ierr)
           ierr = EQ_ERR_CALC_FAILED
           RETURN
        END IF
        g_has_equilibrium = .TRUE.
        ierr = EQ_OK
     CASE DEFAULT
+       WRITE(EQ_ERRMSG, '(A,I0,A)', IOSTAT=ios) &
+            'eq_run: mode ', mode, ' is not implemented (0 or 1)'
        ierr = EQ_ERR_NOT_IMPL
     END SELECT
   END FUNCTION eq_api_run
+
+  !-------------------------------------------------------------------
+  ! note_failure : give a failed eq_run a reason if the failing step
+  ! did not set one (EQ_READ / EQCALQ set specific ones).
+  !-------------------------------------------------------------------
+  SUBROUTINE note_failure(step, code)
+    CHARACTER(LEN=*), INTENT(IN) :: step
+    INTEGER, INTENT(IN) :: code
+    INTEGER :: ios
+    IF (LEN_TRIM(EQ_ERRMSG) > 0) RETURN
+    WRITE(EQ_ERRMSG, '(2A,I0,A)', IOSTAT=ios) &
+         TRIM(step), ' failed (ierr=', code, ')'
+  END SUBROUTINE note_failure
 
   !-------------------------------------------------------------------
   ! eq_set_param : delegate to the L-3 parameter registry.
@@ -213,6 +258,14 @@ CONTAINS
        IF (name(i) == C_NULL_CHAR) EXIT
        fname(i:i) = name(i)
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
     CALL eq_param_set(TRIM(fname), value, reg_ierr)
     IF (reg_ierr == 0) THEN
@@ -250,11 +303,26 @@ CONTAINS
        IF (name(i) == C_NULL_CHAR) EXIT
        fname(i:i) = name(i)
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
+    END IF
     fvalue = ' '
     DO i = 1, LEN(fvalue)
        IF (value(i) == C_NULL_CHAR) EXIT
        fvalue(i:i) = value(i)
     END DO
+    ! As for the name: a value longer than the buffer is refused, not cut.
+    IF (i > LEN(fvalue)) THEN
+       IF (c_str_overflows(value, LEN(fvalue) + 1)) THEN
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
     reg_ierr = eq_param_set_str(TRIM(fname), TRIM(fvalue))
     ! g_has_equilibrium is left as it is, unlike in eq_api_set_param: the
@@ -408,10 +476,41 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION eq_api_finalize() RESULT(ierr) BIND(C, NAME="eq_finalize")
     INTEGER(C_INT) :: ierr
+    QQPS_FROM_FILE = .FALSE.
+    EQ_ERRMSG = ' '
     g_initialized = .FALSE.
     g_has_equilibrium = .FALSE.
     ierr = EQ_OK
   END FUNCTION eq_api_finalize
+
+  !-------------------------------------------------------------------
+  ! eq_last_error : the reason the most recent eq_run failed, e.g. the
+  ! file that could not be loaded or why the psi-surface grid was
+  ! rejected. Copies at most buflen-1 characters of EQ_ERRMSG into buf
+  ! and NUL-terminates it. Empty after a successful eq_run (eq_run
+  ! clears it on entry) and after eq_init / eq_finalize.
+  !-------------------------------------------------------------------
+  FUNCTION eq_api_last_error(buf, buflen) RESULT(ierr) &
+           BIND(C, NAME="eq_last_error")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE, INTENT(IN) :: buflen
+    INTEGER(C_INT) :: ierr
+    INTEGER :: i, n
+    IF (.NOT. g_initialized) THEN
+       ierr = EQ_ERR_NOT_INIT
+       RETURN
+    END IF
+    IF (buflen < 1) THEN
+       ierr = EQ_ERR_INVALID
+       RETURN
+    END IF
+    n = MIN(LEN_TRIM(EQ_ERRMSG), buflen - 1)
+    DO i = 1, n
+       buf(i) = EQ_ERRMSG(i:i)
+    END DO
+    buf(n + 1) = C_NULL_CHAR
+    ierr = EQ_OK
+  END FUNCTION eq_api_last_error
 
   !-------------------------------------------------------------------
   ! Issue #143 pilot: pre-run cross-parameter validation.
@@ -423,23 +522,54 @@ CONTAINS
   ! Categories covered:
   !   OUT_OF_RANGE  : 10 EQCHEK overflow guards (NSGMAX/NTGMAX/NUGMAX/
   !                   NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX/NRVMAX
-  !                   vs the eqcom0_mod compile-time maxima).
-  !   FILE_MISSING  : MODELG in {3,5,8} requires non-blank KNAMEQ.
+  !                   vs the eqcom0_mod compile-time maxima), and a
+  !                   negative RIP for an analytic solve (see below).
+  !   FILE_MISSING  : the files a load reads: KNAMEQ blank or not there
+  !                   for MODELG 3/5/8/9/25, KNAMEQ2 too for MODELG 8;
+  !                   for MODELG 15 the fixed file eqdb.dat not there.
+  !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA, for an
+  !                   analytic solve (the solver can abort or give a
+  !                   wrong equilibrium).
+  !   OUT_OF_RANGE_AFTER_DEP : the box RGMIN..ZGMAX leaves out RR or
+  !                   Z = 0, or RGMAX is below RR+RA: where the solver
+  !                   fails or cuts the plasma. Checked for an analytic
+  !                   solve with MDLEQF >= 10 only; the file loads also
+  !                   read the box then and are not checked (see the
+  !                   long comment at the check): their failure says
+  !                   where the axis search ended and the box
+  !                   (eq_last_error).
+  !
+  ! validate() does not know the mode of the run to come, and goes by
+  ! MODELG. The file formats (MODELG 3/5/8/9/15/25, what EQ_READ reads:
+  ! eq/eqfile.f90:180-216) are taken to be loaded, run(1): they bring
+  ! their own geometry (EQRTSK reads RA/RKAP/RDLT/RB from the TASK-native
+  ! file; EQDSKR reconstructs RB = 1.1*RA), so their pre-run
+  ! RR/RA/RB/RKAP say nothing about the run and are not checked. Any
+  ! other MODELG can only be solved, run(0), and is the analytic solve:
+  ! EQCALC does not read MODELG (0, 1, 2, 4, 6, 7, 26 and -1 give the
+  ! same equilibrium, bit for bit). A file format solved with run(0) is
+  ! the analytic solve too, and goes unchecked.
   !
   ! Future categories (left for follow-up PRs as the validation surface
-  ! grows): INCONSISTENT_PAIR, OUT_OF_RANGE_AFTER_DEP, MISSING_REQUIRED.
+  ! grows): MISSING_REQUIRED.
   !-------------------------------------------------------------------
   FUNCTION eq_api_validate(diag, diag_cap, ndiag) &
            RESULT(ierr) BIND(C, NAME="eq_validate")
     USE eqcom0_mod, ONLY: NRGM, NZGM, NPSM, NSGM, NTGM, NUGM, &
                           NRM, NTHM, NSUM, NRVM
     USE eqcom1_mod, ONLY: NSGMAX, NTGMAX, NUGMAX, NRGMAX, NZGMAX, &
-                          NPSMAX, NRMAX, NTHMAX, NSUMAX, NRVMAX
+                          NPSMAX, NRMAX, NTHMAX, NSUMAX, NRVMAX, &
+                          RGMIN, RGMAX, ZGMIN, ZGMAX, MDLEQF
+    USE plcomm, ONLY: rkind, RR, RA, RB, RKAP, RIP, KNAMEQ2
+    USE equ_params, ONLY: eqfile
     TYPE(eq_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
+    INTEGER :: ios
+    LOGICAL :: analytic
+    CHARACTER(LEN=EQ_DIAG_MSG_LEN - 1) :: msgbuf   ! the C field keeps 127 characters + NUL
 
     IF (.NOT. g_initialized) THEN
        ndiag = 0
@@ -448,6 +578,9 @@ CONTAINS
     END IF
 
     nlocal = 0
+    ! The analytic solve: every MODELG but the file formats (see the header).
+    analytic = .NOT. (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8 .OR. &
+                      MODELG == 9 .OR. MODELG == 15 .OR. MODELG == 25)
 
     ! ---- OUT_OF_RANGE: grid-overflow guards (port from EQCHEK in
     !      eqinit.f90:509-548; same checks the binary path runs at
@@ -463,14 +596,176 @@ CONTAINS
     CALL push_oor("NSUMAX", NSUMAX, NSUM)
     CALL push_oor("NRVMAX", NRVMAX, NRVM)
 
-    ! ---- FILE_MISSING: MODELG in {3,5,8} requires non-blank KNAMEQ.
-    !      eq_run(1) -> equnit_eq_load otherwise opens "" silently
-    !      and fills the post-load grid with garbage.
-    IF (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8) THEN
+    ! ---- FILE_MISSING: the files a load, run(1), reads (EQ_READ,
+    !      eq/eqfile.f90): KNAMEQ for MODELG 3, 5, 8, 9 and 25, and for
+    !      MODELG 8 KNAMEQ2 too (EQJAEAR, eq/eq-qst.f90), reported when
+    !      blank or naming no file; for MODELG 15 the fixed file
+    !      eqdb.dat (equ_params' eqfile: EQDSK in eq/equread.f90 does not
+    !      read KNAMEQ), reported as MODELG when it is not there. The load
+    !      fails on each of them too, and says which file, but only once
+    !      the run is made. A name is looked up as the load opens it,
+    !      relative to the working directory of the process at the time
+    !      of validate(). (task-web-client #191)
+    IF (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8 .OR. &
+        MODELG == 9 .OR. MODELG == 25) THEN
        IF (LEN_TRIM(KNAMEQ) == 0) THEN
-          CALL push_diag("KNAMEQ", EQ_DIAG_FILE_MISSING, &
-               "MODELG=3/5/8 requires non-blank KNAMEQ (eqdata file)")
+          WRITE(msgbuf, '(A,I0,A)', IOSTAT=ios) "MODELG=", MODELG, &
+               " loads the file KNAMEQ names, and KNAMEQ is blank"
+          CALL push_diag("KNAMEQ", EQ_DIAG_FILE_MISSING, msgbuf)
+       ELSE IF (.NOT. file_there(KNAMEQ)) THEN
+          WRITE(msgbuf, '(3A,I0,A)', IOSTAT=ios) "KNAMEQ='", TRIM(KNAMEQ), &
+               "' not found: MODELG=", MODELG, " loads it"
+          IF (ios /= 0) WRITE(msgbuf, '(A,I0,A)', IOSTAT=ios) &
+               "KNAMEQ not found: MODELG=", MODELG, " loads it (name unprintable)"
+          CALL push_diag("KNAMEQ", EQ_DIAG_FILE_MISSING, msgbuf)
        END IF
+       IF (MODELG == 8) THEN
+          IF (LEN_TRIM(KNAMEQ2) == 0) THEN
+             msgbuf = "MODELG=8 loads the file KNAMEQ2 names too, and KNAMEQ2 is blank"
+             CALL push_diag("KNAMEQ2", EQ_DIAG_FILE_MISSING, msgbuf)
+          ELSE IF (.NOT. file_there(KNAMEQ2)) THEN
+             WRITE(msgbuf, '(3A)', IOSTAT=ios) "KNAMEQ2='", TRIM(KNAMEQ2), &
+                  "' not found: MODELG=8 loads it too"
+             IF (ios /= 0) msgbuf = "KNAMEQ2 not found: MODELG=8 loads it too (name unprintable)"
+             CALL push_diag("KNAMEQ2", EQ_DIAG_FILE_MISSING, msgbuf)
+          END IF
+       END IF
+    ELSE IF (MODELG == 15) THEN
+       IF (.NOT. file_there(eqfile)) THEN
+          WRITE(msgbuf, '(5A)', IOSTAT=ios) "MODELG=15 loads the fixed file '", &
+               TRIM(eqfile), "', not KNAMEQ, and '", TRIM(eqfile), "' is not there"
+          IF (ios /= 0) msgbuf = "MODELG=15 loads a fixed file, not KNAMEQ, and it is not there"
+          CALL push_diag("MODELG", EQ_DIAG_FILE_MISSING, msgbuf)
+       END IF
+    END IF
+
+    ! ---- INCONSISTENT_PAIR: the wall must enclose the plasma (RB >=
+    !      RA) in an analytic solve. Measured: a large device (RR=6.2,
+    !      RA=2.0) run through MODELG=2 mode=0 with RB left at the
+    !      small-tokamak default (1.2) fails the run (EQMAGS cannot trace
+    !      a surface; EQCALQP returns ierr=111 and eq_last_error says so;
+    !      before that it read YA(:,0) in zminmax and ended the process);
+    !      RB=0.8 with RA=1.0 runs but gives a different equilibrium
+    !      than an enclosing wall (PVOL 57.97 against 59.16, the same for
+    !      every MODELG solved), because the solve and its R-Z grid use the
+    !      smaller RB (EQCALQ's RB=RA clamp comes after EQCALC in a mode-0
+    !      run). Not for a file load, which brings its own RB: the TASK
+    !      file eqdata.TST-2 (MODELG=3) loads the same equilibrium with
+    !      RA=2.0 > RB=1.2 as with RA=0.2 (measured 2026-11-15).
+    IF (analytic .AND. RB < RA) THEN
+       ! IOSTAT guard (all three diagnostic WRITEs): RR/RA/RB/RKAP are
+       ! externally settable, and an extreme value (e.g. RR=1e30,
+       ! live-reproduced) makes the F0.3 rendering overflow the
+       ! CHARACTER(127) internal file -> gfortran "End of record"
+       ! ABORTS the process without IOSTAT — a library-reachable abort
+       ! inside the function whose whole purpose is returning
+       ! diagnostics instead of crashing. On overflow substitute a
+       ! static message (kept LEN-safe and still naming the check).
+       WRITE(msgbuf, '(A,F0.3,A,F0.3,A)', IOSTAT=ios) &
+            "wall radius RB=", RB, " < minor radius RA=", RA, &
+            " (the solver can abort or give a wrong equilibrium)"
+       IF (ios /= 0) msgbuf = &
+            "wall radius RB < minor radius RA (the solver can abort or give a wrong equilibrium; values unprintable)"
+       CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
+    END IF
+
+    ! ---- OUT_OF_RANGE_AFTER_DEP: the box RGMIN/RGMAX/ZGMIN/ZGMAX,
+    !      where the solver reads it: an analytic solve with MDLEQF >= 10.
+    !      It is read in one place, EQAXIS (eq/eqsub.f90:57-121, from
+    !      EQSETP and EQCALV; otherwise its window is RR +/- RB,
+    !      +/- RKAP*RB), which asks two things of it: the magnetic axis
+    !      must lie inside it (or the run fails, ierr=103), and RGMAX
+    !      bounds the search for the outer edge (beyond it the plasma is
+    !      cut at RGMAX). The axis starts at (RR, 0) (NEWTN steps from
+    !      there) and moves as the solve goes on (outward with the
+    !      Shafranov shift: RAXIS 3.070 for RR=3.0 at the defaults; inward
+    !      with triangularity: 2.976 at RDLT=0.4), and the outer edge at
+    !      Z=0 is RR+RA whatever RKAP and RDLT. So three things are flagged,
+    !      each failing or cutting the plasma whatever the shift (measured
+    !      2026-11-15, the defaults with MDLEQF=10, box [1.5, 4.5] x [-2, 2]):
+    !        RR outside RGMIN..RGMAX (RGMIN=3.001 fails, 2.999 runs);
+    !        RGMAX below RR+RA (3.999 cuts the plasma, PVOL 59.07 against
+    !        59.16; 3.5 gives 11.7; below the axis, 3.05, the run fails;
+    !        4.0 runs, every scalar within 4e-9 of the default box's, the
+    !        edge search's tolerance). The solve's own edge lies 3.3e-4
+    !        inside RR+RA (REDGE 3.99967 with the default box), so an RGMAX
+    !        between the two is flagged though the run is the default
+    !        box's (3.9998: PVOL within 1e-8);
+    !        a Z range that leaves out Z=0, the axis of the up-down
+    !        symmetric plasma (ZGMIN=0.5 and ZGMAX=-0.5 fail; ZGMAX=0.01
+    !        runs). At ZGMIN=0 or ZGMAX=0 exactly, flagged too, the run
+    !        turns on rounding: the axis's Z starts at exactly 0 and ends
+    !        1e-12 (1e-10 on an ITER-sized case) to one side; both fail
+    !        here (macOS arm64, -O0).
+    !      What else the box leaves out of the plasma changes nothing:
+    !      ZGMAX=0.01 (the plasma +/-1.0), RGMIN=2.999 (its inner edge at
+    !      2.0) and RKAP=1.8 with ZGMAX=0.3 run with every scalar as with
+    !      the default box. Not seen before the run: an axis that leaves
+    !      the box as it moves (RDLT=0.4 with RGMIN=RR fails, ierr=103),
+    !      and a Z bound inside the axis's rounding (ZGMIN=-1e-14 fails).
+    !      After the solve EQCALQP overwrites the four with the traced
+    !      plasma extent for any MDLEQF (eqcalq.f90:630-640; EQCALQV
+    !      again for MDLEQF < 10, 1026-1037), so for MDLEQF < 10 they are
+    !      outputs only. With MDLEQF >= 10 a validate() after a run reads
+    !      the traced RGMAX, 3e-4 below RR+RA at the defaults: the edge is
+    !      flagged, rightly once an input has changed, since the next
+    !      run(0) of the same instance reads that box too (RR=3.4 then:
+    !      PVOL 20.81 against 67.05 in a new instance), and needlessly for
+    !      a run of the same input again (PVOL equal to 1.4e-13, the other
+    !      scalars to 1e-11).
+    !      The box is not the grid psi is tabulated on (EQTORZ: RR +/- RB).
+    !      A file load (EQ_READ dispatch,
+    !      eq/eqfile.f90:180-216: MODELG=3/9 -> EQRTSK, a TASK-native file
+    !      carrying its own RG/ZG grids AND RA/RKAP/RDLT/RB; MODELG=5/25
+    !      -> EQDSKR, grid rebuilt from the file's rdim/zdim; MODELG=8 ->
+    !      EQJAEAR; MODELG=15 -> equread::eqdsk) sets the geometry itself,
+    !      so the pre-run values say nothing about the loaded plasma. Not
+    !      checked, hence a false negative for a load with MDLEQF >= 10,
+    !      which reads the box too (EQAXIS: run(1) fails, ierr=103, and
+    !      eq_last_error says where the axis search ended and the box,
+    !      task-web-client #187): the axis it is held to is the one found
+    !      in the file's psi, known only once the file is read. The
+    !      eq_mcp ITER01 fixture (RR=6.2, RA=2.0, MODELG=3,
+    !      test_server.py::test_init_set_run_get_state_cycle_iter01) is far
+    !      outside the default box yet clean: validate() must return [].
+    IF (analytic .AND. MDLEQF >= 10) THEN
+       IF (RR < RGMIN .OR. RR > RGMAX) THEN
+          WRITE(msgbuf, '(A,F0.3,A,F0.3,A,F0.3,A)', IOSTAT=ios) &
+               "RR=", RR, " outside RGMIN..RGMAX [", RGMIN, ", ", RGMAX, &
+               "]: the magnetic axis starts at RR, and must lie in the box (MDLEQF >= 10)"
+          IF (ios /= 0) msgbuf = &
+               "RR outside RGMIN..RGMAX: the magnetic axis starts at RR, and must lie in the box (MDLEQF >= 10; values unprintable)"
+          CALL push_diag("RR", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+       ELSE IF (RR + RA > RGMAX) THEN
+          WRITE(msgbuf, '(A,F0.3,A,1PE9.3,A,0PF0.3,A)', IOSTAT=ios) &
+               "outer edge RR+RA=", RR + RA, " lies ", RR + RA - RGMAX, " beyond RGMAX=", RGMAX, &
+               ": the solve cuts the plasma at RGMAX, or fails (MDLEQF >= 10)"
+          IF (ios /= 0) msgbuf = &
+               "outer edge RR+RA beyond RGMAX: the solve cuts the plasma at RGMAX, or fails" // &
+               " (MDLEQF >= 10; values unprintable)"
+          CALL push_diag("RR", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+       END IF
+
+       IF (ZGMIN >= 0.D0 .OR. ZGMAX <= 0.D0) THEN
+          WRITE(msgbuf, '(A,F0.3,A,F0.3,A)', IOSTAT=ios) &
+               "ZGMIN..ZGMAX [", ZGMIN, ", ", ZGMAX, &
+               "] leaves out Z=0, where the magnetic axis lies (MDLEQF >= 10)"
+          IF (ios /= 0) msgbuf = &
+               "ZGMIN..ZGMAX leaves out Z=0, where the magnetic axis lies (MDLEQF >= 10; values unprintable)"
+          IF (ZGMIN >= 0.D0) THEN
+             CALL push_diag("ZGMIN", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+          ELSE
+             CALL push_diag("ZGMAX", EQ_DIAG_OUT_OF_RANGE_AFTER_DEP, msgbuf)
+          END IF
+       END IF
+    END IF
+
+    ! ---- OUT_OF_RANGE: a negative plasma current, which eq_run(0) refuses (see there).
+    IF (analytic .AND. RIP < 0.D0) THEN
+       WRITE(msgbuf, '(A,1PE11.4,A)', IOSTAT=ios) "plasma current RIP=", RIP, &
+            " MA is negative: the analytic solve does not treat its sign; give its magnitude"
+       IF (ios /= 0) msgbuf = "plasma current RIP is negative: the analytic solve does not treat its sign"
+       CALL push_diag("RIP", EQ_DIAG_OUT_OF_RANGE, msgbuf)
     END IF
 
     ndiag = nlocal
@@ -526,6 +821,18 @@ CONTAINS
       END DO
       diag(nlocal)%code = code_in
     END SUBROUTINE push_diag
+
+    !---------------------------------------------------------------
+    ! Helper: .TRUE. when a file of this name exists (relative to the
+    ! working directory), as the load would open it.
+    !---------------------------------------------------------------
+    LOGICAL FUNCTION file_there(fname)
+      CHARACTER(LEN=*), INTENT(IN) :: fname
+      INTEGER :: ios_q
+      file_there = .FALSE.
+      INQUIRE(FILE=TRIM(fname), EXIST=file_there, IOSTAT=ios_q)
+      IF (ios_q /= 0) file_there = .FALSE.
+    END FUNCTION file_there
 
   END FUNCTION eq_api_validate
 
@@ -594,6 +901,32 @@ CONTAINS
     END IF
     ierr = EQ_OK
   END FUNCTION eq_api_save
+
+  !-------------------------------------------------------------------
+  ! c_str_overflows : .TRUE. when the C string S holds, from position
+  ! FIRST on (the first one the caller's buffer has no room for), a
+  ! character other than a blank. Trailing blanks are no part of a
+  ! name or a value, so a blank-padded string that is longer than the
+  ! buffer only by blanks loses nothing when it is copied. Call it
+  ! only when no NUL was met before FIRST. A string with no NUL within
+  ! C_STR_SCAN characters from FIRST is refused as well.
+  !-------------------------------------------------------------------
+  PURE FUNCTION c_str_overflows(s, first) RESULT(over)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: s
+    INTEGER,                              INTENT(IN) :: first
+    LOGICAL :: over
+    INTEGER, PARAMETER :: C_STR_SCAN = 4096
+    INTEGER :: j
+
+    over = .TRUE.
+    DO j = first, first + C_STR_SCAN - 1
+       IF (s(j) == C_NULL_CHAR) THEN
+          over = .FALSE.
+          RETURN
+       END IF
+       IF (s(j) /= ' ') RETURN
+    END DO
+  END FUNCTION c_str_overflows
 
   !-------------------------------------------------------------------
   ! eq_state_abi_version / eq_state_size : layout query (#246).

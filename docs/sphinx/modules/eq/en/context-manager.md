@@ -25,7 +25,7 @@ with Eq() as eq:
     eq.set_param("RR", 6.5)
     eq.set_param("BB", 5.3)
     eq.set_param("RIP", 1.5)
-    eq.run()
+    eq.run(mode=0)  # the Grad-Shafranov solve; run() is mode=1, a file load
     state = eq.get_state()
 # ← eq_finalize runs the moment we leave the block
 ```
@@ -71,7 +71,7 @@ Key points:
 eq = Eq()                         # eq_init here
 try:
     eq.set_param("RR", 6.5)
-    eq.run()
+    eq.run(mode=0)
     state = eq.get_state()
 finally:
     eq.close()                    # always runs, even on exception

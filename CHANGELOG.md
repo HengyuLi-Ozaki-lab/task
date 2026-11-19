@@ -10,6 +10,48 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, #96 PR 1).
+  - `tr_set_param` and `tr_set_param_str` send a name that starts with `eq:` to EQ's registry (`eq:RB`, `eq:NRMAX`,
+    `eq:NSGMAX`, ...); an unknown name returns `TR_ERR_INVALID`, and an accepted one makes the next `tr_run` prepare
+    again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (they do nothing
+    through TR: set TR's own), and so is every `eq:` name after the process's first preparation attempt, until the
+    pinned bpsd has k-yoshimi/bpsd#7 (it comes off with the `NRMAX` guard below). Under `MODELG` 9 this sets EQ's wall and grid without `tot`. `libtrapi.so` now links EQ's registry object.
+    A mesh change of EQ between two preparations in one process needs the bpsd spline resize
+    (k-yoshimi/bpsd#7); the regrid tests that need it run with `TRLIB_BPSD_REGRID_FIX=1`.
+  - `tr_run` refuses, and `tr_validate` reports, an `eq:` mesh size above the compile-time maximum of EQ's arrays (the bounds of
+    `eq_validate`, EQ's own parameters); `eq:NSGMAX` 129 under `MODELG` 9 used to end the process in `EQMESH`.
+  - `tr_init` sets library mode (`tr/trfailure.f90`), `tr2` never does. In library mode the time loop returns the
+    first failure instead of going on, and records it: `tr_last_error(tr_diag_entry_t*)` gives the kind
+    (`EQ_FAILED` from the periodic `MODELG` 9 re-solve (`NTEQIT`) and from each exit of the q-scaling, with EQ's own
+    reason appended to the detail when EQ set one,
+    `TR_CHECK` from `TRCHCK`, `NONFINITE`, `PREP_FAILED`, `OTHER`; `REFUSED` is reserved for `tr_continue`), the Fortran code and
+    `nt=.. t=.. s: detail`. The first failure is kept; `tr_init` and every `tr_run` clear it. The library-mode
+    behaviour is gated; `tr2`'s output is byte-identical on a single healthy `R` (tr.ITER01 with `MODELG` 9,
+    `NTEQIT` 50 and 0); the two #228 fixes below apply to `tr2` too.
+  - `trlib`: `TrFailure`, `TrlibRunError.failure` (`None` when the `.so` predates `tr_last_error`) and
+    `Trlib.last_error()`. `tr_mcp`: the run error string carries the record, and `describe_parameters` has an
+    `eq_names` line. TOT and the mono build stop and record too, but `tot_api.h` and `totlib` have no accessor yet.
+- **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
+  re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
+  (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
+  so a later preparation on a larger mesh in the same process wrote out of bounds (NaN or SIGSEGV under `MODELG` 3):
+  until the pinned bpsd resizes them (k-yoshimi/bpsd#7), `tr_run` refuses, and `validate()` reports, an `NRMAX`
+  other than the one of the process's first preparation attempt (failed or not), across `tr_finalize` and `tr_init`
+  too, for every `MODELG`.
+- **TR registry: NCLASS, the equations solved, the start current profile, particle transport and the particle
+  source.** `tr_set_param` takes `MDNCLS`, `MDLEQB`, `MDLEQN`, `MDLEQE`, `PROFJ1`, `PROFJ2`, `AD0`, `AV0`, `CDP`,
+  `CNP`, `MDLPSC`, `NPSCMAX` and `PSCTOT[i]`, `PSCR0[i]`, `PSCRW[i]`, `NSPSC[i]` (i = 1..10); the variables,
+  defaults and namelist entries existed, so nothing changes at the defaults. They make the PLATO case of Mochinaga
+  et al., Plasma Fusion Res. 16, 1403093 (2021) (NCLASS, a gas puff, the densities evolved) settable through the
+  library and `tr_mcp`. `tr_run` refuses before `tr_prep`, and `validate()` reports, what the solver cannot take:
+  `MDLEQB`, `MDLEQN`, `MDLPSC` outside {0, 1}; `MDLEQE` outside {0, 1, 2}, 1 or 2 with `MDLEQN` 0, and 2 unless
+  `NSMAX` is 2, species 2 is H or D of charge 1, there is no impurity density and no UFILE (`tr/trexec.f90` adds the
+  other species to the bulk-ion density instead of subtracting them); with `MDLPSC` 1, `NPSCMAX` outside 0..10,
+  `NSPSC[i]` outside 2..NSMAX (only 2 with a UFILE, where `tr_prep` may change NSMAX), `PSCRW[i]` <= 0 or below
+  1e-10 m and `|PSCR0[i]|` above 1e10 m (measured before: an array bound, NaN, another value run without a word, or
+  a stop inside `tr_prep`). `PSCR0` is in metres (RA*rho). `trlib`'s `validate()` asks again when the findings
+  outnumber its first buffer of 32.
+  The integer names join `value_refused`. The M0904 fixture sets `MDNCLS` as its input does.
 - **MCP server `fp_mcp`: a `set_param_str` tool** (#231) sets `KNAMEQ`,
   the equilibrium file that `MODELG=3` loads, so an EQ to FP handoff (an
   equilibrium written by `eq_mcp`'s `save` tool) can be driven through
@@ -95,9 +137,77 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   one left the appended fields as plausible zeros. The check protects
   callers from this change on; a caller older than it never asks, and
   `X_get_state` still takes no buffer size.
+- **TR library: the multi-reaction fusion model of `trx`, selected by
+  `MODEL_PNF` and off by default.** `tr/libnf.f90` (the reaction tables
+  and reactivities) and `tr/trpnf_multi.f90` (`tr_pnf`) are ported from
+  `trx`. `MODEL_PNF` chooses the reaction set: 1 is D-T alone, 2 and 12
+  four reactions, 3 six, 4 and 14 thirteen; with 0, the default, fusion is
+  the legacy `MDLNF` path as it was. `tr_set_param` takes the name
+  `MODEL_PNF` (uppercase only), and the `&TR` namelist takes `model_pnf`;
+  `tr_mcp` does not declare it yet, and the reaction count and the
+  per-reaction rates are not in `tr_get_state`.
+  **It does not replace `MDLNF` yet.** With one reaction (`MODEL_PNF = 1`)
+  the model's `SNF`, `PNF` and `TAUF` reach the solve in place of
+  `MDLNF`'s, and nothing else does: `PFIN`, `PFCL` and the fusion slot of
+  `RNF` and `RTF` stay zero, as in `trx`, so the alpha power fills the fast-ion energy and is
+  not passed to the thermal species. On `tr_iter01` at 10 keV after 20
+  steps the electron temperature on axis is 10.717 keV, against 10.727 with
+  fusion off and 11.237 with `MDLNF = 1`. The reactants are read from
+  species 2 and 3 and the alpha goes to species 4, as with `MDLNF`, and
+  nothing checks that those are D, T and He4. From 1 to 5 keV the D-T rate
+  is within 5 % of the legacy `SIGMAM` since its fit was changed (under
+  Fixed; HengyuLi-Ozaki-lab/task-web-client#58). A run that sets both
+  switches is refused, since it would count the same alphas twice: by
+  `tr_prep`, and by `TRCALC`, before it computes anything, when a switch is
+  changed on a prepared case that is not prepared again (the standalone
+  `tr2`'s `L` then `C`; through `tot` too before upstream #259, since which
+  every set makes the next run prepare again). There a nonzero `MODEL_PNF`
+  the case was not prepared for is refused as well, and `MODEL_PNF = 0`
+  turns the model off at once.
+  With more than one reaction the rates are evaluated and nothing reaches
+  the solve: TR has one fusion fast-ion slot (`NFM = 2`).
+  What was checked is agreement with `trx`, not with a measurement: on a
+  10 keV D-T case the change that `MODEL_PNF = 1` makes to nine global
+  quantities and to the temperature profiles is the change it makes in
+  `trx` to within 1.2 % (globals) and 2 % (profiles). The comment block
+  before `FUSION_DIFFERENTIAL_TOL_SCALAR` in
+  `python/trlib/tests/test_model_pnf_dispatch.py` says what that comparison
+  cannot see: `SNF`, an error the two codes share, and the outermost radial
+  point. The reference is `trx` with five corrections, listed in
+  `test_run/baselines/tr_fus_dt_hot/SOURCE.md` and reported upstream
+  (k-yoshimi/task#235, #236, #238); the four that are on the fusion path
+  are not in the port either. Since the fit was changed (under Fixed) the
+  reference has tr's fit too, its correction 7.
+  `python/trlib/tests/test_libnf.py` holds the D-T reactivity to the legacy
+  `SIGMAM` at the table's points from 1 to 500 keV (6 %; at 1000 keV the
+  table is 1.46 times `SIGMAM`), from 1 to 5 keV (5 %) and at nine points
+  from 5 to 100 keV (1.3 %), and holds that every reaction's rate is
+  finite, not negative and rising from 1 to 50 keV.
 
 ### Changed
 
+- **TR library: `tr_run` and `validate()` refuse a zero centre density with
+  an edge density** (MS10-DP-ISSP/task-web-client#190). `PN = 0` with
+  `PNS > 0` for an active species (outside the UFILE modes `MDLUF` 1/2/3,
+  which the check leaves out) was let through as "runs finite", but the
+  density then vanishes at the axis and the run fails (`tr_prep`'s impurity
+  dilution goes negative on the TST-2 case with `PN(1)` or `PN(2)` at 0;
+  species 3 of TST-2 was finite after 2 steps and met a negative temperature
+  at step 9) or completes with `WPT`, `Q0`, the betas and `TAUE` NaN (TR's
+  defaults with `PN(2) = 0`). `validate()` now reports it as `PN[ns]`
+  (`OUT_OF_RANGE`), and `tr_run` returns `TR_ERR_INVALID` before `tr_prep`,
+  as for a negative density. **A change of behaviour**: such a run used to
+  be made. Not refused: a centre density far below the edge's, which fails
+  too (`PN(2)` = 1e-9, 1e-6 and 1e-4 end with `ierr=3` within 10 steps).
+
+- **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
+  `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
+  the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and
+  `RIPS` = 0, which returned RC 0 with about 10 non-finite scalars, fail with `NONFINITE` at nt 1 (task-web's
+  `non_finite` flag no longer sees them). On flat 9 MA ITER `MODELG` 9 with `NTEQIT` 50 and heating, the run stops
+  at t = 12 s (code 103, the axis leaves the plasma), where it printed `XX EQAXIS` lines to 37 s. `tr2` is
+  unchanged by this entry (its loop does not test the re-solve); see the #228 entry under Fixed for what changed in
+  `tr2`'s `R`.
 - **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
   run re-preps the module, whoever set it (#253).** `tr_set_param` /
   `fp_set_param` / `ti_set_param` used to clear the module's private
@@ -118,8 +228,197 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   read only from the log on unit 6 or from `fp_regress.dat`
   (`FP_REGRESS_DUMP=1`). `fp_run` now returns `FP_ERR_INVALID` before any
   work.
+- **EQ, TR, FP libraries: `set_param` and `set_param_str` refuse a
+  malformed subscript and a string they cannot hold whole.** A scalar's
+  `CASE` never looked at the index, so `NTHMAX[zz]` set `NTHMAX`;
+  list-directed `READ` took `[1,2]`, `[2 3]` and `[/]`; text after the
+  closing bracket was ignored (`PN[1]x` set `PN[1]`). A name was cut to the
+  buffer that took it (64 characters at the C entry points, 32 in TR's and
+  EQ's registries), so `RR` followed by blanks and anything else was `RR`.
+  A string value was cut to the 80 characters of its parameter: TR's and
+  FP's `set_param_str` took a path of 100 characters and kept the first 80.
+  Each is now code 1 (invalid parameter) and nothing is assigned; a string
+  that is longer only by trailing blanks loses nothing and is still taken
+  (it must end within 4096 characters of the buffer's end).
+  Not changed: a subscript that is a whole number is still taken for a
+  scalar (`PROFN1[1]` sets TR's `PROFN1`, which `test_property_fanout.py`
+  relies on).
+- **TR: `FTAUE` and `FTAUI` return `1.D8` where they divided by an ion
+  density of exactly zero**, which gave a number that is not finite (an
+  infinity at a positive temperature and electron density). That happens
+  with the bootstrap models `MDLJBS` = 1, 2 and 3 on a run with fewer than
+  four species, which ask for the absent ones; with the default
+  `MDLJBS = 5` it does not, and none of the three baseline cases reaches
+  the guard. What the two functions returned as a finite number they still
+  return, and no run was found to change against the library before the
+  port, 20 steps each: `tr_tst2` (two species) with `MDLJBS` = 1, 2 and 3,
+  where the guard is reached, in its 367 state values; `tr_iter01` with
+  helium at `1.D-9`, `1.D-12`, `1.D-8` and `1.D-7` in its 567 state values
+  and in the transport coefficients of all four species. All of these are
+  finite. (With a solved species at exactly zero `tr_iter01` is not a
+  number, before the port as after it, and says nothing about the guard.)
+  `trx` guards more widely
+  (`ABS(n) <= 1.D-8`, ahead of every branch), which also replaces the finite
+  time of a species at a trace density and the result of `FTAUE`'s impurity
+  branch, which divides by the electron density; the port first took that
+  guard, and it was narrowed before any release (with it, helium at `1.D-9`
+  moved 182 of 567 state values by up to 2.3e-9). The two functions now
+  live in the module `trcoll`, and `COULOG` and `HY` in `trlib` (moved, not
+  changed).
 
 ### Fixed
+
+- **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
+  and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
+  `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first
+  q-scaling and nothing set it again: a second lifecycle in one process gave NaN for every q, a second preparation
+  inside one lifecycle a state that differed from the first by up to 57 %. It sets the flag at the start of every
+  preparation, `tr_init` and `tr_finalize` restore it. And the q-scaling went on after a failing `eq_calc`, a bad
+  `tr_bpsd_get`/`tr_bpsd_put` status, a zero or non-finite scale factor, or no agreement in 30 iterations; each now
+  ends `tr_set_metric` with `ierr` /= 0 and `tr_run` returns `TR_ERR_CALC_FAILED`. `eq_calc` (`eq/equnit.f90`) has an
+  optional `IERR` for it; called without it, as `trx` and `trm` do, it is unchanged. With `RIPS` = `RIPE` from 0.01
+  to 100 and the rest at the defaults, 0.81 and 0.84, which returned 0 after failed solves, and 11 to 100, which ended
+  the process at a run-time check, now fail; 0.83 and 0.85 to 10 give the same state. This is not library mode only:
+  `tr_set_metric` is `tr2`'s too, so `tr2`'s `R` stops at `trmenu.f90:74` where it used to run on after a failed
+  solve (the `RIPS` 0.81 and 0.84 above), and a second `R` in one `tr2` session under `MODELG` 9 now gives what the
+  first gave. `tr2`'s output on a single `R` that succeeds is unchanged.
+- **EQ library: `eq_bpsd_put` sizes its arrays again when EQ's grid changes.** It sized `equ1D%rho` and
+  `metric1D%rho` once, on its first call, and wrote `NRMAX` points: a later preparation on a bigger EQ grid in the
+  same process wrote past the end (a checked build stopped, e.g. tst2 at `NRMAX` 10, then `MODELG` 9). The
+  preparation on a changed grid needs the bpsd spline resize too (k-yoshimi/bpsd#7).
+- **EQ: a contour extremum at the edge of `YA`, and an `EQMAGS` that could not trace a surface, fail `EQCALQ`.**
+  `EQCALQP` and `EQCALQV` refine the top and bottom of each flux surface with `zminmax`, which read `YA` at index 0
+  when the extremum was the first or last point; a checked build stopped, others read garbage. `EQCALQ` now returns
+  `IERR` = 110 (extremum at the edge, with the reason in `eq_last_error`). `EQCALQP` did not test its two `EQMAGS`
+  calls: `RA` 1.8 or 2.0 with `MODELG` 9 (or `RR` 6.2, `RA` 2.0 and the default wall `RB` 1.2 through `eq_run`)
+  could not trace the surface ("NOT ENOUGH N"; one cause is a wall smaller than the plasma) and went on to
+  the read. They return 111 (surface loop) and 112 (edge surface) with the reason. Callers that ignore
+  `EQCALQ`'s status (`tr2`, `trx`, `trm`, `fp`, `wm`, `wmx`, `wr`, `wrx`, `ob/obprep.f90`) now go on after the early
+  return where a checked build stopped. Healthy results are bit-identical (58 configurations, base against head).
+- **TR: a sawtooth with q below 1 out to the edge read past the mesh.** `TRSAWT` (`tr/trcalc.f90`) printed its
+  profiles to two points past the mixing radius, which is `NRMAX` when q stays below 1 to the edge: a bounds-checking
+  build stopped the process ("Index '51' of dimension 1 of array 'rm' above upper bound of 50" on PLATO's shape at
+  150 kA with `MDLST` 1), others read beyond the arrays. The print stops at `NRMAX`.
+- **TR: `MDLEQE` 2 with `MDLEQB` 1 dropped the electron temperature equation.** `TR_TABLE` (`tr/trprep.f90`) took
+  equation 3 as the bulk-ion density, which it is only without the B_theta equation; with it, equation 3 is the
+  electron temperature, which was then left out of the solve (a PLATO case ran to Te0 117 eV instead of 228 eV). It
+  now takes the equation after the electron's temperature and rotation (`MDLEQU`), the bulk-ion density whenever the
+  temperatures are solved (`MDLEQT` 1, which the registry does not change). `MDLEQE` 0 and `MDLEQB` 0 are unchanged;
+  with the fix `MDLEQE` 2 and 0 reach the same steady state for a hydrogen plasma, as they did with `MDLEQB` 0.
+- **TR: a particle source far from every mesh point ended the run in NaN.** `TRPSCA` (`tr/trpsc.f90`) normalised the
+  Gaussian by its volume integral, which underflowed to 0 when the centre `PSCR0` lay many widths `PSCRW` from every
+  mesh point (outside the plasma, or narrower than the mesh spacing), so the source was infinite. The exponent is
+  now taken relative to its smallest value on the mesh: the source is unchanged where it was finite, and otherwise
+  the whole rate goes where the Gaussian is largest. No baseline case uses `MDLPSC` 1.
+- **EQ library: `validate()` holds the input to what the solve does with it**
+  (HengyuLi-Ozaki-lab/task-web-client#37). With `MDLEQF >= 10` the box
+  `RGMIN`..`ZGMAX` is read only by `EQAXIS`: the magnetic axis, which starts
+  at `(RR, 0)`, must lie in it, and `RGMAX` bounds the plasma's outer edge
+  `RR + RA`. `validate()` compared the whole plasma with the box, so
+  `ZGMAX` below `RKAP*RA`, or `RGMIN` above `RR - RA`, was reported although
+  the run's every scalar is the default box's. It now reports `RR` outside
+  `RGMIN`..`RGMAX` and `RGMAX` below `RR + RA` (diagnostic `RR`), and a Z
+  range that leaves out `Z = 0`, `ZGMIN = 0` and `ZGMAX = 0` included
+  (diagnostic `ZGMIN` or `ZGMAX`, where it named `RKAP`): each of these fails
+  (`ierr=103`) or cuts the plasma at `RGMAX`. The geometry checks (this box,
+  `RB < RA`, a negative `RIP`) are made for the analytic solve, `run(0)`,
+  going by `MODELG`: a file format (3, 5, 8, 9, 15, 25) is taken to be
+  loaded with `run(1)`, which brings its own geometry, and every other
+  `MODELG` is solved, to the same equilibrium (`EQCALC` does not read
+  `MODELG`). So `MODELG` 0, 1 and the other values that `run(1)` cannot load
+  are checked like 2 (the box and `RIP` were checked for 2 only), and a file
+  format is no longer reported for `RB < RA`. Not seen before the run: an
+  axis that leaves the box as it moves (with `RDLT = 0.4` it ends inward of
+  `RR`), and a Z bound within rounding of 0. The EQ documentation now says
+  what `validate()` checks.
+- **EQ library: `validate()` reports the file every load format reads, and
+  `MODELG = 15` returns an error where it ended the process**
+  (MS10-DP-ISSP/task-web-client#191). `FILE_MISSING` covered a blank
+  `KNAMEQ` for `MODELG` 3, 5 and 8 only; it now covers `MODELG` 3, 5, 8, 9
+  and 25, and a `KNAMEQ` that names no file too (looked up, as the load opens
+  it, relative to the working directory at the time of the call), and
+  `KNAMEQ2`, the second file `MODELG = 8` reads, the same way; a load that
+  cannot open `KNAMEQ2` names it, where it named `KNAMEQ`.
+  `MODELG = 15` reads the fixed file `eqdb.dat`, not `KNAMEQ`: `validate()`
+  reports it as `MODELG` when it is not there. Its reader, `eqdsk`
+  (`eq/equread.f90`), ended the process with `STOP` for a missing file, one
+  it could not open and a read error, and for a file that ended early it
+  ran a `BACKSPACE` on the closed unit (a Fortran runtime error) before a
+  `read(*,*)` of standard input, the stdio MCP servers' channel. It now
+  returns an error for each, reads no standard input, and `eq_last_error`
+  names `eqdb.dat` and the reason, e.g. "EQ_READ: MODELG=15 reads the fixed
+  file 'eqdb.dat', not KNAMEQ: 'eqdb.dat' not found". Not tested: a load of
+  a valid `eqdb.dat` (the repository has none); it cannot work through the
+  library as it is, since `eqdsk` then calls `equ_set_psi` with one of the
+  three arrays it takes (`eq/equintf.f90`), which this change leaves alone.
+- **EQ library: a load or solve whose magnetic axis lies outside its window
+  says where both are** (MS10-DP-ISSP/task-web-client#187). With
+  `MDLEQF >= 10` a file load holds the axis it finds in the file to the box
+  `RGMIN`..`ZGMAX` too (default 1.5..4.5 x -2..2 m), and a small device's
+  axis lies outside it: the load failed with "equnit::eq_load failed
+  (ierr=103)". `EQAXIS` now gives `eq_last_error` where the axis search ended
+  and the window, e.g. "EQAXIS: the search for the magnetic axis ended at
+  (R, Z) = (0.3871, 0.0000), outside the box RGMIN..RGMAX = [1.5000, 4.5000],
+  ZGMIN..ZGMAX = [-2.0000, 2.0000] that MDLEQF >= 10 holds the axis to: set
+  the box around it (ierr=103)", where an analytic solve said "EQCALC failed
+  (ierr=103)". `validate()` still cannot
+  see it for a load: the axis is known only once the file is read.
+- **TR documentation: `CDH` and `CNH` weigh `chi_NC`** (the neoclassical
+  `AKNC`), not `chi_NCLASS`: NCLASS needs `MDNCLS`, which the registry does
+  not take (HengyuLi-Ozaki-lab/task-web-client#43). Text and comments only.
+- **TR library: `libnf`'s reaction rates between the low points of its
+  table** (HengyuLi-Ozaki-lab/task-web-client#58). The rates were a cubic
+  spline of `<sigma v>` over `log10(T)` through the table's ten points (1,
+  2, 5, 10, ... 1000 keV). Below 5 keV, where the tables climb by up to 3.3
+  decades from one point to the next, the spline swung: D-T, which `MODEL_PNF = 1`
+  passes to the solve, was 12.2 times the legacy `SIGMAM` at 1.2 keV and
+  0.10 of it at 2.5 keV, and D-He3 (2.05-4.70 keV) and T-He3 (1.05-1.95 and
+  5.10-8.55 keV) were negative. The spline is now of `log10(<sigma v>)`, and
+  `sigmav_nf` returns 10 to its power: no rate is negative, the table's
+  points keep their values (to 3.4e-14), and D-T is within 5 % of `SIGMAM`
+  from 1 to 5 keV and within 1.3 % from 5 to 100 keV. A run with
+  `MODEL_PNF = 1` gets another D-T rate off the table's points: from 0.078
+  times the old one (at 1.15 keV) to 10.04 times it (at 2.45 keV) under
+  5 keV, within 1.82 % of it from 5 to 100 keV.
+  `MODEL_PNF = 0`, the default, is unchanged. The `trx` reference of
+  `test_run/baselines/tr_fus_dt_hot` takes the same fit (its correction 7,
+  branch `ref/trx-regress-capture-58`), and its `metrics.json` was captured
+  again: the comparison's worst entry is 0.58 of its tolerance with both on
+  the new fit, 0.29 with both on the old one (`SOURCE.md` there, item 7).
+- **TR library: a run returns the global results of its last step**
+  (HengyuLi-Ozaki-lab/task-web-client#118). `tr_eval` computed them
+  (`TRGLOB`: `WPT`, `AJT`, the betas, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`,
+  `RQ1`) only on a step that `NTSTEP`, `NGTSTP` or `NGRSTP` divides, so a run
+  whose last step none of the three divides returned an earlier step's: on
+  the TST-2 fixture, `NTMAX = 10` with all three at 1000 returned step 0's
+  `WPT` 5.39e-7 against 2.98e-6. `tr_eval` now computes them on the last
+  step when no output step did, and puts back `TRGLOB`'s reference for
+  `WPDOT`, so a run made in several `tr_run` calls ends as one run does, to
+  1e-4 (without putting it back, `run(5)` then `run(5)` gave `TAUE2` 1.24e-4
+  against 2.84e-4 for `run(10)`). No regression case moves: each ends on an
+  output step.
+- **TR library: `tr_run` refuses a species without an equation, a species 1
+  that is not the electron, and a zero edge density of species 1 or 2**
+  (HengyuLi-Ozaki-lab/task-web-client#86 and
+  HengyuLi-Ozaki-lab/task-web-client#131). TR places each species by
+  its mass alone (`TR_TABLE`): a species that matched no class wrote `NEA`
+  with index -1, two in one place or one above `NSMAX` left a species
+  without equations (with run-time checks the process stopped in
+  `trexec.f90`), and the electron as species 2 ended the run with `WPT` NaN.
+  `tr_run` now returns an error and the process lives. With `PN > 0`, a
+  zero `PNS` of species 1 or 2 ended the run non-finite, the edge transport
+  dividing by it: `tr_run` and `validate()` refuse it; species 3 and above
+  stay allowed.
+- **EQ and TR libraries: a negative plasma current is refused before the
+  run** (HengyuLi-Ozaki-lab/task-web-client#126). EQ's analytic solve does
+  not treat the sign of the current: on the ITER geometry `RIP = -15`
+  converged with `QAXIS = QSURF = 4.611` (the wall's q) against 0.618 and
+  3.201, `BETAT` and `BETAP` 0, `PVOL` -1915 against 798 m^3 and `RAAVE`
+  NaN, with no message. `eq_run(0)` now returns `EQ_ERR_INVALID`, the reason
+  in `eq_last_error`, and `validate()` reports it; with `MODELG = 9`, where
+  TR has EQ solve with TR's own current, `tr_run` and `validate()` refuse
+  `RIPS` or `RIPE` < 0. Not covered: the EQ menu's C command, TR's menu, a
+  UFILE current.
 
 - **MCP servers: the `mcp` dependency is pinned to `>=1.2,<2`** in the
   seven server `pyproject.toml` files, the CI workflow, the servers' own
@@ -136,6 +435,28 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `MCP_AVAILABLE` right after the install, so that skip is a failure
   there. Porting the servers to the 2.x API is separate work. Fix by
   Li Hengyu, cherry-picked from #226.
+- **EQ, TR, FP libraries: `set_param` refuses a value outside what it
+  takes**, with code 1 and before it assigns: one that is not finite (NaN,
+  the infinities), for every name; and for an integer parameter a value
+  outside `-HUGE(0)` to `HUGE(0)`, the range every compiler converts alike
+  (so `-HUGE(0) - 1` and `2147483647.25` are refused with the rest). Beyond
+  the default integer `NINT()` / `INT()` is the compiler's choice (with
+  gfortran on arm64 the nearest end of the integer range, and 0 for NaN).
+  Such a value was assigned and then was a mesh count or a model switch:
+  FP's `NTHMAX = 2**32 + 30` ended the process on every attempt,
+  `MODELD = 2**32` ran as a non-zero `MODELD`.
+- **`Fplib.run`, `Trlib.run`, `Eq.run`: a step count that is negative or
+  does not fit a C `int` (EQ: a mode that does not fit one) is refused
+  before the library is called.** ctypes hands an integer to a `c_int`
+  argument modulo 2**32: `Fplib.run(2**32 + 3)` ran three steps,
+  `Trlib.run(10 - 2**32)` ten, and `Eq.run(2**32)` mode 0.
+- **`eq_mcp`, `tr_mcp`, `fp_mcp`: `set_params` and `set_param` refuse a
+  number that is not finite and an integer too large for a float**, with
+  the server's own "invalid numeric value" error and before the library is
+  called. `float()` takes the strings `"nan"`, `"inf"` and `"1e309"`, so in
+  a list or a dict they reached the registry as NaN or an infinity; and
+  `float(10**400)` raised an `OverflowError` the bulk path did not catch.
+  A string that is a finite number is still taken in a list or a dict.
 - **FP library: `fp_run` refuses the counts the solver cannot run with**,
   before any work, with `FP_ERR_INVALID` and one `XX fp_run: ...` line per
   violation on unit 6 (`fp_param_check` in `fp/fp_param_registry.f90`).
@@ -257,6 +578,33 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   immediately before the stdio server is built, as the other six servers
   do; its `tests/test_fd_isolation.py` runs the shared checks, and
   `python/tests/test_fd_isolation.py` checks all seven servers.
+- **MCP servers on Windows: fd 0 leaves the stdin pipe too** (product
+  line; it was in each server's own isolation before the shared module).
+  Windows serialises the operations on a synchronous pipe, so while the
+  MCP reader thread waits on stdin, the gfortran runtime's `fstat()` /
+  `isatty()` of fd 0 when the library's DLL loads, inside the first tool
+  call, blocks forever. On Windows `_fd_isolation.install()` now also
+  saves the stdin pipe on a descriptor of its own, rebuilds `sys.stdin` on
+  it and opens fd 0 on the null device; when the redirect of fd 1 then
+  fails, fd 0 gets its pipe back. Elsewhere fd 0 stays as it was.
+  `python/tests/test_fd_isolation.py` runs that branch on POSIX systems
+  (its logic, not the Windows pipes themselves).
+- **MCP servers `eq_mcp` and `tr_mcp`: `main()` returns 0 when the
+  session ends** (product line), as upstream's `main()` and #226's do. It
+  ended the process with `os._exit(0)`, to skip a Python teardown that
+  could abort in `tr_finalize`; that abort was a double `DEALLOCATE`,
+  which `DEALLOCATE_TRCOMM` no longer does (`tr/trcomm.f90`). The
+  libraries are now finalized on the way out: 20 stdio sessions of each
+  server, every one exited with 0.
+- **CI: the four required jobs and clean-tree-build run on `ubuntu-24.04`**
+  (HengyuLi-Ozaki-lab/task#17, and the module build after it), where they
+  said `ubuntu-latest`. Between 2026-10-28 and 2026-11-08 `ubuntu-latest`
+  became `ubuntu-26.04`, whose gfortran 15.2 moves six of the 1e-10
+  equivalence cases (`eq_tst2`, FP `dt1` and `iter01`, WRX `demo`, `iter01`
+  and `jt60`) by 1e-10 to 1e-9 from baselines that pass on gfortran 13.3,
+  so every run failed on the same tree that had passed.
+  `regen-baselines.yml` already pinned `ubuntu-24.04`; moving to a newer
+  image is a regeneration of the baselines with it.
 
 ## TR Phase L — library-ization (2026-04-18)
 

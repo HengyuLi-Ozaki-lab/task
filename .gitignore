@@ -127,6 +127,9 @@ wrx/obj/pic/
 wrx/mod_pic/
 wrx/tests/c_abi/test_run_so
 
+# tr L-4: libtrapi.so build artefact
+tr/libtrapi.so
+
 # ti L-4: libtiapi.so build artefacts
 ti/libtiapi.so
 ti/obj/pic/
@@ -189,6 +192,9 @@ docs/manual/*.blg
 # that may be cloned in-tree during local development.
 /bpsd/
 /gsaf/
+
+# Downstream task-web worktrees (created under .worktrees/ by task-web dev flow)
+.worktrees/
 
 # Per-machine Claude Code workspace state.
 # .claude/commands/ and .claude/hooks/ ARE tracked — they are project

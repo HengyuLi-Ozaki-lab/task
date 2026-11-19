@@ -196,6 +196,8 @@ class TestEqLifecycle(unittest.TestCase):
             eq.set_param_str("KNAMEQ", "x")
         with self.assertRaises(EqlibError):
             eq.save("eq.bin")
+        with self.assertRaises(EqlibError):
+            eq.get_psi_rz()
 
     def test_invalid_param_raises(self):
         with Eq() as eq:
@@ -249,7 +251,8 @@ class TestEqLifecycle(unittest.TestCase):
                 pass
 
     def test_run_unimplemented_mode_raises(self):
-        # eq_run(mode != 1) currently returns EQ_ERR_NOT_IMPL.
+        # eq_run implements modes 0 and 1; a mode above 1 returns
+        # EQ_ERR_NOT_IMPL.
         with Eq() as eq:
             with self.assertRaises(EqlibNotImplementedError):
                 eq.run(mode=99)

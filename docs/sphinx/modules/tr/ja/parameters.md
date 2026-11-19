@@ -117,6 +117,8 @@ with Trlib() as tr:
 |---|---|---|---|---|
 | `RIPS` | double | 3.0 | MA | シミュレーション開始時のプラズマ電流 |
 | `RIPE` | double | 3.0 | MA | シミュレーション終了時のプラズマ電流 |
+| `PROFJ1` | double | −2.0 | – | `MODELG = 2` のときだけの初期電流分布: ≤ 0 なら抵抗から (j ∝ 1/η, 電場一定); > 0 なら j ∝ (1 − ρ^\|PROFJ1\|)^\|PROFJ2\| |
+| `PROFJ2` | double | 1.0 | – | その分布の指数 (`PROFJ1` > 0 のとき; 絶対値を使う) |
 
 ## 3. プラズマ組成 (Plasma composition)
 
@@ -192,6 +194,12 @@ $$X(\rho) = (X_0 - X_S)\,(1 - \rho^{\text{PROFN1}})^{\text{PROFN2}} + X_S$$
 | `LMAXTR` | int    | 10    | — | 内部反復の最大反復数 |
 | `NGTSTP` | int    | 2     | — | 時間発展グラフ保存間隔 |
 | `NGRSTP` | int    | 100   | — | 半径プロファイルグラフ保存間隔 |
+| `NRMAX`  | int    | 50    | — | TR の径方向メッシュ, 3 から 500 (`TR_MAX_NRMAX`). 1 プロセスに 1 つの値: bpsd がスプラインを再確保するまで (k-yoshimi/bpsd#7), `tr_run` はそのプロセスの最初の準備と異なる `NRMAX` を拒否します; EQ グリッドの変更には `eq_bpsd_put` の再確保も必要 |
+| `NTEQIT` | int    | 0     | — | `MODELG = 9` での EQ 再計算のステップ間隔 (0 = しない) |
+
+`set_param` の名前 `eq:NAME` (`eq:RB`, `eq:NRMAX` など) は EQ のレジストリに設定されるため, `MODELG = 9` で `tot` なしに EQ の壁と
+グリッドを指定できます. 未知の名前は拒否され, 次の `run` は再度準備を行います. `MODELG = 9` の解が失敗すると, ライブラリ実行は
+失敗記録 (`tr_last_error`; `python/trlib/README.md` 参照) を残して終了します.
 
 ## 7. 輸送モデル (Transport model)
 
@@ -209,6 +217,13 @@ $$X(\rho) = (X_0 - X_S)\,(1 - \rho^{\text{PROFN1}})^{\text{PROFN2}} + X_S$$
 | `CHP`    | double     | 0.0 | 半経験補正係数 |
 | `CK0`    | double     | 12.0 | 電子用 χ 係数 |
 | `CK1`    | double     | 12.0 | イオン用 χ 係数 |
+| `CDH`    | double     | 1.0 | 乱流 χ の重み (χ_s = CDH·χ_turb + CNH·χ_NC, χ_NC は新古典 χ `AKNC`) |
+| `CNH`    | double     | 1.0 | 新古典 χ の重み (同じ和) |
+| `MDNCLS` | int switch | 0   | 0: `MDLAD`, `MDLETA`, `MDLJBS` の新古典モデル; それ以外: 新古典輸送 (粒子と熱), 抵抗 (最初のステップから; 初期分布は `MDLETA` のもの), ブートストラップ電流に NCLASS を使い, `MDLAD`, `MDLAVK`, `MDLJBS` は使わない |
+| `AD0`    | double     | 0.5 | 粒子拡散係数: `MDLAD` 2, 3, 4 と NCLASS では χ_turb に対する係数 (`MDDW = 0`, 既定); `MDLAD` 1 では一定の D (`ALP` で質量と電荷の重み) |
+| `AV0`    | double     | 0.0 | 乱流内向きピンチ係数 (`MDLAD` 1, 2, 4; `MDLAD` 3 と NCLASS では使わない) |
+| `CDP`    | double     | 1.0 | 乱流粒子拡散の重み (D_s = CDP·D_turb + CNP·D_NC; 既定の `MDLAD` 3 と NCLASS では D_turb = AD0·χ_turb) |
+| `CNP`    | double     | 1.0 | 新古典粒子拡散の重み (同じ和) |
 
 `MDLKAI` で選べる輸送モデル一覧 (代表値; 10 番台単位でファミリー構成):
 
@@ -270,7 +285,9 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | `MDLPEL` | int switch | 1 | ペレット注入モデル |
 | `MDLJBS` | int switch | 5 | ブートストラップ電流モデル |
 | `MDLST`  | int switch | 0 | のこぎり波 (sawtooth) モデル |
+| `TPRST`  | double | 0.1 | のこぎり波の周期 [s], > 0 |
 | `MDLNF`  | int switch | 0 | 核融合反応モデル |
+| `MODEL_PNF` | int switch | 0 | `trx` から移植した多反応核融合モデル (下記) |
 | `MDLUF`  | int switch | 0 | UFILE (実験データ) 読込モデル |
 
 `MDLNB`:
@@ -313,6 +330,38 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | 5 | DHe³ (粒子源なし) |
 | 6 | DHe³ (粒子源あり) |
 
+`MODEL_PNF`:
+
+| 値 | 反応 | 反応数 | 輸送計算への反映 |
+|---|---|---|---|
+| 0 (既定) | なし: `MDLNF` のみで決まる | 0 | — |
+| 1 | DT | 1 | 核融合の粒子源・核融合パワー・減速時間 (`SNF`, `PNF`, `TAUF`) を `MDLNF` のものに代えて使用 |
+| 2, 12 | DT, DD | 4 | 評価のみ (未使用) |
+| 3 | DT, DD, DHe³ | 6 | 評価のみ (未使用) |
+| 4, 14 | DT, DD, DHe³, TT, THe³ | 13 | 評価のみ (未使用) |
+
+`trx` のモデル (`tr/libnf.f90`, `tr/trpnf_multi.f90`)。`tr_set_param` では `MODEL_PNF`、`&TR` namelist では
+`model_pnf` という名前で指定する。MCP サーバはまだ宣言していない。`MODEL_PNF` と `MDLNF` の両方を指定した計算は
+拒否される (反応が 1 つのとき両者が同じ粒子源を書き込むため)。それ以外の値は計算の準備時に拒否される。準備済みの
+計算で準備をやり直さずに値を変えた場合 (単体の `tr2` の `L` のあと `C`。upstream #259 以降、ライブラリや `tot` からの
+設定では次の計算で準備がやり直される)、準備時と異なる 0 以外の値は拒否され、0 以外の `MODEL_PNF` に
+`MDLNF` を加えた場合も拒否される。0 にするとモデルは直ちに無効になる。
+
+現時点では `MDLNF` の代わりにはならない:
+
+- `MODEL_PNF = 1` が輸送計算に渡すのは `SNF`, `PNF`, `TAUF` だけである。`PFIN`, `PFCL` および `RNF`, `RTF` の核融合
+  の枠は `trx` と同じく 0 のままで、アルファ粒子のパワーは高速イオンのエネルギーに入るだけで熱化粒子には渡らない。したがって
+  `MDLNF = 1` のようなアルファ加熱は起こらない。
+- 反応する粒子は粒子種 2 と 3 から読み、アルファ粒子は粒子種 4 に渡す (`MDLNF` と同じ)。それらが D, T, He⁴ である
+  ことは確認しない。
+- 反応率は、テーブル (点は 1, 2, 5, 10, … 1000 keV) の対数を温度の対数の 3 次スプラインで補間したものである。
+  D-T 反応率は `MDLNF` のものと、1 から 5 keV では 5 %、5 から 100 keV では 1.3 %、1 から 500 keV のテーブルの点上
+  では 6 % 以内で一致する (最後の点 1000 keV ではテーブルの値が `MDLNF` の 1.46 倍)。
+- 反応が 2 つ以上のときは輸送計算に何も渡らない (TR の核融合高速イオンの枠は 1 つ)。
+
+確認した内容: 10 keV の D-T ケースで、`MODEL_PNF = 1` による変化が、`trx` の 5 つの不具合を修正し反応率の
+補間を TR と同じにした版 (`test_run/baselines/tr_fus_dt_hot/SOURCE.md`) での変化と 2 % 以内で一致する。実測との比較は行っていない。
+
 `MDLST`: 0 (OFF, 既定) / 1 (ON).
 
 `MDLUF`:
@@ -352,6 +401,7 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | `PICR0`  | double | 0.0 | m | パワー堆積の半径中心 |
 | `PICRW`  | double | 0.5 | m | パワー堆積の半径幅 |
 | `PICNPR` | double | 2.0 | — | 平行屈折率 $N_\parallel$ |
+| `PICTOT` | double | 0.0 | MW | 総 ICRF 入力パワー |
 
 ## 11. ECRF (Electron Cyclotron Range of Frequencies)
 
@@ -363,6 +413,7 @@ NBI (`MDLNB=1`) とペレット (`MDLPEL=1`), ブートストラップ電流 Sau
 | `PECR0`  | double | 0.0 | m | パワー堆積の半径中心 |
 | `PECRW`  | double | 0.2 | m | パワー堆積の半径幅 |
 | `PECNPR` | double | 0.0 | — | 平行屈折率 $N_\parallel$ |
+| `PECTOT` | double | 0.0 | MW | 総 ECRF 入力パワー |
 
 ## 12. LH (Lower Hybrid Range)
 
@@ -393,3 +444,32 @@ Fortran 暗黙初期値に依存するため, 厳密に 0.0 が保証される�
 ```python
 tr.set_param_str("KNAMEQ", "eqdata.ITER01")
 ```
+
+## 14. 解く方程式と粒子源 (Equations and particle source)
+
+TR が解く方程式 (`TR_EQS_SELECT`, `tr/trprep.f90`) と `tr/trpsc.f90` のガウス型粒子源 (ガスパフ). 密度が動くのは
+`MDLEQN = 1` のときだけで, `MDLEQN = 0` の粒子源は何も加えません.
+
+| 名前 | 型 | 既定値 | 単位 | 意味 |
+|---|---|---|---|---|
+| `MDLEQB` | int switch | 1 | – | 1: B_θ (電流分布) を解く; 0: 初期分布 (`PROFJ1`) のまま. `MODELG = 3` では TR が毎ステップ平衡から ψ を読み直すので電流は発展せず, `MDLEQB` は何も変えない (PLATO の例で測定) |
+| `MDLEQN` | int switch | 0 | – | 0: 密度は初期分布のまま; 1: 解く |
+| `MDLEQE` | int switch | 0 | – | `MDLEQN = 1` のとき: 0 はイオン密度を解き電子は準中性から; 1 は両方を解く; 2 は電子を解き主イオンは準中性から. 2 は `NSMAX = 2`, 種 2 が電荷 1 の水素か重水素, 不純物密度なし (`MDLIMP = 0`, または `MDLIMP` 1–4 で `PNC` = `PNFE` = 0), UFILE なしのときだけ (`tr/trexec.f90` は他の種を引かずに足す) |
+| `MDLPSC` | int switch | 0 | – | 0: 粒子源なし; 1: `NPSCMAX` 個のガウス型粒子源 |
+| `NPSCMAX` | int | 1 | – | 粒子源の数, 0..10 (`NPSCM`) |
+| `PSCTOT[i]` | double[10] | 0.0 | 10²⁰ s⁻¹ | 粒子源 i の総量 (プラズマ体積で規格化; どのメッシュ点からも遠い粒子源は最も近い所に全量を入れる) |
+| `PSCR0[i]` | double[10] | 0.0 | m | 粒子源 i の中心. ρ ではなく小半径のメートル (RA·ρ) |
+| `PSCRW[i]` | double[10] | 0.5 | m | 粒子源 i の幅: S ∝ exp(−((RA·ρ − PSCR0)/PSCRW)²); 正で 1e-10 m 以上 |
+| `NSPSC[i]` | int[10] | 2 | – | 粒子源 i が供給するイオン種, 2..NSMAX; 電子には PZ 倍 |
+
+`tr_run` は実行前に次を拒否し, `validate()` が報告します: `MDLEQB`, `MDLEQN`, `MDLPSC` が {0, 1} の外;
+`MDLEQE` が {0, 1, 2} の外, `MDLEQN = 0` での `MDLEQE` 1 か 2, 上の場合以外の `MDLEQE = 2`; `MDLPSC = 1` のとき
+`NPSCMAX` が 0..10 の外, 粒子源 i ≤ `NPSCMAX` ごとに `NSPSC[i]` が 2..NSMAX の外, `PSCRW[i]` ≤ 0 か 1e-10 m 未満,
+`|PSCR0[i]|` が 1e10 m 超. どれも配列の範囲外参照, NaN, 黙って別の値として動く, 誤った密度, あるいは `tr_prep`
+の中での停止 (`MDLEQB = 2`, `MDLEQN` なしの `MDLEQE`) になっていました. 負の幅は絶対値と同じガウス分布なので,
+符号が意味を持たないよう拒否します. UFILE (`MDLUF ≠ 0`) では `tr_prep` が NSMAX を変えうる (`TR_EQS_SELECT` は
+UFILE に不純物があれば炭素を加える) ので, 粒子源は種 2 に限り, `MDLEQE = 2` は拒否します. 種が決まるのは
+`tr_prep` の中なので, 意図した制限です.
+
+NCLASS (`MDNCLS ≠ 0`) と `MDLEQE = 1` (両方の密度を解き, 準中性なし) では, PLATO の例が 10 µs の 100 ステップ
+以内に負の温度で止まりました. `MDLEQE` 0 と 2 では動きます.

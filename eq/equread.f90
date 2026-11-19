@@ -71,12 +71,24 @@ contains
 !=======================================================================
 !             eqdsk               level=32       date=81.12.23
 !=======================================================================
-  subroutine eqdsk
+  subroutine eqdsk(ierr)
+!=======================================================================
+!   Reads the fixed file eqfile (equ_params, 'eqdb.dat'), not KNAMEQ.
+!   ierr = 0 on success; otherwise the file is not there (1), cannot be
+!   opened (2), cannot be read (3: a record cut short, or not an eqdb
+!   file), or ends at a record boundary before the equilibrium does (4:
+!   an empty file, a header only). The library reaches this through
+!   EQ_READ (MODELG=15), so each returns where the process used to STOP,
+!   or to stop at a BACKSPACE of the closed unit ahead of a read(*,*) of
+!   standard input, the stdio MCP servers' channel; nothing here reads
+!   standard input now (task-web-client #191). The sizes in the file
+!   (nsr, nsz, nv, nsu) are still taken as they are.
 !=======================================================================
     use bpsd_constants, only : cnpi => PI, rMU0
     use equ_params
     use libgrf
 
+    integer, intent(out) :: ierr
     logical :: lex
     integer :: i, j, n, ir, iz, ist
     real(rkind) :: rsep, zsep, rrmax, rrmin, zzmax, zzmin, rzmax, rzmin, rpmax, rpmin, betp, zzlam
@@ -86,18 +98,29 @@ contains
     CHARACTER(LEN=3):: K3
     CHARACTER(LEN=110):: K110
 !=======================================================================
-    inquire(file=eqfile,exist=lex)
-    if( lex .neqv. .true. ) stop 'No equilibrium file.'
+    ierr = 0
+    inquire(file=eqfile,exist=lex,iostat=ist)
+    if( ist /= 0 .or. .not. lex ) then
+       write(6,*) 'XX eqdsk: no equilibrium file: ', trim(eqfile)
+       ierr = 1
+       return
+    end if
     open(ieqrd,file=eqfile,iostat=ist,form='unformatted',access='sequential',action='read')
-    if(ist /= 0) stop 'file open error.'
+    if( ist /= 0 ) then
+       write(6,*) 'XX eqdsk: file open error: ', trim(eqfile), ': iostat=', ist
+       ierr = 2
+       return
+    end if
 !-----------------------------------------------------------------------
 
+!   A load before this one, if it succeeded, left the case-1 arrays allocated.
+    call alloc_equ(-1)
     call alloc_equ(1)
     call alloc_equ(2)
 
     read(ieqrd,iostat=ist) K3,K110
-    write(6,*) K110
-    read(ieqrd,iostat=ist)nsr,nsz  &
+    if( ist == 0 ) write(6,*) K110
+    if( ist == 0 ) read(ieqrd,iostat=ist)nsr,nsz  &
          &        ,(rg(i),i=1,nsr),(zg(j),j=1,nsz)  &
          &        ,(psi(i),i=1,nsr*nsz)  &
          &        ,nv,(pds(i),i=1,nv),(fds(i),i=1,nv)  &
@@ -130,13 +153,17 @@ contains
 !         &        ,((ccoil(i,j),i=1,100),j=1,icvdm)  &
 !         &        ,ilimt,(rlimt(i),i=1,100),(zlimt(i),i=1,100)
     close(ieqrd)
-    if( ist > 0 ) then ! error
-       write(6,*) 'ist=',ist
-       stop '===== dataio/read error ====='
-    else if( ist < 0 ) then ! end
-       backspace ieqrd
-       write(6,"(5x,'dataio/end:backspace')")
-       read(*,*)
+    if( ist /= 0 ) then
+       if( ist > 0 ) then ! error
+          write(6,*) 'XX eqdsk: dataio/read error: ist=',ist
+          ierr = 3
+       else ! end of file before the equilibrium was read
+          write(6,"(5x,'XX eqdsk: dataio/end: ',a,' ends early')") trim(eqfile)
+          ierr = 4
+       end if
+       call alloc_equ(-2)
+       call alloc_equ(-1)
+       return
     end if
 !-----------------------------------------------------------------------
     write(6,40)eqfile,ieqrd,jeqrd

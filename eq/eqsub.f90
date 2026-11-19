@@ -30,6 +30,8 @@
       USE eqcom2_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
+      INTEGER :: IOS
+      CHARACTER(LEN=16) :: KV(6)
 
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE::  PSIRG,PSIZG,PSIRZG
       EXTERNAL PSIGD,PSIGZ0
@@ -74,6 +76,37 @@
          PSIPA=-PSI0
       ELSE
          WRITE(6,'(A)') 'XX EQAXIS: AXIS OUT OF PLASMA:'
+!        Say where the axis search ended and the window it was held to,
+!        for the C API's eq_last_error: a file load with MDLEQF >= 10
+!        reads the box RGMIN..ZGMAX too (default 1.5..4.5 x -2..2 m), and
+!        a small device's axis lies outside it (task-web-client #187).
+!        The point is the axis when NEWTN converged; find_axis does not
+!        pass a failure on (its IERR=102 is its own), so it may be only
+!        where the search stopped.
+         WRITE(KV,'(F16.4)') RAXIS,ZAXIS,RMIN,RMAX,ZMIN,ZMAX
+         IF(MDLEQF.LT.10) THEN
+            WRITE(EQ_ERRMSG,'(13A)',IOSTAT=IOS) &
+                 'EQAXIS: the search for the magnetic axis ended at'// &
+                 ' (R, Z) = (',TRIM(ADJUSTL(KV(1))),', ', &
+                 TRIM(ADJUSTL(KV(2))),'), outside RR -/+ RB = [', &
+                 TRIM(ADJUSTL(KV(3))),', ',TRIM(ADJUSTL(KV(4))), &
+                 '], -/+ RKAP*RB = [',TRIM(ADJUSTL(KV(5))),', ', &
+                 TRIM(ADJUSTL(KV(6))),'] (MDLEQF < 10) (ierr=103)'
+         ELSE
+            WRITE(EQ_ERRMSG,'(13A)',IOSTAT=IOS) &
+                 'EQAXIS: the search for the magnetic axis ended at'// &
+                 ' (R, Z) = (',TRIM(ADJUSTL(KV(1))),', ', &
+                 TRIM(ADJUSTL(KV(2))),'), outside the box'// &
+                 ' RGMIN..RGMAX = [',TRIM(ADJUSTL(KV(3))),', ', &
+                 TRIM(ADJUSTL(KV(4))),'], ZGMIN..ZGMAX = [', &
+                 TRIM(ADJUSTL(KV(5))),', ',TRIM(ADJUSTL(KV(6))), &
+                 '] that MDLEQF >= 10 holds the axis to: set the box'// &
+                 ' around it (ierr=103)'
+         ENDIF
+         IF(IOS.NE.0) EQ_ERRMSG= &
+              'EQAXIS: the search for the magnetic axis ended outside'// &
+              ' the window it is held to (values unprintable) (ierr=103)'
+         WRITE(6,'(2A)') '   ',TRIM(EQ_ERRMSG)
          IERR=103
          RETURN
       ENDIF
@@ -166,8 +199,13 @@
          ISTEP=ISTEP+1
          GOTO 100
       ENDIF
-      WRITE(6,*) 'XX EQMAGS: NOT ENOUGH N'
-      pause
+      WRITE(6,*) &
+     & 'XX EQMAGS: NOT ENOUGH N (near-axis under-resolved): N,NMAX=', &
+     & N,NMAX
+      WRITE(6,'(A,I5,A)') '   NSGMAX=',NSGMAX, &
+     &     ' : set NSGMAX>=128 in eqparm & rerun.'
+      IF(NPRINT.GE.1) WRITE(6,'(A,1P4E12.4)') &
+     &     '   R0,RAXIS,Yend=',RINIT,RAXIS,Y(1),Y(2)
       IERR=1
       RETURN
 

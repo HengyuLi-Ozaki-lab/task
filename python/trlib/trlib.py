@@ -16,20 +16,24 @@ Usage::
 from __future__ import annotations
 
 import ctypes
+import re
 import weakref
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import List, Optional
 
 from . import _ffi
-from .errors import TrlibError, TrlibParamError, TrlibStateError, raise_for_ierr
+from .errors import (
+    TrFailure, TrlibError, TrlibParamError, TrlibRunError, TrlibStateError,
+    raise_for_ierr,
+)
 from .state import TrState
 
 
 _MAX_C_STRING_BYTES = 63              # name buffer is CHARACTER(LEN=64)
-_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128);
-                                       # tr_api_set_param_str DO loop reads
-                                       # up to LEN(fvalue) chars so full 128 OK
+_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128).
+                                       # KNAMEQ holds 80: the library refuses
+                                       # a longer value (rc 1), it is not cut
 
 
 def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
@@ -91,6 +95,12 @@ class TrDiagEntryPy:
     param: str
     code: int
     message: str
+
+
+#: The largest count a C ``int`` holds. ctypes converts a Python integer to a
+#: ``c_int`` argument with no range check (it keeps the low 32 bits), so
+#: ``run`` checks the range itself.
+_C_INT_MAX = 2**31 - 1
 
 
 class Trlib:
@@ -234,11 +244,54 @@ class Trlib:
         """Advance the simulation ``ntmax`` time-steps.
 
         ``ntmax=0`` is a valid no-op used by the smoke test.
+
+        Raises :class:`TrlibParamError`, before the library is called, for
+        a count outside 0 to 2**31 - 1: ``tr_run`` takes a C ``int``, and a
+        larger count would arrive modulo 2**32 (``2**32 + 20`` ran twenty
+        steps).
         """
         if self._closed:
             raise TrlibError("run on closed Trlib")
-        ierr = self._lib.tr_run(int(ntmax))
+        count = int(ntmax)
+        if not 0 <= count <= _C_INT_MAX:
+            raise TrlibParamError(
+                f"tr_run: the step count must be 0 to {_C_INT_MAX} "
+                "(tr_run takes a C int)"
+            )
+        ierr = self._lib.tr_run(count)
+        if ierr == _ffi.TR_ERR_CALC_FAILED:
+            # The library records the first failure of the run: say what it was.
+            try:
+                failure = self.last_error()
+            except TrlibError:  # a library built before tr_last_error
+                failure = None
+            raise TrlibRunError(f"tr_run({ntmax}): ierr={ierr}", failure=failure)
         raise_for_ierr(f"tr_run({ntmax})", ierr)
+
+    def last_error(self) -> TrFailure:
+        """The first failure of the last :meth:`run`, or ``kind == "NONE"``.
+
+        Cleared at the start of every ``run``. Older builds without
+        ``tr_last_error`` raise :class:`TrlibError`.
+        """
+        if self._closed:
+            raise TrlibError("last_error on closed Trlib")
+        try:
+            fn = self._lib.tr_last_error
+        except AttributeError as exc:
+            raise TrlibError(
+                "libtrapi.so does not export tr_last_error; "
+                "rebuild the shared library."
+            ) from exc
+        e = _ffi.TrDiagEntry()
+        fn(ctypes.byref(e))
+        kind = e.param.decode("ascii", errors="replace").rstrip("\x00")
+        msg = e.msg.decode("ascii", errors="replace").rstrip("\x00")
+        nt, time, detail = 0, 0.0, msg
+        m = re.match(r"nt=(-?\d+) t=\s*(\S+) s: (.*)$", msg)
+        if m:
+            nt, time, detail = int(m.group(1)), float(m.group(2)), m.group(3)
+        return TrFailure(kind=kind, code=int(e.code), nt=nt, time=time, detail=detail)
 
     def get_state(self) -> TrState:
         """Copy the current simulation state into a :class:`TrState`."""
@@ -291,6 +344,12 @@ class Trlib:
         buf = (_ffi.TrDiagEntry * cap)()
         ndiag = ctypes.c_int(0)
         ierr = fn(buf, cap, ctypes.byref(ndiag))
+        # tr_validate counts every finding, also those beyond the buffer, and
+        # changes no state: ask once more with room for all of them.
+        if ndiag.value > cap and ierr in (_ffi.TR_OK, _ffi.TR_ERR_INVALID):
+            cap = int(ndiag.value)
+            buf = (_ffi.TrDiagEntry * cap)()
+            ierr = fn(buf, cap, ctypes.byref(ndiag))
 
         # Contract: ierr==2 (NOT_INIT) is the only one that maps to an
         # exception; ierr==0 and ierr==1 both return the list (empty /

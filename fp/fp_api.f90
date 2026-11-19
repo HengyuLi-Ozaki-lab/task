@@ -141,6 +141,14 @@ CONTAINS
        fname(i:i) = name(i)
        n = i
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = FP_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
     IF (fp_param_set(TRIM(fname), REAL(value, KIND=rkind)) /= 0) THEN
        ierr = FP_ERR_INVALID
@@ -180,11 +188,26 @@ CONTAINS
        IF (name(i) == C_NULL_CHAR) EXIT
        fname(i:i) = name(i)
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = FP_ERR_INVALID
+          RETURN
+       END IF
+    END IF
     fvalue = ' '
     DO i = 1, LEN(fvalue)
        IF (value(i) == C_NULL_CHAR) EXIT
        fvalue(i:i) = value(i)
     END DO
+    ! As for the name: a value longer than the buffer is refused, not cut.
+    IF (i > LEN(fvalue)) THEN
+       IF (c_str_overflows(value, LEN(fvalue) + 1)) THEN
+          ierr = FP_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
     IF (fp_param_set_str(TRIM(fname), TRIM(fvalue)) /= 0) THEN
        ierr = FP_ERR_INVALID
@@ -425,6 +448,32 @@ CONTAINS
     g_prepared    = .FALSE.
     ierr = FP_OK
   END FUNCTION fp_api_finalize
+
+  !-------------------------------------------------------------------
+  ! c_str_overflows : .TRUE. when the C string S holds, from position
+  ! FIRST on (the first one the caller's buffer has no room for), a
+  ! character other than a blank. Trailing blanks are no part of a
+  ! name or a value, so a blank-padded string that is longer than the
+  ! buffer only by blanks loses nothing when it is copied. Call it
+  ! only when no NUL was met before FIRST. A string with no NUL within
+  ! C_STR_SCAN characters from FIRST is refused as well.
+  !-------------------------------------------------------------------
+  PURE FUNCTION c_str_overflows(s, first) RESULT(over)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: s
+    INTEGER,                              INTENT(IN) :: first
+    LOGICAL :: over
+    INTEGER, PARAMETER :: C_STR_SCAN = 4096
+    INTEGER :: j
+
+    over = .TRUE.
+    DO j = first, first + C_STR_SCAN - 1
+       IF (s(j) == C_NULL_CHAR) THEN
+          over = .FALSE.
+          RETURN
+       END IF
+       IF (s(j) /= ' ') RETURN
+    END DO
+  END FUNCTION c_str_overflows
 
   !-------------------------------------------------------------------
   ! fp_state_abi_version / fp_state_size : layout query (#246).

@@ -97,6 +97,33 @@ typedef struct tr_diag_entry {
 
 int tr_init(void);
 int tr_run(int ntmax);
+/* tr_set_param and tr_set_param_str return TR_ERR_INVALID for a name of
+ * more than 64 characters, and tr_set_param_str for a value of more than
+ * 80 (KNAMEQ is CHARACTER(LEN=80)): neither is cut. Trailing blanks are
+ * not counted, as long as the string ends within 4096 characters of the
+ * buffer's end.
+ *
+ * Names that start with "eq:" belong to EQ's registry (eq:RB, eq:NSGMAX,
+ * eq:NRMAX, ...; MODELG 9 sets EQ's wall and grid through them). An accepted
+ * set makes the next tr_run prepare again. An unknown name returns
+ * TR_ERR_INVALID. These are refused too (TR_ERR_INVALID, one line on unit 6):
+ *  - eq:RR, eq:RA, eq:RKAP, eq:RDLT, eq:BB, eq:RIP and eq:KNAMEQ, which do
+ *    nothing through TR (MODELG 9 overwrites EQ's copies from TR's device, and
+ *    TR passes its own KNAMEQ to EQ): set TR's own RR, RA, ... instead (for
+ *    eq:RIP, RIPS and RIPE);
+ *  - every eq: name once the process has made its first preparation attempt
+ *    (failed or not; across tr_finalize and tr_init): until the pinned bpsd has
+ *    k-yoshimi/bpsd#7 an EQ grid change in one process corrupts memory, so eq:
+ *    names are set before the process's first preparation attempt (a tr_run
+ *    refused by its own checks before tr_prep does not count). This comes off
+ *    with the one-NRMAX-per-process guard of tr_run.
+ * That guard closes only the direct route. Under MODELG 9 any input that
+ * moves EQ's plasma grid (NRPMAX: TR's RA, RR and other device inputs, MODELG,
+ * the eq: names, the drift between NTEQIT re-solves) needs a bpsd with
+ * k-yoshimi/bpsd#7. TOT's eq: dispatcher calls eq_param_set directly: the guard
+ * does not apply in totlib or the mono build.
+ * Under MODELG 3, 5 and 8 EQ's NRMAX is TR's NRMAX + 1, NTHMAX is 64 and
+ * NSUMAX is 0 (tr_set_metric). */
 int tr_set_param(const char* name, double value);
 int tr_set_param_str(const char* name, const char* value);
 int tr_get_state(tr_state_t* state);
@@ -118,6 +145,15 @@ size_t tr_state_size(void);
  * -> tr_run. The function does NOT mutate tr state.
  */
 int tr_validate(tr_diag_entry_t* diag, int diag_cap, int* ndiag_out);
+
+/* The first failure of the last tr_run, in the layout of a diagnostic entry.
+   param: NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED or OTHER (REFUSED is
+   reserved for tr_continue, PR 3; nothing records it yet);
+   code: the Fortran status; msg: "nt=<step> t=<time> s: <what failed>", cut at
+   127 characters; for EQ_FAILED the text ends with EQ's own reason (EQ_ERRMSG)
+   when EQ set one.
+   Cleared at the start of every tr_run. Returns 0 always. */
+int tr_last_error(tr_diag_entry_t* e);
 
 /* L-7b-ii: BPSD broker round-trip verification.
  * Returns *ok = 1 on successful pull of the 3 eq-pushed BPSD slots

@@ -2,6 +2,7 @@
 
 MODULE trexec
 
+  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK
   PRIVATE
   PUBLIC tr_exec,tr_eval,tr_coef_decide
 
@@ -20,7 +21,7 @@ CONTAINS
      &   DR, DVRHO, DVRHOG, EPSLTR, LDAB, LMAXTR, MDLEQB, MDLEQE, &
      &   MDLEQN, MDLPCK, MDLUF, MDTC, MLM, NEQMAX, NFM, &
      &   NRAMAX, NRMAX, NROMAX, NSM, NSMAX, NSS, NST, NSV, &
-     &   NTUM, &
+     &   NTUM, NT, &
      &   PA, PZ, PZC, PZFE, RDP, RHOA, RIP, RIPU, &
      &   RMU0, RN, RT, RU, RW, T, TTRHO, TTRHOG, &
      &   VLOOP, VSEC, X, XV, Y, YV, Z, ZV ,NEQMAXM, DIPDT, &
@@ -288,6 +289,7 @@ CONTAINS
          CALL TRATOTN
          CALL TRATOG
          IERR=1
+         CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
          RETURN
       END IF
 
@@ -359,6 +361,7 @@ CONTAINS
          CALL TRATOTN
          CALL TRATOG
          IERR=1
+         CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
          RETURN
       ENDIF
 
@@ -396,12 +399,13 @@ CONTAINS
 
       SUBROUTINE tr_eval(NT,IERR)
 
-      USE TRCOMM, ONLY : NGRSTP, NGTSTP, NTSTEP
+      USE TRCOMM, ONLY : NGRSTP, NGTSTP, NTMAX, NTSTEP, TPRE, WPPRE, rkind
       USE trrslt_files, ONLY : TRSNAP
       IMPLICIT NONE
       INTEGER,INTENT(IN) :: NT
       INTEGER,INTENT(OUT) :: IERR
       integer:: IDGLOB
+      REAL(rkind):: TPRE_KEEP, WPPRE_KEEP
 
       CALL TRCALC(IERR)
       IF(IERR.ne.0) RETURN
@@ -423,6 +427,19 @@ CONTAINS
          IDGLOB=1
          CALL TRATOG
       ENDIF
+!     The last step of a run that no output step above computed the global results (TRGLOB: WPT,
+!     AJT, the betas, TAUE1, TAUE2, ZEFF0, ALI, RQ1) on: compute them here, so that the state the run
+!     leaves holds this step's, not an earlier step's (step 0's when NTSTEP, NGTSTP and NGRSTP all
+!     exceed NTMAX). TRGLOB takes WPDOT (TAUE2) from the previous call's WPT and T and keeps this
+!     call's for the next; this call is no output step, so the previous reference is put back and a
+!     run made in several calls (NTMAX is NT plus each call's count) goes on as one run would.
+      IF(IDGLOB.EQ.0 .AND. NT.GE.NTMAX) THEN
+         WPPRE_KEEP=WPPRE
+         TPRE_KEEP=TPRE
+         CALL TRGLOB
+         WPPRE=WPPRE_KEEP
+         TPRE=TPRE_KEEP
+      ENDIF
       IERR=0
       RETURN
     END SUBROUTINE tr_eval
@@ -443,12 +460,13 @@ CONTAINS
      &                   VV, X, XV, Y, YV, Z, ZV, RDPS, &
      &                   ABVRHOG, rkind
       USE TRCOM1, ONLY : A, B, C, D, PPA, PPB, PPC, RD
+      USE trlib, ONLY : COULOG
       IMPLICIT NONE
       INTEGER, INTENT(INOUT):: NEQRMAX
       INTEGER, INTENT(OUT)  :: IERR  ! #142 B4: propagated from TR_COEF_DECIDE / TR_BAND_GEN
       INTEGER:: KL, MV, MVV, MW, MWMAX, NEQ, NEQ1, NR, NS, NS1, NSTN, NSW, &
      &             NV, NW
-      REAL(rkind)   :: ADV, C1, COEF, COULOG, DV53, FADV, PRV, RDPA, RLP
+      REAL(rkind)   :: ADV, C1, COEF, DV53, FADV, PRV, RDPA, RLP
 
       IERR=0
 

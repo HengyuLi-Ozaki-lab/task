@@ -6,8 +6,9 @@ scalars, 5 array families, 7 strings). The names match the Fortran
 
 ## Required and recommended parameters
 
-Most parameters have defaults, so a minimal call to `run()` works
-without any explicit setting. However, some parameters become
+Most parameters have defaults, so a minimal call to `run(mode=0)` (the
+Grad-Shafranov solve) works without any explicit setting; `run()`, which is
+`mode=1`, also needs a file format in `MODELG` and fails with the default 2. However, some parameters become
 **required under specific conditions**, and others **should be
 overridden** to obtain physically meaningful results.
 
@@ -15,14 +16,14 @@ overridden** to obtain physically meaningful results.
 
 | Condition | Required parameter | Reason |
 |---|---|---|
-| `MODELG ∈ {3, 5, 8}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If unset, `validate()` returns a `FILE_MISSING` diagnostic and `run()` produces an invalid equilibrium. |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If it is blank or names no file, `validate()` returns a `FILE_MISSING` diagnostic and `run()` fails, naming the file. `MODELG = 8` reads `KNAMEQ2` too. `MODELG = 15` reads the fixed file `eqdb.dat` instead (a `FILE_MISSING` diagnostic for `MODELG` when it is not there). |
 
 ```python
 eq.set_param("MODELG", 3)
 eq.set_param_str("KNAMEQ", "eqdata.ITER01")
 ```
 
-With `MODELG=2` (analytic toroidal geometry, the default) `KNAMEQ` is
+With `MODELG=2` (toroidal geometry, the default; solved with `run(mode=0)`) `KNAMEQ` is
 unused, so **strictly speaking nothing is required**.
 
 ### Strongly recommended (defaults are too generic)
@@ -190,7 +191,7 @@ These are checked against the compile-time maxima by `validate()`.
 | `NTHMAX` | int | 64  | poloidal mesh in flux coordinates |
 | `NSUMAX` | int | 65  | number of boundary points |
 | `NRVMAX` | int | 50  | radial mesh for surface averaging |
-| `NTVMAX` | int | 200 | poloidal mesh for surface averaging |
+| `NTVMAX` | int | 400 | poloidal mesh for surface averaging |
 | `NPFCMAX` | int | 0  | number of PF coils |
 
 ## 10. Iteration / convergence
@@ -198,7 +199,7 @@ These are checked against the compile-time maxima by `validate()`.
 | Name | Type | Default | Meaning |
 |---|---|---|---|
 | `EPSEQ`  | double | 1×10⁻⁶ | convergence tolerance for equilibrium iteration |
-| `NLPMAX` | int    | 20     | maximum number of equilibrium iterations |
+| `NLPMAX` | int    | 100    | maximum number of equilibrium iterations |
 | `EPSNW`  | double | 1×10⁻² | Newton-method convergence tolerance |
 | `DELNW`  | double | 1×10⁻² | derivative step size for Newton method |
 | `NLPNW`  | int    | 20     | maximum Newton iterations |
@@ -228,12 +229,15 @@ Allowed values of `MODELG`:
 |---|---|
 | 0 | slab geometry |
 | 1 | cylindrical geometry |
-| 2 (default) | toroidal geometry (analytic) |
-| 3 | TASK/EQ output-file path (requires `KNAMEQ`) |
-| 4 | VMEC output path |
-| 5 | EQDSK file path (requires `KNAMEQ`) |
-| 6 | Boozer-coordinate output |
-| 8 | (TASK-internal path; requires `KNAMEQ`) |
+| 2 (default) | toroidal geometry (solved with `run(mode=0)`) |
+| 3 | TASK/EQ file, loaded with `run(mode=1)` (requires `KNAMEQ`) |
+| 4 | VMEC output path (no `run(mode=1)` load) |
+| 5 | G-EQDSK file, loaded with `run(mode=1)` (requires `KNAMEQ`) |
+| 6 | Boozer-coordinate output (no `run(mode=1)` load) |
+| 8 | QST/JAEA file pair, loaded with `run(mode=1)` (requires `KNAMEQ` and `KNAMEQ2`) |
+| 9 | TASK/EQ file, read by the same reader as 3 (`EQRTSK`) (requires `KNAMEQ`) |
+| 15 | the fixed file `eqdb.dat`, read by `run(mode=1)` (not `KNAMEQ`) |
+| 25 | G-EQDSK file, read by the same reader as 5 (`EQDSKR`) (requires `KNAMEQ`) |
 
 Allowed values of `MDLEQF`:
 
@@ -293,8 +297,8 @@ the physically natural choice (see {doc}`faq` Q1).
 
 | Name | Type | Default | Meaning |
 |---|---|---|---|
-| `KNAMEQ`  | CHARACTER(80) | `'eqdata'`  | equilibrium-data file (required for `MODELG=3,5,8`) |
-| `KNAMEQ2` | CHARACTER(80) | `'eqdata2'` | additional equilibrium data |
+| `KNAMEQ`  | CHARACTER(80) | `'eqdata'`  | equilibrium-data file (required for `MODELG=3,5,8,9,25`) |
+| `KNAMEQ2` | CHARACTER(80) | `'eqdata2'` | additional equilibrium data (required for `MODELG=8`) |
 | `KNAMWR`  | CHARACTER(80) | `'wrdata'`  | ray-tracing data |
 | `KNAMWM`  | CHARACTER(80) | `'wmdata'`  | full-wave data |
 | `KNAMFP`  | CHARACTER(80) | `'fpdata'`  | Fokker-Planck data |

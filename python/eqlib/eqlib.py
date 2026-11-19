@@ -40,6 +40,7 @@ _MAX_C_STRING_BYTES = 63              # name buffer is CHARACTER(LEN=64);
 _MAX_C_STRING_VALUE_BYTES = 80        # value buffer is CHARACTER(LEN=80);
                                        # eq_api_set_param_str reads up to
                                        # LEN(fvalue) chars so full 80 is OK
+_LAST_ERROR_BYTES = 512               # > EQ_ERRMSG (CHARACTER(LEN=256)) + NUL
 
 
 def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
@@ -104,6 +105,12 @@ class EqDiagEntryPy:
     param: str
     code: int
     message: str
+
+
+#: The largest count a C ``int`` holds. ctypes converts a Python integer to a
+#: ``c_int`` argument with no range check (it keeps the low 32 bits), so
+#: ``run`` checks the range itself.
+_C_INT_MAX = 2**31 - 1
 
 
 class Eq:
@@ -280,9 +287,12 @@ class Eq:
 
                 * ``1`` (default) triggers the equilibrium-file load via
                   ``equnit::eq_load`` using the current ``MODELG`` and
-                  ``KNAMEQ`` (requires ``MODELG in {3, 5, 8}``).
-                * ``0`` runs the in-process analytic Grad-Shafranov
-                  solve (``EQCALC`` + ``EQCALQ``); use it with
+                  ``KNAMEQ`` (requires a file format: ``MODELG`` 3, 5,
+                  8, 9 or 25 with ``KNAMEQ``, and ``KNAMEQ2`` too for
+                  8, or 15, which reads the fixed file ``eqdb.dat``
+                  instead).
+                * ``0`` runs the in-process Grad-Shafranov solve
+                  (``EQCALC`` + ``EQCALQ``); use it with
                   ``MODELG=2`` and the basic geometry parameters
                   (``RR``, ``RA``, ``BB``, ``RIP``, ``RKAP``,
                   ``RDLT``, ...) to produce a self-consistent
@@ -290,12 +300,47 @@ class Eq:
                 * a negative ``mode`` raises
                   :class:`EqlibInvalidParamError` (``EQ_ERR_INVALID``).
 
-                Other values return ``EQ_ERR_NOT_IMPL``.
+                A ``mode`` above 1 raises
+                :class:`EqlibNotImplementedError` (``EQ_ERR_NOT_IMPL``).
+
+        On failure the exception message ends with the library's reason
+        (:meth:`last_error`), e.g. which file could not be loaded.
+
+        Raises :class:`EqlibInvalidParamError`, before the library is
+        called, for a mode that is not a C ``int``'s: ``eq_run`` takes
+        one, and a larger number would arrive modulo 2**32 (``2**32``
+        ran mode 0).
         """
         if self._closed:
             raise EqlibError("run on closed Eq")
+        if not -_C_INT_MAX - 1 <= int(mode) <= _C_INT_MAX:
+            raise EqlibInvalidParamError(
+                "eq_run: the mode must fit a C int "
+                f"({-_C_INT_MAX - 1} to {_C_INT_MAX})"
+            )
         rc = self._lib.eq_run(int(mode))
-        raise_for_rc(f"eq_run({mode})", rc)
+        if rc != 0:
+            try:
+                detail = self.last_error()
+            except EqlibError:  # e.g. NOT_INIT: keep eq_run's own error
+                detail = ""
+            raise_for_rc(f"eq_run({mode})", rc, detail=detail)
+
+    def last_error(self) -> str:
+        """Why the most recent :meth:`run` failed; ``""`` after a success.
+
+        Wraps ``eq_last_error``. Returns ``""`` when the loaded library
+        predates it.
+        """
+        if self._closed:
+            raise EqlibError("last_error on closed Eq")
+        try:
+            fn = self._lib.eq_last_error
+        except AttributeError:
+            return ""
+        buf = ctypes.create_string_buffer(_LAST_ERROR_BYTES)
+        raise_for_rc("eq_last_error", fn(buf, len(buf)))
+        return buf.value.decode("ascii", errors="replace").strip()
 
     def save(self, path) -> None:
         """Save the equilibrium of the last ``run`` to a TASK/EQ binary file.
@@ -375,6 +420,42 @@ class Eq:
         raise_for_rc("eq_get_state", rc)
         return EqState.from_c(c)
 
+    def get_psi_rz(self) -> "np.ndarray":  # type: ignore[name-defined]
+        """Return the 2-D PSI(R,Z) field as a numpy array.
+
+        Returns a fresh ``np.ndarray`` of shape ``(nrgmax, nzgmax)``
+        (default 33×33) and dtype float64. Requires numpy.
+
+        The Fortran source is column-major (R varies fastest); we copy
+        into a numpy buffer that matches that layout, then transpose
+        to expose `psi[i_r, i_z]` indexing in Python.
+        """
+        if self._closed:
+            raise EqlibError("get_psi_rz on closed Eq")
+        try:
+            getter = self._lib.eq_common_get_psi_rz_
+        except AttributeError as exc:
+            raise EqlibError(
+                "libeqapi.so does not export eq_common_get_psi_rz_; "
+                "rebuild the shared library after the Task 1.4 PR."
+            ) from exc
+
+        import numpy as np
+        st = self.get_state()
+        # EqState exposes nrgmax/nzgmax as lowercase int attributes (see state.py).
+        nr = int(st.nrgmax)
+        nz = int(st.nzgmax)
+        # Allocate (nz, nr) C-contiguous; Fortran will fill it column-major.
+        buf = np.zeros((nz, nr), dtype=np.float64, order="C")
+        c_nr = ctypes.c_int(nr)
+        c_nz = ctypes.c_int(nz)
+        getter(
+            ctypes.byref(c_nr),
+            ctypes.byref(c_nz),
+            buf.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        )
+        return buf.T.copy()  # contiguous (nr, nz) for caller convenience
+
     # --- validation (Issue #143) ---------------------------------------
     def validate(self) -> List[EqDiagEntryPy]:
         """Run pre-run cross-parameter validation.
@@ -402,6 +483,29 @@ class Eq:
         Older builds without ``eq_validate`` raise :class:`EqlibError`
         (rebuild via ``make -C eq libeqapi.so``). The method does not
         modify any eq state.
+
+        The geometry checks (the wall ``RB`` against ``RA``, the box
+        ``RGMIN``..``ZGMAX`` with ``MDLEQF >= 10``, a negative ``RIP``)
+        are made for the Grad-Shafranov solve only (``run(0)``), going by
+        ``MODELG``: a file format (``MODELG`` 3/5/8/9/15/25) is taken to
+        be loaded with ``run(1)``, which brings its own geometry (EQRTSK
+        reads RA/RKAP/RDLT/RB from the TASK-native file; EQDSKR
+        reconstructs RB = 1.1*RA), so the pre-run values say nothing
+        about it; every other ``MODELG`` is the Grad-Shafranov solve. The box
+        is flagged where the solver fails or cuts the plasma
+        (``eq_validate``'s comment in ``eq/eq_api.f90`` has the
+        measurements); a box that leaves out part of the plasma
+        elsewhere runs as the default one, but for an axis that leaves
+        the box as it moves during the solve (with triangularity it ends
+        inward of ``RR``), which only the run shows.
+
+        ``FILE_MISSING`` names the file a load reads when it is not
+        there: ``KNAMEQ`` (blank, or naming no file) for ``MODELG`` 3, 5,
+        8, 9 and 25, ``KNAMEQ2`` too for 8, and for ``MODELG`` 15 the
+        fixed file ``eqdb.dat``,
+        reported as ``MODELG``. Names are looked up relative to the
+        working directory at the time of the call, as the load opens
+        them.
         """
         if self._closed:
             raise EqlibError("validate on closed Eq")
@@ -429,7 +533,7 @@ class Eq:
 
         n = int(ndiag.value)
         # Fortran push_diag increments nlocal past diag_cap but skips the
-        # write (eq_api.f90:393-395), so ndiag_out can exceed cap. Clamp
+        # write (push_diag in eq/eq_api.f90), so ndiag_out can exceed cap. Clamp
         # and warn so the caller knows results are truncated instead of
         # IndexError-ing off the end of the ctypes buffer.
         if n > cap:

@@ -18,12 +18,15 @@ PF コイル系配列 (`RIPFC`, `RPFC`, `ZPFC`, `WPFC`) は 1-origin の
 
 | `mode` | 用途 | 元 CLI コマンド | 必要な設定 |
 |---|---|---|---|
-| `0` | **解析的 G-S 解** (`EQCALC` + post-processing) | `R` (Run) → `F` (Fields) | `MODELG ∈ {0, 1, 2}`, 解析プロファイル係数 (`PP*`, `PJ*`, `FF*` 等) |
-| `1` (既定) | **EQDSK ファイル読み込み** (`equnit::eq_load`) | `L` (Load) | `MODELG ∈ {3, 5, 8}`, `KNAMEQ` (ファイル名) |
+| `0` | **Grad-Shafranov 求解** (`EQCALC` を `EPSEQ` まで反復 + post-processing) | `R` (Run) → `F` (Fields) | `MODELG ∈ {0, 1, 2}`, プロファイル係数 (`PP*`, `PJ*`, `FF*` 等) |
+| `1` (既定) | **平衡ファイル読み込み** (`equnit::eq_load`) | `L` (Load) | ファイル形式: `MODELG` 3 か 9 (TASK/EQ), 5 か 25 (G-EQDSK) と `KNAMEQ` (ファイル名), 8 (QST/JAEA) と `KNAMEQ`, `KNAMEQ2`. `MODELG = 15` は `eqdb.dat` を読む |
 
-`mode=1` がデフォルトなのは **EQDSK 駆動の標準ワークフロー** だからですが,
-解析的に解きたい場合 (装置パラメータと圧力・電流プロファイル係数だけ
-与える場合) は `mode=0` を使います.
+`mode=1` がデフォルトなのは **ファイル駆動の標準ワークフロー** だからです
+(既定の `MODELG=2` はファイル形式を指さないので失敗します).
+平衡を解きたい場合 (装置パラメータと圧力・電流プロファイル係数だけ
+与える場合) は `mode=0` を使います. 負の `mode` は `EqlibInvalidParamError`,
+1 より大きい `mode` は `EqlibNotImplementedError` になります (C の `int` に
+収まらない数はライブラリを呼ぶ前に `EqlibInvalidParamError`).
 
 ```{note}
 `tr`/`ti`/`wr`/`fp` の `run` は時間ステップ数 `ntmax` を取りますが,
@@ -43,17 +46,24 @@ Phase L-3 以前の古い `libeqapi.so` を読み込んでいます.
 
 ## Q5. `EqlibCalculationFailedError: ierr=3` が出る
 
-平衡計算が収束しなかったか, EQDSK ファイルが整合しないケースです.
+平衡計算が収束しなかったか, 平衡ファイルが整合しないケースです.
 よくある原因:
 
 - `RR`, `RA`, `BB`, `RIP` の組み合わせが物理的にあり得ない (極端な
   低トカマク等)
 - `EPSEQ` (収束判定) が厳しすぎる. 既定 `1e-6` を `1e-4` に緩めて再試行
 - `NLPMAX` (最大反復数) が小さすぎる. 既定 `100` から増やす
-- EQDSK ファイルのフォーマットが合っていない (バージョン違い)
+- 読み込み (`mode=1`) がファイルを開けない (ファイルが無い). 例外の
+  メッセージの末尾に理由があります (`eq.last_error()`). `MODELG` が 3, 5, 8, 9, 25
+  のとき, ファイルはあってもその形式でない場合は例外になりません: 読み込み
+  ルーチン (3 と 9 は `EQRTSK`, 5 と 25 は `EQDSKR`, 8 は `EQJAEAR`) は読み込みを
+  検査せず, Fortran の実行時エラーでプロセスが止まります (`MODELG` 3, 5, 8 で確認).
+  15 (`eqdb.dat`) の読み込みルーチンは検査してエラーを返します
 
-`validate()` で事前にチェックできるのはグリッド寸法とファイル存在まで
-で, 物理整合性は `run()` で初めて分かります.
+`validate()` で事前にチェックできるのはグリッド寸法, 読み込むファイルの欠落 (空, または存在しないファイルを指す
+`KNAMEQ`, `MODELG=8` の `KNAMEQ2`, `MODELG=15` の `eqdb.dat`), Grad-Shafranov 求解
+では壁がプラズマの内側にあること, 負の電流, ソルバーが使えない箱
+(`MDLEQF >= 10`) までで, 物理整合性は `run()` で初めて分かります.
 
 ## Q6. 同じプロセスで 2 個の `Eq()` を作れる?
 

@@ -26,7 +26,8 @@ temperature, current and equilibrium profiles.
 :::{grid-item-card} **eq** — Equilibrium
 :link: ../../eq/en/index.html
 
-MHD equilibrium solver. Reads EQDSK or analytic profiles, returns
+MHD equilibrium solver. Loads an equilibrium file or solves the
+Grad-Shafranov equation from profile coefficients, returns
 ψ-surface geometry and derived scalars.
 **Status:** full chapter
 :::

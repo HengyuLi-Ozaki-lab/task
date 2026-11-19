@@ -19,6 +19,19 @@ The contract is: **same Fortran source + same compiler + same libm =
 bit-stable output**. It does NOT promise byte-equivalent output across
 different compilers or libm vendors.
 
+Two directories under `test_run/baselines/` are **not** among the 20 and
+are outside this contract: `tr_fus_dt` and `tr_fus_dt_hot`. They hold
+captures of another code (`trx`, with the corrections their `SOURCE.md`
+lists), taken on macOS. `tr_fus_dt_hot` is the reference of
+`python/trlib/tests/test_model_pnf_dispatch.py`, which compares the change
+`MODEL_PNF = 1` makes and not the state at 1e-10; `tr_fus_dt`, the same
+case at 1 keV, is kept for the record and no test reads it. No equivalence
+test reads either of
+them, `regen-baselines.yml` leaves them out of its default list of cases
+(and is not to be given them: what it writes is a run of `tr`, not a
+capture of `trx`), and `run_tests.sh`
+reports REGRESSION for them by design (`test_run/test_definitions.conf`).
+
 ## What the contract does NOT assert
 
 - **Cross-platform bit-equivalence**. macOS Homebrew GCC 15.2.0 +
@@ -39,13 +52,45 @@ different compilers or libm vendors.
 
 ## The canonical platform
 
-**Ubuntu CI runner with gfortran 13.x**. The full set of
-`linux-gcc13` baselines under `test_run/baselines/*/metrics.json`
-was generated on clavius
-(memory `reference_clavius_baseline_regen.md`) and is exercised on
-every push by `.github/workflows/python-tests.yml` line 323's
-whole-tree pytest (which sweeps the 7 module `test_equivalence.py`
-suites).
+**Ubuntu CI runner with gfortran 13.x**. The baselines under
+`test_run/baselines/*/metrics.json` are exercised on every push by
+`.github/workflows/python-tests.yml`'s whole-tree pytest (which sweeps
+the 7 module `test_equivalence.py` suites).
+
+They no longer share one provenance, so record it per group. Where a claim
+rests on inference rather than a log, it says so.
+
+| baselines | compiler | basis |
+|---|---|---|
+| `eq_iter01`, `eq_tst2`, `eq_jt60`, `tr_iter01`, `tr_tst2` | GitHub `ubuntu-24.04`, gfortran 13.3.0 | **measured** -- `regen-baselines.yml` run 30514856222 logs it. Regenerated together with the four `eqdata` fixtures they read (NTVMAX 200 -> 400) |
+| `tot_ht6m_short` | GitHub CI runner, gfortran 13.3.0 | **measured** -- run 28327720495, the run `d1f7f9e7` (2026-06-29) cites, logs `GNU Fortran (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`. NOTE: `d1f7f9e7`'s own message says "gf13.2"; that reads the apt metapackage revision `4:13.2.0-7ubuntu1`, printed elsewhere in the same apt step -- measured on run 28327720495 itself, 60 lines later; on run 30516807586, 4 lines in the build-only jobs and 149 in the pytest jobs. The compiler was 13.3.0 |
+| `tot_demo2014_short` | clavius | **stated** -- `14659b3a` (2026-05-12) body: "2 baseline regens on clavius". No compiler given |
+| `wrx_demo`, `wrx_iter01`, `wrx_jt60` | GitHub CI runner (`python-tests.yml`, pytest job) | **captured** -- run 38690362398 (2026-10-15), artifact `equivalence-actuals-3.11-38690362398` (the 3.13 artifact is byte-identical), species-major `*_nsa_nray` (#249). The compiler line of that run's log was not read for this record; the job and runner image are those of the rows above. Why they changed: `docs/superpowers/decisions/2026-10-21-wrx-rl-binning-baseline.md` |
+| `tr_m0904`, `fp_*`, `ti_*`, `wr_*` | clavius, **unconfirmed** | `9614009b` / `8956d7a9` / `a12465a5` / `404b79ec` / `87941c97` name no machine (`404b79ec` says only "on a dev box") and no compiler; the attribution rests on memory `reference_clavius_baseline_regen.md` |
+
+Rows 1 and 2 are the same compiler, 13.3.0 -- there is no patch-level straddle
+between them. Read `apt-get install` output with care when attributing one:
+`4:13.2.0-7ubuntu1` is the gcc-defaults metapackage revision, not the
+compiler. Every job
+here prints the real version with `gfortran --version | head -1`; use that.
+
+Anything regenerated from now on must come from the CI runner, not from
+clavius or a developer machine. That follows from the canonical-platform
+definition above on its own -- generating elsewhere is off-policy by
+construction, whatever the size of the gap.
+
+On the size of the gap, two data points of different strength:
+
+- **~3e-9**, clavius vs CI on eq_tst2 / tr_tst2. This is what #197 was
+  filed on; the drift is real and measured, though #197's attribution of it
+  to a compiler-version difference does not survive checking (see the note
+  at the top of `.github/workflows/regen-baselines.yml`).
+- **~4e-10**, a macOS-generated `eqdata.TST-2` scored against the CI
+  baseline -- 10 mismatches, 4x over tolerance. Reported by a scoping
+  investigation for this change and NOT reproduced independently, so treat
+  it as indicative. It is quoted because it points at the sharper hazard:
+  the gate skips on non-Linux (#213), so a developer-generated fixture
+  cannot be scored on the machine that produced it.
 
 ## Non-Linux behavior
 
@@ -85,7 +130,7 @@ Run a Linux container with gfortran 13.x:
 ```bash
 docker run --rm -it -v "$(pwd)":/work -w /work ubuntu:24.04 bash -c "
   apt-get update && apt-get install -y gfortran python3 python3-pip
-  pip3 install pytest pytest-forked pytest-timeout pytest-mock
+  pip3 install 'pytest<9.2' pytest-forked pytest-timeout pytest-mock   # 9.2 breaks pytest-forked 1.7.5
   ./scripts/setup.sh   # bpsd clone + lib*api.so build
   python3 -m pytest python/ --forked --timeout=120 --timeout-method=signal
 "
