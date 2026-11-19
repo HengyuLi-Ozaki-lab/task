@@ -62,9 +62,7 @@ jobs:
         # graphics archives (see fp/Makefile:318), so X11 is never
         # linked into the .so files we build here.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gfortran gcc make valgrind
+          bash .github/scripts/apt-install.sh gfortran gcc make valgrind
           gfortran --version | head -1
 
       - name: Clone BPSD (patched fork k-yoshimi/bpsd@develop)
@@ -359,9 +357,7 @@ jobs:
         # Same toolchain as the pytest job (Ubuntu 24.04 default
         # gfortran 13.2). No Python / pytest needed here.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gfortran gcc make
+          bash .github/scripts/apt-install.sh gfortran gcc make
           gfortran --version | head -1
 
       - name: Clone BPSD (patched fork k-yoshimi/bpsd@develop)

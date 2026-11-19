@@ -166,6 +166,22 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   terminal shows that line and no longer the library's output. Where
   `fstat` gives a descriptor no identity (Windows for a pipe or a console)
   the merged layout is not recognised and fd 1 goes to stderr as usual.
+- **CI: the install steps run apt only for a package the runner image
+  lacks, and try it three times.** The four "Install Fortran/C build deps"
+  steps (the pytest and mono build jobs, `regen-baselines.yml`,
+  `clean-tree-build.yml`) call `.github/scripts/apt-install.sh`, which skips
+  apt altogether when the image has every package (it has gfortran, gcc,
+  make and jq) and otherwise runs `apt-get update` and `apt-get install` of
+  the missing ones up to three times, 30 s and 60 s apart, starting none
+  after its first 4 minutes: that retries an error that comes back fast
+  (apt's own three retries of a download, its default since apt 2.3, are
+  1, 2 and 4 s apart). On 2026-11-19 both pytest jobs of a pull request
+  failed in that step, with security.ubuntu.com answering 503 and
+  azure.archive.ubuntu.com unreachable for at least four minutes, while the
+  mono build job, which had nothing to download, passed; in such an outage
+  one attempt takes minutes (about 4 for the 3.11 job), and the step now
+  fails after one or two.
+  `clean-tree-build.yml` also runs when the script changes.
 - **tot docs and `tot_mcp`: string parameters and the tool count** (#274).
   The tot Sphinx pages showed `tot.set_param_str("fp:KNAMEQ", ...)` and
   `("wr:KNAMEQ", ...)`, which tot refuses: it passes string values on for

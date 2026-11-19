@@ -43,6 +43,7 @@ on:
       - 'mtxp/**'
       - '.github/workflows/clean-tree-build.yml'
       - '.github/actions/**'
+      - '.github/scripts/**'
   push:
     branches: [develop, master, chore/pre-push-hook-worktree-compat]
     paths:
@@ -59,6 +60,7 @@ on:
       - 'mtxp/**'
       - '.github/workflows/clean-tree-build.yml'
       - '.github/actions/**'
+      - '.github/scripts/**'
   schedule:
     # Weekly, Monday 03:00 UTC (12:00 JST). A schedule fires from the
     # default branch (master), whose tree is far behind develop; the
@@ -97,9 +99,7 @@ jobs:
         # Same toolchain as python-tests.yml: Ubuntu 24.04's default
         # gfortran. No Python packages are needed.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gfortran gcc make
+          bash .github/scripts/apt-install.sh gfortran gcc make
           gfortran --version | head -1
 
       - name: README steps 1-2, per-system files (make.header, mtxp/make.mtxp)
