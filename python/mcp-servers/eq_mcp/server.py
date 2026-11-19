@@ -188,7 +188,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "ZLIMM":  {"type": "float", "group": "region", "description": "lower Z limiter [m]"},
     "FRBIN":  {"type": "float", "group": "region", "description": "RB inner-region scaling"},
     # --- E. integer mesh / model switches --------------------------
-    "MODELG": {"type": "int", "group": "models", "description": "equilibrium/geometry selector (1..9; 3 = TASK/EQ binary load)"},
+    "MODELG": {"type": "int", "group": "models", "description": "for run(mode=1), the format of the file it loads: 3 or 9 a TASK/EQ binary file, 5 or 25 a G-EQDSK file, 8 a QST/JAEA pair (KNAMEQ, KNAMEQ2); the default 2 names none. For run(mode=0) keep 2: the solve is toroidal for every value (0 or 1 is no slab or cylinder), and 5 makes EQCALQ's current averages use P' and FF' arrays that only a G-EQDSK load fills (0, or an earlier file's, after a solve)"},
     "MODELQ": {"type": "int", "group": "models", "description": "q-profile model selector"},
     "IDEBUG": {"type": "int", "group": "models", "description": "debug-output level"},
     "MODEFR": {"type": "int", "group": "models", "description": "file-read mode of FROPEN: 0 reads the file named by KNAMEQ; 1 asks for a file name on unit 5 (not for a server)"},
@@ -221,7 +221,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "ZPFC":  {"type": "float[NPFCM]", "group": "pfcoil",    "description": "PF-coil Z position per coil (1-origin)"},
     "WPFC":  {"type": "float[NPFCM]", "group": "pfcoil",    "description": "PF-coil width per coil (1-origin)"},
     # --- string parameters (set via set_param_str under the hood) --
-    "KNAMEQ":  {"type": "str", "group": "io", "description": "equilibrium data file name (EQDSK / TASK-EQ)"},
+    "KNAMEQ":  {"type": "str", "group": "io", "description": "equilibrium file name: the file run(mode=1) loads, in the format MODELG names (for MODELG 8 the first of its two files); the save tool sets it to its path once it accepts the path"},
     "KNAMEQ2": {"type": "str", "group": "io", "description": "secondary equilibrium data file name"},
     "KNAMWR":  {"type": "str", "group": "io", "description": "WR (ray-tracing) input file name"},
     "KNAMWM":  {"type": "str", "group": "io", "description": "WM (full-wave) input file name"},
@@ -669,8 +669,8 @@ def build_server() -> Any:
             "/ `set_param_str` / `set_params`, optionally run "
             "`validate` to check the configuration, solve or load the "
             "equilibrium with `run` (mode 0: the Grad-Shafranov solve, "
-            "no file; mode 1, the default: load the file in the format "
-            "MODELG names, KNAMEQ for most formats; it fails with the "
+            "no file; mode 1, the default: load the file KNAMEQ names, in "
+            "the format MODELG names; it fails with the "
             "default MODELG=2), and read state with `get_state`. `save` writes "
             "that equilibrium to a TASK/EQ file for another module to "
             "load. Use `describe_parameters` "
@@ -854,11 +854,11 @@ def build_server() -> Any:
             run(mode)
             return get_state()
 
-        ``mode`` is as for ``run``: the default 1 loads a file, so
-        ``params`` must set a file ``MODELG`` (and, for most formats,
-        ``KNAMEQ`` unless the file is ``eqdata``), since the call starts
-        from a fresh ``init`` at the defaults; ``mode=0`` solves the
-        Grad-Shafranov equation without one.
+        ``mode`` is as for ``run``: the default 1 loads a file, and the
+        call starts from a fresh ``init`` at the defaults, so ``params``
+        must set a file ``MODELG``, and ``KNAMEQ`` unless the file is
+        ``eqdata`` (for ``MODELG=8`` also ``KNAMEQ2`` unless the second
+        file is ``eqdata2``). ``mode=0`` solves the Grad-Shafranov equation without a file.
         """
         return handle_run_and_get_state(params, mode)
 

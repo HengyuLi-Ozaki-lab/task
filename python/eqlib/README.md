@@ -2,8 +2,9 @@
 
 `eqlib` is a thin `ctypes`-based Python wrapper around
 `eq/libeqapi.so`, the in-process shared-library version of the TASK/EQ
-MHD-equilibrium code. It lets scripts drive EQ calculations (EQDSK
-load and downstream `equnit` post-processing) from Python without
+MHD-equilibrium code. It lets scripts drive EQ calculations (the
+Grad-Shafranov solve, or the load of an equilibrium file with `equnit`'s
+post-processing) from Python without
 shelling out to the standalone `eq` binary or going through namelist
 files.
 
@@ -15,7 +16,7 @@ TASK/EQ has two user-facing deliverables:
 |---|---|---|
 | Binary | `eq/eq` | `eq/libeqapi.so` |
 | Entry | interactive menu | 6 C ABI functions |
-| I/O | namelist + EQDSK + ASCII | in-memory state struct |
+| I/O | namelist + equilibrium files (TASK/EQ, G-EQDSK) + ASCII | in-memory state struct |
 | Graphics | PGPlot / Fortran 90 graphics | excluded (replaced by stubs) |
 | Python | — | `python/eqlib` |
 
@@ -84,7 +85,7 @@ from eqlib import Eq
 
 with Eq() as eq:
     eq.set_params(RR=3.0, BB=3.0, RIP=1.0, MODELG=3)
-    eq.set_param_str("KNAMEQ", "eqdata")   # path to EQDSK file
+    eq.set_param_str("KNAMEQ", "eqdata")   # path to a TASK/EQ file (MODELG=3)
     eq.run()                               # mode=1 (default) → eq_load
     state = eq.get_state()
 
@@ -272,7 +273,7 @@ Every `eq_*` return code maps to a concrete subclass of `EqlibError`:
 | 0 | — | success |
 | 1 | `EqlibInvalidParamError` | invalid parameter name / index / value (incl. bare `"PSIB"`), or a negative `eq_run` mode |
 | 2 | `EqlibNotInitializedError` | API call before `eq_init` or after `close` |
-| 3 | `EqlibCalculationFailedError` | `eq_run` / `eq_get_state` failed (e.g. EQDSK file missing) |
+| 3 | `EqlibCalculationFailedError` | `eq_run` / `eq_get_state` failed (e.g. the equilibrium file is missing) |
 | 4 | `EqlibNotImplementedError` | `eq_run` with a mode above 1 (modes 0 and 1 are implemented) |
 
 Spec-style aliases (`EqLibError`, `EqLibInvalidParam`,
@@ -284,8 +285,10 @@ Spec-style aliases (`EqLibError`, `EqLibInvalidParam`,
 | CLI step | `eqlib` equivalent |
 |---|---|
 | edit `eqparm` namelist | `eq.set_param(...)` / `eq.set_params(...)` |
-| EQDSK file path / namelist `KNAMEQ` | `eq.set_param_str("KNAMEQ", path)` |
-| menu option for EQDSK load | `eq.run(mode=1)` (default `mode=1`) |
+| equilibrium file path / namelist `KNAMEQ` | `eq.set_param_str("KNAMEQ", path)` |
+| menu `R` (`EQCALC`, then `EQCALQ`) | `eq.run(mode=0)` |
+| menu `L` (load `KNAMEQ` in the format `MODELG` names) | `eq.run(mode=1)` (default `mode=1`); unlike `L`, it does not turn `MODELG=2` into 3: set `MODELG` first |
+| menu `K` (asks for a G-EQDSK file name, `MODELG=5`) | `eq.set_param_str("KNAMEQ", path)`, `eq.set_param("MODELG", 5)`, then `eq.run(mode=1)` |
 | inspect graphics output | `eq.get_state()` → numpy / matplotlib |
 | menu `Q` (quit) | exit context manager / `eq.close()` |
 | batch parameter sweep | Python `for` loop (see `examples/parameter_sweep.py`) |
@@ -305,9 +308,8 @@ These three behaviours catch new users:
    `KNAMPF` go through the dedicated 6th C ABI entry. They cannot be
    passed via `set_params(**kwargs)`.
 3. **`Eq.run()` defaults to `mode=1`.** Calling `eq.run()` with no
-   argument loads the current `KNAMEQ` via `equnit::eq_load`. This
-   matches the canonical EQDSK-driven workflow. With the default
-   `MODELG=2` it fails (`EqlibCalculationFailedError`): set a `MODELG`
+   argument loads the current `KNAMEQ` via `equnit::eq_load`. With the
+   default `MODELG=2` it fails (`EqlibCalculationFailedError`): set a `MODELG`
    that reads a file and `KNAMEQ` first, or solve for the equilibrium
    from the parameters (`EQCALC` + `EQCALQ`, without an equilibrium
    file) with an explicit `eq.run(0)`.
