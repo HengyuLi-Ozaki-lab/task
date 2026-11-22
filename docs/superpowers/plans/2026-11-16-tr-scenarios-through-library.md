@@ -1119,6 +1119,24 @@ Every listed name gets a test that its last row equals the final scalar of PR 2'
   - a full buffer is reported.
 - **task-web** sets `NGTSTP` so that the scenario's steps / NGTSTP < 10001.
 
+### F3, the fourth Codex round (2026-11-22, after the merge of the product line `8a9f5e98`)
+
+Six findings at P2 and two at P3, each measured before it was answered:
+
+- **The failed iterate of a `TRCHCK` failure was a row.** `tr_exec` records it for `tr2`'s graphics (`DT` 100 s: a row at
+  800 s with `TE0` 3.7e6 after that step's own row; at `NGTSTP` 3 a row off the cadence). Not recorded in library mode.
+- **Under `MODELG` 9 the row of a step that ends with an EQ re-solve holds the `Q0` of before it.** `tr_loop` records the
+  step, re-solves, and recomputes `Q0` (`tr_bpsd_get`, `TRCALC`): 6.6e-5 relative in the test case, the other 29 shared
+  names agree. Documented and tested; the record before the re-solve is `tr_loop`'s choice (a consistent snapshot).
+- **`tr_run(0)` evaluates no step**, so after a preparation `T` is 0 and the other scalars are the previous run's.
+  Documented and tested, not refused: `get_state` after `run(0)` is how the initial profiles are read.
+- **`GVT` columns 89 to 88 + 4 `NGPST` are also `TRATOTN`'s sawtooth record** once `MDLST` /= 0 and `T` >= `TSST`. `TSST`
+  is not a library parameter (1e9 s), so in library mode the record never starts; a test pins that.
+- **Descriptions:** `PNFT` is alpha and proton together for D-He3 (`MDLNF` 5, 6) and `QF` a D-T gain; `RIP` is the
+  equilibrium's boundary current under `MODELG` 3, 5 and 8.
+- **Tests:** the `tot` reference reads used `trlib`'s own library, not the image `Tot` loaded (`TOTLIB_PATH` = the mono
+  image failed them); the skip markers ignored `TRLIB_PATH` (all 126 tests skipped with the library only there).
+
 ### F4. task-web side of the bump (for the second spec and the `deps.lock` bump)
 
 - **Runs that now fail.** In library mode, MODELG 0, 4 or 25, and RIPS = 0, now fail with NONFINITE at nt 1. Before,

@@ -196,7 +196,10 @@ and friends.
 returns the time history, a row every `NGTSTP` steps (default 2, the first row is t = 0), as `{rows, full, columns}`;
 `describe_history_schema` lists the columns with units. The values are **single precision**, and the history holds
 **`NTM` = 10001 rows**: TR then stops recording without a message and `full` is true. For a long run set `NGTSTP` so that
-steps / `NGTSTP` stays below 10001.
+steps / `NGTSTP` stays below 10001. A run that fails on a negative temperature ends its history on the last recorded step
+(the failed iterate is not a row); under `MODELG` 9 the row of a step that ends with an EQ re-solve holds the `Q0` of
+before the re-solve, while `get_state` gives the one after it. The scalars are current after a `run` of one step or more:
+a run of 0 steps evaluates none.
 
 ## Usage examples
 

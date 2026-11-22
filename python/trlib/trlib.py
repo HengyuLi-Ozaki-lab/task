@@ -333,7 +333,10 @@ class Trlib:
         """One global result by name, as of the last step TR computed the globals on.
 
         TRGLOB computes them on output steps and on the last step of a run, so they are current after
-        :meth:`run`. Units are those of ``tr/trrslt_globals.f90`` (``tr_mcp``'s state schema lists them).
+        :meth:`run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
+        run after a changed parameter) ``T`` is 0 and the others are still the previous run's. Units are those of
+        ``tr/trrslt_globals.f90`` (``tr_mcp``'s state schema lists them; ``PNFT`` is the charged fusion products'
+        power, alpha only for D-T, and ``RIP`` the equilibrium's boundary current under ``MODELG`` 3, 5 and 8).
         An unknown name raises :class:`TrlibParamError`.
         """
         if self._closed:
@@ -383,8 +386,11 @@ class Trlib:
         when the last step of the call was recorded (a multiple of ``NGTSTP``) and the buffer was not full: after
         ``run(1)`` with the defaults ``history("T")["T"][-1]`` is 0 while ``get_scalar("T")`` is ``DT``, and
         recording stops at capacity (:meth:`history_full` is true), so the history lags the state once the run
-        advances past it; a history that fills exactly at the end of a call is still current. An unknown name raises
-        :class:`TrlibParamError`.
+        advances past it; a history that fills exactly at the end of a call is still current. Under ``MODELG`` 9 a
+        step that ends with an EQ re-solve (a multiple of ``NTEQIT``) is recorded before the re-solve, which then
+        recomputes ``Q0``: that row's ``Q0`` is the one of before it. A run that fails on a negative temperature
+        (``TrlibRunError``, kind ``TR_CHECK``) ends the history on the last recorded step; the failed iterate is not
+        a row. An unknown name raises :class:`TrlibParamError`.
         """
         if self._closed:
             raise TrlibError("history on closed Trlib")

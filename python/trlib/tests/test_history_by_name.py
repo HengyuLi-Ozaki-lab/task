@@ -23,17 +23,16 @@ PYTHON_ROOT = HERE.parents[2]
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
-from trlib import Trlib, TrlibParamError  # noqa: E402
+from trlib import Trlib, TrlibParamError, TrlibRunError  # noqa: E402
 from trlib import _ffi  # noqa: E402
 
 REPO = HERE.parents[3]
-DEFAULT_SO = REPO / "tr" / "libtrapi.so"
 FIXTURES_DIR = HERE.parent / "fixtures"
 
 pytestmark = [
     pytest.mark.forked,
-    pytest.mark.skipif(not DEFAULT_SO.exists() and not os.environ.get("MONO_LIB_PATH"),
-                       reason=f"libtrapi.so not built at {DEFAULT_SO}"),
+    pytest.mark.skipif(not _ffi._default_lib_path().exists(),          # Trlib()'s own resolution: MONO_LIB_PATH,
+                       reason=f"libtrapi.so not found at {_ffi._default_lib_path()}"),   # TRLIB_PATH, tr/, lib/
 ]
 
 # name -> GVT column (0 = GT), read from tr/trrslt_globals.f90 TRATOT (lines 427-549 at the base).
@@ -430,3 +429,60 @@ def test_the_last_row_stays_behind_the_state_once_the_buffer_is_full():
         t.run(10100)
         assert t.history_full()
         assert t.history("T")["T"][-1] < t.get_scalar("T") - 1.0e-3
+
+
+@pytest.mark.parametrize("ngtstp,times", [(1, [0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0]),
+                                          (2, [0.0, 200.0, 400.0, 600.0, 800.0]),
+                                          (3, [0.0, 300.0, 600.0])])
+def test_a_failed_step_is_not_a_row_of_the_history(ngtstp, times):
+    # DT = 100 s: TRCHCK finds a negative temperature in the step from 800 s (test_loop_failures). tr_exec records the
+    # failed iterate for tr2's graphics (TRATOT at the failure, at the time of the step before, outside the NGTSTP
+    # cadence: before, a row T = 800 with TE0 3.7e6 followed the step's own row). In library mode it is not a row:
+    # the history holds recorded steps only, and tr_last_error says where the run failed.
+    with Trlib() as t:
+        t.set_param("DT", 100.0)
+        t.set_param("NGTSTP", ngtstp)
+        with pytest.raises(TrlibRunError) as err:
+            t.run(30)
+        assert (err.value.failure.kind, err.value.failure.nt) == ("TR_CHECK", 8)
+        assert t.history_length() == len(times)
+        assert list(t.history("T")["T"]) == pytest.approx(times, abs=1e-3)
+
+
+def _modelg9(t, nteqit):
+    t.set_param("MODELG", 9)
+    t.set_param("RIPS", 3.0)
+    t.set_param("RIPE", 3.0)
+    t.set_param("NTEQIT", nteqit)
+    t.set_param("NGTSTP", 1)
+
+
+def test_after_an_eq_re_solve_on_the_last_step_only_q0_differs_from_the_row():
+    # MODELG 9: tr_loop records the step (tr_eval) before it re-solves EQ on a multiple of NTEQIT, and then recomputes
+    # Q0 on the new metric (tr_bpsd_get, TRCALC: tr/trloop.f90). The row keeps the Q0 of before the re-solve and
+    # get_scalar gives the one after it (measured: 6.6e-5 relative here); the other names are TRGLOB's and agree.
+    with Trlib() as t:
+        _modelg9(t, 5)
+        t.run(10)
+        h = t.history(list(SHARED))
+        differ = {n for n in SHARED if h[n][-1] != pytest.approx(t.get_scalar(n), rel=1e-6, abs=0.0)}
+        assert differ == {"Q0"}
+
+
+@pytest.mark.parametrize("name", SHARED)
+def test_off_an_eq_re_solve_step_the_last_row_agrees_under_modelg_9(name):
+    with Trlib() as t:
+        _modelg9(t, 5)
+        t.run(12)                                    # step 12 is recorded and is not a multiple of NTEQIT
+        assert t.history(name)[name][-1] == pytest.approx(t.get_scalar(name), rel=1e-6, abs=0.0)
+
+
+def test_the_sawtooth_record_cannot_be_started_through_the_library():
+    # TRATOTN (tr/trexec.f90) writes the sawtooth record's temperatures into GVT columns 89 to 88 + 4 NGPST of its
+    # own rows (NGST, counted from the record's start) when MDLST /= 0 and T >= TSST: over PEXE ... NLAV and over
+    # RA and BB, which BETAN is computed from. TSST is 1e9 s (tr/trinit.f90) and not a library parameter, so the
+    # record never starts in library mode and those columns are TRATOT's. A change that makes TSST settable must
+    # keep the record out of them first.
+    with Trlib() as t:
+        with pytest.raises(TrlibParamError):
+            t.set_param("TSST", 0.0)

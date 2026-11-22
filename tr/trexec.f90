@@ -285,8 +285,12 @@ CONTAINS
       CALL TRCHCK(ICHCK)
       IF(ICHCK.EQ.1) THEN
          CALL TRGLOB
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: the failed iterate is not a row of the time history (GT, GVT), which holds the recorded
+!        steps only; tr_last_error records the failure. tr2 records it for its graphics, as before.
+         IF(.NOT.tr_library_mode) THEN
+            CALL TRATOT
+            CALL TRATOTN
+         ENDIF
          CALL TRATOG
          IERR=1
          CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
@@ -357,8 +361,11 @@ CONTAINS
 
       IF(ICHCK.EQ.1) THEN
          CALL TRGLOB
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: not a row of the time history, as above.
+         IF(.NOT.tr_library_mode) THEN
+            CALL TRATOT
+            CALL TRATOTN
+         ENDIF
          CALL TRATOG
          IERR=1
          CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')

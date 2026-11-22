@@ -1133,10 +1133,16 @@ CONTAINS
   ! (tr/trrslt_globals.f90; TRGLOB runs on output steps and on a run's
   ! last step, tr/trexec.f90 tr_eval), in the unit TRGLOB gives it:
   !   T s; WPT, WPDOT MJ and MW; AJT, AJRFT, AJOHT, AJNBT, AJBST, RIP MA;
-  !   POHT, PNBT, PNFT (alpha power), PRFST, PEXST, PRLT, POUT MW;
+  !   POHT, PNBT, PNFT, PRFST, PEXST, PRLT, POUT MW (PNFT is the charged fusion
+  !   products' power: alpha for D-T, MDLNF 1-4; alpha and proton for D-He3,
+  !   MDLNF 5, 6, trpnf.f90; QF = 5 PNFT / input is TRGLOB's D-T gain);
   !   PINT MW and includes PNFT (POHT+PNBT+PRFST+PNFT+PEXST);
   !   VLOOP V; TAUE1, TAUE2, TAUE98 s; RQ1 m; the rest have no unit.
-  ! The order here is the order tr_scalar_name enumerates.
+  ! The order here is the order tr_scalar_name enumerates. RIP is the
+  ! equilibrium's boundary current under MODELG 3, 5 and 8 (tr_bpsd_get,
+  ! trbpsd.f90), the current set (RIPS to RIPE) otherwise. A tr_run of 0 steps
+  ! evaluates no step (tr_loop returns before tr_eval): after a preparation T is
+  ! 0 again and the others are still the previous run's.
   !-------------------------------------------------------------------
   PURE FUNCTION scalar_table() RESULT(names)
     CHARACTER(LEN=8) :: names(N_SCALARS)
@@ -1295,7 +1301,13 @@ CONTAINS
   ! when they are full. tr_prep sets NGT to 0 (trprep.f90), so a run starts a
   ! history and a re-preparation starts it again. In library mode tr_eval does not
   ! record the step a call of tr_run starts on when the call before it ended on
-  ! it (the same T twice).
+  ! it (the same T twice), nor the failed iterate of a TRCHCK failure (tr_exec).
+  ! Under MODELG 9 tr_loop records a step before it re-solves EQ on it (a
+  ! multiple of NTEQIT) and then recomputes Q0 on the new metric: that row
+  ! holds the Q0 of before the re-solve, tr_get_scalar the one after it.
+  ! Columns 89 to 88 + 4 NGPST are also the sawtooth record's (TRATOTN, its
+  ! own row count NGST) once MDLST /= 0 and T >= TSST; TSST (1e9 s) is not a
+  ! library parameter, so in library mode they are always TRATOT's.
   !
   ! COL = 0: GT (the time); COL > 0: GVT column; BETAN and PRFST have no
   ! column of their own and are computed from columns of the same row:

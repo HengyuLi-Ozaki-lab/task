@@ -49,6 +49,7 @@ def _chdir():
 
 
 def test_tot_get_scalar_equals_the_trlib_value_for_the_same_run():
+    from totlib._ffi import _default_lib_path as tot_library
     from trlib._ffi import load_library
     prev = _chdir()
     try:
@@ -57,7 +58,9 @@ def test_tot_get_scalar_equals_the_trlib_value_for_the_same_run():
             tot.set_param("tr:NTMAX", 20)
             tot.run(20)
             via_tot = {n: tot.get_scalar(f"tr:{n}") for n in ("PNFT", "WPT", "QF", "PINT", "RIP")}
-            lib = load_library()                   # the mono image: the TR that tot drives
+            # The TR that tot drives: the image Tot() loaded (the mono image, whether named by MONO_LIB_PATH or
+            # TOTLIB_PATH) or the libtrapi.so that libtotapi.so links, not trlib's own resolution.
+            lib = load_library(str(tot_library()))
             for n, v in via_tot.items():
                 out = ctypes.c_double()
                 assert lib.tr_get_scalar(n.encode(), ctypes.byref(out)) == 0

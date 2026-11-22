@@ -49,6 +49,7 @@ def _chdir():
 
 
 def test_tot_history_equals_the_tr_history_of_the_same_image():
+    from totlib._ffi import _default_lib_path as tot_library
     from trlib._ffi import load_library
     prev = _chdir()
     try:
@@ -59,7 +60,9 @@ def test_tot_history_equals_the_tr_history_of_the_same_image():
             assert set(h) == {"tr:T", "tr:WPT", "tr:PNFT"}
             assert all(len(v) == 11 for v in h.values())
             assert h["tr:T"][0] == 0.0 and h["tr:WPT"][-1] > 0.0 and h["tr:PNFT"][-1] > 0.0
-            lib = load_library()
+            # The TR that tot drives: the image Tot() loaded (the mono image, whether named by MONO_LIB_PATH or
+            # TOTLIB_PATH) or the libtrapi.so that libtotapi.so links, not trlib's own resolution.
+            lib = load_library(str(tot_library()))
             buf = (ctypes.c_double * 11)()
             got = ctypes.c_int()
             assert lib.tr_history_get(b"WPT", buf, 11, ctypes.byref(got)) == 0 and got.value == 11

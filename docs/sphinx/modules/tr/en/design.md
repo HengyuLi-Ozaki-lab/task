@@ -159,7 +159,15 @@ The scalars of `tr_state_t` are 14 of the 31 global results `TRGLOB` computes; `
 `tr_history_*` export the time history `GT(NGT)`, `GVT(NGT, 1:110)` that `TRATOT` writes every `NGTSTP` steps (`tr_eval`):
 47 columns by name, in **single precision** (`GUCLIP`), `NTM` = 10001 rows. TR stops recording silently when they are full
 (`tr_history_full` reports it): a long run sets `NGTSTP`. `tr_prep` sets `NGT` to 0, so a preparation starts the history
-again. In library mode `tr_eval` does not record the step a `tr_run` call starts on when the previous call ended on it.
+again. In library mode `tr_eval` does not record the step a `tr_run` call starts on when the previous call ended on it,
+and `tr_exec` does not record the failed iterate of a `TRCHCK` failure (`tr2` records both). Under `MODELG` 9 `tr_loop`
+records a step before it re-solves EQ on it and then recomputes `Q0` on the new metric (`tr_bpsd_get`, `TRCALC`), so that
+row's `Q0` is the one of before the re-solve. A `tr_run` of 0 steps evaluates no step: `TRGLOB` does not run, and after a
+preparation the scalars other than `T` are the previous run's. `GVT` columns 89 to 88 + 4 `NGPST` are also the sawtooth
+record's (`TRATOTN`, rows counted from the record's start) once `MDLST` /= 0 and `T` >= `TSST`; `TSST` (1e9 s) is not a
+library parameter, so in library mode they are always `TRATOT`'s (a test fails if it becomes one). In `tr2` the record
+overwrites those columns of its rows (89 to 104 at the default `NGPST` 4: `PEXE` to `PICI`, `RR` to `AJTTOR`,
+`TAUE98`, `H98Y2`, `NLAV`).
 
 (reinit-constraints)=
 ## Re-initialisation constraints

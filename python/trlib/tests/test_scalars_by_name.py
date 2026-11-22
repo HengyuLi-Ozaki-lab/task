@@ -24,13 +24,12 @@ from trlib import _ffi  # noqa: E402
 from trlib.state import SCALAR_FIELDS  # noqa: E402
 
 REPO = HERE.parents[3]
-DEFAULT_SO = REPO / "tr" / "libtrapi.so"
 FIXTURES_DIR = HERE.parent / "fixtures"
 
 pytestmark = [
     pytest.mark.forked,
-    pytest.mark.skipif(not DEFAULT_SO.exists() and not os.environ.get("MONO_LIB_PATH"),
-                       reason=f"libtrapi.so not built at {DEFAULT_SO}"),
+    pytest.mark.skipif(not _ffi._default_lib_path().exists(),          # Trlib()'s own resolution: MONO_LIB_PATH,
+                       reason=f"libtrapi.so not found at {_ffi._default_lib_path()}"),   # TRLIB_PATH, tr/, lib/
 ]
 
 # The table of the plan's Task 5 (31 names), in the order the library lists them.
@@ -195,3 +194,24 @@ def test_get_state_on_a_library_without_the_scalar_table_holds_the_struct_scalar
                 t.get_scalar("T")
         finally:
             t._lib = real
+
+
+def test_a_run_of_zero_steps_evaluates_no_step():
+    # tr_run(0) prepares again after a changed parameter (T is 0 again) but evaluates no step (tr_loop returns before
+    # tr_eval), so TRGLOB does not run: the other scalars are still the previous run's until a run of one step or more.
+    prev = os.getcwd()
+    os.chdir(FIXTURES_DIR)
+    try:
+        with Trlib() as t:
+            _iter01_hot(t)
+            t.run(20)
+            pnbt = t.get_scalar("PNBT")
+            assert pnbt > 0.0
+            t.set_param("PNBTOT", 0.0)
+            t.run(0)
+            assert t.get_scalar("T") == 0.0
+            assert t.get_scalar("PNBT") == pnbt
+            t.run(1)
+            assert t.get_scalar("PNBT") == 0.0
+    finally:
+        os.chdir(prev)

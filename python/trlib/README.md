@@ -152,8 +152,11 @@ time=12 s; <detail>]`.
 `BETAN`, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`, `AJRFT`, `PNFT`, `QF`, `PINT`, `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`,
 `POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`, `TAUE98`); `Trlib.get_scalar(name)` returns one as
 `TRGLOB` last computed it, in the units of `tr/trrslt_globals.f90` (powers in MW, currents in MA, energy in MJ; `PINT`
-includes the alpha power `PNFT`, and `P_fus = 5 PNFT` for D-T). They are current after `run`; between `Trlib()` and the first
-`run` they are the previous lifecycle's. An unknown or inexact name raises `TrlibParamError`. `get_state().scalars` holds all
+includes `PNFT`, the power of the charged fusion products: the alpha power for D-T, `MDLNF` 1 to 4, with `P_fus = 5 PNFT`;
+alpha and proton together for D-He3, `MDLNF` 5 and 6, where `QF`, TRGLOB's D-T gain `5 PNFT / input`, is five times the
+gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8, the current set otherwise). They are current
+after a `run` of one step or more; between `Trlib()` and the first `run` they are the previous lifecycle's, and `run(0)`
+evaluates no step (after a changed parameter `T` is 0 and the others are still the previous run's). An unknown or inexact name raises `TrlibParamError`. `get_state().scalars` holds all
 31; `to_dict()` keeps the 14 of the C struct. `tr_mcp`'s `describe_state_schema` gives each name its unit and meaning.
 
 TR records a time history every `NGTSTP` steps (default 2): `Trlib.history(names=None)` returns `{name: numpy.ndarray}`
@@ -167,6 +170,10 @@ one (`run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1);
 `tr_prep` starts the history again, so the first `run` and every `run` after a changed parameter do. **The buffer holds
 `NTM` = 10001 rows; TR then stops recording without a message** (`history_full()` is true): set `NGTSTP` so that
 steps / `NGTSTP` stays below 10001 for a long run. `BETAN` and `PRFST` are computed from the row; `PEXST` has no column.
+Under `MODELG` 9 a step that ends with an EQ re-solve (a multiple of `NTEQIT`) is recorded before the re-solve, which then
+recomputes `Q0` on the new metric: that row's `Q0` differs from `get_scalar("Q0")` (6.6e-5 relative in the test case), the
+other names agree. A run that fails on a negative temperature (`TrlibRunError`, kind `TR_CHECK`) ends the history on the
+last recorded step; the failed iterate is not a row.
 `tot` has the same through `Tot.get_scalar("tr:NAME")` and `Tot.history(["tr:NAME", ...])`.
 
 ## API reference

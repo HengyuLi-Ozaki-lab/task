@@ -225,9 +225,9 @@ SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
     "ALI":    {"unit": "",    "description": "internal inductance"},
     "RQ1":    {"unit": "m",   "description": "distance of the q = 1 surface from the axis (0 when q0 >= 1). When q already exceeds 1 in the first cell, TRGLOB's first-cell branch (tr/trrslt_globals.f90:374) multiplies by DR, which is a normalised radius, not by RA: the value is then a fraction of the minor radius, not metres (for the TASK developers)"},
     "AJRFT":  {"unit": "MA",  "description": "RF and external driven current"},
-    "PNFT":   {"unit": "MW",  "description": "fusion alpha power (P_fus = 5 PNFT for D-T)"},
-    "QF":     {"unit": "",    "description": "fusion gain: 5 PNFT / (POHT + PNBT + PRFST + PEXST)"},
-    "PINT":   {"unit": "MW",  "description": "total input power: POHT + PNBT + PRFST + PNFT + PEXST (alpha power included)"},
+    "PNFT":   {"unit": "MW",  "description": "power of the charged fusion products (TR's PNF): the alpha power for D-T (MDLNF 1 to 4; P_fus = 5 PNFT), alpha and proton together for D-He3 (MDLNF 5, 6; tr/trpnf.f90:214)"},
+    "QF":     {"unit": "",    "description": "5 PNFT / (POHT + PNBT + PRFST + PEXST), TRGLOB's D-T fusion gain whatever the reaction (tr/trrslt_globals.f90:366): for D-He3 (MDLNF 5, 6) the fusion gain is QF / 5"},
+    "PINT":   {"unit": "MW",  "description": "total input power: POHT + PNBT + PRFST + PNFT + PEXST (the charged fusion products PNFT included)"},
     "POHT":   {"unit": "MW",  "description": "ohmic power"},
     "PNBT":   {"unit": "MW",  "description": "neutral-beam power"},
     "PRFST":  {"unit": "MW",  "description": "RF power, all species"},
@@ -237,7 +237,7 @@ SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
     "AJOHT":  {"unit": "MA",  "description": "ohmic current"},
     "AJNBT":  {"unit": "MA",  "description": "neutral-beam driven current"},
     "AJBST":  {"unit": "MA",  "description": "bootstrap current"},
-    "RIP":    {"unit": "MA",  "description": "boundary (programmed) plasma current at this time"},
+    "RIP":    {"unit": "MA",  "description": "plasma current at this time: under MODELG 3, 5 and 8 the equilibrium's boundary current, which tr_bpsd_get also writes into RIPS and RIPE (tr/trbpsd.f90:413-416), so not the current that was set; otherwise RIPS ramping to RIPE over a call of tr_run (tr/trloop.f90:44-45, tr/trexec.f90:310)"},
     "VLOOP":  {"unit": "V",   "description": "one-turn voltage at the edge"},
     "WPDOT":  {"unit": "MW",  "description": "rate of change of WPT between the last two global evaluations"},
     "H98Y2":  {"unit": "",    "description": "H factor: TAUE2 / TAUE98"},
@@ -261,17 +261,17 @@ HISTORY_SCHEMA: Dict[str, Dict[str, str]] = {
     "AJNBT": {"unit": "MA", "description": "neutral-beam driven current"},
     "AJRFT": {"unit": "MA", "description": "RF and external driven current"},
     "AJBST": {"unit": "MA", "description": "bootstrap current"},
-    "PINT": {"unit": "MW", "description": "total input power, alpha power included"},
+    "PINT": {"unit": "MW", "description": "total input power, the charged fusion products PNFT included"},
     "POHT": {"unit": "MW", "description": "ohmic power"},
     "PNBT": {"unit": "MW", "description": "neutral-beam power"},
     "PRFE": {"unit": "MW", "description": "RF power into species 1 (electrons)"},
     "PRFD": {"unit": "MW", "description": "RF power into species 2 (first bulk ion)"},
-    "PNFT": {"unit": "MW", "description": "fusion alpha power"},
+    "PNFT": {"unit": "MW", "description": "power of the charged fusion products: alpha for D-T (MDLNF 1 to 4), alpha and proton for D-He3 (MDLNF 5, 6)"},
     "POUT": {"unit": "MW", "description": "total output power"},
     "VLOOP": {"unit": "V", "description": "one-turn voltage at the edge"},
     "ALI": {"unit": "", "description": "internal inductance"},
     "RQ1": {"unit": "m", "description": "distance of the q = 1 surface from the axis; in TRGLOB's first-cell branch (tr/trrslt_globals.f90:374) a normalised radius, not metres (for the TASK developers)"},
-    "Q0": {"unit": "", "description": "safety factor on axis"},
+    "Q0": {"unit": "", "description": "safety factor on axis; under MODELG 9 the row of a step that ends with an EQ re-solve (a multiple of NTEQIT) holds the Q0 of before the re-solve, while get_state's is recomputed after it"},
     "WPDOT": {"unit": "MW", "description": "rate of change of the stored energy"},
     "TAUE1": {"unit": "s", "description": "energy confinement time, steady state"},
     "TAUE2": {"unit": "s", "description": "energy confinement time, transient"},
@@ -279,8 +279,8 @@ HISTORY_SCHEMA: Dict[str, Dict[str, str]] = {
     "BETA0": {"unit": "", "description": "central toroidal beta (fraction)"},
     "BETAA": {"unit": "", "description": "volume-averaged toroidal beta (fraction)"},
     "ZEFF0": {"unit": "", "description": "effective charge number on axis"},
-    "QF": {"unit": "", "description": "fusion gain 5 PNFT / (POHT + PNBT + PRFST + PEXST)"},
-    "RIP": {"unit": "MA", "description": "boundary plasma current at the row's time"},
+    "QF": {"unit": "", "description": "5 PNFT / (POHT + PNBT + PRFST + PEXST), the D-T fusion gain whatever the reaction (QF / 5 for D-He3, MDLNF 5, 6)"},
+    "RIP": {"unit": "MA", "description": "plasma current at the row's time: the equilibrium's boundary current under MODELG 3, 5 and 8, otherwise the one set (RIPS ramping to RIPE)"},
     "PEXE": {"unit": "MW", "description": "external power into species 1 (electrons)"},
     "PEXI": {"unit": "MW", "description": "external power into species 2 (first bulk ion)"},
     "PECE": {"unit": "MW", "description": "EC heating of electrons"},
@@ -309,7 +309,8 @@ STATE_SCHEMA: Dict[str, Any] = {
             "type": "object",
             "description": (
                 "the library's named global results (31), each as of the last step TR computed them on; "
-                "units are in each entry"
+                "units are in each entry. A run of 0 steps evaluates no step: after a changed parameter it "
+                "leaves T at 0 and the others at the previous run's values until a run of one step or more"
             ),
             "properties": {
                 name: {"type": "number", **entry} for name, entry in SCALAR_SCHEMA.items()
@@ -651,7 +652,9 @@ def handle_describe_history_schema() -> Dict[str, Any]:
             "The columns get_history can return, each with its unit and meaning. One row is recorded every "
             "NGTSTP steps (default 2), the state at t = 0 first; a row is recorded at every step that is a multiple of NGTSTP, so a "
             "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again; at most 10001 rows are kept "
-            "('full' says when they are). Values are single precision (about 7 digits)."
+            "('full' says when they are). Values are single precision (about 7 digits). A run that fails on a negative "
+            "temperature (TR_CHECK) ends its history on the last recorded step: the failed iterate is not a row. Under "
+            "MODELG 9 the row of a step that ends with an EQ re-solve holds the Q0 of before the re-solve."
         ),
         "columns": HISTORY_SCHEMA,
     }

@@ -171,7 +171,11 @@ void tr_check_bpsd_pull(int *ok);
    tr_get_scalar: the value of one name (exact, upper case); TR_ERR_NOT_INIT before tr_init, TR_ERR_INVALID for a
      name not listed (*value is left as it was). After tr_init and before the first tr_run the values are those of
      the previous lifecycle in this process (as tr_get_state's scalars are), 0 in a fresh process: read them after
-     a run. */
+     a run of one step or more. A tr_run of 0 steps evaluates no step: after a preparation (a first run, or a run
+     after a changed parameter) T is 0 and the others are still the previous run's.
+   PNFT is the power of the charged fusion products (alpha for D-T, MDLNF 1 to 4; alpha and proton for D-He3, MDLNF
+     5 and 6) and QF = 5 PNFT / (POHT + PNBT + PRFST + PEXST) is the D-T gain whatever the reaction. RIP is the
+     equilibrium's boundary current under MODELG 3, 5 and 8, the current set (RIPS to RIPE) otherwise. */
 int tr_scalar_count(void);
 int tr_scalar_name(int i, char* buf, int buflen);
 int tr_get_scalar(const char* name, double* value);
@@ -184,7 +188,11 @@ int tr_get_scalar(const char* name, double* value);
    tr_history_count / tr_history_name: the named columns, enumerated as tr_scalar_name does. "T" is the time;
      the others are TR's names in tr/trrslt_globals.f90's TRATOT, in its units (see tr_mcp's get_history schema).
    tr_history_get: copies the first min(n, rows) rows of the column `name` into buf and sets *got to that number.
-     TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for an unknown name or n < 0. */
+     TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for an unknown name or n < 0.
+   A run that fails on a negative temperature (TR_CHECK in tr_last_error) ends its history on the last recorded
+   step: the failed iterate is not a row (tr2 records it). Under MODELG 9 a step that ends with an EQ re-solve (a
+   multiple of NTEQIT) is recorded before the re-solve, which then recomputes Q0: that row's Q0 differs from
+   tr_get_scalar's; the other shared names agree. */
 int tr_history_length(void);
 int tr_history_full(void);
 int tr_history_count(void);

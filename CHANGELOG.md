@@ -35,8 +35,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   - `tr_scalar_count`, `tr_scalar_name`, `tr_get_scalar(name, &value)`: 31 global results as `TRGLOB` last computed
     them (`T`, `WPT`, `AJT`, `Q0`, the betas, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`, `AJRFT`, `PNFT`, `QF`, `PINT`,
     `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`,
-    `TAUE98`) in the units of `tr/trrslt_globals.f90` (`PINT` includes the alpha power `PNFT`, which is `P_fus/5` for
-    D-T). They are current after `tr_run`; before the first run of a lifecycle they are the previous one's. An
+    `TAUE98`) in the units of `tr/trrslt_globals.f90` (`PINT` includes `PNFT`, the charged fusion products' power: the
+    alpha power, `P_fus/5`, for D-T; alpha and proton together for D-He3, `MDLNF` 5 and 6, where `QF`, a D-T gain, is
+    five times the gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8). They are current after
+    a `tr_run` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
+    0 steps evaluates no step (after a changed parameter `T` is 0 and the others are the previous run's). An
     unknown or inexact name returns `TR_ERR_INVALID` and leaves the value alone. `Trlib.scalar_names()`,
     `Trlib.get_scalar()`; `TrState.scalars` holds all 31 after `get_state` (`to_dict()` keeps the 14 of the C struct,
     which the baselines compare).
@@ -55,7 +58,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   silently; `tr_history_full` says when. A long run sets `NGTSTP` so that steps / `NGTSTP` < 10001.
   `Trlib.history(names=None)` returns `{name: ndarray}` (float64 from the single-precision rows: about 7 digits),
   with `history_names`, `history_length`, `history_full`; `tot_history_*` and `Tot.history` take `tr:<NAME>` names;
-  `tr_mcp` has `get_history` and `describe_history_schema` (unit and meaning of each column).
+  `tr_mcp` has `get_history` and `describe_history_schema` (unit and meaning of each column). Under `MODELG` 9 the row
+  of a step that ends with an EQ re-solve (a multiple of `NTEQIT`) holds the `Q0` of before the re-solve, which then
+  recomputes it (`get_scalar` gives the one after); the other shared names agree with `get_scalar`.
 - **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
   re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
   (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
@@ -229,6 +234,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   mode every call began with an evaluation of the step the call before ended on, which wrote that step's row of
   `GT`/`GVT` a second time (with `WPDOT` 0). It is not recorded again (`tr/trexec.f90`, `tr_eval`); the profile history
   (`TRATOG`) and `TRSNAP`'s print still repeat the step and are not exported. `tr2` is unchanged.
+- **TR library: the failed iterate of a negative-temperature failure is not a row of the history.** `tr_exec` records
+  it for `tr2`'s graphics (`TRATOT` at the failure, at the time of the step before and outside the `NGTSTP` cadence:
+  `DT` 100 s gave a row at 800 s with `TE0` 3.7e6 after that step's own row). In library mode it is not recorded; the
+  history ends on the last recorded step and `tr_last_error` says where the run failed (`tr/trexec.f90`). `tr2` is
+  unchanged.
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and
