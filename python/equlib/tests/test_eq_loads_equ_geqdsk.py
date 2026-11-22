@@ -36,7 +36,7 @@ with eqlib.Eq() as eq:
     eq.set_param_str('KNAMEQ', 'q.geqdsk')
     eq.run(1)
     s = eq.get_state()
-    print(json.dumps({'raxis': s.scalars['raxis'], 'p0': s.ppps[0]}))
+    print('EQ-LOAD-RESULT ' + json.dumps({'raxis': s.scalars['raxis'], 'p0': s.ppps[0]}), flush=True)
 """
 
 
@@ -52,6 +52,10 @@ def test_eq_loads_the_file(workdir):
     r = subprocess.run([sys.executable, "-c", CHILD, str(PYTHON)], cwd=workdir, env=env,
                        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stderr[-2000:]
-    got = json.loads(r.stdout.strip().splitlines()[-1])
+    # libgfortran flushes EQ's unit 6 at exit, after Python's own output:
+    # take the marked line, not the last one.
+    line = [l for l in r.stdout.splitlines() if l.startswith('EQ-LOAD-RESULT ')]
+    assert len(line) == 1, r.stdout[-2000:]
+    got = json.loads(line[0][len('EQ-LOAD-RESULT '):])
     assert abs(got["raxis"] - st.raxis) < 1e-3
     assert got["p0"] == pytest.approx(st.pressure[0] * 1e-6, rel=1e-8)

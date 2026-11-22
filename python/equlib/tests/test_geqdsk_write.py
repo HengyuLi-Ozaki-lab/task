@@ -1,6 +1,8 @@
 """``Equ.write_geqdsk``: refusals, overwrite, a file that cannot be written."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from equlib import Equ, EqulibCalculationFailedError, EqulibInvalidParamError
@@ -54,3 +56,10 @@ def test_a_path_longer_than_80_characters(solved, workdir):
     solved.write_geqdsk(str(target))
     assert target.stat().st_size > 1_000_000
     assert not (workdir / "long.geqdsk").exists()
+    assert Path.cwd() == workdir
+    # Refused (exists, no overwrite): the directory comes back too.
+    with pytest.raises(EqulibInvalidParamError, match="exists"):
+        solved.write_geqdsk(str(target))
+    assert Path.cwd() == workdir
+    solved.write_geqdsk(str(target), overwrite=True)
+    assert Path.cwd() == workdir

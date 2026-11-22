@@ -207,13 +207,14 @@ class Equ:
     def write_geqdsk(self, path: Union[str, "os.PathLike[str]"], overwrite: bool = False) -> None:
         """Write the last run's equilibrium as G-EQDSK (EQU's own writer).
 
-        EQU's file name holds 80 characters; a longer path is written from
-        its directory under its base name (the working directory is changed
-        for the call and put back).
+        EQU's file name holds 80 ASCII characters; a longer path, or one
+        whose directories are not ASCII, is written from its directory under
+        its base name (the working directory is changed for the call and put
+        back).
         """
         self._check_open()
         text = str(path)
-        if len(text) <= _VALUE_MAX:
+        if text.isascii() and len(text) <= _VALUE_MAX:
             raw = _encode(text, "path", _VALUE_MAX)
             self._raise("equ_write_geqdsk",
                         self._lib.equ_write_geqdsk(raw, 1 if overwrite else 0))

@@ -117,11 +117,32 @@ def test_validate_is_read_only(quest):
     ("RWMN", 0.30),   # marker 0 at R = 0.28: eqchek lowers RWMN to 0.208, the program runs
     ("ISEP", -1),     # the code uses the sign
     ("MSFX", 30),     # a positive MSFX: eqchek lowers it
-    ("ZWMX", 0.9),    # the default flux-loop point (2.786, 0.952) off the grid: eqout no longer indexes there
 ])
 def test_accepted_inputs(quest, name, value):
     quest.set_param(name, value)
     assert quest.validate() == [], name
+
+
+def test_flux_loop_point_off_the_grid_runs(quest):
+    # The default flux-loop point (2.786, 0.952) with ZWMX = 0.9 made eqout
+    # index psi at 68,217 of 66,049; it computes psloop on the grid only now.
+    quest.set_param("ZWMX", 0.9)
+    quest.run(1)
+    assert quest.get_state().nr == 257
+
+
+def test_generated_markers_outside_the_box(workdir):
+    # MSFX > 0 (the default 9): eqchek generates the markers from the shape;
+    # ELIPUP = 1.5 puts the upper ones at Z = 1.343, above the box's 1.2.
+    with Equ() as equ:
+        equ.set_param_str("KNAMCOIL", "done")     # the JT-60U coils in memory
+        assert equ.validate() == []
+        equ.set_param("ELIPUP", 1.5)
+        diags = equ.validate()
+        assert any(d.param.startswith("RVAC[") and d.code == AFTER_DEP for d in diags), diags
+        equ.set_param("ELIPUP", 1.0)
+        equ.set_param("ZPLA", 0.4)
+        assert any(d.param.startswith("RVAC[") for d in equ.validate())
 
 
 def test_validate_asks_again_past_its_capacity(quest, monkeypatch):
