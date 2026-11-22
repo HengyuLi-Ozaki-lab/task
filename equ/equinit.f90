@@ -454,7 +454,7 @@
                write(6,*) 'XX eqflin: cannot open the coil file ', &
                     trim(knamcoil)
                call equ_fail('eqflin: cannot open the coil file '// &
-                    trim(knamcoil))
+                    trim(knamcoil), 2)
                ierr=7
                return
             endif

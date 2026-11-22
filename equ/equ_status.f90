@@ -20,9 +20,17 @@ MODULE equ_status_mod
   LOGICAL, SAVE :: failed = .FALSE.
   CHARACTER(LEN=256), SAVE :: message = ' '
 CONTAINS
-  SUBROUTINE equ_fail(msg)
+  SUBROUTINE equ_fail(msg, code)
     CHARACTER(LEN=*), INTENT(IN) :: msg
-    IF (.NOT. equ_library_mode) STOP
+    ! CODE = 2: outside library mode stop with exit status 2, as the
+    ! runtime error the site used to end in did (the former STOPs exit 0).
+    INTEGER, INTENT(IN), OPTIONAL :: code
+    IF (.NOT. equ_library_mode) THEN
+       IF (PRESENT(code)) THEN
+          IF (code == 2) STOP 2
+       END IF
+       STOP
+    END IF
     ! The first failure is the cause; later ones follow from it.
     IF (.NOT. failed) message = msg
     failed = .TRUE.

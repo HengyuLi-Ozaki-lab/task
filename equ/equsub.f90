@@ -696,6 +696,7 @@
 !-----------------------------------------------------------------------
       if(iabs(icp(3)).eq.2.and.xxli.gt.0.)then
        call eqind
+       if(equ_failed()) return
        erch(1)=dabs(1.d0-zzli/xxli)
        xx1=zzli
        xx2=xxli
@@ -1095,6 +1096,7 @@
 !    
 !=======================================================================
       subroutine eqind
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     CALCULATE INDUCTANCE                                         JAERI
 !=======================================================================
@@ -1147,6 +1149,14 @@
       irmin=(rrmin-rg(1))/dr
       irmax=(rrmax-rg(1))/dr+2.d0
       if(iudsym.eq.1)zzmax=nzh
+!     The loop reads psi(i+-1) and psi(i+-nr): a boundary that reaches the
+!     edge of the box (QUEST with ISEP=0) used to index psi out of bounds.
+      if(izmin.lt.2.or.izmax.gt.nz-1.or.irmin.lt.2.or.irmax.gt.nr-1) then
+         write(6,*) ' stop at eqind : the plasma boundary reaches the box edge'
+         call equ_fail('eqind: the plasma boundary reaches the edge of '// &
+              'the box', 2)
+         return
+      endif
       do iz=izmin,izmax
        do ir=irmin,irmax
         i=(iz-1)*nr+ir
@@ -1496,6 +1506,7 @@
       beta=100.d0*beta
 !-----
       call eqind
+      if(equ_failed()) return
 !-----
       x=(rloop-rg(1))/dr+1.d0
       y=(zloop-zg(1))/dz+1.d0

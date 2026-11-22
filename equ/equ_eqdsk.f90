@@ -20,7 +20,7 @@ CONTAINS
     USE libfio
     IMPLICIT NONE
 
-    INTEGER:: neqdsk,ierr,idum,i,iv,ir,iz,nps,npsmax,nps_save,isu,ilim
+    INTEGER:: neqdsk,ierr,idum,i,iv,ir,iz,nps,npsmax,nps_save,isu,ilim,ios
     CHARACTER(LEN=10):: string(6)
     REAL(rkind):: xdum,rmin,rmax,zmin,zmax,rdim,zdim,rctr,rleft,zmid,bctr
     REAL(rkind):: dps,ps,pv,dpv,pf,dpf
@@ -38,7 +38,8 @@ CONTAINS
        string(i)='          '
     END DO
 
-    WRITE(neqdsk,2000) (string(i),i=1,6),idum,nr,nz
+    WRITE(neqdsk,2000,IOSTAT=ios) (string(i),i=1,6),idum,nr,nz
+    IF(ios.NE.0) GOTO 9100
 
     rmin=rsu(1)
     rmax=rsu(1)
@@ -59,11 +60,15 @@ CONTAINS
 !    WRITE(6,'(A,1P4E12.4)') 'rz/minmax:',rmin,rmax,zmin,zmax
 !    WRITE(6,'(A,1P4E12.4)') 'rz/dimctr:',rdim,zdim,rctr,zmid
 !    WRITE(6,'(A,1P3E12.4)') 'rzs/axis: ',raxis,zaxis,saxis
-    WRITE(neqdsk,2020) rdim,zdim,rctr,rleft,zmid
+    WRITE(neqdsk,2020,IOSTAT=ios) rdim,zdim,rctr,rleft,zmid
+    IF(ios.NE.0) GOTO 9100
     bctr=btv/rctr
-    WRITE(neqdsk,2020) raxis,zaxis,saxis,0.D0,bctr
-    WRITE(neqdsk,2020) tcur*1.D6,saxis,xdum,raxis,xdum
-    WRITE(neqdsk,2020) zaxis,xdum,0.D0,xdum,xdum
+    WRITE(neqdsk,2020,IOSTAT=ios) raxis,zaxis,saxis,0.D0,bctr
+    IF(ios.NE.0) GOTO 9100
+    WRITE(neqdsk,2020,IOSTAT=ios) tcur*1.D6,saxis,xdum,raxis,xdum
+    IF(ios.NE.0) GOTO 9100
+    WRITE(neqdsk,2020,IOSTAT=ios) zaxis,xdum,0.D0,xdum,xdum
+    IF(ios.NE.0) GOTO 9100
 
     ALLOCATE(fx(nv),pfv(nv))
     ALLOCATE(uvlv(4,nv),uprv(4,nv),upfv(4,nv),uqqv(4,nv))
@@ -105,10 +110,14 @@ CONTAINS
 !            'nps=',nps,ps,pres(nps),pprime(nps),fpol(nps),ffprime(nps)
     END DO
        
-    WRITE(neqdsk,2020) (fpol(nps),nps=1,npsmax)
-    WRITE(neqdsk,2020) (pres(nps),nps=1,npsmax)
-    WRITE(neqdsk,2020) (ffprime(nps),nps=1,npsmax)
-    WRITE(neqdsk,2020) (pprime(nps),nps=1,npsmax)
+    WRITE(neqdsk,2020,IOSTAT=ios) (fpol(nps),nps=1,npsmax)
+    IF(ios.NE.0) GOTO 9100
+    WRITE(neqdsk,2020,IOSTAT=ios) (pres(nps),nps=1,npsmax)
+    IF(ios.NE.0) GOTO 9100
+    WRITE(neqdsk,2020,IOSTAT=ios) (ffprime(nps),nps=1,npsmax)
+    IF(ios.NE.0) GOTO 9100
+    WRITE(neqdsk,2020,IOSTAT=ios) (pprime(nps),nps=1,npsmax)
+    IF(ios.NE.0) GOTO 9100
 
     ALLOCATE(psirz(nr,nz))
     DO ir=1,nr
@@ -116,22 +125,40 @@ CONTAINS
           psirz(ir,iz)=psi(ir+nr*(iz-1))
        END DO
     END DO
-    WRITE(neqdsk,2020) ((psirz(ir,iz),ir=1,nr),iz=1,nz)
+    WRITE(neqdsk,2020,IOSTAT=ios) ((psirz(ir,iz),ir=1,nr),iz=1,nz)
+    IF(ios.NE.0) GOTO 9100
 
-    WRITE(neqdsk,2020) (qpsi(nps),nps=1,npsmax)
+    WRITE(neqdsk,2020,IOSTAT=ios) (qpsi(nps),nps=1,npsmax)
+    IF(ios.NE.0) GOTO 9100
 
-    WRITE(neqdsk,2022) nsu,ilimt
-    WRITE(neqdsk,2020) (rsu(isu),zsu(isu),isu=1,nsu)
-    WRITE(neqdsk,2020) (rlimt(ilim),zlimt(ilim),ilim=1,ilimt)
+    WRITE(neqdsk,2022,IOSTAT=ios) nsu,ilimt
+    IF(ios.NE.0) GOTO 9100
+    WRITE(neqdsk,2020,IOSTAT=ios) (rsu(isu),zsu(isu),isu=1,nsu)
+    IF(ios.NE.0) GOTO 9100
+    WRITE(neqdsk,2020,IOSTAT=ios) (rlimt(ilim),zlimt(ilim),ilim=1,ilimt)
+    IF(ios.NE.0) GOTO 9100
 
-    WRITE(neqdsk,2024) 0,0.D0,0
+    WRITE(neqdsk,2024,IOSTAT=ios) 0,0.D0,0
+    IF(ios.NE.0) GOTO 9100
       
     DEALLOCATE(fx,pfv,psirz)
     DEALLOCATE(uvlv,uprv,upfv,uqqv)
     DEALLOCATE(pres,pprime,fpol,ffprime,qpsi)
-    REWIND(neqdsk)
-    CLOSE(neqdsk)
+    REWIND(neqdsk,IOSTAT=ios)
+    IF(ios.NE.0) GOTO 9100
+    CLOSE(neqdsk,IOSTAT=ios)
+    IF(ios.NE.0) GOTO 9110
     WRITE(6,*) '-- equ-eqdsk-data wrriten in ',TRIM(KNAMEQ)
+    RETURN
+
+!   A write that fails (a full disk, a quota) used to end the process
+!   with a runtime error: it returns ierr instead (11 write, 12 close).
+9100 WRITE(6,*) 'XX equ_eqdsk_write: write error, iostat=',ios
+    ierr=11
+    CLOSE(neqdsk,IOSTAT=ios)
+    RETURN
+9110 WRITE(6,*) 'XX equ_eqdsk_write: close error, iostat=',ios
+    ierr=12
     RETURN
 
 9010 WRITE(6,*) 'XX equ_efit: SPL1D(siv,vlv...): ierr=',ierr
