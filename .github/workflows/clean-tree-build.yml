@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [tr, fp, ti, wr, wrx, eq]
+        module: [tr, fp, ti, wr, wrx, eq, equ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
