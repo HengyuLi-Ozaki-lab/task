@@ -1499,6 +1499,10 @@
 !-----
       x=(rloop-rg(1))/dr+1.d0
       y=(zloop-zg(1))/dz+1.d0
+!     The flux-loop point (rloop, zloop) off the grid used to index psi
+!     out of bounds; psloop is then left 0 (it is not read anywhere).
+      psloop=0.d0
+      if(x.ge.1.d0.and.x.lt.dble(nr).and.y.ge.1.d0.and.y.lt.dble(nz)) then
       ix=x
       iy=y
       x=x-ix
@@ -1507,6 +1511,7 @@
       psloop=psi(i)+x*(psi(i+1)-psi(i))+y*(psi(i+nsr)-psi(i))&
              +x*y*(psi(i+nsr+1)+psi(i)-psi(i+1)-psi(i+nsr)) &
              -cvac(0)
+      endif
 !=======================================================================
 !      call clockm(mtime1)
 !      cpu=1.d-03*DBLE(mtime1)-cput
@@ -2367,9 +2372,12 @@
        zbiv=zbiv+dl*(bi0+bi1)/2.0
        zarv=zarv+(r1-r0)*(z1+z0)/2.0
 !-----
-!      The contour arrays hold isrzdm points (half of them, and the
-!      mirror, when iudsym=1); a longer contour used to index past them.
-       if(nzsu.ge.isrzdm/(1+iudsym)) then
+!      The contour arrays hold isrzdm points: with iudsym=1 half of them
+!      and the mirror (2*nzsu-1). nsu = nzsu-1 at the end, and eqequ reads
+!      rsu(nsu+2), so nzsu stops at isrzdm-1 (iudsym=0) or isrzdm/2.
+!      A longer contour used to index past the arrays.
+       if((iudsym.eq.0.and.nzsu.ge.isrzdm-1).or. &
+          (iudsym.eq.1.and.nzsu.ge.isrzdm/2)) then
           write(6,*) ' stop at eqtrc : more points than isrzdm '
           call equ_fail('eqtrc: the contour has more points than '// &
                'isrzdm (1542) holds')
