@@ -288,7 +288,7 @@ Spec-style aliases (`EqLibError`, `EqLibInvalidParam`,
 | edit `eqparm` namelist | `eq.set_param(...)` / `eq.set_params(...)` |
 | equilibrium file path / namelist `KNAMEQ` | `eq.set_param_str("KNAMEQ", path)` |
 | menu `R` (`EQCALC`, then `EQCALQ`) | `eq.run(mode=0)` |
-| menu `L` (load `KNAMEQ` in the format `MODELG` names) | `eq.run(mode=1)` (default `mode=1`); unlike `L`, it does not turn `MODELG=2` into 3: set `MODELG` first |
+| menu `L` (load `KNAMEQ` in the format `MODELG` names) | `eq.run(mode=1)` (default `mode=1`); unlike `L`, it does not turn `MODELG=2` into 3 (set `MODELG` first), and it refuses `MODELG=15` (the fixed file `eqdb.dat`, whose reader cannot load a file), which `L` still passes to that reader |
 | menu `K` (asks for a G-EQDSK file name, `MODELG=5`) | `eq.set_param_str("KNAMEQ", path)`, `eq.set_param("MODELG", 5)`, then `eq.run(mode=1)` |
 | inspect graphics output | `eq.get_state()` → numpy / matplotlib |
 | menu `Q` (quit) | exit context manager / `eq.close()` |
