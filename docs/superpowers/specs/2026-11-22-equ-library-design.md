@@ -288,19 +288,25 @@ is the lead's to decide. The internal `WRITE`s of real numbers into messages use
 ### 9.1 Standard input and output
 
 - Never called by the library: `gsopen`, `eqmenu`/`task_klin`, `task_parm` mode 0, `eqgout`.
-- `write_geqdsk` sets `MODEFW` to 0 (`overwrite` true) or 3 (refuse an existing file) and `KNAMEQ` to the path
-  before `equ_eqdsk_write`, so `FWOPEN` never prompts; the C entry point refuses a path over 80 characters
-  (`KNAMEQ`'s length), and `equlib` writes such a path from its directory under its base name.
+- `write_geqdsk` creates a new file itself (section 10), then sets `MODEFW = 0` and `KNAMEQ` to the path before
+  `equ_eqdsk_write`, so `FWOPEN` never prompts; the C entry point refuses a path over 80 characters
+  (`KNAMEQ`'s length), and `equlib` writes such a path from its directory under its base name (the directory as
+  written: `os.chdir` resolves `link/..` through the link, as an open would; *found in review*:
+  `os.path.abspath` dropped it first and wrote elsewhere).
 - The library does not use unit 7 (the program's scratch unit for namelist lines); it reads the namelist and
   the coil file on a free unit of 30..99 (not the program's 18), and refuses to write G-EQDSK when unit 21, which
-  EQU's writer uses, is open in the process. Paths under `/dev` and `/proc` are refused for `read_parm`,
-  `KNAMCOIL` and `write_geqdsk` (*found in review*: `/dev/stdin` would read the MCP server's channel): as
-  written, through symbolic links and `..` (`realpath(3)`), for a file that does not exist yet through its
-  directory, and link by link (`readlink(2)`) where `realpath` cannot resolve the target (Linux's
-  `/proc/<pid>/fd/0` links to `pipe:[n]`). The name is checked as `OPEN` takes it: leading blanks are part of
-  it (*found in review*: a link named `' lnk'` passed a check of the left-adjusted name). A chain the check
-  cannot decide (more than 40 links, a name over 4096 characters) is refused. `equlib`'s route for a path over 80 characters passes the base name
-  from the directory, where the same check resolves it.
+  EQU's writer uses, is open in the process. For `read_parm`, `KNAMCOIL` and `write_geqdsk` (*found in review*:
+  `/dev/stdin` would read the MCP server's channel) a name under `/dev` or `/proc` is refused as written, and,
+  through any name, a file that exists must be a regular file that is not the process's standard input, output
+  or error (`equ/equ_path.c`: `stat(2)`, which follows links, then the file opened without blocking, creating or
+  truncating it and its descriptor compared with fds 0 to 2; on macOS `stat` of `/dev/fd/N` reports another
+  `st_dev`). So a pipe, FIFO (whose `OPEN` would block), terminal, device or directory is refused through a link,
+  `..`, `/dev/fd/0` or `/proc/self/fd/0`, and a file the host reads as its standard input is not read again
+  (*found in review*: a check of the path's name, through `realpath(3)` and `readlink(2)`, still let some of these
+  through: a link whose target resolves to a named FIFO, a directory link whose name ends in a blank). A name
+  that does not exist is left to the open (`STATUS='OLD'` fails; a new G-EQDSK file is created with
+  `STATUS='NEW'`); a name `stat` cannot decide (a loop of links, no access) is refused. The name is checked as
+  `OPEN` takes it: leading blanks are part of it (`' /dev/x'` is a relative name).
 - Unit 6 stays as it is (the solver prints its progress); the MCP server isolates fd 1.
 
 ### 9.2 Process-ending statements on the library's path: the Fortran changes
@@ -309,20 +315,24 @@ is the lead's to decide. The internal `WRITE`s of real numbers into messages use
 |---|---|---|
 | `equinit.f90:449-450` (`eqflin`) | `OPEN` of the coil file without `IOSTAT`: a missing file ends the process with a runtime error | `IOSTAT`; a failure goes through `equ_fail` (below); unit 18 closed on every error return |
 | `equsub.f90:803-804` (`eqerr`, called from `eqtrc`) | `STOP` | `equ_fail` |
-| `equsub.f90:1296-1297`, `1314-1315` (`eqlin`) | `STOP` (`irst = nr-1`; more than 20 failed traces) | `equ_fail`; the first also for `irst = nr` (*found in review*: the outward search ends there when the plasma reaches the box on the axis row, and the walk read the next row) |
+| `equsub.f90:1296-1297`, `1314-1315` (`eqlin`) | `STOP` (`irst = nr-1`; more than 20 failed traces) | `equ_fail` |
+| `eqlin`, the outward search along the axis row (*found in review*) | it tested `psi(ist+1)` before `irst < nr`, so at `irst = nr` it read the next row's value, and the walk below went on with `rg(nr+1)` | `irst < nr` tested first (the `psi` test negated, so a NaN ends it as before); `irst = nr` goes through `equ_fail`, exit status 2 |
+| `eqaxi`, the search of the magnetic axis (*found in review*) | the walk read `psi(i±1)`, `psi(i±nr)` without a bound: QUEST with `IUDSYM = 0`, `ZVAC(0) = ZVAC(1) = -1.295` validates, `eqsol` puts the axis in the first row and `psi` was read at -108 | a step off the inner grid goes through `equ_fail`, exit status 2; its six callers return |
+| `flxfun`, a filament's flux at a point (*found in review*) | `INT` of `dlog(1-xx)` with `xx = 1` (a filament on the point: QUEST with `ISVAC = 1` and a filament at the grid point (0.10, 0)), `xx < 0` (`R < 0`) or a NaN indexed `xtab` out of bounds on x86 (arm64 saturates at `xx = 1`, and the run went on) | `equ_fail`, exit status 2; `eqbnd`, `eqvac0`, `eqvac` and their callers return |
 | `equsub.f90:2320-2321` (`eqtrc`) | `STOP` (`s1*s2*s3*s4 = 0`) | `equ_fail` |
 | callers of `eqtrc`/`eqlin` up to `eqset` and `eqfct` (`eqequ`, `eqlin`, `eqout`, `eqrcu`, `eqsep`, …) | carry on | return when a failure is recorded (one test after each call) |
 | `equ_eqdsk.f90:137-152` | error paths return with unit 21 open | close it |
 | `eqtrc`, where it stores a contour point (*found in implementation*) | a contour longer than `isrzdm` (half of it when `IUDSYM = 1`) indexed past `zrsu` (QUEST with `RVAC(0) = 0.2`) | refuse the next point through `equ_fail`; the bound leaves room for `eqequ`'s read of `rsu(nsu+2)` |
 | `eqind` (*found in review*) | a plasma boundary that reaches the edge of the box (QUEST with `ISEP = 0`) indexed `psi` out of bounds | the loop's range kept on the grid; a cell with `psi < 0` on the edge of the box, whose neighbours are off it, goes through `equ_fail`, exit status 2 outside library mode (the runtime error's) |
 | `eqlin`, the walk to the first flux-surface crossing on the axis row (*found in review*) | no lower bound: on a coarse grid (QUEST at `NR = 17`, `NZ = 33`) it read `rg` at -211 | the walk stops at the row's first cell; no crossing goes through `equ_fail`, exit status 2 |
-| `eqtrc`, the start point (*found in review*) | a start off the grid indexed `psi` before the walk's own test (QUEST's namelist with `'done'`: `psi` at -105; `validate` now refuses that input, 6.4) | `equ_fail`, exit status 2 |
+| `eqtrc`, the start point (*found in review*) | a start off the grid, or in a row whose first cell is not on it (rows `iz-1`, `iz` with `irot = 0`), indexed `psi` before the loops' own tests (QUEST's namelist with `'done'`: `psi` at -105; `validate` now refuses that input, 6.4) | tested on the real coordinates before `INT` (a NaN too); `equ_fail`, exit status 2 |
 | `equ_eqdsk.f90`, every `WRITE`, `REWIND`, `CLOSE` (*found in review*) | a failed write (a full disk) ended the process | `IOSTAT`, `ierr` 11 (write) or 12 (close) |
 | `eqout`, the flux-loop value `psloop` (*found in review*) | `(RLOOP, ZLOOP)` off the grid indexed `psi` out of bounds (QUEST with `ZWMX = 0.9` and the JT-60U default point) | computed only on the grid, else 0; `psloop` is read nowhere, so no result changes |
 
 - A new module `equ_status_mod` holds a library-mode flag (false by default), a failure flag and a message.
-  `equ_fail(msg, code)` stops with status 2 for the sites that used to end in a runtime error (a missing coil
-  file, `eqind`, `eqlin`'s walk, `eqtrc`'s start), plain `STOP` for the former `STOP`s; the library clears the flag once it has
+  `equ_fail(msg, code)` stops with status 2 for the sites that used to end in a runtime error or an out-of-bounds
+  read (a missing coil file, `eqind`, `eqlin`'s walk and `irst = nr`, `eqtrc`'s start, `eqaxi`, `flxfun`), plain
+  `STOP` for the former `STOP`s; the library clears the flag once it has
   reported it. Each site prints to unit 6 what it printed before and then calls `equ_fail`, which prints
   nothing; outside library mode it then stops, as the code does today, so the program behaves as before in every
   case and `equmenu.f90` is not changed. In library mode (set by
@@ -333,7 +343,8 @@ is the lead's to decide. The internal `WRITE`s of real numbers into messages use
 - The remaining `STOP`s of `equ/` are outside the library's path (`eqdsk0`, `eqinp`/`eqrest`, `trsvq`,
   `equ_convert.f90`, the program's end); a test lists them with their line so a new one on the path is seen.
 - Aborts the bounds checks catch are not all preventable before the run; `validate` closes those that follow
-  from the inputs, and the walks the reviews reached (`eqlin`, `eqind`, `eqtrc`) now fail through `equ_fail`. A run that still reaches one ends the
+  from the inputs, and the walks and tables the reviews reached (`eqlin`, `eqind`, `eqtrc`, `eqaxi`, `flxfun`)
+  now fail through `equ_fail`. A run that still reaches one ends the
   process, as for EQ and TR; the tests run `--forked`.
 
 ### 9.3 A second run in one process
@@ -359,12 +370,16 @@ symbols `libgrf`, `equgout.f90` and `equ_convert.f90` reference (`GSOPEN` withou
 
 ## 10. Writing G-EQDSK
 
-`equ_write_geqdsk(path, overwrite)` calls `equ_eqdsk_write` after a successful run, and checks afterwards that a
-non-empty file exists. Refused: no equilibrium (`EQU_ERR_INVALID`), a blank or too long path, an existing file
-without `overwrite`, an existing file the process may not write (*found in review*: `FWOPEN` opens it read-only and
-the first write fails). When the writer fails, a file this call created is removed, so that a part-written file is
-not loaded later; a file that was there is left as the failed write left it, and the message says it may be
-incomplete. The program's `E` is unchanged. The file is the program's, number for number, with its properties: title blank, `current` =
+`equ_write_geqdsk(path, overwrite)` calls `equ_eqdsk_write` after a successful run. Refused (`EQU_ERR_INVALID`):
+no equilibrium, a blank or too long path, a path the checks of 9.1 refuse, an existing file without `overwrite`,
+an existing file the process may not write (*found in review*: `FWOPEN` opens it read-only and the first write
+fails), a new file that cannot be created. A new file is created first with `STATUS='NEW'` (`O_EXCL`: a name
+taken meanwhile, or a dangling link, is refused and not followed), and the writer then overwrites it
+(`MODEFW = 0`). Afterwards the file must end with the writer's last record (*found in review*: gfortran's runtime
+does not report every failed write; past `RLIMIT_FSIZE` the file is cut and `IOSTAT` stays 0). When the writer
+fails or the file is cut, the file this call created is removed, so that a part-written file is not loaded
+later (*found in review*: the removal used to reopen the name, which could be another caller's file); a file that
+was there is left as the failed write left it, and the message says it may be incomplete. The program's `E` is unchanged. The file is the program's, number for number, with its properties: title blank, `current` =
 the input `TCUR` × 1e6, `sibry` = 0, `pres` and `pprime` in MPa (section 20), the boundary an open polygon,
 `limitr = ILIMT`.
 

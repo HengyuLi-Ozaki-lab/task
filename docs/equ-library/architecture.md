@@ -59,13 +59,14 @@ is EQ's.
 ## Process safety
 
 - **Standard input.** The library calls nothing that reads it (`gsopen`, the menu,
-  `task_parm` mode 0, `eqgout`). `equ_write_geqdsk` sets `MODEFW` to 0 or 3 and
+  `task_parm` mode 0, `eqgout`). `equ_write_geqdsk` sets `MODEFW` to 0 and
   `KNAMEQ` before EQU's writer, so `FWOPEN` does not prompt.
 - **Process-ending statements.** The four `STOP`s on the path of `R` (`eqerr`,
   `eqlin` twice, `eqtrc`), a missing coil file, a boundary that reaches the
-  box (`eqind`) and `eqlin`'s walk past the axis row on a coarse grid go through
+  box (`eqind`), `eqlin`'s walks past the axis row, `eqaxi`'s search at the
+  box's edge and a filament on a point of `flxfun`'s flux go through
   `equ_fail`; `eqtrc` also refuses a contour longer than its arrays and a start
-  off the grid; EQU's G-EQDSK writer returns its write errors. Outside library mode `equ_fail`
+  whose first cell is off the grid; EQU's G-EQDSK writer returns its write errors. Outside library mode `equ_fail`
   stops, so the program is unchanged. The other `STOP`s of `equ/` are off the
   library's path (`python/equlib/tests/test_stop_sites.py` holds that list).
 - **Checks before the run.** Array bounds (`NR`, `NZ` = 2**k+1 for the Buneman
@@ -78,13 +79,17 @@ is EQ's.
 - **Off-grid reads.** `eqout` computes the unused flux-loop value `psloop` only
   when `(RLOOP, ZLOOP)` is on the grid.
 - **The host's files.** The coil file is read on a free unit (not 18); a G-EQDSK
-  write is refused while unit 21 (EQU's writer's) is open; paths under `/dev`
-  and `/proc` are refused (one could be the MCP server's standard input), also
-  through symbolic links and `..`, and for a new file through its directory;
+  write is refused while unit 21 (EQU's writer's) is open. `read_parm`, the coil
+  file and `equ_write_geqdsk` refuse a name under `/dev` or `/proc` as written and,
+  through any name, a file that exists and is not a regular file (a pipe, FIFO,
+  terminal, device, directory) or is the process's standard input, output or
+  error (`equ_path.c`: `stat(2)`, then the open file compared with fds 0 to 2);
   the name is checked as `OPEN` takes it (leading blanks are part of it).
-  `equ_write_geqdsk` refuses an existing file the process may not write, and
-  when the write fails it removes a file it created (one that was there is
-  left as the failed write left it).
+  `equ_write_geqdsk` refuses an existing file the process may not write, creates
+  a new file itself (`STATUS='NEW'`), checks that the file ends with the
+  writer's last record (gfortran does not report a write cut by a file size
+  limit), and when the write fails removes the file it created (one that was
+  there is left as the failed write left it).
 - **Unit 6.** The solver prints its progress; the MCP server moves fd 1 to stderr.
 
 ## Each run starts from the inputs as set
