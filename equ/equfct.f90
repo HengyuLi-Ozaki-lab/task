@@ -44,6 +44,7 @@
       call eqrcu
       if(equ_failed()) return
       call eqbnd
+      if(equ_failed()) return
       call eqpde
       do i=1,nrz
       psistr(i)=psi(i)
@@ -62,6 +63,7 @@
       call eqadj
       if(iad.gt.0)then 
       call eqaxi
+      if(equ_failed()) return
       call eqsep
       if(equ_failed()) return
       call eqrbp

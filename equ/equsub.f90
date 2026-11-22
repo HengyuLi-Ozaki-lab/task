@@ -212,6 +212,7 @@
       use equ_mod
       use eqv_mod
       use cnt_mod
+      use equ_status_mod, only: equ_fail
       implicit none
 ! local variables
       integer   i, ir, ix, iy, iz, n, idd,idr,idz, ii
@@ -234,6 +235,15 @@
        ir=ir+idr
        iz=iz+idz
        i=(iz-1)*nr+ir
+!      The walk reads psi(i+-1) and psi(i+-nr): a start on the edge of the
+!      box (ZPLA in its first row, IUDSYM=0) indexed psi below 1, a
+!      runtime error; exit status 2 as that error's.
+       if(ir.lt.2.or.ir.gt.nr-1.or.iz.lt.2.or.iz.gt.nz-1)then
+        write(6,*) '  stop at eqaxi : the axis search reached the box edge'
+        call equ_fail('eqaxi: the search of the magnetic axis reached '// &
+             'the edge of the box', 2)
+        return
+       endif
        idr=0
        idz=0
        idd=0
@@ -285,6 +295,7 @@
       use equ_mod
       use eqv_mod
       use vac_mod
+      use equ_status_mod, only: equ_failed
       implicit none
 ! local variables
       integer   is, l, n, ns
@@ -348,6 +359,7 @@
 !*    set the boundary values of psi
 !-----------------------------------------------------------------------
       call flxfun(flx,rbnd,zbnd,irzbnd,rs,zs,cs,ns)
+      if(equ_failed()) return
 
       do l=1,irzbnd
        psi(lrzbnd(l))=flx(l)
@@ -638,6 +650,7 @@
 !*    LOAD PSI ON THE BOUNDARY OF THE COMPUTATIONAL DOMAIN
 !-----------------------------------------------------------------------
       call eqbnd
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
 !*    SOLVE L(PSI)=RCU(R,Z)
 !-----------------------------------------------------------------------
@@ -650,6 +663,7 @@
 !*    SEARCH MAGNETIC AXIS
 !-----------------------------------------------------------------------
       call eqaxi
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
 !*    SEARCH STAGNATION POINT
 !-----------------------------------------------------------------------
@@ -937,6 +951,7 @@
 !=======================================================================
       subroutine flxfun(flx,r,z,m,r0,z0,c0,n)
 !=======================================================================
+      use equ_status_mod, only: equ_fail
       implicit none
       integer   ntab, mtab
       real*8    dtab, xtab(2050), ftab(2050)
@@ -955,6 +970,15 @@
       do mm=1,m
        x=r(mm)*r0(nn)
        xx=4.d0*x/((r(mm)+r0(nn))**2+(z(mm)-z0(nn))**2)
+!      A filament on the point itself (xx = 1), a point or filament at
+!      R < 0 (xx < 0) or a value that is not a number: INT of dlog(1-xx)
+!      indexed xtab out of bounds (on x86; arm64 saturates at xx = 1).
+       if(.not.(xx.ge.0.d0.and.xx.lt.1.d0))then
+        write(6,*) '  stop at flxfun : a filament on a point of the flux, or R < 0'
+        call equ_fail('flxfun: a current filament lies on a point where '// &
+             'the flux is computed (or R < 0)', 2)
+        return
+       endif
        i=1.d0-dtab*dlog(1.d0-xx)
        i=min0(i,ntab-1)
        d=(xx-xtab(i))/(xtab(i+1)-xtab(i))
@@ -1311,19 +1335,29 @@
 !=======================================================================
       sigcu=1.d0
       call eqaxi 
+      if(equ_failed()) return
       dpsi=saxis/float(nvm)
       irst=iraxis
       ist= (izaxis-1)*nr + irst
-      do while(sigcu*psi(ist+1).le.0.d0.and.irst.lt.nr)
+!     irst < nr is tested before psi(ist+1), which at irst = nr is the
+!     next row's (the old test read it); the psi test is the old one
+!     negated, so a NaN ends the search as it did.
+      do while(irst.lt.nr)
+        if(.not.(sigcu*psi(ist+1).le.0.d0)) exit
         irst=irst+1
         ist= (izaxis-1)*nr + irst
       enddo
-!     irst = nr too: the search ends there when psi(nr) of the axis row
-!     has the plasma's sign, and the walk below read the next row.
-      if(irst.ge.nr-1)then
-       write(6,*)'stop at eqlin : irst >= nr-1'
-       call equ_fail('eqlin: irst >= nr-1 (the plasma reaches the box '// &
-            'on the axis row)')
+      if(irst.eq.nr-1)then
+       write(6,*)'stop at eqlin : irst = nr-1'
+       call equ_fail('eqlin: irst = nr-1')
+       return
+      endif
+!     irst = nr: the plasma's sign up to the box on the axis row; the walk
+!     below read the next row, and eqtrc rg(nr+1).
+      if(irst.eq.nr)then
+       write(6,*)'stop at eqlin : irst = nr'
+       call equ_fail('eqlin: irst = nr (the plasma reaches the box on '// &
+            'the axis row)', 2)
        return
       endif
 !-----------------------------------------------------------------------
@@ -1363,6 +1397,7 @@
          psep=psep+dps
          cvac(0)=cvac(0)+dps
          call eqaxi
+         if(equ_failed()) return
         else
          istop=1
          if(istep.gt.1)write(6,*)'    surface has been moved : istep=',istep
@@ -2117,6 +2152,7 @@
       cvac(0)=cvac(0)-xsep
       psep=psep-xsep
       call eqaxi
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
       istp=0
       k=0
@@ -2158,6 +2194,7 @@
       endif
 !-----
       call eqaxi
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
       return
       end subroutine eqsep
@@ -2254,6 +2291,8 @@
 ! argument
       integer   irsig, irot, irend, izend
       real*8    psi0, rst, zst
+      integer   izlo, izhi
+      real*8    xst, zzst
 ! local variables
       integer   i, i1, i2, i3, i4, ir, ist, iz, j, k, ll, lm, lp, n &
               , istop 
@@ -2264,18 +2303,31 @@
       nzsu=0
 !-----------------------------------------------------------------------
 !..SEARCH STARTING POINT
-      ir=(rst-rg(1))/dr+1.
-      iz=(zst-zg(1))/dz+1.
-      i=nr*(iz-1)+ir
-!     The start (rst, zst) off the grid used to index psi out of bounds
-!     before the loop's own test (QUEST's namelist with KNAMCOIL='done':
-!     psi at -105, a runtime error); exit status 2 as that error's.
-      if(ir.lt.1.or.ir.ge.nr.or.iz.lt.1.or.iz.gt.nz)then
+!     The start (rst, zst) off the grid, or in a row whose first cell
+!     (rows iz-1 and iz with irot = 0, iz and iz+1 otherwise) is not on
+!     it, used to index psi out of bounds before the loops' own tests
+!     (QUEST's namelist with KNAMCOIL='done': psi at -105, a runtime
+!     error); exit status 2 as that error's. The test is on the reals,
+!     before INT, so that a NaN or a huge value is refused too.
+      xst=(rst-rg(1))/dr+1.
+      zzst=(zst-zg(1))/dz+1.
+      if(irot.eq.0)then
+       izlo=2
+       izhi=nz
+      else
+       izlo=1
+       izhi=nz-1
+      endif
+      if(.not.(xst.ge.1.d0.and.xst.lt.DBLE(nr).and. &
+               zzst.ge.DBLE(izlo).and.zzst.lt.DBLE(izhi+1)))then
        write(ft06,'(1p3d10.3,i4)')psi0,rst,zst,irsig
        write(6,*) '  stop at eqtrc : the starting point is off the grid'
        call equ_fail('eqtrc: the starting point is off the grid', 2)
        return
       endif
+      ir=(rst-rg(1))/dr+1.
+      iz=(zst-zg(1))/dz+1.
+      i=nr*(iz-1)+ir
       do while((psi0-psi(i))*(psi0-psi(i+1)).gt.0.)
        i=i-irsig
        ir=ir-irsig
@@ -2507,6 +2559,7 @@
       use equ_mod
       use vac_mod
       use cnt_mod
+      use equ_status_mod, only: equ_failed
       implicit none
 ! local variables
       integer   i, icx(10), ii, ir, iz, j, k, nc
@@ -2588,6 +2641,7 @@
       do nc=1,icvdm
       if(ncoil(nc).gt.0)then
       call eqvac0(nc,ncoil(nc),rcoil(1,nc),zcoil(1,nc),ccoil(1,nc))
+      if(equ_failed()) return
       endif
       enddo
 !-----------------------------------------------------------------------
@@ -2601,6 +2655,7 @@
       use geo_mod
       use equ_mod
       use vac_mod
+      use equ_status_mod, only: equ_failed
       implicit none
 ! argument
       integer   nc, nss, istop
@@ -2664,6 +2719,7 @@
 !-----------------------------------------------------------------------
       if(isvac.eq.0) then
        call flxfun(flx,rbnd,zbnd,irzbnd,rs,zs,cs,ns)
+       if(equ_failed()) return
        do l=1,irzbnd
         i=lrzbnd(l)
         psi(i)=flx(l)
@@ -2688,6 +2744,7 @@
          zgs(ir)=zg(iz)
         enddo
         call flxfun(flx,rgs,zgs,nsr,rs,zs,cs,ns)
+        if(equ_failed()) return
         do ir=1,nsr
          ip = ip + 1
          psi(ip)=flx(ir)

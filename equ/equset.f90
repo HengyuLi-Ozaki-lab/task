@@ -33,6 +33,7 @@
       bav0=bav
       bav=1.
       call eqvac
+      if(equ_failed()) return
       do i=1,nsr*nsz
       psi(i)=rbp(i)
       enddo
@@ -57,6 +58,7 @@
 !     load Solovev equilibrium as initial guess
 !-----------------------------------------------------------------------
       call eqvac
+      if(equ_failed()) return
       call eqsol
       call eqrbp
       call eqlin
