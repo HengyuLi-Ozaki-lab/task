@@ -138,7 +138,7 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! 軸上 Zeff
 **挙動の変更:** `MODELG` 0, 4, 25 および `RIPS = 0` は, 非有限のスカラーを持つ RC 0 を返していましたが, `NONFINITE` で失敗します.
 
 `tr_set_param` / `tr_set_param_str` の名前 `eq:NAME` は EQ のレジストリ (`eq_param_set`) に渡されます. このため
-`libtrapi.so` は `eq_param_registry.o` をリンクし, 受理された設定の後の `tr_run` は再度準備を行います. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` は TR 経由では何もしないため拒否され, プロセスの最初の準備の試行の後は, 固定された bpsd が k-yoshimi/bpsd#7 を持つまで, すべての `eq:` 名が拒否されます. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です. このガードは bpsd#7 の溢れへの直接の経路だけを塞ぎます: `MODELG` 9 では EQ のプラズマ格子を動かす入力はすべてその bpsd を必要とします (`python/trlib/README.md` 参照). TOT の `eq:` ディスパッチャはガードされません.
+`libtrapi.so` は `eq_param_registry.o` をリンクし, 受理された設定の後の `tr_run` は再度準備を行います. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ`, `eq:KNAMEQ2` は TR 経由では何もしないため拒否され, プロセスの最初の準備の試行の後は, 固定された bpsd が k-yoshimi/bpsd#7 を持つまで, すべての `eq:` 名が拒否されます. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です. このガードは bpsd#7 の溢れへの直接の経路だけを塞ぎます: `MODELG` 9 では EQ のプラズマ格子を動かす入力はすべてその bpsd を必要とします (`python/trlib/README.md` 参照). TOT の `eq:` ディスパッチャはガードされません.
 
 ## 出力の名前引き (`tr_api.f90`)
 

@@ -18,7 +18,7 @@ LLM クライアントから自然言語で操作するシナリオは {doc}`mcp
 `eq.run()` には 2 つの経路があります ({doc}`hello-world` 参照):
 
 - `mode=0`: Grad-Shafranov 求解 (`MODELG=2`, ファイル不要)
-- `mode=1`: 平衡ファイルを読込 (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`. `MODELG = 15` は `eqdb.dat` を読む)
+- `mode=1`: 平衡ファイルを読込 (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`. 固定の `eqdb.dat` を読む `MODELG = 15` は拒否される)
 
 ユーザが平衡ファイルのパス (ここでは TASK/EQ 形式, `MODELG=3`) を指定したか否かで自動的に切替えるラッパー.
 

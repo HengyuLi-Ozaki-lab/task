@@ -289,8 +289,9 @@ class Eq:
                   ``equnit::eq_load`` using the current ``MODELG`` and
                   ``KNAMEQ`` (requires a file format: ``MODELG`` 3, 5,
                   8, 9 or 25 with ``KNAMEQ``, and ``KNAMEQ2`` too for
-                  8, or 15, which reads the fixed file ``eqdb.dat``
-                  instead).
+                  8). ``MODELG`` 15, which reads the fixed file
+                  ``eqdb.dat``, raises :class:`EqlibInvalidParamError`:
+                  its reader cannot load a file.
                 * ``0`` runs the in-process Grad-Shafranov solve
                   (``EQCALC`` + ``EQCALQ``); use it with
                   ``MODELG=2`` and the basic geometry parameters
@@ -503,11 +504,10 @@ class Eq:
 
         ``FILE_MISSING`` names the file a load reads when it is not
         there: ``KNAMEQ`` (blank, or naming no file) for ``MODELG`` 3, 5,
-        8, 9 and 25, ``KNAMEQ2`` too for 8, and for ``MODELG`` 15 the
-        fixed file ``eqdb.dat``,
-        reported as ``MODELG``. Names are looked up relative to the
-        working directory at the time of the call, as the load opens
-        them.
+        8, 9 and 25, and ``KNAMEQ2`` too for 8. Names are looked up
+        relative to the working directory at the time of the call, as
+        the load opens them. ``MODELG`` 15, whose load :meth:`run`
+        refuses, is reported as ``OUT_OF_RANGE`` on ``MODELG``.
         """
         if self._closed:
             raise EqlibError("validate on closed Eq")

@@ -24,7 +24,7 @@ Grad-Shafranov 方程式を解いて ψ サーフェスと派生量を計算) �
 - **`run(mode=1)`** — `MODELG` が指す形式の平衡ファイル読み込み
   (`equnit::eq_load`): 3 と 9 は TASK/EQ 形式, 5 と 25 は G-EQDSK 形式で,
   いずれも `KNAMEQ` のファイル. 8 は QST/JAEA 形式の 2 ファイル (`KNAMEQ` と
-  `KNAMEQ2`), 15 は固定の `eqdb.dat`. 既定の `MODELG=2` では失敗します.
+  `KNAMEQ2`). 固定の `eqdb.dat` を読む 15 は拒否されます. 既定の `MODELG=2` では失敗します.
 
 両方とも出力としては磁気軸位置 (`raxis`, `zaxis`), 中心 q (`qaxis`),
 表面 q (`qsurf`), プラズマ $\beta$ (`betat`, `betap`), プラズマ体積

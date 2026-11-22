@@ -24,8 +24,8 @@ computes ψ surfaces and derived quantities) from Python via the `eqlib` wrapper
   `MODELG=2` (the default). No file required.
 - **`run(mode=1)`** — load an equilibrium file (`equnit::eq_load`) of the
   format `MODELG` names: 3 and 9 a TASK/EQ file, 5 and 25 a G-EQDSK file,
-  each named by `KNAMEQ`; 8 a QST/JAEA pair (`KNAMEQ` and `KNAMEQ2`); 15
-  the fixed `eqdb.dat`. It fails with the default `MODELG=2`.
+  each named by `KNAMEQ`; 8 a QST/JAEA pair (`KNAMEQ` and `KNAMEQ2`); 15,
+  the fixed `eqdb.dat`, is refused. It fails with the default `MODELG=2`.
 
 Both produce, as scalar outputs, the magnetic-axis position (`raxis`,
 `zaxis`), axis safety factor (`qaxis`), surface safety factor

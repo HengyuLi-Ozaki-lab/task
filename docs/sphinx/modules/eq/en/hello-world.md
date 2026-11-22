@@ -62,8 +62,8 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
   reads `RR`, `BB`, `RIP` (and `RA`, `RKAP`, `RDLT`, `RB`) from the file.
 - **(4) `MODELG=3`**: Selects the file format: 3 (and 9) a TASK/EQ file,
   5 (and 25) a G-EQDSK file, each named by `KNAMEQ`; 8 a QST/JAEA pair
-  (`KNAMEQ`, `KNAMEQ2`); 15 the fixed file `eqdb.dat`. `mode=1` needs one
-  of these and fails with the default `MODELG=2`.
+  (`KNAMEQ`, `KNAMEQ2`); 15, the fixed file `eqdb.dat`, is refused.
+  `mode=1` needs one of these and fails with the default `MODELG=2`.
 - **(5) `set_param_str`**: String parameters require the **dedicated
   API** (see {doc}`parameter-setting`, method C).
 - **(6) `eq.run()`**: With no argument it runs `mode=1` (the file load).
@@ -74,7 +74,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
 ```text
 Is the equilibrium in a file?
   |- No  -> mode=0 (MODELG=2, the default): solve it from the profiles
-  `- Yes -> mode=1 (MODELG in {3, 5, 8, 9, 25} with KNAMEQ set, or 15)
+  `- Yes -> mode=1 (MODELG in {3, 5, 8, 9, 25} with KNAMEQ set)
 ```
 
 For a fully runnable notebook, see {doc}`quickstart`.

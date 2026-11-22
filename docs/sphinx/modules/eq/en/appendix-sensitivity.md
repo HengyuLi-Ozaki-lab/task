@@ -29,7 +29,7 @@ These are determined without solving the equilibrium.
 | `NZGMAX` | `state.nzgmax` | = | number of Z-grid points |
 | `NPSMAX` | `state.npsmax` | = | number of ψ-surface samples |
 | `NRMAX`, `NTHMAX` | `state.nrmax`, `state.nthmax` | = | resolution of the ψ mesh |
-| `MODELG ∈ {3, 5, 8, 9, 25}` | required input | the file referenced by `KNAMEQ` must exist | `validate` returns `FILE_MISSING` for a blank `KNAMEQ` or a missing file, which also fails in `run`; `MODELG = 15` reads the fixed `eqdb.dat` |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | required input | the file referenced by `KNAMEQ` must exist | `validate` returns `FILE_MISSING` for a blank `KNAMEQ` or a missing file, which also fails in `run`; `MODELG = 15` (the fixed `eqdb.dat`) is refused |
 | `MODELG = 2` | `KNAMEQ` ignored | — | the Grad-Shafranov solve (`run(mode=0)`) does not read it |
 
 ## 2. Trends known as physical scaling

@@ -110,7 +110,7 @@ def test_a_q_scaling_failure_carries_eq_s_message():
 
 def test_a_later_lifecycle_does_not_carry_an_earlier_eq_reason():
     # EQ_ERRMSG lives in libtrapi and was never cleared: a second lifecycle that fails for another reason (RIPS 100:
-    # code 103) reported the first one's EQMAGS text (RA 1.8: code 111).
+    # code 102) reported the first one's EQMAGS text (RA 1.8: code 111).
     p = _child('''
         with Trlib() as t:
             t.set_param("MODELG", 9); t.set_param("RA", 1.8)

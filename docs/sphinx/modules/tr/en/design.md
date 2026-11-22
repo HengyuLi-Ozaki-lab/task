@@ -147,7 +147,7 @@ each step, and ends the run at the first failure with the record (`EQ_FAILED`, `
 `NONFINITE`.
 
 A name `eq:NAME` in `tr_set_param` / `tr_set_param_str` is sent to EQ's registry (`eq_param_set`); `libtrapi.so` links
-`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` dispatcher is not guarded.
+`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` dispatcher is not guarded.
 
 ## Outputs by name (`tr_api.f90`)
 
