@@ -40,9 +40,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     five times the gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8 and the experimental
     data's under `MDLUF` 1 and 3). They are current after
     a `tr_run` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
-    0 steps evaluates no step: what the preparation sets (`T` 0, `RIP` = `RIPS`, `Q0` from the profiles it builds) is
-    new, what only a step computes (the powers, `WPT`) is still the run before's. `tr_mcp`'s `run_and_get_state` with
-    `ntmax` 0 returns `T` only among the scalars. An
+    0 steps evaluates no step: what the preparation sets (`T` 0, `RIP` = `RIPS`, `Q0` under `MODELG` 2, from the profiles it builds) is
+    new, what only a step computes (the powers, `WPT`) is still the run before's. `tr_mcp`'s `get_state` and
+    `run_and_get_state` return `T` only among the scalars until a run of one step or more since the handle was opened
+    or a parameter was set. An
     unknown or inexact name returns `TR_ERR_INVALID` and leaves the value alone. `Trlib.scalar_names()`,
     `Trlib.get_scalar()`; `TrState.scalars` holds all 31 after `get_state` (`to_dict()` keeps the 14 of the C struct,
     which the baselines compare).
@@ -243,7 +244,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   history ends on the last recorded step and `tr_last_error` says where the run failed (`tr/trexec.f90`). `tr2` is
   unchanged. Likewise a step that `tr_loop` finds not finite (`NONFINITE`) is taken back from the history
   (`tr_eval_take_back_row`; `DT` 1e6 s left a row of NaN), and a preparation that fails before it starts the history
-  again (`MODEL_PNF` and `MDLNF` both set) leaves no rows: they were the run before's.
+  again (`MODEL_PNF` and `MDLNF` both set) leaves no rows: they were the run before's. A retry on the same handle
+  does not record the rejected step again, and `tr_eval` does not call `TRATOTN` in library mode (the sawtooth
+  record, which writes temperatures into `GVT` columns 89 to 104 of its own rows).
+- **`tot/Makefile`: the delegated TR targets (`../tr/libtrapi.so`, `../tr/obj/tr_api.o`) depend on `tr/tr_api.f90`.**
+  `tot_api.f90` uses `tr_api`'s new names, and an incremental build compiled it against the old `tr_api.mod` because
+  an existing `libtrapi.so` kept TR's own make from running.
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and

@@ -172,7 +172,7 @@ void tr_check_bpsd_pull(int *ok);
      name not listed (*value is left as it was). After tr_init and before the first tr_run the values are those of
      the previous lifecycle in this process (as tr_get_state's scalars are), 0 in a fresh process: read them after
      a run of one step or more. A tr_run of 0 steps evaluates no step: after a preparation (a first run, or a run
-     after a changed parameter) what it sets is new (T 0, RIP = RIPS, Q0 from the profiles it builds) and what only a
+     after a changed parameter) what it sets is new (T 0, RIP = RIPS, Q0 under MODELG 2) and what only a
      step computes (the powers, WPT) is still the run before's.
    PNFT is the power of the charged fusion products (alpha for D-T, MDLNF 1 to 4; alpha and proton for D-He3, MDLNF
      5 and 6) and QF = 5 PNFT / (POHT + PNBT + PRFST + PEXST) is the D-T gain whatever the reaction. RIP is the

@@ -334,8 +334,8 @@ class Trlib:
 
         TRGLOB computes them on output steps and on the last step of a run, so they are current after
         :meth:`run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
-        run after a changed parameter) what it sets is new (``T`` 0, ``RIP`` = ``RIPS``, ``Q0`` from the profiles it
-        builds) and what only a step computes (the powers, ``WPT``) is still the run before's. Units are those of
+        run after a changed parameter) what it sets is new (``T`` 0, ``RIP`` = ``RIPS``, ``Q0`` under
+        ``MODELG`` 2) and what only a step computes (the powers, ``WPT``) is still the run before's. Units are those of
         ``tr/trrslt_globals.f90`` (``tr_mcp``'s state schema lists them; ``PNFT`` is the charged fusion products'
         power, alpha only for D-T, and ``RIP`` the equilibrium's boundary current under ``MODELG`` 3, 5 and 8 and the
         experimental data's under ``MDLUF`` 1 and 3).

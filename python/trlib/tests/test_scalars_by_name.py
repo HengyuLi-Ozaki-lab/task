@@ -198,7 +198,7 @@ def test_get_state_on_a_library_without_the_scalar_table_holds_the_struct_scalar
 
 def test_a_run_of_zero_steps_evaluates_no_step():
     # tr_run(0) prepares again after a changed parameter but evaluates no step (tr_loop returns before tr_eval), so
-    # TRGLOB does not run. What the preparation sets is new (T is 0, RIP is RIPS, Q0 from the profiles it builds);
+    # TRGLOB does not run. What the preparation sets is new (T is 0, RIP is RIPS, Q0 under MODELG 2, the default);
     # what only a step computes (PNBT, WPT) is still the run before's until a run of one step or more.
     with Trlib() as t:
         t.set_param("PNBTOT", 10.0)

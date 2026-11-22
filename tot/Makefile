@@ -282,7 +282,9 @@ $(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TO
 	(cd ../eq; make eq_api.o)
 ../tr/obj/tr_state.o:
 	(cd ../tr; make obj/tr_state.o)
-../tr/obj/tr_api.o:
+# tot_api.f90 USEs tr_api's names (tr_get_scalar, tr_history_*): a change of tr_api.f90 must reach tr_api.mod
+# before tot_api.o is compiled, so these two delegated targets depend on it (TR's own Makefile does the rest).
+../tr/obj/tr_api.o: ../tr/tr_api.f90
 	(cd ../tr; make obj/tr_api.o)
 ../ti/ti_state.o:
 	(cd ../ti; make ti_state.o)
@@ -472,7 +474,7 @@ $(OBJDIR_PIC)/tot_is_mono_mono.o   : tot_is_mono_mono.f90
 # Makefile — tot only needs the final .so.
 ../eq/libeqapi.so:
 	(cd ../eq; $(MAKE) libeqapi.so)
-../tr/libtrapi.so:
+../tr/libtrapi.so: ../tr/tr_api.f90
 	(cd ../tr; $(MAKE) libtrapi.so)
 ../fp/libfpapi.so:
 	(cd ../fp; $(MAKE) libfpapi.so)

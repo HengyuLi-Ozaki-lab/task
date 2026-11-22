@@ -1146,7 +1146,7 @@ CONTAINS
   ! trbpsd.f90), the experimental data's under MDLUF 1 and 3 (tr_exec), the
   ! current set (RIPS to RIPE) otherwise. A tr_run of 0 steps evaluates no step
   ! (tr_loop returns before tr_eval): what the preparation sets is new (T 0,
-  ! RIP = RIPS, Q0 from its profiles), what only a step computes is not.
+  ! RIP = RIPS, Q0 under MODELG 2), what only a step computes is not.
   !-------------------------------------------------------------------
   PURE FUNCTION scalar_table() RESULT(names)
     CHARACTER(LEN=8) :: names(N_SCALARS)
@@ -1312,8 +1312,8 @@ CONTAINS
   ! multiple of NTEQIT) and then recomputes Q0 on the new metric: that row
   ! holds the Q0 of before the re-solve, tr_get_scalar the one after it.
   ! Columns 89 to 88 + 4 NGPST are also the sawtooth record's (TRATOTN, its
-  ! own row count NGST) once MDLST /= 0 and T >= TSST; TSST (1e9 s) is not a
-  ! library parameter, so in library mode they are always TRATOT's.
+  ! own row count NGST) once MDLST /= 0 and T >= TSST (1e9 s); tr_eval does not
+  ! call TRATOTN in library mode, so there they are always TRATOT's.
   !
   ! COL = 0: GT (the time); COL > 0: GVT column; BETAN and PRFST have no
   ! column of their own and are computed from columns of the same row:

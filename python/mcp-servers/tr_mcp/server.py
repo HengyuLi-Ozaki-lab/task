@@ -310,8 +310,9 @@ STATE_SCHEMA: Dict[str, Any] = {
             "description": (
                 "the library's named global results (31), each as of the last step TR computed them on; "
                 "units are in each entry. A run of 0 steps evaluates no step: what the preparation sets (T 0, "
-                "RIP = RIPS, Q0 from the profiles it builds) is new, what only a step computes (the powers, WPT) is "
-                "still the run before's (run_and_get_state with ntmax 0 returns T only). A library built before the "
+                "RIP = RIPS, Q0 under MODELG 2) is new, what only a step computes (the powers, WPT) is "
+                "still the run before's: until a run of one step or more since the handle was opened or a parameter "
+                "was set, get_state and run_and_get_state return T only. A library built before the "
                 "scalar table gives the 14 of tr_state_t only"
             ),
             "properties": {
@@ -345,17 +346,23 @@ class _ServerState:
 
     def __init__(self) -> None:
         self.tr: Optional[Trlib] = None
+        # True once a run of one step or more has ended since the handle was opened or a parameter was set. Until
+        # then TR's global results are not this handle's: a run of 0 steps evaluates no step, and finalize then init
+        # does not clear them (CLAUDE.md, module state). The state tools then return T only among the scalars.
+        self.evaluated = False
 
     def ensure_open(self) -> Trlib:
         """Return the live handle, opening one if needed."""
         if self.tr is None or self.tr.closed:
             self.tr = Trlib()
+            self.evaluated = False
         return self.tr
 
     def close(self) -> None:
         if self.tr is not None and not self.tr.closed:
             self.tr.close()
         self.tr = None
+        self.evaluated = False
 
 
 STATE = _ServerState()
@@ -532,6 +539,7 @@ def handle_init() -> str:
 def handle_set_param(name: str, value: float) -> str:
     try:
         tr = STATE.ensure_open()
+        STATE.evaluated = False
         tr.set_param(name, _number(name, value))
         return f"set {name} = {value}"
     except Exception as exc:
@@ -549,6 +557,7 @@ def handle_set_param_str(name: str, value: str) -> str:
     """
     try:
         tr = STATE.ensure_open()
+        STATE.evaluated = False
         tr.set_param_str(name, str(value))
         return f"set {name} = {value!r}"
     except Exception as exc:
@@ -562,16 +571,31 @@ def handle_set_params(params: Dict[str, SupportedValue]) -> str:
         )
     try:
         tr = STATE.ensure_open()
+        STATE.evaluated = False
         applied = _apply_bulk_params(tr, params)
         return f"set {len(applied)} parameter(s): {applied}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _run(tr: Trlib, nsteps: int) -> None:
+    """``tr.run(nsteps)``, keeping ``STATE.evaluated``: a run of one step or more evaluates the globals, also one that
+    fails after its preparation; a failed preparation and a run of 0 steps do not."""
+    try:
+        tr.run(nsteps)
+    except TrlibRunError as exc:
+        failure = getattr(exc, "failure", None)
+        if nsteps > 0 and failure is not None and failure.kind != "PREP_FAILED":
+            STATE.evaluated = True
+        raise
+    if nsteps > 0:
+        STATE.evaluated = True
+
+
 def handle_run(ntmax: int = 1) -> str:
     try:
         tr = STATE.ensure_open()
-        tr.run(int(ntmax))
+        _run(tr, int(ntmax))
         return f"advanced {ntmax} time step(s)"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -579,10 +603,13 @@ def handle_run(ntmax: int = 1) -> str:
 
 def _state_dict(tr: Trlib) -> Dict[str, Any]:
     """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
-    compare) with ``scalars`` replaced by all the library's named global results."""
+    compare) with ``scalars`` replaced by all the library's named global results, or by ``T`` alone until a run
+    of one step or more since the handle was opened or a parameter was set (``STATE.evaluated``)."""
     state = tr.get_state()
     out = state.to_dict()
     out["scalars"] = dict(state.scalars)
+    if not STATE.evaluated:
+        out["scalars"] = {k: v for k, v in out["scalars"].items() if k == "T"}
     return out
 
 
@@ -703,13 +730,8 @@ def handle_run_and_get_state(
         tr = STATE.ensure_open()
         if params:
             _apply_bulk_params(tr, params)
-        tr.run(int(ntmax))
-        out = _state_dict(tr)
-        if int(ntmax) == 0:
-            # No step was evaluated, and finalize then init does not clear TR's global results: they would be a
-            # call before's beside this call's initial profiles. T (0 after the preparation) is the only one kept.
-            out["scalars"] = {"T": out["scalars"].get("T", 0.0)}
-        return out
+        _run(tr, int(ntmax))
+        return _state_dict(tr)
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 

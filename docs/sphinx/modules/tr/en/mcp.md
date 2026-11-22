@@ -199,7 +199,8 @@ returns the time history, a row every `NGTSTP` steps (default 2, the first row i
 steps / `NGTSTP` stays below 10001. A run that fails on a negative temperature or with a state that is not finite ends
 its history on the last recorded step (the failed step is not a row); under `MODELG` 9 the row of a step that ends with an
 EQ re-solve holds the `Q0` of before the re-solve, while `get_state` gives the one after it. The scalars are current after
-a `run` of one step or more: a run of 0 steps evaluates none, and `run_and_get_state` with `ntmax` 0 returns `T` only.
+a `run` of one step or more: a run of 0 steps evaluates none, and `get_state` and `run_and_get_state` return `T` only
+among the scalars until a run of one step or more since the handle was opened or a parameter was set.
 
 ## Usage examples
 

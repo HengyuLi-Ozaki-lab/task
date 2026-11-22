@@ -1128,13 +1128,14 @@ Six findings at P2 and two at P3, each measured before it was answered:
 - **Under `MODELG` 9 the row of a step that ends with an EQ re-solve holds the `Q0` of before it.** `tr_loop` records the
   step, re-solves, and recomputes `Q0` (`tr_bpsd_get`, `TRCALC`): 6.6e-5 relative in the test case, the other 29 shared
   names agree. Documented and tested; the record before the re-solve is `tr_loop`'s choice (a consistent snapshot).
-- **`tr_run(0)` evaluates no step**, so after a preparation what it sets is new (`T` 0, `RIP` = `RIPS`, `Q0`) and what
+- **`tr_run(0)` evaluates no step**, so after a preparation what it sets is new (`T` 0, `RIP` = `RIPS`, `Q0` under `MODELG` 2) and what
   only a step computes (the powers, `WPT`) is the run before's. Documented and tested, not refused: `get_state` after
   `run(0)` is how the initial profiles are read. (The fifth round's wording fix; evaluating the prepared state in
   `run(0)` was considered and not done: `TRCALC` injects the `PELTIM` pellet on every call within half a step of it
   (`tr/trcalc.f90`), so a second call at t = 0 would inject it twice.)
 - **`GVT` columns 89 to 88 + 4 `NGPST` are also `TRATOTN`'s sawtooth record** once `MDLST` /= 0 and `T` >= `TSST`. `TSST`
-  is not a library parameter (1e9 s), so in library mode the record never starts; a test pins that.
+  is not a library parameter (1e9 s); a test pins that, and since the sixth round `tr_eval` does not call `TRATOTN`
+  in library mode (a run can still reach 1e9 s).
 - **Descriptions:** `PNFT` is alpha and proton together for D-He3 (`MDLNF` 5, 6) and `QF` a D-T gain; `RIP` is the
   equilibrium's boundary current under `MODELG` 3, 5 and 8.
 - **Tests:** the `tot` reference reads used `trlib`'s own library, not the image `Tot` loaded (`TOTLIB_PATH` = the mono
@@ -1145,6 +1146,12 @@ The fifth round (on `c9e7b464`), four P2 and five P3: a step `tr_loop` finds not
 rows), `tr_mcp`'s `run_and_get_state` with `ntmax` 0 showed the call before's results (now `T` only), the `run(0)`
 wording above, `RIP` under `MDLUF` 1 and 3, the schema of a library older than the scalar table, and three test defects
 (a relative library path resolved after the fixture `chdir`: 29 tests failed; the `tot` skip markers; the status row).
+
+The sixth round (on `2fb03c60`), three P2 and two P3: a retry on the same handle recorded the rejected non-finite step
+again (its step now stays marked), `get_state` after a one-shot `ntmax` 0 still showed the call before's results (the
+check is now the server's, shared by both tools), `tot/Makefile`'s delegated TR targets did not notice a changed
+`tr_api.f90` (they depend on it now), `TRATOTN` could still run at 1e9 s (not called in library mode), and `Q0` is new
+after a preparation under `MODELG` 2 only.
 
 ### F4. task-web side of the bump (for the second spec and the `deps.lock` bump)
 

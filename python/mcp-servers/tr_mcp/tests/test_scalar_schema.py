@@ -71,3 +71,29 @@ def test_a_one_shot_run_of_zero_steps_returns_no_result_of_the_call_before():
         assert second["NT"] == 0 and len(second["profile"]) == second["NRMAX"]
     finally:
         srv.STATE.close()
+
+
+def test_get_state_after_a_one_shot_run_of_zero_steps_returns_no_result_of_the_call_before():
+    # The same state read again (get_state on the handle the one-shot call left open) must not show the first
+    # call's PNBT either.
+    try:
+        srv.handle_run_and_get_state(params={"PNBTOT": 10.0}, ntmax=20)
+        srv.handle_run_and_get_state(params={"PNBTOT": 0.0}, ntmax=0)
+        assert srv.handle_get_state()["scalars"] == {"T": 0.0}
+        srv.handle_run(1)
+        assert srv.handle_get_state()["scalars"]["PNBT"] == 0.0
+    finally:
+        srv.STATE.close()
+
+
+def test_a_changed_parameter_hides_the_results_until_a_step_is_run():
+    try:
+        srv.handle_init()
+        srv.handle_set_param("PNBTOT", 10.0)
+        srv.handle_run(5)
+        assert srv.handle_get_state()["scalars"]["PNBT"] == pytest.approx(10.0)
+        srv.handle_set_param("PNBTOT", 0.0)
+        srv.handle_run(0)
+        assert srv.handle_get_state()["scalars"] == {"T": 0.0}
+    finally:
+        srv.STATE.close()

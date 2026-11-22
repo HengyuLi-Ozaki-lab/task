@@ -481,9 +481,8 @@ def test_off_an_eq_re_solve_step_the_last_row_agrees_under_modelg_9(name):
 def test_the_sawtooth_record_cannot_be_started_through_the_library():
     # TRATOTN (tr/trexec.f90) writes the sawtooth record's temperatures into GVT columns 89 to 88 + 4 NGPST of its
     # own rows (NGST, counted from the record's start) when MDLST /= 0 and T >= TSST: over PEXE ... NLAV and over
-    # RA and BB, which BETAN is computed from. TSST is 1e9 s (tr/trinit.f90) and not a library parameter, so the
-    # record never starts in library mode and those columns are TRATOT's. A change that makes TSST settable must
-    # keep the record out of them first.
+    # RA and BB, which BETAN is computed from. tr_eval does not call TRATOTN in library mode; TSST (1e9 s,
+    # tr/trinit.f90) is also not a library parameter, which this test pins.
     with Trlib() as t:
         with pytest.raises(TrlibParamError):
             t.set_param("TSST", 0.0)
@@ -518,3 +517,21 @@ def test_a_failed_preparation_leaves_no_history_of_the_run_before():
         assert err.value.failure.kind == "PREP_FAILED"
         assert t.history_length() == 0
         assert len(t.history("T")["T"]) == 0
+
+
+def test_a_retry_after_a_step_that_is_not_finite_does_not_record_that_step_again():
+    # A second run on the same handle, with no changed parameter, starts at the failed step: tr_loop's prologue
+    # evaluates it again. The step stays out of the history.
+    with Trlib() as t:
+        t.set_param("DT", 1.0e6)
+        t.set_param("NGTSTP", 1)
+        with pytest.raises(TrlibRunError):
+            t.run(30)
+        rows = t.history_length()
+        try:
+            t.run(4)
+        except TrlibRunError:
+            pass
+        h = t.history()
+        assert t.history_length() == rows
+        assert all(np.all(np.isfinite(v)) for v in h.values())

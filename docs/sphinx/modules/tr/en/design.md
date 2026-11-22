@@ -164,11 +164,11 @@ and `tr_exec` does not record the failed iterate of a `TRCHCK` failure (`tr2` re
 row of a step it finds not finite (`tr_eval_take_back_row`), and a preparation that fails leaves no rows. Under `MODELG` 9 `tr_loop`
 records a step before it re-solves EQ on it and then recomputes `Q0` on the new metric (`tr_bpsd_get`, `TRCALC`), so that
 row's `Q0` is the one of before the re-solve. A `tr_run` of 0 steps evaluates no step: `TRGLOB` does not run, so after a
-preparation what it sets is new (`T` 0, `RIP` = `RIPS`, `Q0` from its profiles) and what only a step computes is the run
+preparation what it sets is new (`T` 0, `RIP` = `RIPS`, `Q0` under `MODELG` 2) and what only a step computes is the run
 before's. (Evaluating the prepared state there is not done: `TRCALC` injects the `PELTIM` pellet on every call within half a step
 of it, so a second call at t = 0 would inject it twice.) `GVT` columns 89 to 88 + 4 `NGPST` are also the sawtooth
-record's (`TRATOTN`, rows counted from the record's start) once `MDLST` /= 0 and `T` >= `TSST`; `TSST` (1e9 s) is not a
-library parameter, so in library mode they are always `TRATOT`'s (a test fails if it becomes one). In `tr2` the record
+record's (`TRATOTN`, rows counted from the record's start) once `MDLST` /= 0 and `T` >= `TSST` (1e9 s); `tr_eval` does not
+call `TRATOTN` in library mode, so there they are always `TRATOT`'s. In `tr2` the record
 overwrites those columns of its rows (89 to 104 at the default `NGPST` 4: `PEXE` to `PICI`, `RR` to `AJTTOR`,
 `TAUE98`, `H98Y2`, `NLAV`).
 

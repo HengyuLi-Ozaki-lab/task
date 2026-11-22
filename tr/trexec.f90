@@ -436,7 +436,7 @@ CONTAINS
          IF(.NOT.(tr_library_mode .AND. NT.EQ.tr_eval_nt_row)) THEN
             NGT_BEFORE=NGT
             CALL TRATOT
-            CALL TRATOTN
+            IF(.NOT.tr_library_mode) CALL TRATOTN
             tr_eval_nt_row=NT
             tr_eval_row_added=(NGT.GT.NGT_BEFORE)
          ENDIF
@@ -464,14 +464,14 @@ CONTAINS
     END SUBROUTINE tr_eval
 
 !     Library mode: take back the history row tr_eval recorded at step NT, when tr_loop then finds that step not
-!     finite (the run ends there with NONFINITE). The rows before it stay; nothing else is undone.
+!     finite (the run ends there with NONFINITE). The rows before it stay; nothing else is undone. tr_eval_nt_row
+!     stays NT, so a later call that starts on this step (a retry with no changed parameter) does not record it.
     SUBROUTINE tr_eval_take_back_row(NT)
       USE TRCOMM, ONLY : NGT
       IMPLICIT NONE
       INTEGER,INTENT(IN) :: NT
       IF(NT.EQ.tr_eval_nt_row .AND. tr_eval_row_added .AND. NGT.GT.0) THEN
          NGT=NGT-1
-         tr_eval_nt_row=-1
          tr_eval_row_added=.FALSE.
       ENDIF
     END SUBROUTINE tr_eval_take_back_row
