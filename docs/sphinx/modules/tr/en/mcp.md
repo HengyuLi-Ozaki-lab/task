@@ -334,10 +334,10 @@ with `tr-mcp doctor`.
 | `calculation failed` | Check the consistency of `DT` and the equilibrium input. Reset via `finalize` → `init` |
 
 A failed `run` puts the library's failure record in the error string:
-`[failure: kind=EQ_FAILED code=103 nt=600 time=12 s; <detail>]` (`kind` is `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
+`[failure: kind=EQ_FAILED code=102 nt=600 time=12 s; <detail>]` (`kind` is `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
 `PREP_FAILED` or `OTHER`; `REFUSED` is reserved for `tr_continue`, PR 3 of the plan, and not recorded yet; see `python/trlib/README.md`). `MODELG` 0, 4, 25 and `RIPS = 0` now fail this
 way (`NONFINITE`, nt 1) where they used to return a state with non-finite scalars. A name `eq:NAME` in `set_param`
-goes to EQ's registry (`describe_parameters` says so in its `eq_names` line); `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (set TR's own; `RIPS` and `RIPE` for `eq:RIP`), and so is every `eq:` name after the process's first preparation attempt (until the pinned bpsd has k-yoshimi/bpsd#7). That guard closes only the direct route: under `MODELG` 9 any input that moves EQ's plasma grid (TR's `RA`, `RR` and other device inputs, `MODELG`, the `eq:` names, the drift between `NTEQIT` re-solves) needs a bpsd with k-yoshimi/bpsd#7, and TOT's `eq:` dispatcher is not guarded. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0.
+goes to EQ's registry (`describe_parameters` says so in its `eq_names` line); `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` are refused (set TR's own; `RIPS` and `RIPE` for `eq:RIP`), and so is every `eq:` name after the process's first preparation attempt (until the pinned bpsd has k-yoshimi/bpsd#7). That guard closes only the direct route: under `MODELG` 9 any input that moves EQ's plasma grid (TR's `RA`, `RR` and other device inputs, `MODELG`, the `eq:` names, the drift between `NTEQIT` re-solves) needs a bpsd with k-yoshimi/bpsd#7, and TOT's `eq:` dispatcher is not guarded. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0.
 
 For details, see §8 FAQ of `python/mcp-servers/tr_mcp/README.md`.
 

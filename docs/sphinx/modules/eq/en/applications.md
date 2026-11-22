@@ -18,7 +18,7 @@ language, see {doc}`mcp`.
 `eq.run()` has two paths (see {doc}`hello-world`):
 
 - `mode=0`: the Grad-Shafranov solve (`MODELG=2`, no file needed)
-- `mode=1`: load an equilibrium file (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`; `MODELG = 15` reads `eqdb.dat`)
+- `mode=1`: load an equilibrium file (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`; `MODELG = 15`, the fixed `eqdb.dat`, is refused)
 
 A wrapper that switches automatically depending on whether the user
 passed an equilibrium file path (here a TASK/EQ file, `MODELG=3`).

@@ -181,7 +181,8 @@ is ASCII: a `bytes` path and a non-ASCII one are refused. Once the path is
 accepted, `KNAMEQ` stays at it also when the save then fails. After a
 failed write, what is at the path cannot be taken for the equilibrium that
 was to be saved (usually it is a short file): do not load it (`run(1)` with `MODELG=3`
-ends the process on a file that is cut off).
+raises `EqlibCalculationFailedError` where a read of a file that is cut off
+fails, and what reads without an error is not that equilibrium either).
 
 A save whose file was not opened, or is shorter than what was written, is
 an error:
@@ -228,7 +229,7 @@ change is required — names are forwarded verbatim.
 | Radial profile | `PROFR0`, `PROFR1`, `PROFR2` | |
 | Convergence | `EPSEQ`, `EPSNW`, `DELNW`, `NLPMAX`, `NLPNW` | |
 | Domain | `RGMIN`, `RGMAX`, `ZGMIN`, `ZGMAX`, `ZLIMP`, `ZLIMM`, `FRBIN` | |
-| Model switches | `MODELG`, `MODELQ`, `IDEBUG`, `MODEFR`, `MODEFW`, `MDLEQF`, `MDLEQC`, `MDLEQA`, `MDLEQX`, `MDLEQV`, `NPRINT` | int (cast via INT(value)) |
+| Model switches | `MODELG`, `MODELQ`, `IDEBUG`, `MODEFR`, `MODEFW`, `MDLEQF`, `MDLEQC`, `MDLEQA`, `MDLEQX`, `MDLEQV`, `NPRINT` | int (cast via INT(value)); `MODEFR` takes 0 only (1 would read a file name from standard input) |
 | Mesh sizes | `NRMAX`, `NTHMAX`, `NSUMAX`, `NSGMAX`, `NTGMAX`, `NUGMAX`, `NRGMAX`, `NZGMAX`, `NPSMAX`, `NRVMAX`, `NTVMAX`, `NPFCMAX` | int |
 | 1-D arrays (0-origin) | `PSIB[0..5]` | **Bare `"PSIB"` rejected — always pass `[i]`** |
 | 1-D arrays (1-origin) | `RIPFC[1..10]`, `RPFC[1..10]`, `ZPFC[1..10]`, `WPFC[1..10]` | PF-coil descriptors |
@@ -258,7 +259,7 @@ against the `eq` binary.
 | `zg` | `list[float]` | `[nzgmax]` Z-grid coordinates |
 | `psips` | `list[float]` | `[npsmax]` psi-surface ψ values |
 | `ppps` | `list[float]` | `[npsmax]` pressure profile |
-| `ttps` | `list[float]` | `[npsmax]` T (= R·Bφ) profile |
+| `ttps` | `list[float]` | `[npsmax]` T (= 2π·R·Bφ) profile |
 | `qqps` | `list[float]` | `[npsmax]` q profile |
 
 Scalars (canonical order): `raxis`, `zaxis`, `psi0`, `psipa`,
@@ -273,7 +274,7 @@ Every `eq_*` return code maps to a concrete subclass of `EqlibError`:
 | 0 | — | success |
 | 1 | `EqlibInvalidParamError` | invalid parameter name / index / value (incl. bare `"PSIB"`), or a negative `eq_run` mode |
 | 2 | `EqlibNotInitializedError` | API call before `eq_init` or after `close` |
-| 3 | `EqlibCalculationFailedError` | `eq_run` / `eq_get_state` failed (e.g. the equilibrium file is missing) |
+| 3 | `EqlibCalculationFailedError` | `eq_run` / `eq_get_state` failed (e.g. an equilibrium file missing, or not of the format `MODELG` names) |
 | 4 | `EqlibNotImplementedError` | `eq_run` with a mode above 1 (modes 0 and 1 are implemented) |
 
 Spec-style aliases (`EqLibError`, `EqLibInvalidParam`,
@@ -344,7 +345,7 @@ These three behaviours catch new users:
 | `EqlibInvalidParamError` on a name that should work | not yet in `eq_param_registry.f90` | add a `CASE ("MYNAME")` and rebuild `libeqapi.so` |
 | `EqlibInvalidParamError` on `"PSIB"` | bare name has no idx | always use `"PSIB[0]"` … `"PSIB[5]"` |
 | `EqlibError: libeqapi.so does not export eq_set_param_str` | pre-L-3 build | rebuild `libeqapi.so` after the L-3 registry land |
-| `EqlibCalculationFailedError` in `eq.run()` | `MODELG` does not read a file (the default 2 does not), `KNAMEQ` not set, or the file missing | set `MODELG` and `set_param_str("KNAMEQ", path)` first, or `eq.run(0)` to solve without a file |
+| `EqlibCalculationFailedError` in `eq.run()` | `MODELG` does not read a file (the default 2 does not), `KNAMEQ` not set, the file missing, or not of the format `MODELG` names (`eq.last_error()` says which) | set `MODELG` and `set_param_str("KNAMEQ", path)` first, or `eq.run(0)` to solve without a file |
 | `EqlibNotImplementedError` in `eq.run()` | mode above 1 | `eq.run()` (mode=1, file load) or `eq.run(0)` (Grad-Shafranov solve) |
 
 ## Tests

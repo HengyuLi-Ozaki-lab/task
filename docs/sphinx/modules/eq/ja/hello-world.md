@@ -59,7 +59,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
   `RR`, `BB`, `RIP` (と `RA`, `RKAP`, `RDLT`, `RB`) をファイルから読みます.
 - **(4) `MODELG=3`**: ファイル形式の指定. 3 (と 9) は TASK/EQ 形式,
   5 (と 25) は G-EQDSK 形式で, いずれも `KNAMEQ` のファイル. 8 は QST/JAEA
-  形式の 2 ファイル (`KNAMEQ`, `KNAMEQ2`), 15 は固定の `eqdb.dat`.
+  形式の 2 ファイル (`KNAMEQ`, `KNAMEQ2`). 固定の `eqdb.dat` を読む 15 は拒否されます.
   `mode=1` にはこのどれかが必要で, 既定の `MODELG=2` では失敗します.
 - **(5) `set_param_str`**: 文字列パラメータは **専用 API** が必須
   ({doc}`parameter-setting` 方法 C 参照).
@@ -71,7 +71,7 @@ print(f"raxis={st.scalars['raxis']:.4f}  qaxis={st.scalars['qaxis']:.4f}")
 ```text
 平衡はファイルにある?
   ├─ No  → mode=0 (MODELG=2, デフォルト): プロファイルから解く
-  └─ Yes → mode=1 (MODELG ∈ {3, 5, 8, 9, 25} + KNAMEQ 指定, または 15)
+  └─ Yes → mode=1 (MODELG ∈ {3, 5, 8, 9, 25} + KNAMEQ 指定)
 ```
 
 完全な実行可能 notebook: {doc}`quickstart`.

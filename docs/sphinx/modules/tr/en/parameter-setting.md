@@ -69,8 +69,9 @@ Diagnostic codes:
 | `MISSING_REQUIRED`       | a required parameter is unset |
 
 Checks currently performed: `NSMAX` above the compile-time maximum
-(`OUT_OF_RANGE`); `MODELG` 3/5/7/8 with a blank `KNAMEQ`
-(`FILE_MISSING`); `EXTERNAL_DRIVEN_I != 0` with `EXTERNAL_DRIVEN_RW <= 0`
+(`OUT_OF_RANGE`); `MODELG` 3/5/7/8 with a `KNAMEQ` that is blank or names
+no file (looked up relative to the working directory at the time of the
+call), and `MODELG` 8 with a blank `KNAMEQ2`, which TR cannot set (`FILE_MISSING`); `EXTERNAL_DRIVEN_I != 0` with `EXTERNAL_DRIVEN_RW <= 0`
 (`OUT_OF_RANGE`); and, outside the UFILE modes (`MDLUF` not in 1/2/3),
 the namelist profile of every active species `1..NSMAX`: `PN`/`PNS`
 negative, both zero, non-finite, `PN` zero with `PNS` positive (the density
@@ -82,4 +83,11 @@ divides by them and the run would turn NaN (#189). `run()` refuses the
 same findings before `tr_prep` (`TrlibParamError`), and also `NSMAX`
 above the compile-time maximum, so raising `NSMAX` beyond a fixture's
 species count needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the
-added species.
+added species. Reported and not refused: `PN[1]` or `PNS[1]` away from the
+ions' charge density (`Σ PZ[s]·PN[s]` over `s = 2..NSMAX`, and the same
+with `PNS`) by more than 1e-3 of the larger (`INCONSISTENT_PAIR`,
+task-web-client #200; not in the UFILE modes, and not beside a finding of
+the species-profile checks, which include `RIPS` or `RIPE` below 0 with
+`MODELG = 9`), so the added species also needs `PN[1]` raised by its charge
+density `PZ[ns]·PN[ns]`, and `PNS[1]` by `PZ[ns]·PNS[ns]`, for `validate()`
+to stay clean.

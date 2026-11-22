@@ -107,10 +107,10 @@ int tr_run(int ntmax);
  * eq:NRMAX, ...; MODELG 9 sets EQ's wall and grid through them). An accepted
  * set makes the next tr_run prepare again. An unknown name returns
  * TR_ERR_INVALID. These are refused too (TR_ERR_INVALID, one line on unit 6):
- *  - eq:RR, eq:RA, eq:RKAP, eq:RDLT, eq:BB, eq:RIP and eq:KNAMEQ, which do
- *    nothing through TR (MODELG 9 overwrites EQ's copies from TR's device, and
- *    TR passes its own KNAMEQ to EQ): set TR's own RR, RA, ... instead (for
- *    eq:RIP, RIPS and RIPE);
+ *  - eq:RR, eq:RA, eq:RKAP, eq:RDLT, eq:BB, eq:RIP, eq:KNAMEQ and eq:KNAMEQ2,
+ *    which do nothing through TR (MODELG 9 overwrites EQ's copies from TR's
+ *    device, and TR passes its own KNAMEQ and KNAMEQ2 to EQ): set TR's own RR,
+ *    RA, ... instead (for eq:RIP, RIPS and RIPE; KNAMEQ2 is not settable);
  *  - every eq: name once the process has made its first preparation attempt
  *    (failed or not; across tr_finalize and tr_init): until the pinned bpsd has
  *    k-yoshimi/bpsd#7 an EQ grid change in one process corrupts memory, so eq:

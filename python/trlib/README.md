@@ -119,18 +119,19 @@ first failure is kept; `tr_init` and every `tr_run` clear the record (`kind == "
 
 | kind | meaning |
 |---|---|
-| `EQ_FAILED` | an equilibrium solve of `MODELG = 9` failed: the initial q-scaling (`tr_set_metric`) or the periodic re-solve (`NTEQIT`); `code` is EQ's (103 axis out of plasma, 110/111/112 below) |
+| `EQ_FAILED` | the load of the equilibrium file of `MODELG` 3, 5 or 8 failed (`detail` is `eq_load:` and EQ's reason, which for a file `EQ_READ` could not read names it), or an equilibrium solve of `MODELG = 9` failed: the initial q-scaling (`tr_set_metric`) or the periodic re-solve (`NTEQIT`); `code` is the failing step's: EQ's (102 an axis search that ended at a point that is not finite, 103 one that ended outside its window, 110/111/112 below), bpsd's, or -1 and -2 for the q-scaling itself (a scale factor zero or not finite, no agreement) |
 | `NONFINITE` | Q0, the stored energy or a central temperature is not finite (`code` -3) |
 | `TR_CHECK` | `TRCHCK`: a negative temperature |
-| `PREP_FAILED`, `OTHER` | the preparation failed; any other non-zero status of the loop |
+| `PREP_FAILED`, `OTHER` | the preparation failed (for `MODELG = 7`, a VMEC file `pl_vmec` could not open: `detail` names `KNAMEQ`); any other non-zero status of the loop |
 | `REFUSED` | reserved for `tr_continue` (PR 3 of the plan); nothing records it yet (`tr_run` refuses before the run by returning `TR_ERR_INVALID`, with no record) |
 
-EQ's own codes 110 (a flux-surface extremum at the edge of the contour array), 111 and 112 (`EQMAGS` could not trace
-the surface in the loop, or the edge surface) come with a reason in EQ's `EQ_ERRMSG` (`libtrapi.so` does not export
-`eq_last_error`): an `EQ_FAILED` record appends it to `detail` as `<where>: <EQ's reason>` when EQ set one (EQCALC's
-codes may leave it empty). The message of `tr_last_error` is cut at 127 characters, so a long reason is cut there.
+EQ's own codes 102 and 103 (`EQAXIS`), 110 (a flux-surface extremum at the edge of the contour array), 111 and 112
+(`EQMAGS` could not trace the surface in the loop, or the edge surface) come with a reason in EQ's `EQ_ERRMSG`
+(`libtrapi.so` does not export `eq_last_error`): an `EQ_FAILED` record appends it to `detail` as `<where>: <EQ's
+reason>` when EQ set one (EQCALC's codes may leave it empty). The message of `tr_last_error` is cut at 127
+characters, so a long reason is cut there.
 
-`tr_mcp` puts the record in the error string of a failed `run`: `... [failure: kind=EQ_FAILED code=103 nt=600
+`tr_mcp` puts the record in the error string of a failed `run`: `... [failure: kind=EQ_FAILED code=102 nt=600
 time=12 s; <detail>]`.
 
 ### Changes of behaviour
@@ -191,14 +192,15 @@ A name that starts with `eq:` (`eq:RB`, `eq:NSGMAX`, `eq:NRMAX`, ...) goes to EQ
 and grid through `set_param` / `set_param_str`; an unknown name raises `TrlibParamError`, and an accepted one makes the
 next `run` prepare again. Two kinds of `eq:` name are refused (`TrlibParamError`, one line on unit 6):
 
-- `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` do nothing through TR: under `MODELG` 9
-  EQ's copy is overwritten from TR's device, and TR passes its own `KNAMEQ` to EQ. Set `RR`, `RA`, ... (TR's) instead;
+- `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` do nothing through TR:
+  under `MODELG` 9 EQ's copy is overwritten from TR's device, and TR passes its own `KNAMEQ` and `KNAMEQ2` to EQ. Set `RR`, `RA`, ... (TR's) instead;
   for `eq:RIP` set `RIPS` and `RIPE`, which TR passes to EQ as `RIP`.
   Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, its `NTHMAX` is fixed at 64 and its `NSUMAX` at 0
   (`tr_set_metric`, `tr/trmetric.f90`).
 - every `eq:` name, once this process has made its first preparation attempt (failed or not; across `tr_finalize`
   and `tr_init` too): until the pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change in one process corrupts memory
-  (`EQ_FAILED` 103 from a spline written past its end, measured with `eq:NRMAX` 30 then 60 and `eq:RB` 2.0 then 1.2),
+  (`EQ_FAILED` from a spline written past its end: 103, measured on fork PR #25's build with `eq:NRMAX` 30 then 60
+  and `eq:RB` 2.0 then 1.2; the axis search now reports a non-finite end point as 102),
   so `eq:` names are set before the process's first preparation attempt (a `run` that `tr_run`'s own checks refuse
   before `tr_prep` does not count). This guard comes off with the `NRMAX` guard below.
 
@@ -214,7 +216,8 @@ input can move the count). Under `MODELG` 9 *any* input that moves EQ's plasma g
 `MODELG` itself (`MODELG` 9 then the `tst2` defaults: 50 to 51 points; its test is gated on `TRLIB_BPSD_REGRID_FIX=1`),
 the `eq:` names, and the drift of `NRPMAX` between `NTEQIT` re-solves inside one run (47 and 48 in `tr.ITER01` with
 `MODELG` 9). Measured on an unpatched bpsd: `MODELG` 9 with `RA` 0.5 in one lifecycle, then `RA` 1.0 in the next, fails
-with `EQ_FAILED` 103 at q-scaling iteration 2, with no `eq:` name set and TR's `NRMAX` unchanged. The protection
+with `EQ_FAILED` 102 at q-scaling iteration 2 (103 on fork PR #25's build, before the axis search reported an end point
+that is not finite), with no `eq:` name set and TR's `NRMAX` unchanged. The protection
 against the overrun is bpsd#7 itself. TOT's `eq:` dispatcher (`dispatch_eq` in `tot/tot_param_registry.f90`) calls
 `eq_param_set` directly, so this guard does not apply in `totlib` or the mono build.
 
@@ -295,8 +298,13 @@ for the zero-density case, `OUT_OF_RANGE` otherwise). `run()` also
 refuses `NSMAX` above the compile-time `NSM` (4), which `validate()`
 already reported. Raising `NSMAX` above a fixture's species count
 therefore needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the new
-species. `PN[ns]=0` is refused with `PNS[ns]>0` too (task-web-client #190): the density then
-vanishes at the axis and the run fails or ends with NaN. In the UFILE modes
+species, and `PN[1]`, `PNS[1]` raised by its charge density (`PZ[ns]·PN[ns]`,
+`PZ[ns]·PNS[ns]`) for `validate()` to stay clean. `PN[ns]=0` is refused with `PNS[ns]>0` too (task-web-client #190): the density then
+vanishes at the axis and the run fails or ends with NaN. Densities that are
+not quasi-neutral (`PN[1]` away from `Σ PZ[s]·PN[s]`, `s = 2..NSMAX`, or `PNS[1]` from
+`Σ PZ[s]·PNS[s]`, by more than 1e-3 of the larger) are reported by `validate()` as
+`INCONSISTENT_PAIR` and not refused by `run()` (task-web-client #200): ions far
+below the electrons fail at step 0, a smaller difference runs. In the UFILE modes
 `MDLUF=1/2/3` the species that `tr_prof` still takes from the namelist
 are not checked yet (follow-up issue).
 
