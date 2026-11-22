@@ -97,7 +97,7 @@ platform today because EQU has no library interface.
 | Fortran kernel | `equ/equ*.f90` (unchanged except section 9); new `equ/equ_status.f90` (section 9.2), added to `SRCS` | shared with the program |
 | C ABI | `equ/equ_api.h`; `equ/equ_api.f90` (module `equ_api`, functions `equ_api_*` exported `BIND(C, NAME='equ_*')`); `equ/equ_state.f90` (the `BIND(C)` state type); `equ/equ_param_registry.f90` | EQ's layout and naming |
 | Shared library | `equ/libequapi.so` (`make -C equ libequapi.so`) | links `pl`, `lib`, `bpsd` PIC archives; no graphics |
-| C checks | `equ/tests/c_abi/test_smoke.c`, `test_run_so.c`, `test_negative.c`; targets `equ_api_check_so`, `equ_api_check_all` | EQ's set |
+| C checks | `equ/tests/c_abi/test_run_so.c`, `test_negative.c` (both through dlopen); targets `equ_api_check_so`, `equ_api_check_all` | EQ's dlopen drivers |
 | Program for comparison | `equ/equ_nogr` (`make -C equ equ_nogr`): the program linked with `equ/equ_static_stubs.f90` instead of GSAF | new target; `equ` itself unchanged |
 | Python | `python/equlib/`: `_ffi.py`, `equlib.py` (`Equ`), `state.py` (`EquState`), `errors.py`, `README.md`, `examples/`, `tests/` | library path `EQULIB_PATH` |
 | MCP | `python/mcp-servers/equ_mcp/`: `server.py` (FastMCP `task-equ`), `pyproject.toml`, `README.md`, `tests/` | |
@@ -255,11 +255,14 @@ Read-only; each entry names the parameter and the reason. The list, in three kin
   value above 257 without a word (`equinit.f90:533-535`), the library refuses it.
 - **What `eqchek` refuses** (`equinit.f90:527-778`), reported before the run instead of after the coil file is
   read: `IEQRD ≠ 0` (its `ierr` 1); `NR·NZ·NV = 0` (2); more fitted coil groups (`IVAC(i) ≥ 0`) than marker points
-  `|MSFX|` (3).
-- **Marker points** (*found in implementation*, corrected in review): for `MSFX ≤ 0`, each `(RVAC(k), ZVAC(k))`,
-  k = 0..|MSFX|, inside the box as `eqchek` sets it: `RMAJ`, `RPLA` taken from the markers with R > 0 when
-  `MSFX < 0`, the box widened to `RMAJ ∓ 1.2 RPLA` and `|Z| < 1.2 ELIP RPLA`; and that box's inner edge > 0. QUEST
-  with `ZWMX = 0.6` indexed `svac` at -177 in `eqadj0`.
+  (3), with `MSFX` as `eqchek` leaves it (lowered when positive), taken from `eqchek` itself (below).
+- **Marker points** (*found in implementation*, corrected in two reviews): every marker `(RVAC(k), ZVAC(k))`,
+  k = 0..|MSFX|, inside the box as `eqchek` leaves it, and that box's inner edge > 0. When nothing above is reported,
+  the library runs `eqflin` and `eqchek` on a copy of the inputs (`eqchek_preview`: the stash, the Solovev
+  constants and `nivac`, the coil and limiter arrays are put back) and checks what they leave: the markers given
+  (`MSFX ≤ 0`; `RMAJ`, `RPLA` taken from them) or generated from the shape (`MSFX > 0`), and the box widened to
+  `RMAJ ∓ 1.2 RPLA`, `|Z| < 1.2 ELIP RPLA`. QUEST with `ZWMX = 0.6` indexed `svac` at -177 in `eqadj0`; the
+  defaults with `ELIPUP = 1.5` or `ZPLA = 0.4` generate markers above the box.
 - **Files and choices**: `KNAMCOIL` names an existing file unless `'done'`; the file holds the groups and lines
   `NCOIL` and `ILIMT` ask for (a read-only scan with `IOSTAT`); `RWMN > 0`, `RWMX > RWMN`, `ZWMX > 0`;
   `ICP(1)` one of the values `eqpfds` and `eqequ` handle (±1, ±2, ±9, ±11); `ISVAC` 0 or 1; `ISEP` −4 to 4 (the
@@ -267,7 +270,8 @@ Read-only; each entry names the parameter and the reason. The list, in three kin
   `IEQMAX`, `MSETUP`, `IODMAX`, `IADMAX` ≥ 0.
 
 A value the code accepts but the physics may not (for example a coil far outside the box) is not refused: that
-is the lead's to decide. Every `WRITE` into a message uses `IOSTAT` (EQ's `eq_api_validate` pattern).
+is the lead's to decide. The internal `WRITE`s of real numbers into messages use `IOSTAT` (EQ's
+`eq_api_validate` pattern); `itoa`'s `I0` into 16 characters cannot fail.
 
 ## 9. Process safety
 
@@ -275,7 +279,8 @@ is the lead's to decide. Every `WRITE` into a message uses `IOSTAT` (EQ's `eq_ap
 
 - Never called by the library: `gsopen`, `eqmenu`/`task_klin`, `task_parm` mode 0, `eqgout`.
 - `write_geqdsk` sets `MODEFW` to 0 (`overwrite` true) or 3 (refuse an existing file) and `KNAMEQ` to the path
-  before `equ_eqdsk_write`, so `FWOPEN` never prompts; a path over 80 characters (`KNAMEQ`'s length) is refused.
+  before `equ_eqdsk_write`, so `FWOPEN` never prompts; the C entry point refuses a path over 80 characters
+  (`KNAMEQ`'s length), and `equlib` writes such a path from its directory under its base name.
 - The library does not use unit 7 (the program's scratch unit for namelist lines) and opens its files with
   `NEWUNIT`.
 - Unit 6 stays as it is (the solver prints its progress); the MCP server isolates fd 1.
@@ -372,7 +377,7 @@ inside #300's direction.
 
 | Layer | What | Where |
 |---|---|---|
-| C ABI | lifecycle, pre-init refusals, unknown and malformed names, refusals of each run mode, layout queries, re-init, use after finalize; a missing coil file returns an error and the process lives | `equ/tests/c_abi/*.c`, run by `equ_api_check_so` |
+| C ABI | lifecycle, pre-init refusals, unknown and malformed names, refusals of each run mode, layout queries, re-init, use after finalize; a missing coil file returns an error and the process lives | `equ/tests/c_abi/*.c`, run by `equ_api_check_all` (in CI) |
 | Python | FFI and layout; registry against the Fortran `CASE` list and the MCP table; each validation entry (one test per entry, each seen to fail by mutation); `read_parm` errors; run refusals; the four former `STOP`s reached from crafted inputs where an input reaches them; `write_geqdsk` refusals and overwrite; `get_psi_rz` equals the G-EQDSK's `psirz`; second run and run-after-another-case equal a fresh process | `python/equlib/tests/` |
 | Comparison (1e-10) | QUEST and ITER#1 from `equ/example`: the program `equ_nogr` (`R`, `E`, path, `Q` on its stdin) against the library's mode 1, through `read_parm` and through `set_param` replaying the same namelist; every number of the two G-EQDSK files equal within 1e-10 relative (in practice the same text). Same machine, so it runs on macOS and Linux | `python/equlib/tests/test_program_parity.py` |
 | MCP | registry shape and schema, handlers, bulk sets, the six shared fd-isolation cases, a stdio subprocess that writes a G-EQDSK | `python/mcp-servers/equ_mcp/tests/` |
@@ -385,7 +390,7 @@ inside #300's direction.
 ## 15. CI
 
 In `.github/workflows/python-tests.yml`'s pytest job: `equ` in the `.so` loop (before `tot`), in the
-`_api_check_so` loop, and the build of `equ_nogr`; the tests are collected by `pytest python/`. `equ` in
+`_api_check_so` loop, the build of `equ_nogr` and `equ_api_check_all`; the tests are collected by `pytest python/`. `equ` in
 `clean-tree-build.yml`'s matrix. The mono job's module list is unchanged (EQU is not in the mono image) and its
 comment says why. No job is added or renamed, so the ruleset is unchanged.
 

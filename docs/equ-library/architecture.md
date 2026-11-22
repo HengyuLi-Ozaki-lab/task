@@ -68,8 +68,9 @@ is EQ's.
   library's path (`python/equlib/tests/test_stop_sites.py` holds that list).
 - **Checks before the run.** Array bounds (`NR`, `NZ` = 2**k+1 for the Buneman
   solver, `NV` >= 3), what `eqchek` refuses, the box, the profile and switch
-  values, marker points inside the box as `eqchek` widens it, the coil file
-  (exists, holds what `NCOIL` and `ILIMT` ask for).
+  values, the coil file (exists, holds what `NCOIL` and `ILIMT` ask for), then
+  `eqflin` and `eqchek` on a copy of the inputs: the marker points (given or
+  generated) inside the box as `eqchek` widens it, and `eqchek`'s own refusal.
 - **Off-grid reads.** `eqout` computes the unused flux-loop value `psloop` only
   when `(RLOOP, ZLOOP)` is on the grid.
 - **Unit 6.** The solver prints its progress; the MCP server moves fd 1 to stderr.
