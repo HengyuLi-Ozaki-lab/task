@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional, Union
 
 from . import _ffi
-from .errors import EqulibInitError, EqulibInvalidParamError, raise_for_rc
+from .errors import (EqulibCalculationFailedError, EqulibInitError, EqulibInvalidParamError,
+                     raise_for_rc)
 from .state import EquState
 
 _NAME_MAX = 63          # bytes of a name (the C side holds 64 with the NUL)
@@ -158,14 +159,19 @@ class Equ:
     def validate(self) -> list[EquDiag]:
         """Every check of the inputs in one batch; ``[]`` when none fails."""
         self._check_open()
-        arr = (_ffi.EquDiagEntry * _DIAG_CAP)()
-        n = ctypes.c_int(0)
-        rc = self._lib.equ_validate(arr, _DIAG_CAP, ctypes.byref(n))
-        if rc not in (_ffi.EQU_OK, _ffi.EQU_ERR_INVALID):
-            self._raise("equ_validate", rc)
+        cap = _DIAG_CAP
+        while True:
+            arr = (_ffi.EquDiagEntry * cap)()
+            n = ctypes.c_int(0)
+            rc = self._lib.equ_validate(arr, cap, ctypes.byref(n))
+            if rc not in (_ffi.EQU_OK, _ffi.EQU_ERR_INVALID):
+                self._raise("equ_validate", rc)
+            if n.value <= cap:     # the library counts past cap: ask again
+                break
+            cap = n.value
         return [EquDiag(arr[i].param.decode("ascii", "replace"), int(arr[i].code),
                         arr[i].msg.decode("ascii", "replace"))
-                for i in range(min(n.value, _DIAG_CAP))]
+                for i in range(n.value)]
 
     # --- run and results -----------------------------------------------
     def run(self, mode: int = 1) -> None:
@@ -199,9 +205,29 @@ class Equ:
         return np.frombuffer(buf, dtype=np.float64).reshape(nz, nr).T.copy()
 
     def write_geqdsk(self, path: Union[str, "os.PathLike[str]"], overwrite: bool = False) -> None:
-        """Write the last run's equilibrium as G-EQDSK (EQU's own writer)."""
+        """Write the last run's equilibrium as G-EQDSK (EQU's own writer).
+
+        EQU's file name holds 80 characters; a longer path is written from
+        its directory under its base name (the working directory is changed
+        for the call and put back).
+        """
         self._check_open()
-        raw = _encode(str(path), "path", _VALUE_MAX)
-        self._raise("equ_write_geqdsk",
-                    self._lib.equ_write_geqdsk(raw, 1 if overwrite else 0))
+        text = str(path)
+        if len(text) <= _VALUE_MAX:
+            raw = _encode(text, "path", _VALUE_MAX)
+            self._raise("equ_write_geqdsk",
+                        self._lib.equ_write_geqdsk(raw, 1 if overwrite else 0))
+            return
+        head, base = os.path.split(os.path.abspath(text))
+        raw = _encode(base, "the file name", _VALUE_MAX)
+        here = os.getcwd()
+        try:
+            os.chdir(head)
+        except OSError as exc:
+            raise EqulibCalculationFailedError(f"write_geqdsk: {head}: {exc}") from exc
+        try:
+            rc = self._lib.equ_write_geqdsk(raw, 1 if overwrite else 0)
+        finally:
+            os.chdir(here)
+        self._raise("equ_write_geqdsk", rc)
 

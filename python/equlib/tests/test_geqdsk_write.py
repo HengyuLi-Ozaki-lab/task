@@ -44,3 +44,13 @@ def test_existing_file(solved, workdir):
 def test_directory_missing(solved):
     with pytest.raises(EqulibCalculationFailedError, match="not written"):
         solved.write_geqdsk("no-such-dir/g")
+
+
+def test_a_path_longer_than_80_characters(solved, workdir):
+    deep = workdir / ("d" * 60) / ("e" * 30)
+    deep.mkdir(parents=True)
+    target = deep / "long.geqdsk"
+    assert len(str(target)) > 80
+    solved.write_geqdsk(str(target))
+    assert target.stat().st_size > 1_000_000
+    assert not (workdir / "long.geqdsk").exists()

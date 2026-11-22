@@ -110,12 +110,15 @@ int equ_read_parm(const char *path);
  * subscript, index out of range, value not finite, an integer parameter
  * given a fraction or a value beyond the default integer; a name over 63
  * characters. String names (DEVICE, DEVNAM, TITLE, KNAMCOIL) go through
- * equ_set_param_str; a value longer than the variable is refused. */
+ * equ_set_param_str; a value longer than the variable is refused. A set
+ * that succeeds after a run drops that run's result; a refused one, like a
+ * failed equ_read_parm, leaves it. */
 int equ_set_param(const char *name, double value);
 int equ_set_param_str(const char *name, const char *value);
 
-/* Every check of the inputs in one batch; read-only. EQU_OK and
- * *ndiag = 0, or EQU_ERR_INVALID with *ndiag entries (counted past cap). */
+/* Every check of the inputs in one batch; read-only (after a run it looks
+ * at the inputs and leaves the run's result). EQU_OK and *ndiag = 0, or
+ * EQU_ERR_INVALID with *ndiag entries (counted past cap). */
 int equ_validate(equ_diag_entry_t *diags, int cap, int *ndiag);
 
 /* mode 1: the menu's R (setup solve, the TR interface's profiles through

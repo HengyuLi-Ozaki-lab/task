@@ -261,12 +261,17 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Build equ_nogr (the EQU program without graphics)
+      - name: Build equ_nogr (the EQU program without graphics); EQU's C refusal cases
         # python/equlib/tests/test_program_parity.py compares the G-EQDSK
         # of libequapi.so with this program's on the same input: the
         # program equ linked from the PIC objects above with no-op GSAF
         # entries (equ/equ_static_stubs.f90). Without it those tests skip.
-        run: make -C equ equ_nogr
+        # equ_api_check_all adds test_negative (36 refusal cases, dlopen
+        # only) to the equ_api_check_so above.
+        run: |
+          set -e
+          make -C equ equ_nogr
+          make -C equ equ_api_check_all
 
       - name: Run orchestrator Layer 2 + Layer 4 C ABI checks (tot_api_check_all)
         # Phase L-6 composite target. Builds and runs every C ABI driver:

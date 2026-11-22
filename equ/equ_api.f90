@@ -24,9 +24,10 @@ MODULE equ_api
                        EQU_MAX_NR, EQU_MAX_NZ, EQU_MAX_NV, EQU_MAX_NSU, EQU_NCV, &
                        EQU_DIAG_PARAM_LEN, EQU_DIAG_MSG_LEN, &
                        EQU_DIAG_OUT_OF_RANGE, EQU_DIAG_INCONSISTENT_PAIR, &
-                       EQU_DIAG_FILE_MISSING
+                       EQU_DIAG_OUT_OF_RANGE_AFTER_DEP, EQU_DIAG_FILE_MISSING
   USE equ_param_registry, ONLY: equ_param_set, equ_param_set_str
-  USE equ_image_mod, ONLY: image_save, image_restore, reset_run_state
+  USE equ_image_mod, ONLY: image_save, image_restore, image_swap, &
+                           stash_save, stash_restore, reset_run_state
   USE equ_status_mod, ONLY: equ_library_mode, equ_failed, equ_status_clear, &
                             equ_status_message
   IMPLICIT NONE
@@ -44,15 +45,18 @@ MODULE equ_api
   INTEGER(C_INT), PARAMETER :: EQU_ERR_NOT_IMPL    = 4
 
   INTEGER, PARAMETER :: dp = KIND(1.0D0)
-  INTEGER, PARAMETER :: NAME_LEN = 64      ! a name of 63 characters and the NUL
+  INTEGER, PARAMETER :: NAME_LEN = 63      ! names: at most 63 characters (equ_api.h)
   INTEGER, PARAMETER :: VALUE_LEN = 80     ! the longest CHARACTER of &EQU
-  INTEGER, PARAMETER :: PATH_LEN = 1024
+  INTEGER, PARAMETER :: PATH_LEN = 1023    ! paths: at most 1023 characters
   INTEGER, PARAMETER :: COIL_UNIT = 18     ! the program's unit for the coil file
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   ! The fields hold the equilibrium of the last successful run.
   LOGICAL, SAVE :: g_has_equilibrium = .FALSE.
-  ! A run has overwritten inputs since the image was taken.
+  ! A run has overwritten inputs since the image was taken: the module
+  ! variables hold the solver's values (which get_state and the G-EQDSK
+  ! writer read), the image the inputs. A check or a set swaps the two in
+  ! for its time (image_swap); a run, or a set that succeeds, ends it.
   LOGICAL, SAVE :: g_dirty = .FALSE.
   INTEGER, SAVE :: g_mode = -1
   CHARACTER(LEN=256), SAVE :: g_errmsg = ' '
@@ -110,6 +114,7 @@ CONTAINS
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=PATH_LEN) :: fpath
     INTEGER :: u, ios, ist, jerr
+    LOGICAL :: was_dirty
 
     IF (.NOT. g_initialized) THEN
        ierr = EQU_ERR_NOT_INIT
@@ -125,7 +130,6 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
-    CALL restore_if_dirty
     ! A positive unit: eqnlin writes the namelist to unit -NID when NID is
     ! negative, and NEWUNIT= gives negative numbers.
     u = free_unit()
@@ -141,10 +145,16 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
+    ! The read goes into the inputs; a failed one is undone and, after a
+    ! run, leaves the run's values in place.
+    was_dirty = g_dirty
+    IF (was_dirty) CALL image_swap
+    CALL stash_save
     CALL eqnlin(u, ist, jerr)
     CLOSE(u)
     IF (jerr /= 0) THEN
-       CALL image_restore
+       CALL stash_restore
+       IF (was_dirty) CALL image_swap
        IF (jerr == 9) THEN
           CALL set_error('read_parm: no &EQU namelist in '//TRIM(fpath))
        ELSE
@@ -156,6 +166,7 @@ CONTAINS
        RETURN
     END IF
     CALL image_save
+    g_dirty = .FALSE.
     g_has_equilibrium = .FALSE.
     g_errmsg = ' '
     ierr = EQU_OK
@@ -171,6 +182,7 @@ CONTAINS
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=NAME_LEN) :: fname
     INTEGER :: jerr
+    LOGICAL :: was_dirty
 
     IF (.NOT. g_initialized) THEN
        ierr = EQU_ERR_NOT_INIT
@@ -181,13 +193,20 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
-    CALL restore_if_dirty
+    ! The set goes into the inputs (the registry assigns nothing when it
+    ! refuses); a refused one, after a run, leaves the run's values.
+    was_dirty = g_dirty
+    IF (was_dirty) CALL image_swap
     CALL equ_param_set(TRIM(fname), REAL(value, dp), jerr)
     IF (jerr == 0) THEN
        CALL image_save
+       g_dirty = .FALSE.
        g_has_equilibrium = .FALSE.
        ierr = EQU_OK
-    ELSE IF (jerr == 2) THEN
+       RETURN
+    END IF
+    IF (was_dirty) CALL image_swap
+    IF (jerr == 2) THEN
        CALL set_error('set_param: '//TRIM(fname)//' is accepted by the &EQU '// &
                       'namelist but not used by EQU')
        ierr = EQU_ERR_INVALID
@@ -209,6 +228,7 @@ CONTAINS
     CHARACTER(LEN=NAME_LEN) :: fname
     CHARACTER(LEN=VALUE_LEN) :: fvalue
     INTEGER :: jerr
+    LOGICAL :: was_dirty
 
     IF (.NOT. g_initialized) THEN
        ierr = EQU_ERR_NOT_INIT
@@ -225,13 +245,16 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
-    CALL restore_if_dirty
+    was_dirty = g_dirty
+    IF (was_dirty) CALL image_swap
     CALL equ_param_set_str(TRIM(fname), TRIM(fvalue), jerr)
     IF (jerr == 0) THEN
        CALL image_save
+       g_dirty = .FALSE.
        g_has_equilibrium = .FALSE.
        ierr = EQU_OK
     ELSE
+       IF (was_dirty) CALL image_swap
        CALL set_error('set_param_str: '//TRIM(fname)//': unknown string name, '// &
                       'or a value longer than the variable')
        ierr = EQU_ERR_INVALID
@@ -240,9 +263,8 @@ CONTAINS
 
   !-------------------------------------------------------------------
   ! equ_validate : the checks of the inputs, in one batch (design,
-  ! section 8). Read-only: it looks at the image of the inputs, which the
-  ! module variables equal unless a run has overwritten them, so it
-  ! restores the image first when needed.
+  ! section 8). Read-only: after a run it swaps the inputs in for the
+  ! checks and the run's values back afterwards.
   !-------------------------------------------------------------------
   FUNCTION equ_api_validate(diag, diag_cap, ndiag_out) RESULT(ierr) &
            BIND(C, NAME="equ_validate")
@@ -257,9 +279,10 @@ CONTAINS
        ierr = EQU_ERR_NOT_INIT
        RETURN
     END IF
-    CALL restore_if_dirty
+    IF (g_dirty) CALL image_swap
     nlocal = 0
     CALL check_inputs(push)
+    IF (g_dirty) CALL image_swap
     ndiag_out = nlocal
     IF (nlocal > 0) THEN
        ierr = EQU_ERR_INVALID
@@ -461,8 +484,10 @@ CONTAINS
     st%zaxis = zaxis
     st%psi_axis = saxis
     ! As eqout prints them (equsub.f90, after its call of eqsep).
-    IF (irsep > 1 .AND. irsep < nr) st%rsep = rg(irsep)
-    IF (izsep > 1 .AND. izsep < nz) st%zsep = zg(izsep)
+    ! Only when an X point was found (iisep > 0): irsep and izsep are
+    ! otherwise left from eqsol's guess.
+    IF (iisep > 0 .AND. irsep > 1 .AND. irsep < nr) st%rsep = rg(irsep)
+    IF (iisep > 0 .AND. izsep > 1 .AND. izsep < nz) st%zsep = zg(izsep)
     st%psi_sep = psep
     st%ip = ttcu
     st%ip_target = tcur
@@ -672,8 +697,8 @@ CONTAINS
     USE geo_mod, ONLY: nr, nz
     USE eqv_mod, ONLY: nv
     USE equ_mod, ONLY: nsumax, isep, ieqmax, msetup, iodmax, iadmax
-    USE par_mod, ONLY: rwmn, rwmx, zwmx, icp
-    USE vac_mod, ONLY: msfx, ncoil, ilimt, isvac, ivac, rvac, zvac
+    USE par_mod, ONLY: rwmn, rwmx, zwmx, icp, rmaj, rpla, elip
+    USE vac_mod, ONLY: msfx, ncoil, ilimt, isvac, ivac, rvac, zvac, ivbnd
     USE aaa_mod, ONLY: iudsym, icvdm, nsfix
     USE cnt_mod, ONLY: ieqrd
     USE eqinit_mod, ONLY: knamcoil
@@ -684,20 +709,28 @@ CONTAINS
          INTEGER(C_INT), INTENT(IN) :: code
        END SUBROUTINE report
     END INTERFACE
-    INTEGER :: n, nivac, ios
+    INTEGER :: n, nivac, ios, nmark
+    REAL(dp) :: rrmax, rrmin, rm, rp, bx_rmin, bx_rmax, bx_z
     CHARACTER(LEN=128) :: why
-    CHARACTER(LEN=24) :: rz
+    CHARACTER(LEN=40) :: rz
 
     ! --- bounds the arrays need (equcomm.f90) ---
-    IF (nr < 3 .OR. nr > EQU_MAX_NR) CALL report('NR', EQU_DIAG_OUT_OF_RANGE, &
-         'NR='//itoa(nr)//' is outside 3..257 (irdm)')
-    IF (nz < 3 .OR. nz > EQU_MAX_NZ) CALL report('NZ', EQU_DIAG_OUT_OF_RANGE, &
-         'NZ='//itoa(nz)//' is outside 3..257 (izdm)')
-    IF (nv < 2 .OR. nv > EQU_MAX_NV) CALL report('NV', EQU_DIAG_OUT_OF_RANGE, &
-         'NV='//itoa(nv)//' is outside 2..101 (ivdm)')
+    ! NR - 1 and NZ - 1 powers of two: the Buneman solver (eqgrd's csrz,
+    ! eqpde's cyclic reduction) halves both directions.
+    IF (nr < 3 .OR. nr > EQU_MAX_NR .OR. .NOT. pow2_plus_1(nr)) CALL report('NR', &
+         EQU_DIAG_OUT_OF_RANGE, 'NR='//itoa(nr)//' must be 2**k+1 in 3..257 '// &
+         '(3, 5, 9, 17, 33, 65, 129, 257): the Buneman solver')
+    IF (nz < 3 .OR. nz > EQU_MAX_NZ .OR. .NOT. pow2_plus_1(nz)) CALL report('NZ', &
+         EQU_DIAG_OUT_OF_RANGE, 'NZ='//itoa(nz)//' must be 2**k+1 in 3..257 '// &
+         '(3, 5, 9, 17, 33, 65, 129, 257): the Buneman solver')
+    ! NV >= 3: eqout prints rbv(nv-2), eqpfds reads pds0(nv-2).
+    IF (nv < 3 .OR. nv > EQU_MAX_NV) CALL report('NV', EQU_DIAG_OUT_OF_RANGE, &
+         'NV='//itoa(nv)//' is outside 3..101 (ivdm)')
     IF (nsumax < 3 .OR. nsumax > EQU_MAX_NSU) CALL report('NSUMAX', &
          EQU_DIAG_OUT_OF_RANGE, 'NSUMAX='//itoa(nsumax)//' is outside 3..1542 (isrzdm)')
-    IF (ABS(msfx) > nsfix - 1) CALL report('MSFX', EQU_DIAG_OUT_OF_RANGE, &
+    ! A positive MSFX is lowered by eqchek (to 17, or 9 when up-down
+    ! symmetric); a negative one counts given markers RVAC/ZVAC(0:30).
+    IF (msfx < -(nsfix - 1)) CALL report('MSFX', EQU_DIAG_OUT_OF_RANGE, &
          '|MSFX|='//itoa(ABS(msfx))//' is above 29 (the marker arrays)')
     DO n = 0, icvdm
        IF (ncoil(n) < 0 .OR. ncoil(n) > 100) CALL report('NCOIL['//itoa(n)//']', &
@@ -706,6 +739,10 @@ CONTAINS
     END DO
     IF (ilimt < 0 .OR. ilimt > 100) CALL report('ILIMT', EQU_DIAG_OUT_OF_RANGE, &
          'ILIMT='//itoa(ilimt)//' is outside 0..100 (limiter points)')
+    ! eqlim reads IVBND points of RVBND, ZVBND(50), which no input sets.
+    IF (ivbnd /= 0) CALL report('IVBND', EQU_DIAG_OUT_OF_RANGE, &
+         'IVBND must be 0: the vacuum boundary points it counts (RVBND, ZVBND) '// &
+         'are not inputs of &EQU')
 
     ! --- what eqchek refuses (equinit.f90), before the coil file is read ---
     IF (ieqrd /= 0) CALL report('IEQRD', EQU_DIAG_OUT_OF_RANGE, &
@@ -714,9 +751,13 @@ CONTAINS
     DO n = 0, icvdm
        IF (ivac(n) >= 0) nivac = nivac + 1
     END DO
-    IF (nivac > ABS(msfx)) CALL report('IVAC', EQU_DIAG_INCONSISTENT_PAIR, &
-         itoa(nivac)//' coil groups are fitted (IVAC(i)>=0, i>0) but |MSFX|='// &
-         itoa(ABS(msfx))//' marker points')
+    ! With a positive MSFX the larger of eqchek's caps (17): eqchek itself
+    ! refuses what this lets through (a run error, not a process exit).
+    nmark = ABS(msfx)
+    IF (msfx > 17) nmark = 17
+    IF (nivac > nmark) CALL report('IVAC', EQU_DIAG_INCONSISTENT_PAIR, &
+         itoa(nivac)//' coil groups are fitted (IVAC(i)>=0, i>0) but there are '// &
+         itoa(nmark)//' marker points')
 
     ! --- the box, the profile and the switches ---
     IF (.NOT. (rwmn > 0.0_dp)) CALL report('RWMN', EQU_DIAG_OUT_OF_RANGE, &
@@ -733,8 +774,9 @@ CONTAINS
     END SELECT
     IF (isvac /= 0 .AND. isvac /= 1) CALL report('ISVAC', EQU_DIAG_OUT_OF_RANGE, &
          'ISVAC must be 0 or 1')
-    IF (isep < 0 .OR. isep > 4) CALL report('ISEP', EQU_DIAG_OUT_OF_RANGE, &
-         'ISEP must be 0..4')
+    ! The code takes ISEP's sign into account (iabs(isep), eqsep).
+    IF (ABS(isep) > 4) CALL report('ISEP', EQU_DIAG_OUT_OF_RANGE, &
+         'ISEP must be -4..4')
     IF (iudsym /= 0 .AND. iudsym /= 1) CALL report('IUDSYM', EQU_DIAG_OUT_OF_RANGE, &
          'IUDSYM must be 0 or 1')
     IF (ieqmax < 0) CALL report('IEQMAX', EQU_DIAG_OUT_OF_RANGE, 'IEQMAX must be >= 0')
@@ -742,21 +784,48 @@ CONTAINS
     IF (iodmax < 0) CALL report('IODMAX', EQU_DIAG_OUT_OF_RANGE, 'IODMAX must be >= 0')
     IF (iadmax < 0) CALL report('IADMAX', EQU_DIAG_OUT_OF_RANGE, 'IADMAX must be >= 0')
 
-    ! --- marker points (MSFX < 0: RVAC, ZVAC 0..|MSFX| are given) ---
-    ! eqchek only enlarges the box, so a marker inside the box as given
-    ! is inside the grid; one outside it can index the vacuum field svac
-    ! below its bounds in eqadj0 (QUEST with ZWMX = 0.6: index -177).
-    IF (msfx < 0 .AND. ABS(msfx) <= nsfix - 1) THEN
-       DO n = 0, ABS(msfx)
-          IF (.NOT. (rvac(n) > rwmn .AND. rvac(n) < rwmx .AND. &
-                     ABS(zvac(n)) < zwmx)) THEN
-             WRITE(rz, '(2(1X,ES10.3))', IOSTAT=ios) rvac(n), zvac(n)
-             IF (ios /= 0) rz = ' (not printable)'
-             CALL report('RVAC['//itoa(n)//']', EQU_DIAG_OUT_OF_RANGE, &
-                  'the marker point (R, Z) ='//TRIM(rz)//' is outside the box '// &
-                  'RWMN < R < RWMX, |Z| < ZWMX')
-          END IF
-       END DO
+    ! --- the box as eqchek sets it, and the marker points in it ---
+    ! eqchek (equinit.f90) takes RMAJ, RPLA from the given markers when
+    ! MSFX < 0 (those with R > 0), then widens the box to
+    ! RMAJ -+ 1.2*RPLA and |Z| < 1.2*ELIP*RPLA. A marker outside that box
+    ! indexes the vacuum field svac out of bounds in eqadj0 (QUEST with
+    ! ZWMX = 0.6: index -177); eqadj0 uses marker 0 when MSFX = 0 too.
+    IF (rwmn > 0.0_dp .AND. rwmx > rwmn .AND. zwmx > 0.0_dp .AND. &
+        msfx >= -(nsfix - 1)) THEN
+       rm = rmaj
+       rp = rpla
+       IF (msfx < 0) THEN
+          rrmax = -1.0E10_dp
+          rrmin = 1.0E10_dp
+          DO n = 0, ABS(msfx)
+             IF (rvac(n) > 0.0_dp .AND. rvac(n) > rrmax) rrmax = rvac(n)
+             IF (rvac(n) > 0.0_dp .AND. rvac(n) < rrmin) rrmin = rvac(n)
+          END DO
+          rm = 0.5_dp * (rrmax + rrmin)
+          rp = 0.5_dp * ABS(rrmax - rrmin)
+       END IF
+       bx_rmin = MIN(rwmn, rm - 1.2_dp * rp)
+       bx_rmax = MAX(rwmx, rm + 1.2_dp * rp)
+       bx_z = MAX(zwmx, 1.2_dp * elip * rp)
+       IF (.NOT. (bx_rmin > 0.0_dp)) THEN
+          WRITE(rz, '(ES10.3)', IOSTAT=ios) bx_rmin
+          IF (ios /= 0) rz = '(not printable)'
+          CALL report('RWMN', EQU_DIAG_OUT_OF_RANGE_AFTER_DEP, &
+               'eqchek lowers the box''s inner edge to RMAJ - 1.2*RPLA ='//TRIM(rz)// &
+               ' <= 0 (RMAJ, RPLA from the markers when MSFX < 0)')
+       END IF
+       IF (msfx <= 0) THEN
+          DO n = 0, ABS(msfx)
+             IF (.NOT. (rvac(n) > bx_rmin .AND. rvac(n) < bx_rmax .AND. &
+                        ABS(zvac(n)) < bx_z)) THEN
+                WRITE(rz, '(2(1X,ES10.3))', IOSTAT=ios) rvac(n), zvac(n)
+                IF (ios /= 0) rz = ' (not printable)'
+                CALL report('RVAC['//itoa(n)//']', EQU_DIAG_OUT_OF_RANGE_AFTER_DEP, &
+                     'the marker point (R, Z) ='//TRIM(rz)//' is outside the box '// &
+                     'as eqchek sets it')
+             END IF
+          END DO
+       END IF
     END IF
 
     ! --- the coil file ---
@@ -766,6 +835,13 @@ CONTAINS
        IF (LEN_TRIM(why) > 0) CALL report('KNAMCOIL', EQU_DIAG_FILE_MISSING, why)
     END IF
   END SUBROUTINE check_inputs
+
+  LOGICAL FUNCTION pow2_plus_1(n)
+    INTEGER, INTENT(IN) :: n
+    INTEGER :: m
+    m = n - 1
+    pow2_plus_1 = m > 0 .AND. IAND(m, m - 1) == 0
+  END FUNCTION pow2_plus_1
 
   !-------------------------------------------------------------------
   ! scan_coil_file : does the file hold what eqflin will read (equinit.f90,

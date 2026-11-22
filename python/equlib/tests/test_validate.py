@@ -14,7 +14,7 @@ from equlib.tests.conftest import requires_lib
 
 pytestmark = requires_lib
 
-OUT_OF_RANGE, INCONSISTENT_PAIR, FILE_MISSING = 1, 2, 4
+OUT_OF_RANGE, INCONSISTENT_PAIR, AFTER_DEP, FILE_MISSING = 1, 2, 3, 4
 
 
 @pytest.fixture
@@ -39,7 +39,10 @@ CASES = [
     ("NR", 258, "NR", OUT_OF_RANGE),
     ("NZ", 2, "NZ", OUT_OF_RANGE),
     ("NZ", 258, "NZ", OUT_OF_RANGE),
-    ("NV", 1, "NV", OUT_OF_RANGE),
+    ("NV", 2, "NV", OUT_OF_RANGE),            # eqout prints rbv(nv-2)
+    ("NR", 200, "NR", OUT_OF_RANGE),          # NR-1 not a power of two
+    ("NZ", 100, "NZ", OUT_OF_RANGE),
+    ("IVBND", 1, "IVBND", OUT_OF_RANGE),
     ("NV", 102, "NV", OUT_OF_RANGE),
     ("NSUMAX", 2, "NSUMAX", OUT_OF_RANGE),
     ("NSUMAX", 1543, "NSUMAX", OUT_OF_RANGE),
@@ -55,13 +58,17 @@ CASES = [
     ("ICP[1]", 3, "ICP[1]", OUT_OF_RANGE),
     ("ISVAC", 2, "ISVAC", OUT_OF_RANGE),
     ("ISEP", 5, "ISEP", OUT_OF_RANGE),
+    ("ISEP", -5, "ISEP", OUT_OF_RANGE),
     ("IUDSYM", 2, "IUDSYM", OUT_OF_RANGE),
     ("IEQMAX", -1, "IEQMAX", OUT_OF_RANGE),
     ("MSETUP", -1, "MSETUP", OUT_OF_RANGE),
     ("IODMAX", -1, "IODMAX", OUT_OF_RANGE),
     ("IADMAX", -1, "IADMAX", OUT_OF_RANGE),
-    # QUEST's marker 2 is at Z = -0.70: outside |Z| < 0.6.
-    ("ZWMX", 0.6, "RVAC[2]", OUT_OF_RANGE),
+    # QUEST's marker 2 is at Z = -0.70: outside |Z| < 0.6, and outside
+    # eqchek's widened box too (1.2*ELIP*RPLA = 0.691 with RPLA from the markers).
+    ("ZWMX", 0.6, "RVAC[2]", AFTER_DEP),
+    # A marker at R = 0.02 makes eqchek's inner edge RMAJ - 1.2*RPLA < 0.
+    ("RVAC[0]", 0.02, "RWMN", AFTER_DEP),
 ]
 
 
@@ -104,3 +111,23 @@ def test_validate_is_read_only(quest):
     quest.set_param("NV", 1)
     first = quest.validate()
     assert quest.validate() == first
+
+
+@pytest.mark.parametrize("name,value", [
+    ("RWMN", 0.30),   # marker 0 at R = 0.28: eqchek lowers RWMN to 0.208, the program runs
+    ("ISEP", -1),     # the code uses the sign
+    ("MSFX", 30),     # a positive MSFX: eqchek lowers it
+    ("ZWMX", 0.9),    # the default flux-loop point (2.786, 0.952) off the grid: eqout no longer indexes there
+])
+def test_accepted_inputs(quest, name, value):
+    quest.set_param(name, value)
+    assert quest.validate() == [], name
+
+
+def test_validate_asks_again_past_its_capacity(quest, monkeypatch):
+    import equlib.equlib as mod
+    for n in range(1, 7):
+        quest.set_param(f"NCOIL[{n}]", 101)
+    full = quest.validate()
+    monkeypatch.setattr(mod, "_DIAG_CAP", 2)
+    assert quest.validate() == full and len(full) > 2

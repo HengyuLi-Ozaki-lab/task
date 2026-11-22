@@ -82,7 +82,7 @@ $(OBJDIR)/equ_convert.o : equ_convert.f90 equcomm.f90
 # equ_status_mod (the failure record of the library interface) is used
 # by the routines that used to STOP and by their callers.
 $(OBJDIR)/equ_status.o : equ_status.f90
-$(OBJDIR)/equsub.o $(OBJDIR)/equinit.o $(OBJDIR)/equset.o $(OBJDIR)/equfct.o : equ_status.f90
+$(OBJDIR)/equsub.o $(OBJDIR)/equinit.o $(OBJDIR)/equset.o $(OBJDIR)/equfct.o : $(OBJDIR)/equ_status.o
 
 # =====================================================================
 # Library interface (libequapi.so) and the program without graphics
@@ -189,7 +189,8 @@ $(OBJC_PIC): | libs_pic_prereq
 # Every PIC object of SRCS uses equcomm's modules, and those that
 # used to STOP use equ_status_mod.
 $(OBJDIR_PIC)/equsub.o $(OBJDIR_PIC)/equinit.o $(OBJDIR_PIC)/equset.o $(OBJDIR_PIC)/equfct.o: $(OBJDIR_PIC)/equ_status.o
-$(OBJS_PIC) $(OBJDIR_PIC)/equmain.o $(OBJDIR_PIC)/equ_static_stubs.o: | libs_pic_prereq $(OBJC_PIC)
+# equcomm.o is a real prerequisite: an edit of equcomm.f90 rebuilds them.
+$(OBJS_PIC) $(OBJDIR_PIC)/equmain.o $(OBJDIR_PIC)/equ_static_stubs.o: $(OBJC_PIC) | libs_pic_prereq
 
 # --- equ_nogr: the program without graphics -------------------------
 # The same main program, menu and solver as `equ`, linked from the PIC
@@ -219,7 +220,7 @@ SRCS_API=equ_state.f90 equ_param_registry.f90 equ_image.f90 equ_api.f90
 OBJ_API_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_API:.f90=.o))
 OBJ_LIBEQUAPI=$(OBJC_PIC) $(OBJS_PIC_CORE) $(OBJ_API_PIC)
 
-$(OBJ_API_PIC): | libs_pic_prereq $(OBJC_PIC) $(OBJS_PIC_CORE)
+$(OBJ_API_PIC): $(OBJC_PIC) $(OBJS_PIC_CORE) | libs_pic_prereq
 $(OBJDIR_PIC)/equ_param_registry.o: $(OBJDIR_PIC)/equ_state.o
 $(OBJDIR_PIC)/equ_image.o: $(OBJDIR_PIC)/equ_param_registry.o
 $(OBJDIR_PIC)/equ_api.o: $(OBJDIR_PIC)/equ_state.o $(OBJDIR_PIC)/equ_param_registry.o \
