@@ -7,7 +7,8 @@
 ## 必須・推奨パラメータ
 
 ほとんどのパラメータは既定値があるため最小構成では何も指定しなくても
-`run()` できます. ただし **特定の条件で必須** になるものと, **物理的に
+`run(mode=0)` (Grad-Shafranov 求解) できます. `run()` (`mode=1`) には
+`MODELG` でファイル形式を指定する必要があり, 既定の 2 では失敗します. ただし **特定の条件で必須** になるものと, **物理的に
 意味のある結果を得るには上書きすべき** ものがあります.
 
 ### 必須 (条件付き)
@@ -21,7 +22,7 @@ eq.set_param("MODELG", 3)
 eq.set_param_str("KNAMEQ", "eqdata.ITER01")
 ```
 
-`MODELG=2` (解析的トロイダル幾何, 既定) なら `KNAMEQ` 不要なので
+`MODELG=2` (トロイダル形状, 既定. `run(mode=0)` で解く) なら `KNAMEQ` 不要なので
 **厳密な意味で必須なパラメータはありません**.
 
 ### 強く推奨 (既定値が generic すぎる)
@@ -227,12 +228,15 @@ $$F(\psi) = B_T R + \mathrm{FF}_0 (1-\psi^{P_{R0}})^{P_{F0}} + \cdots$$
 |---|---|
 | 0 | Slab geometry (平板近似) |
 | 1 | Cylindrical geometry (円柱近似) |
-| 2 (既定) | Toroidal geometry (解析的トロイダル) |
-| 3 | TASK/EQ 出力ファイル経路 (`KNAMEQ` 必要) |
-| 4 | VMEC 出力経路 |
-| 5 | EQDSK ファイル経路 (`KNAMEQ` 必要) |
-| 6 | Boozer 座標出力 |
-| 8 | (TASK 内専用パス, `KNAMEQ` 必要) |
+| 2 (既定) | Toroidal geometry (`run(mode=0)` で解く) |
+| 3 | TASK/EQ 形式のファイル, `run(mode=1)` で読み込む (`KNAMEQ` 必要) |
+| 4 | VMEC 出力経路 (`run(mode=1)` では読み込まない) |
+| 5 | G-EQDSK 形式のファイル, `run(mode=1)` で読み込む (`KNAMEQ` 必要) |
+| 6 | Boozer 座標出力 (`run(mode=1)` では読み込まない) |
+| 8 | QST/JAEA 形式の 2 ファイル, `run(mode=1)` で読み込む (`KNAMEQ` と `KNAMEQ2` 必要) |
+| 9 | TASK/EQ 形式のファイル, 3 と同じ読み込みルーチン (`EQRTSK`) で読む (`KNAMEQ` 必要) |
+| 15 | 固定ファイル `eqdb.dat` (`KNAMEQ` ではない). 読み込みルーチンがファイルを読み込めないため `run(mode=1)` は拒否する |
+| 25 | G-EQDSK 形式のファイル, 5 と同じ読み込みルーチン (`EQDSKR`) で読む (`KNAMEQ` 必要) |
 
 `MDLEQF` の許容値:
 

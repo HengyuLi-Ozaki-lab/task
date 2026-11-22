@@ -28,7 +28,7 @@
 | `NPSMAX` | `state.npsmax` | = | ψ-面サンプル数 |
 | `NRMAX`, `NTHMAX` | `state.nrmax`, `state.nthmax` | = | ψ-メッシュの解像度 |
 | `MODELG ∈ {3, 5, 8, 9, 25}` | 必須入力 | `KNAMEQ` のファイル存在が必要 | `KNAMEQ` が空かファイルが無ければ `validate` で `FILE_MISSING`, `run` でも失敗. `MODELG = 15` (固定の `eqdb.dat`) は拒否される |
-| `MODELG = 2` | `KNAMEQ` 無視 | — | 解析的トロイダル経路では使わない |
+| `MODELG = 2` | `KNAMEQ` 無視 | — | Grad-Shafranov 求解 (`run(mode=0)`) は読まない |
 
 ## 2. 物理スケーリングとして既知の傾向
 
@@ -106,7 +106,7 @@
 
 | 入力 | 効果 |
 |---|---|
-| `MODELG=2` (解析) | `KNAMEQ` 不要. 内蔵プロファイルで解く |
+| `MODELG=2` (トロイダル, 既定) | `KNAMEQ` 不要. `run(mode=0)` がプロファイル係数から解く |
 | `MODELG=3` (TASK/EQ) | `KNAMEQ` 必須. TASK ネイティブ平衡を読み込む |
 | `MODELG=5` (EQDSK) | `KNAMEQ` 必須. G-EQDSK 標準形式 |
 | `MDLEQF=0` (既定) | $P, J_\text{tor}, T, V_\varphi$ + $I_p$ を入力 |

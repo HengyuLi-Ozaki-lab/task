@@ -142,7 +142,8 @@ CONTAINS
   !               Requires a file format, MODELG ∈ {3, 5, 8, 9, 25}
   !               with a valid KNAMEQ (and KNAMEQ2 for 8); 15 (the
   !               fixed eqdb.dat) is refused with EQ_ERR_INVALID.
-  !   other     : EQ_ERR_NOT_IMPL (reserved for future modes).
+  !   mode > 1  : EQ_ERR_NOT_IMPL (reserved for future modes);
+  !   mode < 0  : EQ_ERR_INVALID.
   !-------------------------------------------------------------------
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
     USE plcomm, ONLY: RIP
@@ -179,7 +180,7 @@ CONTAINS
           ierr = EQ_ERR_INVALID
           RETURN
        END IF
-       ! Analytic Grad-Shafranov solve via EQCALC, then post-process
+       ! The Grad-Shafranov solve via EQCALC, then post-process
        ! via EQCALQ to populate the ψ-surface profile + scalar
        ! diagnostics (qaxis/qsurf/betat/betap/pvol). EQCALC alone
        ! solves the fixed-boundary GS equation but doesn't compute the
@@ -726,7 +727,7 @@ CONTAINS
     !      eq/eqfile.f90:180-216: MODELG=3/9 -> EQRTSK, a TASK-native file
     !      carrying its own RG/ZG grids AND RA/RKAP/RDLT/RB; MODELG=5/25
     !      -> EQDSKR, grid rebuilt from the file's rdim/zdim; MODELG=8 ->
-    !      EQJAEAR; MODELG=15 -> equread::eqdsk) sets the geometry itself,
+    !      EQJAEAR; MODELG=15 -> equread::eqdsk, which run(1) refuses) sets the geometry itself,
     !      so the pre-run values say nothing about the loaded plasma. Not
     !      checked, hence a false negative for a load with MDLEQF >= 10,
     !      which reads the box too (EQAXIS: run(1) fails, ierr=103, and

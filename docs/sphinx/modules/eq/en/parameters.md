@@ -6,8 +6,9 @@ scalars, 5 array families, 7 strings). The names match the Fortran
 
 ## Required and recommended parameters
 
-Most parameters have defaults, so a minimal call to `run()` works
-without any explicit setting. However, some parameters become
+Most parameters have defaults, so a minimal call to `run(mode=0)` (the
+Grad-Shafranov solve) works without any explicit setting; `run()`, which is
+`mode=1`, also needs a file format in `MODELG` and fails with the default 2. However, some parameters become
 **required under specific conditions**, and others **should be
 overridden** to obtain physically meaningful results.
 
@@ -22,7 +23,7 @@ eq.set_param("MODELG", 3)
 eq.set_param_str("KNAMEQ", "eqdata.ITER01")
 ```
 
-With `MODELG=2` (analytic toroidal geometry, the default) `KNAMEQ` is
+With `MODELG=2` (toroidal geometry, the default; solved with `run(mode=0)`) `KNAMEQ` is
 unused, so **strictly speaking nothing is required**.
 
 ### Strongly recommended (defaults are too generic)
@@ -228,12 +229,15 @@ Allowed values of `MODELG`:
 |---|---|
 | 0 | slab geometry |
 | 1 | cylindrical geometry |
-| 2 (default) | toroidal geometry (analytic) |
-| 3 | TASK/EQ output-file path (requires `KNAMEQ`) |
-| 4 | VMEC output path |
-| 5 | EQDSK file path (requires `KNAMEQ`) |
-| 6 | Boozer-coordinate output |
-| 8 | (TASK-internal path; requires `KNAMEQ`) |
+| 2 (default) | toroidal geometry (solved with `run(mode=0)`) |
+| 3 | TASK/EQ file, loaded with `run(mode=1)` (requires `KNAMEQ`) |
+| 4 | VMEC output path (no `run(mode=1)` load) |
+| 5 | G-EQDSK file, loaded with `run(mode=1)` (requires `KNAMEQ`) |
+| 6 | Boozer-coordinate output (no `run(mode=1)` load) |
+| 8 | QST/JAEA file pair, loaded with `run(mode=1)` (requires `KNAMEQ` and `KNAMEQ2`) |
+| 9 | TASK/EQ file, read by the same reader as 3 (`EQRTSK`) (requires `KNAMEQ`) |
+| 15 | the fixed file `eqdb.dat` (not `KNAMEQ`); `run(mode=1)` refuses it, as its reader cannot load a file |
+| 25 | G-EQDSK file, read by the same reader as 5 (`EQDSKR`) (requires `KNAMEQ`) |
 
 Allowed values of `MDLEQF`:
 
