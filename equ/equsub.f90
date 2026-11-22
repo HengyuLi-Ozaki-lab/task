@@ -2367,6 +2367,14 @@
        zbiv=zbiv+dl*(bi0+bi1)/2.0
        zarv=zarv+(r1-r0)*(z1+z0)/2.0
 !-----
+!      The contour arrays hold isrzdm points (half of them, and the
+!      mirror, when iudsym=1); a longer contour used to index past them.
+       if(nzsu.ge.isrzdm/(1+iudsym)) then
+          write(6,*) ' stop at eqtrc : more points than isrzdm '
+          call equ_fail('eqtrc: the contour has more points than '// &
+               'isrzdm (1542) holds')
+          return
+       endif
        nzsu=nzsu+1
        zrsu(nzsu)=r1
        zzsu(nzsu)=z1
