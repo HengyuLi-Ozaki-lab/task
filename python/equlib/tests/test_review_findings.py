@@ -1,10 +1,13 @@
 """Inputs the third in-house review of 2026-11-22 found to index past EQU's
 arrays, or to reach a device through a link or a long path; each is now an
-error of the run or refused before it."""
+error of the run or refused before it. (The file checks are stat(2)'s since
+the second Codex review: test_second_codex_review.py.)"""
 from __future__ import annotations
 
 import os
+import re
 import subprocess
+import sys
 
 import pytest
 
@@ -111,27 +114,40 @@ def quest_links(workdir):
         yield equ
 
 
-@pytest.mark.parametrize("path", ["in_link", "devdir/stdin", "rel_link", "proc_link",
-                                  " lnk", " devdir/stdin", "/dev/" + "./" * 45 + "stdin"])
-def test_links_to_devices_refused_for_read_parm(quest_links, path):
-    with pytest.raises(EqulibInvalidParamError, match="/dev or /proc"):
+# Under pytest fd 0 is a device or a pipe and fd 1 a capture file: a link
+# to either is "not a regular file" or one of the process's streams.
+STREAM = r"not a regular file|standard input, output or error"
+# /proc/self/fd/0 dangles on macOS (no /proc): nothing there to read.
+PROC = STREAM if sys.platform.startswith("linux") else None
+
+
+@pytest.mark.parametrize("path,refused", [
+    ("in_link", STREAM), ("devdir/stdin", STREAM), ("rel_link", STREAM),
+    ("proc_link", PROC or "cannot open"), (" lnk", STREAM), (" devdir/stdin", STREAM),
+    ("/dev/" + "./" * 45 + "stdin", "under /dev or /proc")])
+def test_links_to_devices_refused_for_read_parm(quest_links, path, refused):
+    with pytest.raises(EqulibInvalidParamError, match=refused):
         quest_links.read_parm(path)
 
 
-@pytest.mark.parametrize("path", ["in_link", "devdir/stdin", "rel_link", "proc_link", " lnk"])
-def test_links_to_devices_refused_for_the_coil_file(quest_links, path):
+@pytest.mark.parametrize("path,refused", [
+    ("in_link", STREAM), ("devdir/stdin", STREAM), ("rel_link", STREAM),
+    ("proc_link", PROC or "no coil file"), (" lnk", STREAM)])
+def test_links_to_devices_refused_for_the_coil_file(quest_links, path, refused):
     quest_links.set_param_str("KNAMCOIL", path)
-    diags = quest_links.validate()
-    assert "KNAMCOIL" in _params(diags)
-    assert "/dev or /proc" in " ".join(d.message for d in diags)
+    diags = [d for d in quest_links.validate() if d.param == "KNAMCOIL"]
+    assert len(diags) == 1
+    assert re.search(refused, diags[0].message), diags[0].message
 
 
-@pytest.mark.parametrize("path", ["rel_link", "devdir/newfile", "proc_link", " devdir/stdout",
-                                  # over 80 characters: written from its directory
-                                  "/dev/" + "./" * 45 + "stdout"])
-def test_links_to_devices_refused_for_geqdsk(quest_links, path):
+@pytest.mark.parametrize("path,refused", [
+    ("rel_link", STREAM), ("proc_link", PROC or "cannot be created"),
+    (" devdir/stdout", STREAM),
+    # over 80 characters: written from its directory, as "stdout" in /dev
+    ("/dev/" + "./" * 45 + "stdout", STREAM)])
+def test_links_to_devices_refused_for_geqdsk(quest_links, path, refused):
     quest_links.run(0)
-    with pytest.raises(EqulibInvalidParamError, match="/dev or /proc"):
+    with pytest.raises(EqulibInvalidParamError, match=refused):
         quest_links.write_geqdsk(path, overwrite=True)
     quest_links.write_geqdsk("ok.geqdsk")
     assert os.path.getsize("ok.geqdsk") > 0

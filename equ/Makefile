@@ -223,7 +223,12 @@ SRCS_CORE=$(filter-out equgout.f90 equmenu.f90 equ_convert.f90 equunit.f90,$(SRC
 OBJS_PIC_CORE=$(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
 SRCS_API=equ_state.f90 equ_param_registry.f90 equ_image.f90 equ_api.f90
 OBJ_API_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_API:.f90=.o))
-OBJ_LIBEQUAPI=$(OBJC_PIC) $(OBJS_PIC_CORE) $(OBJ_API_PIC)
+OBJ_LIBEQUAPI=$(OBJC_PIC) $(OBJS_PIC_CORE) $(OBJ_API_PIC) $(OBJDIR_PIC)/equ_path.o
+
+# equ_path.c: stat(2) for equ_api.f90's file checks (a hidden symbol).
+$(OBJDIR_PIC)/equ_path.o: equ_path.c | libs_pic_prereq
+	@mkdir -p $(OBJDIR_PIC)
+	$(CC) -O2 -fPIC -c -o $@ equ_path.c
 
 $(OBJ_API_PIC): $(OBJC_PIC) $(OBJS_PIC_CORE) | libs_pic_prereq
 $(OBJDIR_PIC)/equ_param_registry.o: $(OBJDIR_PIC)/equ_state.o

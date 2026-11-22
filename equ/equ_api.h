@@ -140,7 +140,10 @@ int equ_get_psi_rz(int nr, int nz, double *psi);
 /* Writes the equilibrium of the last run as G-EQDSK, with EQU's own
  * writer (the program's E command). overwrite = 0 refuses an existing
  * file. EQU_ERR_INVALID: no equilibrium, a blank path or one over 80
- * characters; EQU_ERR_CALC_FAILED: the file was not written. */
+ * characters, a name under /dev or /proc, a file that is not a regular
+ * file or is a standard stream of the process, an existing file that is
+ * not writable, a new file that cannot be created; EQU_ERR_CALC_FAILED:
+ * the file was not written (a new file is then removed). */
 int equ_write_geqdsk(const char *path, int overwrite);
 
 /* The reason of the last failure, at most buflen-1 characters. */

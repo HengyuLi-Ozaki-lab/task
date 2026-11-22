@@ -60,21 +60,15 @@ MODULE equ_api
   INTEGER, SAVE :: g_mode = -1
   CHARACTER(LEN=256), SAVE :: g_errmsg = ' '
 
-  ! libc, for device_path: a link or ".." can lead under /dev or /proc.
+  ! equ_path.c: what a path names, for host_file_refusal.
+  INTEGER(C_INT), PARAMETER :: PATH_ABSENT = 0, PATH_REGULAR = 1, PATH_OTHER = 2, &
+                               PATH_STD_STREAM = 3
   INTERFACE
-     FUNCTION c_realpath(path, resolved) BIND(C, NAME='realpath') RESULT(r)
-       IMPORT :: C_CHAR, C_PTR
+     FUNCTION c_path_kind(path) BIND(C, NAME='equ_path_kind') RESULT(k)
+       IMPORT :: C_CHAR, C_INT
        CHARACTER(KIND=C_CHAR), INTENT(IN) :: path(*)
-       TYPE(C_PTR), VALUE :: resolved
-       TYPE(C_PTR) :: r
-     END FUNCTION c_realpath
-     FUNCTION c_readlink(path, buf, bufsiz) BIND(C, NAME='readlink') RESULT(n)
-       IMPORT :: C_CHAR, C_SIZE_T, C_PTRDIFF_T
-       CHARACTER(KIND=C_CHAR), INTENT(IN) :: path(*)
-       CHARACTER(KIND=C_CHAR), INTENT(OUT) :: buf(*)
-       INTEGER(C_SIZE_T), VALUE :: bufsiz
-       INTEGER(C_PTRDIFF_T) :: n      ! ssize_t
-     END FUNCTION c_readlink
+       INTEGER(C_INT) :: k
+     END FUNCTION c_path_kind
   END INTERFACE
 
 CONTAINS
@@ -131,6 +125,7 @@ CONTAINS
     CHARACTER(LEN=PATH_LEN) :: fpath
     INTEGER :: u, ios, ist, jerr
     LOGICAL :: was_dirty
+    CHARACTER(LEN=80) :: why
 
     IF (.NOT. g_initialized) THEN
        ierr = EQU_ERR_NOT_INIT
@@ -146,11 +141,11 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
-    ! Input files are regular files: a path under /dev or /proc may be the
-    ! process's standard input (/dev/stdin, /dev/fd/0), which a stdio MCP
-    ! server owns.
-    IF (device_path(fpath)) THEN
-       CALL set_error('read_parm: '//TRIM(fpath)//' is under /dev or /proc')
+    ! Only a regular file that is not the process's standard input,
+    ! output or error, which a stdio MCP server owns (host_file_refusal).
+    why = host_file_refusal(fpath)
+    IF (LEN_TRIM(why) > 0) THEN
+       CALL set_error('read_parm: '//TRIM(fpath)//' '//TRIM(why))
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
@@ -341,7 +336,7 @@ CONTAINS
   ! equ_run : mode 1 = the menu's R; mode 0 = its first step (equ_prof).
   !-------------------------------------------------------------------
   FUNCTION equ_api_run(mode) RESULT(ierr) BIND(C, NAME="equ_run")
-    USE eqinit_mod, ONLY: eqflin, eqchek
+    USE eqinit_mod, ONLY: eqflin, eqchek, knamcoil
     USE eqsub_mod, ONLY: eqgrd, eqout
     USE eqset_mod, ONLY: eqset
     USE eqfct_mod, ONLY: eqfct
@@ -396,10 +391,14 @@ CONTAINS
     ! --- equ_prof (equunit.f90:58-73) ---
     ! eqflin takes its unit as an argument: a free one, not the program's
     ! 18, which a host may have open.
-    ucoil = free_unit()
-    IF (ucoil < 0) THEN
-       CALL set_error('run: no free Fortran unit in 30..99 for the coil file')
-       GOTO 900
+    IF (TRIM(knamcoil) /= 'done') THEN
+       ucoil = free_unit()
+       IF (ucoil < 0) THEN
+          CALL set_error('run: no free Fortran unit in 30..99 for the coil file')
+          GOTO 900
+       END IF
+    ELSE
+       ucoil = 18          ! eqflin opens no file with 'done'
     END IF
     CALL eqflin(ucoil, jerr)
     IF (failed_step('eqflin', jerr)) GOTO 900
@@ -602,8 +601,9 @@ CONTAINS
 
   !-------------------------------------------------------------------
   ! equ_write_geqdsk : EQU's own writer (the program's E), with the file
-  ! name and MODEFW set so that FWOPEN does not prompt: 0 overwrites,
-  ! 3 refuses an existing file (lib/libfio.f90 FWOPEN).
+  ! name and MODEFW = 0 so that FWOPEN does not prompt (lib/libfio.f90
+  ! FWOPEN); a new file is created first, so overwrite = 0 refuses a file
+  ! there before the call and one made meanwhile.
   !-------------------------------------------------------------------
   FUNCTION equ_api_write_geqdsk(path, overwrite) RESULT(ierr) &
            BIND(C, NAME="equ_write_geqdsk")
@@ -616,9 +616,11 @@ CONTAINS
     CHARACTER(LEN=LEN(KNAMEQ)) :: save_name
     INTEGER :: save_mode, jerr, u, ios
     INTEGER(8) :: fsize
-    LOGICAL :: there, existed
+    LOGICAL :: there, created
     CHARACTER(LEN=8) :: wr
-    CHARACTER(LEN=48) :: note
+    CHARACTER(LEN=56) :: note
+    CHARACTER(LEN=80) :: why
+    CHARACTER(LEN=200) :: msg
 
     IF (.NOT. g_initialized) THEN
        ierr = EQU_ERR_NOT_INIT
@@ -644,8 +646,9 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
-    IF (device_path(fpath)) THEN
-       CALL set_error('write_geqdsk: '//TRIM(fpath)//' is under /dev or /proc')
+    why = host_file_refusal(fpath)
+    IF (LEN_TRIM(why) > 0) THEN
+       CALL set_error('write_geqdsk: '//TRIM(fpath)//' '//TRIM(why))
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
@@ -664,45 +667,72 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
-    ! An existing file the process may not write: FWOPEN would open it
-    ! read-only and the first WRITE fail.
     IF (there) THEN
+       ! An existing file the process may not write: FWOPEN would open it
+       ! read-only and the first WRITE fail.
        INQUIRE(FILE=TRIM(fpath), WRITE=wr)
        IF (wr == 'NO') THEN
           CALL set_error('write_geqdsk: '//TRIM(fpath)//' exists and is not writable')
           ierr = EQU_ERR_INVALID
           RETURN
        END IF
+    ELSE
+       ! A new file is created here with STATUS='NEW' (O_EXCL: a name taken
+       ! meanwhile, or a dangling link, is refused, not opened), so that a
+       ! failed write removes only a file this call made.
+       u = free_unit()
+       IF (u < 0) THEN
+          CALL set_error('write_geqdsk: no free Fortran unit in 30..99')
+          ierr = EQU_ERR_CALC_FAILED
+          RETURN
+       END IF
+       msg = ' '
+       OPEN(UNIT=u, FILE=TRIM(fpath), STATUS='NEW', ACTION='WRITE', FORM='FORMATTED', &
+            IOSTAT=ios, IOMSG=msg)
+       IF (ios /= 0) THEN
+          CALL set_error('write_geqdsk: '//TRIM(fpath)//' cannot be created: '//TRIM(msg))
+          ierr = EQU_ERR_INVALID
+          RETURN
+       END IF
+       CLOSE(u)
     END IF
-    existed = there
+    created = .NOT. there
+    ! The file exists now (the host's, or the empty one made above):
+    ! FWOPEN opens it for writing without a prompt.
     save_name = KNAMEQ
     save_mode = MODEFW
     KNAMEQ = TRIM(fpath)
-    IF (overwrite /= 0) THEN
-       MODEFW = 0
-    ELSE
-       MODEFW = 3
-    END IF
+    MODEFW = 0
     CALL equ_eqdsk_write(jerr)
     KNAMEQ = save_name
     MODEFW = save_mode
+    ! gfortran's runtime does not report every failed write (past
+    ! RLIMIT_FSIZE the file is cut and IOSTAT stays 0): the file must end
+    ! with the writer's last record.
+    IF (jerr == 0) THEN
+       IF (.NOT. ends_with_last_record(TRIM(fpath))) jerr = 13
+    END IF
     IF (jerr /= 0) THEN
-       ! A file this call created is removed, so that a part-written one
+       ! The file this call created is removed, so that a part-written one
        ! is not loaded later; a file that was there is left as it is.
-       IF (existed) THEN
-          note = '; the file that was there may be incomplete'
-       ELSE
-          note = ' '
-          INQUIRE(FILE=TRIM(fpath), EXIST=there)
+       IF (created) THEN
+          note = '; the part-written file could not be removed'
           u = free_unit()
-          IF (there .AND. u > 0) THEN
+          IF (u > 0) THEN
              OPEN(UNIT=u, FILE=TRIM(fpath), STATUS='OLD', IOSTAT=ios)
              IF (ios == 0) CLOSE(u, STATUS='DELETE', IOSTAT=ios)
              IF (ios == 0) note = '; the part-written file was removed'
           END IF
+       ELSE
+          note = '; the file that was there may be incomplete'
        END IF
-       CALL set_error('write_geqdsk: '//TRIM(fpath)//' not written (ierr='// &
-                      itoa(jerr)//')'//TRIM(note))
+       IF (jerr == 13) THEN
+          CALL set_error('write_geqdsk: '//TRIM(fpath)//' not written (ierr=13: '// &
+                         'it ends before its last record)'//TRIM(note))
+       ELSE
+          CALL set_error('write_geqdsk: '//TRIM(fpath)//' not written (ierr='// &
+                         itoa(jerr)//')'//TRIM(note))
+       END IF
        ierr = EQU_ERR_CALC_FAILED
        RETURN
     END IF
@@ -1017,12 +1047,14 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(OUT) :: why
     INTEGER :: u, ios, n, nn
     CHARACTER(LEN=10) :: aname
+    CHARACTER(LEN=80) :: r
     REAL(dp) :: a, b, c
     LOGICAL :: there
 
     why = ' '
-    IF (device_path(fname)) THEN
-       why = 'the coil file '//fname//' is under /dev or /proc'
+    r = host_file_refusal(fname)
+    IF (LEN_TRIM(r) > 0) THEN
+       why = 'the coil file '//fname//' '//TRIM(r)
        RETURN
     END IF
     INQUIRE(FILE=fname, EXIST=there)
@@ -1074,100 +1106,64 @@ CONTAINS
   END SUBROUTINE scan_coil_file
 
   !-------------------------------------------------------------------
-  ! device_path : a path that is, or leads to, a name under /dev or /proc:
-  ! as written (also after leading blanks), and as OPEN takes it (leading
-  ! blanks kept: ' lnk' is a name of its own) through symbolic links and
-  ! "..", or, for a file that does not exist yet, through its directory.
-  ! Linux's /proc/<pid>/fd/0 links to "pipe:[n]", which realpath cannot
-  ! resolve, so the links are also followed one at a time. A chain it
-  ! cannot decide (more than 40 links, a name longer than 4096) counts
-  ! as a device.
+  ! ends_with_last_record : the G-EQDSK file p ends with the record
+  ! equ_eqdsk_write writes last (format 2024: 0, 0.D0, 0) and a newline.
+  ! Without a free unit it is not checked (.TRUE.).
   !-------------------------------------------------------------------
-  LOGICAL FUNCTION device_path(p)
+  LOGICAL FUNCTION ends_with_last_record(p)
     CHARACTER(LEN=*), INTENT(IN) :: p
-    CHARACTER(LEN=4096) :: cur, r, t, d
-    INTEGER :: hop
-    device_path = .TRUE.
-    IF (under_device(ADJUSTL(p))) RETURN
-    IF (LEN_TRIM(p) > LEN(cur)) RETURN
-    cur = p
-    DO hop = 1, 40
-       IF (under_device(cur)) RETURN
-       IF (resolved_path(cur, r)) THEN
-          device_path = under_device(r)
-          RETURN
-       END IF
-       IF (resolved_path(dir_of(cur), r)) THEN
-          IF (under_device(r)) RETURN
-       END IF
-       IF (.NOT. link_target(cur, t)) THEN
-          ! Not a link: a file that does not exist yet, in a directory
-          ! that is not under /dev or /proc.
-          device_path = .FALSE.
-          RETURN
-       END IF
-       IF (t(1:1) == '/') THEN
-          cur = t
-       ELSE
-          d = dir_of(cur)
-          IF (LEN_TRIM(d) + 1 + LEN_TRIM(t) > LEN(cur)) RETURN
-          cur = TRIM(d)//'/'//t
-       END IF
-    END DO
-  END FUNCTION device_path
-
-  LOGICAL FUNCTION under_device(s)
-    CHARACTER(LEN=*), INTENT(IN) :: s
-    under_device = s == '/dev' .OR. s == '/proc' .OR. &
-                   s(1:MIN(5, LEN(s))) == '/dev/' .OR. s(1:MIN(6, LEN(s))) == '/proc/'
-  END FUNCTION under_device
-
-  FUNCTION dir_of(s) RESULT(d)
-    CHARACTER(LEN=*), INTENT(IN) :: s
-    CHARACTER(LEN=4096) :: d
-    INTEGER :: k
-    k = INDEX(TRIM(s), '/', BACK=.TRUE.)
-    IF (k == 0) THEN
-       d = '.'
-    ELSE IF (k == 1) THEN
-       d = '/'
-    ELSE
-       d = s(1:k-1)
+    CHARACTER(LEN=26) :: last
+    CHARACTER(LEN=27) :: tail
+    INTEGER :: u, ios
+    INTEGER(8) :: n
+    ends_with_last_record = .FALSE.
+    WRITE(last, '(i5,e16.9,i5)') 0, 0.0_dp, 0
+    INQUIRE(FILE=p, SIZE=n)
+    IF (n < LEN(tail)) RETURN
+    u = free_unit()
+    IF (u < 0) THEN
+       ends_with_last_record = .TRUE.
+       RETURN
     END IF
-  END FUNCTION dir_of
+    OPEN(UNIT=u, FILE=p, STATUS='OLD', ACTION='READ', ACCESS='STREAM', &
+         FORM='UNFORMATTED', IOSTAT=ios)
+    IF (ios /= 0) RETURN
+    READ(u, POS=n-LEN(tail)+1, IOSTAT=ios) tail
+    CLOSE(u)
+    IF (ios /= 0) RETURN
+    ends_with_last_record = tail == last//ACHAR(10)
+  END FUNCTION ends_with_last_record
 
-  ! realpath(3) into a buffer of 4096 + 1 bytes (PATH_MAX: 4096 on Linux,
-  ! 1024 on macOS); .FALSE. if the path does not resolve.
-  LOGICAL FUNCTION resolved_path(s, out)
-    CHARACTER(LEN=*), INTENT(IN) :: s
-    CHARACTER(LEN=*), INTENT(OUT) :: out
-    CHARACTER(KIND=C_CHAR), TARGET :: buf(4097)
-    INTEGER :: i
-    out = ' '
-    buf = C_NULL_CHAR
-    resolved_path = C_ASSOCIATED(c_realpath(TRIM(s)//C_NULL_CHAR, C_LOC(buf)))
-    IF (.NOT. resolved_path) RETURN
-    DO i = 1, MIN(SIZE(buf), LEN(out))
-       IF (buf(i) == C_NULL_CHAR) EXIT
-       out(i:i) = buf(i)
-    END DO
-  END FUNCTION resolved_path
-
-  ! readlink(2): .FALSE. if s is not a symbolic link.
-  LOGICAL FUNCTION link_target(s, out)
-    CHARACTER(LEN=*), INTENT(IN) :: s
-    CHARACTER(LEN=*), INTENT(OUT) :: out
-    CHARACTER(KIND=C_CHAR) :: buf(4096)
-    INTEGER(C_PTRDIFF_T) :: n
-    INTEGER :: i
-    out = ' '
-    n = c_readlink(TRIM(s)//C_NULL_CHAR, buf, INT(SIZE(buf), C_SIZE_T))
-    link_target = n > 0 .AND. n < SIZE(buf)
-    IF (.NOT. link_target) RETURN
-    DO i = 1, INT(n)
-       out(i:i) = buf(i)
-    END DO
-  END FUNCTION link_target
+  !-------------------------------------------------------------------
+  ! host_file_refusal : why the library does not open path p, blank if it
+  ! may. p is taken as OPEN takes it (trailing blanks dropped, leading
+  ! ones kept). A name under /dev or /proc is refused as written; through
+  ! any name (a link, "..", /dev/fd/0, a named FIFO) a file that exists
+  ! must be a regular file and not one of the process's standard input,
+  ! output or error, which a stdio MCP server owns (equ_path.c: stat(2)
+  ! follows the links). A name that does not exist is left to the caller.
+  !-------------------------------------------------------------------
+  FUNCTION host_file_refusal(p) RESULT(why)
+    CHARACTER(LEN=*), INTENT(IN) :: p
+    CHARACTER(LEN=80) :: why
+    CHARACTER(LEN=LEN_TRIM(p)) :: q
+    q = p(1:LEN_TRIM(p))
+    why = ' '
+    IF (q == '/dev' .OR. q == '/proc' .OR. q(1:MIN(5, LEN(q))) == '/dev/' .OR. &
+        q(1:MIN(6, LEN(q))) == '/proc/') THEN
+       why = 'is under /dev or /proc'
+       RETURN
+    END IF
+    SELECT CASE (c_path_kind(q//C_NULL_CHAR))
+    CASE (PATH_ABSENT, PATH_REGULAR)
+    CASE (PATH_OTHER)
+       why = 'is not a regular file (a directory, pipe, FIFO, terminal or device)'
+    CASE (PATH_STD_STREAM)
+       why = 'is the standard input, output or error of this process'
+    CASE DEFAULT
+       why = 'cannot be checked (stat failed: a loop of links, no access, ...)'
+    END SELECT
+  END FUNCTION host_file_refusal
 
   !-------------------------------------------------------------------
   ! free_unit : the first unit of 30..99 that is not open, or -1.

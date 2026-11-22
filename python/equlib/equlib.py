@@ -218,9 +218,10 @@ class Equ:
         """Write the last run's equilibrium as G-EQDSK (EQU's own writer).
 
         EQU's file name holds 80 ASCII characters; a longer path, or one
-        whose directories are not ASCII, is written from its directory under
-        its base name: the process's working directory is changed for the
-        call and put back, so no other thread may rely on it meanwhile.
+        whose directories are not ASCII, is written from its directory (as
+        written: the file system resolves ``link/..``) under its base name:
+        the process's working directory is changed for the call and put
+        back, so no other thread may rely on it meanwhile.
         """
         self._check_open()
         text = str(path)
@@ -229,7 +230,11 @@ class Equ:
             self._raise("equ_write_geqdsk",
                         self._lib.equ_write_geqdsk(raw, 1 if overwrite else 0))
             return
-        head, base = os.path.split(os.path.abspath(text))
+        # The directory as written: os.chdir resolves "link/.." through the
+        # link, as an open of the whole path would (os.path.abspath would
+        # drop "link/.." before the file system saw it).
+        head, base = os.path.split(text)
+        head = head or "."
         raw = _encode(base, "the file name", _VALUE_MAX)
         here = os.getcwd()
         try:

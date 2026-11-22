@@ -43,9 +43,11 @@ def test_existing_file(solved, workdir):
     assert (workdir / "g").stat().st_size > 1_000_000
 
 
-def test_directory_missing(solved):
-    with pytest.raises(EqulibCalculationFailedError, match="not written"):
+def test_directory_missing(solved, workdir):
+    # The file is created before EQU's writer runs (STATUS='NEW').
+    with pytest.raises(EqulibInvalidParamError, match="cannot be created"):
         solved.write_geqdsk("no-such-dir/g")
+    assert not (workdir / "no-such-dir").exists()
 
 
 def test_a_path_longer_than_80_characters(solved, workdir):
