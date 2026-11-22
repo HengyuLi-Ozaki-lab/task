@@ -2,9 +2,9 @@
 
 MODULE trexec
 
-  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK, tr_library_mode
+  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK, tr_library_mode, tr_eval_nt_row, tr_eval_row_added
   PRIVATE
-  PUBLIC tr_exec,tr_eval,tr_coef_decide
+  PUBLIC tr_exec,tr_eval,tr_coef_decide,tr_eval_take_back_row
 
 CONTAINS
 
@@ -413,8 +413,7 @@ CONTAINS
       INTEGER,INTENT(OUT) :: IERR
       integer:: IDGLOB
       REAL(rkind):: TPRE_KEEP, WPPRE_KEEP
-!     The step of the last history row TRATOT recorded; -1 = none since the last tr_prep (NGT = 0).
-      INTEGER, SAVE :: NT_ROW = -1
+      INTEGER:: NGT_BEFORE
 
       CALL TRCALC(IERR)
       IF(IERR.ne.0) RETURN
@@ -433,11 +432,13 @@ CONTAINS
 !        repeat that step's time, so it is not recorded. tr2 keeps its rows as before. Only this time
 !        history (GT, GVT) is guarded: the profile history TRATOG writes (GTR, GVR) and the print of
 !        TRSNAP still repeat that step at a cut; neither is exported by the library.
-         IF(NGT.EQ.0) NT_ROW=-1
-         IF(.NOT.(tr_library_mode .AND. NT.EQ.NT_ROW)) THEN
+         IF(NGT.EQ.0) tr_eval_nt_row=-1
+         IF(.NOT.(tr_library_mode .AND. NT.EQ.tr_eval_nt_row)) THEN
+            NGT_BEFORE=NGT
             CALL TRATOT
             CALL TRATOTN
-            NT_ROW=NT
+            tr_eval_nt_row=NT
+            tr_eval_row_added=(NGT.GT.NGT_BEFORE)
          ENDIF
       ENDIF
       IF(MOD(NT,NGRSTP).EQ.0) THEN
@@ -461,6 +462,19 @@ CONTAINS
       IERR=0
       RETURN
     END SUBROUTINE tr_eval
+
+!     Library mode: take back the history row tr_eval recorded at step NT, when tr_loop then finds that step not
+!     finite (the run ends there with NONFINITE). The rows before it stay; nothing else is undone.
+    SUBROUTINE tr_eval_take_back_row(NT)
+      USE TRCOMM, ONLY : NGT
+      IMPLICIT NONE
+      INTEGER,INTENT(IN) :: NT
+      IF(NT.EQ.tr_eval_nt_row .AND. tr_eval_row_added .AND. NGT.GT.0) THEN
+         NGT=NGT-1
+         tr_eval_nt_row=-1
+         tr_eval_row_added=.FALSE.
+      ENDIF
+    END SUBROUTINE tr_eval_take_back_row
 
 !     ***********************************************************
 

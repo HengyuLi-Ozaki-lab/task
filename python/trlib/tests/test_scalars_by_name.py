@@ -75,10 +75,10 @@ def _iter01_hot(t):
 
 def test_pint_includes_the_alpha_power_and_every_heating_power_is_counted():
     # trrslt_globals.f90: PINT = POHT + PNBT + PRFST + PNFT + PEXST.
-    prev = os.getcwd()
-    os.chdir(FIXTURES_DIR)
-    try:
-        with Trlib() as t:
+    with Trlib() as t:                  # before the chdir: a relative TRLIB_PATH is resolved from the start cwd
+        prev = os.getcwd()
+        os.chdir(FIXTURES_DIR)
+        try:
             _iter01_hot(t)
             t.run(10)
             g = t.get_scalar
@@ -87,8 +87,8 @@ def test_pint_includes_the_alpha_power_and_every_heating_power_is_counted():
                                               rel=1e-12)
             assert g("QF") == pytest.approx(5.0 * g("PNFT") / (g("POHT") + g("PNBT") + g("PRFST") + g("PEXST")),
                                             rel=1e-12)
-    finally:
-        os.chdir(prev)
+        finally:
+            os.chdir(prev)
 
 
 def test_struct_scalars_agree_with_the_table():
@@ -197,21 +197,21 @@ def test_get_state_on_a_library_without_the_scalar_table_holds_the_struct_scalar
 
 
 def test_a_run_of_zero_steps_evaluates_no_step():
-    # tr_run(0) prepares again after a changed parameter (T is 0 again) but evaluates no step (tr_loop returns before
-    # tr_eval), so TRGLOB does not run: the other scalars are still the previous run's until a run of one step or more.
-    prev = os.getcwd()
-    os.chdir(FIXTURES_DIR)
-    try:
-        with Trlib() as t:
-            _iter01_hot(t)
-            t.run(20)
-            pnbt = t.get_scalar("PNBT")
-            assert pnbt > 0.0
-            t.set_param("PNBTOT", 0.0)
-            t.run(0)
-            assert t.get_scalar("T") == 0.0
-            assert t.get_scalar("PNBT") == pnbt
-            t.run(1)
-            assert t.get_scalar("PNBT") == 0.0
-    finally:
-        os.chdir(prev)
+    # tr_run(0) prepares again after a changed parameter but evaluates no step (tr_loop returns before tr_eval), so
+    # TRGLOB does not run. What the preparation sets is new (T is 0, RIP is RIPS, Q0 from the profiles it builds);
+    # what only a step computes (PNBT, WPT) is still the run before's until a run of one step or more.
+    with Trlib() as t:
+        t.set_param("PNBTOT", 10.0)
+        t.run(20)
+        before = {n: t.get_scalar(n) for n in ("PNBT", "WPT", "RIP", "Q0")}
+        assert before["PNBT"] == pytest.approx(10.0)
+        t.set_param("PNBTOT", 0.0)
+        t.set_param("RIPS", 0.7)
+        t.set_param("RIPE", 0.7)
+        t.run(0)
+        assert t.get_scalar("T") == 0.0
+        assert t.get_scalar("RIP") == 0.7
+        assert t.get_scalar("Q0") != before["Q0"]
+        assert t.get_scalar("PNBT") == before["PNBT"] and t.get_scalar("WPT") == before["WPT"]
+        t.run(1)
+        assert t.get_scalar("PNBT") == 0.0 and t.get_scalar("WPT") != before["WPT"]

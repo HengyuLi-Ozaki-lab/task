@@ -14,14 +14,14 @@ from pathlib import Path
 import pytest
 
 from totlib import Tot
+from totlib import _ffi as _tot_ffi
 from totlib.errors import TotlibError
 
-_REPO = Path(__file__).resolve().parents[3]
 pytestmark = [
     pytest.mark.forked,
-    pytest.mark.skipif(
-        not (os.environ.get("MONO_LIB_PATH") or os.environ.get("TOTLIB_PATH") or (_REPO / "tot" / "libtotapi.so").exists()),
-        reason="libtotapi.so is not built",
+    pytest.mark.skipif(                       # Tot()'s own resolution: MONO_LIB_PATH, TOTLIB_PATH, tot/, lib/
+        not _tot_ffi._default_lib_path().exists(),
+        reason=f"libtotapi.so not found at {_tot_ffi._default_lib_path()}",
     ),
 ]
 
@@ -51,9 +51,10 @@ def _chdir():
 def test_tot_history_equals_the_tr_history_of_the_same_image():
     from totlib._ffi import _default_lib_path as tot_library
     from trlib._ffi import load_library
+    path = str(tot_library().resolve())      # before the chdir: a relative TOTLIB_PATH or MONO_LIB_PATH
     prev = _chdir()
     try:
-        with Tot() as tot:
+        with Tot(path) as tot:
             _hot(tot)
             tot.run(20)
             h = tot.history(["tr:T", "tr:WPT", "tr:PNFT"])
@@ -62,7 +63,7 @@ def test_tot_history_equals_the_tr_history_of_the_same_image():
             assert h["tr:T"][0] == 0.0 and h["tr:WPT"][-1] > 0.0 and h["tr:PNFT"][-1] > 0.0
             # The TR that tot drives: the image Tot() loaded (the mono image, whether named by MONO_LIB_PATH or
             # TOTLIB_PATH) or the libtrapi.so that libtotapi.so links, not trlib's own resolution.
-            lib = load_library(str(tot_library()))
+            lib = load_library(path)
             buf = (ctypes.c_double * 11)()
             got = ctypes.c_int()
             assert lib.tr_history_get(b"WPT", buf, 11, ctypes.byref(got)) == 0 and got.value == 11

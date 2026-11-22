@@ -237,7 +237,7 @@ SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
     "AJOHT":  {"unit": "MA",  "description": "ohmic current"},
     "AJNBT":  {"unit": "MA",  "description": "neutral-beam driven current"},
     "AJBST":  {"unit": "MA",  "description": "bootstrap current"},
-    "RIP":    {"unit": "MA",  "description": "plasma current at this time: under MODELG 3, 5 and 8 the equilibrium's boundary current, which tr_bpsd_get also writes into RIPS and RIPE (tr/trbpsd.f90:413-416), so not the current that was set; otherwise RIPS ramping to RIPE over a call of tr_run (tr/trloop.f90:44-45, tr/trexec.f90:310)"},
+    "RIP":    {"unit": "MA",  "description": "plasma current at this time: under MODELG 3, 5 and 8 the equilibrium's boundary current, which tr_bpsd_get also writes into RIPS and RIPE (tr/trbpsd.f90:413-416), so not the current that was set; under MDLUF 1 and 3 interpolated from the experimental data (RIPU, tr/trexec.f90:314-319); otherwise RIPS ramping to RIPE over a call of tr_run (tr/trloop.f90:44-45, tr/trexec.f90:310)"},
     "VLOOP":  {"unit": "V",   "description": "one-turn voltage at the edge"},
     "WPDOT":  {"unit": "MW",  "description": "rate of change of WPT between the last two global evaluations"},
     "H98Y2":  {"unit": "",    "description": "H factor: TAUE2 / TAUE98"},
@@ -280,7 +280,7 @@ HISTORY_SCHEMA: Dict[str, Dict[str, str]] = {
     "BETAA": {"unit": "", "description": "volume-averaged toroidal beta (fraction)"},
     "ZEFF0": {"unit": "", "description": "effective charge number on axis"},
     "QF": {"unit": "", "description": "5 PNFT / (POHT + PNBT + PRFST + PEXST), the D-T fusion gain whatever the reaction (QF / 5 for D-He3, MDLNF 5, 6)"},
-    "RIP": {"unit": "MA", "description": "plasma current at the row's time: the equilibrium's boundary current under MODELG 3, 5 and 8, otherwise the one set (RIPS ramping to RIPE)"},
+    "RIP": {"unit": "MA", "description": "plasma current at the row's time: the equilibrium's boundary current under MODELG 3, 5 and 8, the experimental data's under MDLUF 1 and 3, otherwise the one set (RIPS ramping to RIPE)"},
     "PEXE": {"unit": "MW", "description": "external power into species 1 (electrons)"},
     "PEXI": {"unit": "MW", "description": "external power into species 2 (first bulk ion)"},
     "PECE": {"unit": "MW", "description": "EC heating of electrons"},
@@ -309,8 +309,10 @@ STATE_SCHEMA: Dict[str, Any] = {
             "type": "object",
             "description": (
                 "the library's named global results (31), each as of the last step TR computed them on; "
-                "units are in each entry. A run of 0 steps evaluates no step: after a changed parameter it "
-                "leaves T at 0 and the others at the previous run's values until a run of one step or more"
+                "units are in each entry. A run of 0 steps evaluates no step: what the preparation sets (T 0, "
+                "RIP = RIPS, Q0 from the profiles it builds) is new, what only a step computes (the powers, WPT) is "
+                "still the run before's (run_and_get_state with ntmax 0 returns T only). A library built before the "
+                "scalar table gives the 14 of tr_state_t only"
             ),
             "properties": {
                 name: {"type": "number", **entry} for name, entry in SCALAR_SCHEMA.items()
@@ -653,7 +655,8 @@ def handle_describe_history_schema() -> Dict[str, Any]:
             "NGTSTP steps (default 2), the state at t = 0 first; a row is recorded at every step that is a multiple of NGTSTP, so a "
             "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again; at most 10001 rows are kept "
             "('full' says when they are). Values are single precision (about 7 digits). A run that fails on a negative "
-            "temperature (TR_CHECK) ends its history on the last recorded step: the failed iterate is not a row. Under "
+            "temperature (TR_CHECK) or with a state that is not finite (NONFINITE) ends its history on the last recorded "
+            "step: the failed step is not a row; a failed preparation leaves no rows. Under "
             "MODELG 9 the row of a step that ends with an EQ re-solve holds the Q0 of before the re-solve."
         ),
         "columns": HISTORY_SCHEMA,
@@ -701,7 +704,12 @@ def handle_run_and_get_state(
         if params:
             _apply_bulk_params(tr, params)
         tr.run(int(ntmax))
-        return _state_dict(tr)
+        out = _state_dict(tr)
+        if int(ntmax) == 0:
+            # No step was evaluated, and finalize then init does not clear TR's global results: they would be a
+            # call before's beside this call's initial profiles. T (0 after the preparation) is the only one kept.
+            out["scalars"] = {"T": out["scalars"].get("T", 0.0)}
+        return out
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
@@ -858,6 +866,9 @@ def build_server() -> Any:
             set_params(params)
             run(ntmax)
             return get_state()
+
+        With ``ntmax`` 0 no step is evaluated: the profiles are the prepared
+        initial state and ``scalars`` holds ``T`` only.
         """
         return handle_run_and_get_state(params, ntmax)
 

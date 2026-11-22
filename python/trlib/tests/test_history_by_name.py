@@ -73,7 +73,8 @@ def _iter01_hot(t):
 
 
 class _Iter01:
-    """A cwd that holds eqdata.ITER01, for the length of a test."""
+    """A cwd that holds eqdata.ITER01, for the length of a test. Enter it after Trlib(): a relative TRLIB_PATH or
+    MONO_LIB_PATH is resolved from the cwd the test started in."""
     def __enter__(self):
         self.prev = os.getcwd()
         os.chdir(FIXTURES_DIR)
@@ -131,7 +132,7 @@ def test_a_call_of_zero_steps_records_nothing():
 
 @pytest.mark.parametrize("name", sorted(set(SHARED) - {"BETAN", "PRFST"}))
 def test_the_last_row_equals_the_final_scalar(name):
-    with _Iter01(), Trlib() as t:
+    with Trlib() as t, _Iter01():
         _iter01_hot(t)
         t.run(20)                                    # the last step is a multiple of NGTSTP
         assert t.history(name)[name][-1] == pytest.approx(t.get_scalar(name), rel=1e-6, abs=0.0)
@@ -139,7 +140,7 @@ def test_the_last_row_equals_the_final_scalar(name):
 
 @pytest.mark.parametrize("name", ["BETAN", "PRFST"])
 def test_the_last_row_of_a_derived_name_equals_the_final_scalar(name):
-    with _Iter01(), Trlib() as t:
+    with Trlib() as t, _Iter01():
         _iter01_hot(t)
         t.run(20)
         assert t.history(name)[name][-1] == pytest.approx(t.get_scalar(name), rel=1e-6, abs=0.0)
@@ -147,7 +148,7 @@ def test_the_last_row_of_a_derived_name_equals_the_final_scalar(name):
 
 def test_the_heating_powers_are_not_zero_in_the_case_these_tests_use():
     # A comparison of two zeros proves nothing.
-    with _Iter01(), Trlib() as t:
+    with Trlib() as t, _Iter01():
         _iter01_hot(t)
         t.run(20)
         for n in ("PNFT", "PNBT", "POHT", "PINT", "PRFST", "PRLT", "WPT", "TAUE1", "VLOOP", "QF", "AJNBT"):
@@ -156,7 +157,7 @@ def test_the_heating_powers_are_not_zero_in_the_case_these_tests_use():
 
 def test_the_last_row_of_the_central_and_average_values_matches_the_state():
     # TS0 = FCTR(RM(1), RM(2), RT(1), RT(2)) = (9 RT(1) - RT(2)) / 8 on the half-step mesh (trrslt_globals.f90).
-    with _Iter01(), Trlib() as t:
+    with Trlib() as t, _Iter01():
         _iter01_hot(t)
         t.run(20)
         s = t.get_state()
@@ -171,7 +172,7 @@ def test_the_last_row_of_the_central_and_average_values_matches_the_state():
 
 def test_rf_columns_are_the_right_modes_and_species():
     # PRFVT(NS, mode): 1 = ECH, 2 = LH, 3 = ICRH; NS 1 electrons, 2 ions. ITER01 drives all three.
-    with _Iter01(), Trlib() as t:
+    with Trlib() as t, _Iter01():
         _iter01_hot(t)
         t.run(20)
         h = t.history(["PECE", "PECI", "PLHE", "PLHI", "PICE", "PICI", "PRFE", "PRFD", "PRFST", "PEXE"])
@@ -358,7 +359,7 @@ def test_the_average_and_line_averaged_values_match_the_state():
     # radius-weighted means of the state's profiles to a few per cent, and NLAV is the plain mean of ne. Electron
     # and ion temperatures start 12 and 8 keV apart, and ne is twice the ion density, so a wrong species or column
     # (NEAV for the density of the first ion, TEAV for TIAV) is out of tolerance.
-    with _Iter01(), Trlib() as t:
+    with Trlib() as t, _Iter01():
         _iter01_hot(t)
         t.set_param("PT[1]", 12.0)
         for i in (2, 3, 4):
@@ -486,3 +487,34 @@ def test_the_sawtooth_record_cannot_be_started_through_the_library():
     with Trlib() as t:
         with pytest.raises(TrlibParamError):
             t.set_param("TSST", 0.0)
+
+
+@pytest.mark.parametrize("ngtstp,times", [(1, [0.0, 1.0e6]), (2, [0.0])])
+def test_a_step_that_is_not_finite_is_not_a_row_of_the_history(ngtstp, times):
+    # DT = 1e6 s: the state is NaN after the second step (test_loop_failures). tr_eval records the step before tr_loop
+    # finds it not finite (NONFINITE); the row is taken back, and the rows before it stay.
+    with Trlib() as t:
+        t.set_param("DT", 1.0e6)
+        t.set_param("NGTSTP", ngtstp)
+        with pytest.raises(TrlibRunError) as err:
+            t.run(30)
+        assert (err.value.failure.kind, err.value.failure.nt) == ("NONFINITE", 2)
+        assert t.history_length() == len(times)
+        h = t.history()
+        assert list(h["T"]) == pytest.approx(times)
+        assert all(np.all(np.isfinite(v)) for v in h.values())
+
+
+def test_a_failed_preparation_leaves_no_history_of_the_run_before():
+    # MODEL_PNF and MDLNF both set: tr_prep refuses before it starts the history again (NGT = 0). The rows of the run
+    # before are not this run's.
+    with Trlib() as t:
+        t.run(20)
+        assert t.history_length() == 11
+        t.set_param("MODEL_PNF", 1)
+        t.set_param("MDLNF", 1)
+        with pytest.raises(TrlibRunError) as err:
+            t.run(10)
+        assert err.value.failure.kind == "PREP_FAILED"
+        assert t.history_length() == 0
+        assert len(t.history("T")["T"]) == 0

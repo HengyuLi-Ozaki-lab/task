@@ -57,3 +57,17 @@ def test_get_state_returns_all_the_scalars():
         assert state["scalars"]["WPT"] > 0.0
     finally:
         srv.handle_finalize()
+
+
+def test_a_one_shot_run_of_zero_steps_returns_no_result_of_the_call_before():
+    # A run of 0 steps evaluates no step, and finalize then init does not clear TR's global results (CLAUDE.md:
+    # module state): the second call would show the first call's PNBT beside its own initial profiles. It returns
+    # T only.
+    try:
+        first = srv.handle_run_and_get_state(params={"PNBTOT": 10.0}, ntmax=20)
+        assert first["scalars"]["PNBT"] == pytest.approx(10.0)
+        second = srv.handle_run_and_get_state(params={"PNBTOT": 0.0}, ntmax=0)
+        assert second["scalars"] == {"T": 0.0}
+        assert second["NT"] == 0 and len(second["profile"]) == second["NRMAX"]
+    finally:
+        srv.STATE.close()

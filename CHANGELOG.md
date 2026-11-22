@@ -37,9 +37,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`,
     `TAUE98`) in the units of `tr/trrslt_globals.f90` (`PINT` includes `PNFT`, the charged fusion products' power: the
     alpha power, `P_fus/5`, for D-T; alpha and proton together for D-He3, `MDLNF` 5 and 6, where `QF`, a D-T gain, is
-    five times the gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8). They are current after
+    five times the gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8 and the experimental
+    data's under `MDLUF` 1 and 3). They are current after
     a `tr_run` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
-    0 steps evaluates no step (after a changed parameter `T` is 0 and the others are the previous run's). An
+    0 steps evaluates no step: what the preparation sets (`T` 0, `RIP` = `RIPS`, `Q0` from the profiles it builds) is
+    new, what only a step computes (the powers, `WPT`) is still the run before's. `tr_mcp`'s `run_and_get_state` with
+    `ntmax` 0 returns `T` only among the scalars. An
     unknown or inexact name returns `TR_ERR_INVALID` and leaves the value alone. `Trlib.scalar_names()`,
     `Trlib.get_scalar()`; `TrState.scalars` holds all 31 after `get_state` (`to_dict()` keeps the 14 of the C struct,
     which the baselines compare).
@@ -238,7 +241,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   it for `tr2`'s graphics (`TRATOT` at the failure, at the time of the step before and outside the `NGTSTP` cadence:
   `DT` 100 s gave a row at 800 s with `TE0` 3.7e6 after that step's own row). In library mode it is not recorded; the
   history ends on the last recorded step and `tr_last_error` says where the run failed (`tr/trexec.f90`). `tr2` is
-  unchanged.
+  unchanged. Likewise a step that `tr_loop` finds not finite (`NONFINITE`) is taken back from the history
+  (`tr_eval_take_back_row`; `DT` 1e6 s left a row of NaN), and a preparation that fails before it starts the history
+  again (`MODEL_PNF` and `MDLNF` both set) leaves no rows: they were the run before's.
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and

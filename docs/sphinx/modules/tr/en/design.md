@@ -160,10 +160,13 @@ The scalars of `tr_state_t` are 14 of the 31 global results `TRGLOB` computes; `
 47 columns by name, in **single precision** (`GUCLIP`), `NTM` = 10001 rows. TR stops recording silently when they are full
 (`tr_history_full` reports it): a long run sets `NGTSTP`. `tr_prep` sets `NGT` to 0, so a preparation starts the history
 again. In library mode `tr_eval` does not record the step a `tr_run` call starts on when the previous call ended on it,
-and `tr_exec` does not record the failed iterate of a `TRCHCK` failure (`tr2` records both). Under `MODELG` 9 `tr_loop`
+and `tr_exec` does not record the failed iterate of a `TRCHCK` failure (`tr2` records both); `tr_loop` takes back the
+row of a step it finds not finite (`tr_eval_take_back_row`), and a preparation that fails leaves no rows. Under `MODELG` 9 `tr_loop`
 records a step before it re-solves EQ on it and then recomputes `Q0` on the new metric (`tr_bpsd_get`, `TRCALC`), so that
-row's `Q0` is the one of before the re-solve. A `tr_run` of 0 steps evaluates no step: `TRGLOB` does not run, and after a
-preparation the scalars other than `T` are the previous run's. `GVT` columns 89 to 88 + 4 `NGPST` are also the sawtooth
+row's `Q0` is the one of before the re-solve. A `tr_run` of 0 steps evaluates no step: `TRGLOB` does not run, so after a
+preparation what it sets is new (`T` 0, `RIP` = `RIPS`, `Q0` from its profiles) and what only a step computes is the run
+before's. (Evaluating the prepared state there is not done: `TRCALC` injects the `PELTIM` pellet on every call within half a step
+of it, so a second call at t = 0 would inject it twice.) `GVT` columns 89 to 88 + 4 `NGPST` are also the sawtooth
 record's (`TRATOTN`, rows counted from the record's start) once `MDLST` /= 0 and `T` >= `TSST`; `TSST` (1e9 s) is not a
 library parameter, so in library mode they are always `TRATOT`'s (a test fails if it becomes one). In `tr2` the record
 overwrites those columns of its rows (89 to 104 at the default `NGPST` 4: `PEXE` to `PICI`, `RR` to `AJTTOR`,

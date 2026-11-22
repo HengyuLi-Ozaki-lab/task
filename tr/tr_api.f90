@@ -360,6 +360,9 @@ CONTAINS
        ! The first attempt fixes the mesh, failed or not: tr_prep can size
        ! bpsd's splines (tr_set_metric) and then fail later (tr_prof_impurity).
        IF (g_first_nrmax == 0) g_first_nrmax = NRMAX
+       ! Not prepared until tr_prep succeeds: a preparation that fails before it starts the history again
+       ! (NGT = 0) leaves the rows of the run before, which are not this run's (history_rows gives 0).
+       g_prepared = .FALSE.
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, T, 'tr_prep failed')
@@ -1140,9 +1143,10 @@ CONTAINS
   !   VLOOP V; TAUE1, TAUE2, TAUE98 s; RQ1 m; the rest have no unit.
   ! The order here is the order tr_scalar_name enumerates. RIP is the
   ! equilibrium's boundary current under MODELG 3, 5 and 8 (tr_bpsd_get,
-  ! trbpsd.f90), the current set (RIPS to RIPE) otherwise. A tr_run of 0 steps
-  ! evaluates no step (tr_loop returns before tr_eval): after a preparation T is
-  ! 0 again and the others are still the previous run's.
+  ! trbpsd.f90), the experimental data's under MDLUF 1 and 3 (tr_exec), the
+  ! current set (RIPS to RIPE) otherwise. A tr_run of 0 steps evaluates no step
+  ! (tr_loop returns before tr_eval): what the preparation sets is new (T 0,
+  ! RIP = RIPS, Q0 from its profiles), what only a step computes is not.
   !-------------------------------------------------------------------
   PURE FUNCTION scalar_table() RESULT(names)
     CHARACTER(LEN=8) :: names(N_SCALARS)
@@ -1301,7 +1305,9 @@ CONTAINS
   ! when they are full. tr_prep sets NGT to 0 (trprep.f90), so a run starts a
   ! history and a re-preparation starts it again. In library mode tr_eval does not
   ! record the step a call of tr_run starts on when the call before it ended on
-  ! it (the same T twice), nor the failed iterate of a TRCHCK failure (tr_exec).
+  ! it (the same T twice), nor the failed iterate of a TRCHCK failure (tr_exec),
+  ! and tr_loop takes back the row of a step it finds not finite (NONFINITE).
+  ! A failed preparation leaves no rows (g_prepared is false until tr_prep succeeds).
   ! Under MODELG 9 tr_loop records a step before it re-solves EQ on it (a
   ! multiple of NTEQIT) and then recomputes Q0 on the new metric: that row
   ! holds the Q0 of before the re-solve, tr_get_scalar the one after it.
