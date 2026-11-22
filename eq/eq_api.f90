@@ -141,7 +141,8 @@ CONTAINS
   !               Requires a file format, MODELG ∈ {3, 5, 8, 9, 25}
   !               with a valid KNAMEQ (and KNAMEQ2 for 8), or 15 with
   !               the fixed eqdb.dat.
-  !   other     : EQ_ERR_NOT_IMPL (reserved for future modes).
+  !   mode > 1  : EQ_ERR_NOT_IMPL (reserved for future modes);
+  !   mode < 0  : EQ_ERR_INVALID.
   !-------------------------------------------------------------------
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
     USE plcomm, ONLY: RIP
@@ -178,7 +179,7 @@ CONTAINS
           ierr = EQ_ERR_INVALID
           RETURN
        END IF
-       ! Analytic Grad-Shafranov solve via EQCALC, then post-process
+       ! The Grad-Shafranov solve via EQCALC, then post-process
        ! via EQCALQ to populate the ψ-surface profile + scalar
        ! diagnostics (qaxis/qsurf/betat/betap/pvol). EQCALC alone
        ! solves the fixed-boundary GS equation but doesn't compute the

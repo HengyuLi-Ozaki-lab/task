@@ -116,9 +116,7 @@ jobs:
         shell: bash
         run: |
           set -eo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gfortran gcc make jq
+          bash .github/scripts/apt-install.sh gfortran gcc make jq
           gfortran --version | head -1
 
       - name: Clone BPSD (patched fork k-yoshimi/bpsd@develop)
