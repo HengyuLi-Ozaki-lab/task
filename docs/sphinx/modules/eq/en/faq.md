@@ -58,11 +58,12 @@ inconsistent. Common causes:
   default `100`
 - The load (`mode=1`) cannot open the file (it is not there); the
   exception message ends with the reason (`eq.last_error()`). With
-  `MODELG` 3, 5, 8, 9 or 25, a file that is there but not of that format
+  `MODELG` 3, 5, 9 or 25, a file that is there but not of that format
   gives no exception: their readers (`EQRTSK` for 3 and 9, `EQDSKR` for 5
-  and 25, `EQJAEAR` for 8) do not check their reads, and the process stops
-  with a Fortran runtime error (measured for `MODELG` 3, 5 and 8);
-  `run(1)` refuses 15 (`eqdb.dat`) before any read
+  and 25) do not check their reads, and the process stops with a Fortran
+  runtime error (measured for `MODELG` 3 and 5); the reader of 8
+  (`EQJAEAR`) checks them and returns the error, and `run(1)` refuses 15
+  (`eqdb.dat`) before any read
 
 `validate()` catches grid dimensions, a missing load file (a blank `KNAMEQ` or one naming no file,
 `KNAMEQ2` for `MODELG=8`), the refused `MODELG=15` and, for the
