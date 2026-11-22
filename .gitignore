@@ -159,6 +159,7 @@ equ/mod_pic/
 equ/tests/c_abi/test_run_so
 equ/tests/c_abi/test_negative
 equ/tests/c_abi/*.o
+equ/tests/c_abi/run/
 adpost/obj/pic/
 adpost/mod_pic/
 adpost/lib-adpost_pic.a

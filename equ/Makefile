@@ -206,3 +206,75 @@ equ_nogr: $(OBJC_PIC) $(OBJS_PIC) $(OBJDIR_PIC)/equmain.o \
 
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) equ_nogr libequapi.so
+
+# --- libequapi.so: the library interface ----------------------------
+# The library's objects are SRCS without the graphics and the menu:
+# equgout.f90 and equ_convert.f90 draw, equmenu.f90 is the menu, and
+# equunit.f90 uses eqgout_mod; equ_api.f90 calls the solver's routines
+# itself. No GSAF symbol is referenced by what remains, so no graphics
+# stubs are linked (equ_static_stubs.f90 is for equ_nogr only).
+SRCS_CORE=$(filter-out equgout.f90 equmenu.f90 equ_convert.f90 equunit.f90,$(SRCS))
+OBJS_PIC_CORE=$(addprefix $(OBJDIR_PIC)/, $(SRCS_CORE:.f90=.o))
+SRCS_API=equ_state.f90 equ_param_registry.f90 equ_image.f90 equ_api.f90
+OBJ_API_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS_API:.f90=.o))
+OBJ_LIBEQUAPI=$(OBJC_PIC) $(OBJS_PIC_CORE) $(OBJ_API_PIC)
+
+$(OBJ_API_PIC): | libs_pic_prereq $(OBJC_PIC) $(OBJS_PIC_CORE)
+$(OBJDIR_PIC)/equ_param_registry.o: $(OBJDIR_PIC)/equ_state.o
+$(OBJDIR_PIC)/equ_image.o: $(OBJDIR_PIC)/equ_param_registry.o
+$(OBJDIR_PIC)/equ_api.o: $(OBJDIR_PIC)/equ_state.o $(OBJDIR_PIC)/equ_param_registry.o \
+                         $(OBJDIR_PIC)/equ_image.o
+
+# eq/Makefile's link line: gfortran drives it (libgfortran comes along),
+# FLIBS is left out (no graphics), Apple ld resolves the cycles itself.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  SO_SONAME = -Wl,-install_name,@rpath/libequapi.so
+  SO_GROUP_BEGIN =
+  SO_GROUP_END =
+  SO_UNDEFINED = -Wl,-undefined,dynamic_lookup
+else
+  SO_SONAME = -Wl,-soname,libequapi.so
+  SO_GROUP_BEGIN = -Wl,--start-group
+  SO_GROUP_END = -Wl,--end-group
+  SO_UNDEFINED = -Wl,--unresolved-symbols=ignore-all
+endif
+
+libequapi.so: $(OBJ_LIBEQUAPI) $(OBJBPSD_PIC) $(LIBS_PIC) $(LIBMTX_PIC)
+	$(FCFREE) -shared -fPIC $(SO_SONAME) $(SO_UNDEFINED) \
+	    $(OBJ_LIBEQUAPI) $(OBJBPSD_PIC) $(LIBMTX_PIC) \
+	    $(SO_GROUP_BEGIN) $(LIBS_PIC) $(SO_GROUP_END) \
+	    -o libequapi.so
+
+.PHONY: libequapi_inspect
+libequapi_inspect: libequapi.so
+	@echo "=== exported equ_* symbols ==="
+	@nm -g libequapi.so | grep ' T _*equ_[a-z_]*$$' || true
+	@echo "=== undefined, other than libc and libgfortran ==="
+	@nm -u libequapi.so | grep -vE '@|^_*_gfortran|^_*(str|mem|f|mal|cal|fre|abort|exit|printf|sprintf|snprintf)' | head -40 || true
+
+# --- C-level checks through dlopen (as eq_api_check_so) -------------
+CC ?= gcc
+CFLAGS_API ?= -Wall -Wextra -O2
+EQU_API_DIR = tests/c_abi
+
+$(EQU_API_DIR)/test_run_so: $(EQU_API_DIR)/test_run_so.c equ_api.h
+	$(CC) $(CFLAGS_API) -I. -o $@ $(EQU_API_DIR)/test_run_so.c -ldl
+$(EQU_API_DIR)/test_negative: $(EQU_API_DIR)/test_negative.c equ_api.h
+	$(CC) $(CFLAGS_API) -I. -o $@ $(EQU_API_DIR)/test_negative.c -ldl
+
+# test_run_so copies the QUEST example into its own working directory.
+.PHONY: equ_api_check_so equ_api_check_all
+equ_api_check_so: libequapi.so $(EQU_API_DIR)/test_run_so
+	@rm -rf $(EQU_API_DIR)/run && mkdir -p $(EQU_API_DIR)/run
+	@cd $(EQU_API_DIR)/run && EQULIB_PATH=$(CURDIR)/libequapi.so \
+	    EQU_EXAMPLE_DIR=$(CURDIR)/example ../test_run_so > run.log 2>&1 \
+	    || { tail -40 run.log; exit 1; }
+	@grep '^OK:' $(EQU_API_DIR)/run/run.log
+	@echo "equ_api_check_so OK"
+
+equ_api_check_all: equ_api_check_so $(EQU_API_DIR)/test_negative
+	@cd $(EQU_API_DIR)/run && EQULIB_PATH=$(CURDIR)/libequapi.so \
+	    ../test_negative > negative.log 2>&1 || { tail -20 negative.log; exit 1; }
+	@grep '^OK:' $(EQU_API_DIR)/run/negative.log
+	@echo "equ_api_check_all OK"
