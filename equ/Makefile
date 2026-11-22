@@ -190,7 +190,12 @@ $(OBJC_PIC): | libs_pic_prereq
 # used to STOP use equ_status_mod.
 $(OBJDIR_PIC)/equsub.o $(OBJDIR_PIC)/equinit.o $(OBJDIR_PIC)/equset.o $(OBJDIR_PIC)/equfct.o: $(OBJDIR_PIC)/equ_status.o
 # equcomm.o is a real prerequisite: an edit of equcomm.f90 rebuilds them.
+# Every PIC object also depends on every source of the module: the
+# modules use one another (tpxssl_mod, eqpfds_mod, eqsub_mod, ...), and an
+# interface change must rebuild their users; a full rebuild of equ/ takes
+# seconds. (make -j is not supported, as in eq/.)
 $(OBJS_PIC) $(OBJDIR_PIC)/equmain.o $(OBJDIR_PIC)/equ_static_stubs.o: $(OBJC_PIC) | libs_pic_prereq
+$(OBJS_PIC) $(OBJDIR_PIC)/equmain.o: $(SRCC) $(SRCS)
 
 # --- equ_nogr: the program without graphics -------------------------
 # The same main program, menu and solver as `equ`, linked from the PIC

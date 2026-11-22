@@ -17,6 +17,7 @@ from __future__ import annotations
 import ctypes
 import math
 import os
+import threading
 import weakref
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional, Union
@@ -56,26 +57,34 @@ def _encode(text: str, what: str, limit: int) -> bytes:
     return raw
 
 
-class Equ:
-    """Handle to libequapi.so. Context manager; ``close()`` is idempotent."""
+# One owner of the Fortran state per process, whatever subclass holds it.
+_OWNER_LOCK = threading.Lock()
+_owner: Optional["weakref.ReferenceType[Equ]"] = None
 
-    _live_instance: Optional["weakref.ReferenceType[Equ]"] = None
+
+class Equ:
+    """Handle to libequapi.so. Context manager; ``close()`` is idempotent.
+
+    One live handle per process (EQU's state is one set of Fortran modules),
+    and not for use from several threads at once.
+    """
 
     def __init__(self, lib_path: Optional[str] = None) -> None:
+        global _owner
         self._closed = True
-        cls = self.__class__
-        live = cls._live_instance() if cls._live_instance is not None else None
-        if live is not None and not live._closed:
-            raise EqulibInitError("another live Equ() exists in this process: "
-                                  "EQU's state is one set of Fortran modules")
-        cls._live_instance = weakref.ref(self)
-        try:
-            self._lib = _ffi.load_library(lib_path)
-            raise_for_rc("equ_init", self._lib.equ_init())
-            self._closed = False
-        except Exception:
-            cls._live_instance = None
-            raise
+        with _OWNER_LOCK:
+            live = _owner() if _owner is not None else None
+            if live is not None and not live._closed:
+                raise EqulibInitError("another live Equ() exists in this process: "
+                                      "EQU's state is one set of Fortran modules")
+            _owner = weakref.ref(self)
+            try:
+                self._lib = _ffi.load_library(lib_path)
+                raise_for_rc("equ_init", self._lib.equ_init())
+                self._closed = False
+            except Exception:
+                _owner = None
+                raise
 
     # --- life cycle ----------------------------------------------------
     @property
@@ -89,13 +98,14 @@ class Equ:
         self.close()
 
     def close(self) -> None:
+        global _owner
         if self._closed:
             return
         self._lib.equ_finalize()
         self._closed = True
-        cls = self.__class__
-        if cls._live_instance is not None and cls._live_instance() is self:
-            cls._live_instance = None
+        with _OWNER_LOCK:
+            if _owner is not None and _owner() is self:
+                _owner = None
 
     def reset(self) -> None:
         """``equ_init`` again: every input back to EQU's defaults."""
@@ -209,8 +219,8 @@ class Equ:
 
         EQU's file name holds 80 ASCII characters; a longer path, or one
         whose directories are not ASCII, is written from its directory under
-        its base name (the working directory is changed for the call and put
-        back).
+        its base name: the process's working directory is changed for the
+        call and put back, so no other thread may rely on it meanwhile.
         """
         self._check_open()
         text = str(path)

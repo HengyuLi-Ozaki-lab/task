@@ -49,7 +49,7 @@ CASES = [
     ("MSFX", -30, "MSFX", OUT_OF_RANGE),
     ("NCOIL[3]", 101, "NCOIL[3]", OUT_OF_RANGE),
     ("NCOIL[0]", -1, "NCOIL[0]", OUT_OF_RANGE),
-    ("ILIMT", 101, "ILIMT", OUT_OF_RANGE),
+    ("ILIMT", 1, "ILIMT", OUT_OF_RANGE),       # eqlim's limiter branch: refused
     ("IEQRD", 1, "IEQRD", OUT_OF_RANGE),
     ("IVAC[7]", 7, "IVAC", INCONSISTENT_PAIR),      # 3 fitted groups, |MSFX| = 2
     ("RWMN", 0.0, "RWMN", OUT_OF_RANGE),

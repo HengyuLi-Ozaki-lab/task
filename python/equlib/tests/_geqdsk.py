@@ -17,12 +17,25 @@ _NUM = re.compile(r"[-+]?\d*\.\d+(?:[EeDd][-+]?\d+)?|[-+]?\d+")
 
 
 def read_numbers(path: str | Path) -> tuple[list[int], list[float]]:
-    """Return the header's integers (idum, nw, nh) and every later number."""
+    """Return the header's integers (idum, nw, nh) and every later number.
+
+    Refuses a file with a field the pattern cannot read (NaN, Infinity, a
+    field of asterisks) and checks the count of numbers against the header
+    and the boundary/limiter counts, so two broken files cannot match.
+    """
+    import math
     with open(path) as f:
         head = f.readline()
         body = f.read()
+    assert not any(bad in body.lower() for bad in ("nan", "inf", "*")), f"{path}: unreadable field"
     ints = [int(x) for x in head[48:].split()]
     nums = [float(x.replace("D", "E").replace("d", "e")) for x in _NUM.findall(body)]
+    assert all(math.isfinite(x) for x in nums), path
+    nw, nh = ints[1], ints[2]
+    pre = 20 + 4 * nw + nw * nh + nw          # header block, 4 profiles, psirz, qpsi
+    nbbbs, limitr = int(nums[pre]), int(nums[pre + 1])
+    expected = pre + 2 + 2 * nbbbs + 2 * limitr + 3
+    assert len(nums) == expected, f"{path}: {len(nums)} numbers, the counts say {expected}"
     return ints, nums
 
 

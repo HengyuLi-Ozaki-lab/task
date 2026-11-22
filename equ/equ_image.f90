@@ -10,7 +10,9 @@
 ! RVAC and ZVAC. The library keeps an image of every &EQU variable, taken
 ! after each init, read_parm and set_param, and puts it back before a run
 ! and before a set that follows a run, so each run starts from the inputs
-! as set.
+! as set. The coil and limiter arrays are part of the image too: with
+! KNAMCOIL = 'done' they are inputs (after init the JT-60U set), and a run
+! with IUDSYM = 1 folds zcoil below the midplane in eqvac0.
 !
 ! reset_run_state clears what eqinit does not set and a run reads: the
 ! iteration counters iad, ieq, iod, the time counters, iread (eqset's
@@ -37,7 +39,8 @@ MODULE equ_image_mod
   USE eqinit_mod, ONLY: knamcoil
   USE vac_mod, ONLY: ivac, ncoil, cvac, cvacst, cvacwg, cvact, &
                      isvac, msfx, rvac, zvac, ilimt, ivbnd, &
-                     ivtab, ivgrp
+                     ivtab, ivgrp, rcoil, zcoil, ccoil, rlimt, &
+                     zlimt
   USE cnt_mod, ONLY: ieqout, ieqrd, jeqrd, ieqwt, jeqwt
   IMPLICIT NONE
   PRIVATE
@@ -107,6 +110,11 @@ MODULE equ_image_mod
   INTEGER, SAVE :: s_jeqrd, t_jeqrd
   INTEGER, SAVE :: s_ieqwt, t_ieqwt
   INTEGER, SAVE :: s_jeqwt, t_jeqwt
+  REAL(dp), SAVE :: s_rcoil(100,18), t_rcoil(100,18)
+  REAL(dp), SAVE :: s_zcoil(100,18), t_zcoil(100,18)
+  REAL(dp), SAVE :: s_ccoil(100,18), t_ccoil(100,18)
+  REAL(dp), SAVE :: s_rlimt(100), t_rlimt(100)
+  REAL(dp), SAVE :: s_zlimt(100), t_zlimt(100)
 
 CONTAINS
 
@@ -173,6 +181,11 @@ CONTAINS
     s_jeqrd = jeqrd
     s_ieqwt = ieqwt
     s_jeqwt = jeqwt
+    s_rcoil = rcoil
+    s_zcoil = zcoil
+    s_ccoil = ccoil
+    s_rlimt = rlimt
+    s_zlimt = zlimt
   END SUBROUTINE image_save
 
   SUBROUTINE image_restore
@@ -238,6 +251,11 @@ CONTAINS
     jeqrd = s_jeqrd
     ieqwt = s_ieqwt
     jeqwt = s_jeqwt
+    rcoil = s_rcoil
+    zcoil = s_zcoil
+    ccoil = s_ccoil
+    rlimt = s_rlimt
+    zlimt = s_zlimt
   END SUBROUTINE image_restore
 
   ! Exchange the module variables and the image: after a run the module
@@ -432,6 +450,21 @@ CONTAINS
     t_jeqwt = jeqwt
     jeqwt = s_jeqwt
     s_jeqwt = t_jeqwt
+    t_rcoil = rcoil
+    rcoil = s_rcoil
+    s_rcoil = t_rcoil
+    t_zcoil = zcoil
+    zcoil = s_zcoil
+    s_zcoil = t_zcoil
+    t_ccoil = ccoil
+    ccoil = s_ccoil
+    s_ccoil = t_ccoil
+    t_rlimt = rlimt
+    rlimt = s_rlimt
+    s_rlimt = t_rlimt
+    t_zlimt = zlimt
+    zlimt = s_zlimt
+    s_zlimt = t_zlimt
   END SUBROUTINE image_swap
 
   ! A second copy, to undo a namelist read that fails part-way.
@@ -498,6 +531,11 @@ CONTAINS
     t_jeqrd = jeqrd
     t_ieqwt = ieqwt
     t_jeqwt = jeqwt
+    t_rcoil = rcoil
+    t_zcoil = zcoil
+    t_ccoil = ccoil
+    t_rlimt = rlimt
+    t_zlimt = zlimt
   END SUBROUTINE stash_save
 
   SUBROUTINE stash_restore
@@ -563,6 +601,11 @@ CONTAINS
     jeqrd = t_jeqrd
     ieqwt = t_ieqwt
     jeqwt = t_jeqwt
+    rcoil = t_rcoil
+    zcoil = t_zcoil
+    ccoil = t_ccoil
+    rlimt = t_rlimt
+    zlimt = t_zlimt
   END SUBROUTINE stash_restore
 
   SUBROUTINE reset_run_state(ierr)
@@ -571,6 +614,7 @@ CONTAINS
     USE par_mod, ONLY: btol
     USE vac_mod, ONLY: svac
     USE eqv_mod, ONLY: rbv
+    USE equ_mod, ONLY: psep, iisep, irsep, izsep
     USE bpsd, ONLY: bpsd_plasmaf_type, bpsd_put_plasmaf
     INTEGER, INTENT(OUT) :: ierr
     TYPE(bpsd_plasmaf_type) :: empty
@@ -583,6 +627,12 @@ CONTAINS
     btol = 0.0_dp
     svac = 0.0_dp
     rbv = 0.0_dp
+    ! The separatrix of the previous run: eqsep sets none of it when
+    ! ISEP = 0 (a fresh process has zeros).
+    psep = 0.0_dp
+    iisep = 0
+    irsep = 0
+    izsep = 0
     empty%nrmax = 0
     empty%nsmax = 0
     empty%time = 0.0_dp

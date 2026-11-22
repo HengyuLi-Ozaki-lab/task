@@ -112,7 +112,9 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
 
 def load_library(path: Optional[str] = None) -> ctypes.CDLL:
     """Load ``libequapi.so``, check its layout, attach the prototypes."""
-    p = Path(path) if path else default_lib_path()
+    # Resolved: CDLL of a bare name ("libequapi.so") would search the
+    # loader's directories instead of the path that was checked.
+    p = (Path(path) if path else default_lib_path()).resolve()
     if not p.exists():
         raise FileNotFoundError(
             f"{lib_filename()} not found at {p}. Build it with "

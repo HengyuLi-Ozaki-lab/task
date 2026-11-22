@@ -48,7 +48,6 @@ MODULE equ_api
   INTEGER, PARAMETER :: NAME_LEN = 63      ! names: at most 63 characters (equ_api.h)
   INTEGER, PARAMETER :: VALUE_LEN = 80     ! the longest CHARACTER of &EQU
   INTEGER, PARAMETER :: PATH_LEN = 1023    ! paths: at most 1023 characters
-  INTEGER, PARAMETER :: COIL_UNIT = 18     ! the program's unit for the coil file
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   ! The fields hold the equilibrium of the last successful run.
@@ -127,6 +126,14 @@ CONTAINS
     END IF
     IF (LEN_TRIM(fpath) == 0) THEN
        CALL set_error('read_parm: the path is blank')
+       ierr = EQU_ERR_INVALID
+       RETURN
+    END IF
+    ! Input files are regular files: a path under /dev or /proc may be the
+    ! process's standard input (/dev/stdin, /dev/fd/0), which a stdio MCP
+    ! server owns.
+    IF (device_path(fpath)) THEN
+       CALL set_error('read_parm: '//TRIM(fpath)//' is under /dev or /proc')
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
@@ -324,9 +331,10 @@ CONTAINS
     USE equpl_mod, ONLY: eqpl_init, eqpl_prof, eqpl_get, eqpl_put
     USE trset_mod, ONLY: trset
     USE trpl_mod, ONLY: trpl_init, trpl_put
+    USE equ_mod, ONLY: ieq
     INTEGER(C_INT), VALUE, INTENT(IN) :: mode
     INTEGER(C_INT) :: ierr
-    INTEGER :: jerr
+    INTEGER :: jerr, ucoil
     CHARACTER(LEN=256) :: first
 
     IF (.NOT. g_initialized) THEN
@@ -369,7 +377,14 @@ CONTAINS
     g_dirty = .TRUE.
 
     ! --- equ_prof (equunit.f90:58-73) ---
-    CALL eqflin(COIL_UNIT, jerr)
+    ! eqflin takes its unit as an argument: a free one, not the program's
+    ! 18, which a host may have open.
+    ucoil = free_unit()
+    IF (ucoil < 0) THEN
+       CALL set_error('run: no free Fortran unit in 30..99 for the coil file')
+       GOTO 900
+    END IF
+    CALL eqflin(ucoil, jerr)
     IF (failed_step('eqflin', jerr)) GOTO 900
     CALL eqchek(jerr)
     IF (failed_step('eqchek', jerr)) GOTO 900
@@ -392,6 +407,9 @@ CONTAINS
        ! --- equ_calc (equunit.f90:77-89) ---
        CALL eqpl_get(jerr)
        IF (failed_step('eqpl_get', jerr)) GOTO 900
+       ! The state reports this loop's steps: with IEQMAX = 0 it runs none,
+       ! and ieq would otherwise show eqset's ten.
+       ieq = 0
        CALL eqfct
        IF (failed_step('eqfct', 0)) GOTO 900
        CALL eqout
@@ -428,6 +446,8 @@ CONTAINS
     failed_step = .FALSE.
     IF (equ_failed()) THEN
        CALL set_error('run: '//TRIM(equ_status_message()))
+       ! Reported: the flag is cleared, so a later check or run starts clean.
+       CALL equ_status_clear
        failed_step = .TRUE.
     ELSE IF (jerr /= 0) THEN
        CALL set_error('run: '//step//' failed (ierr='//itoa(jerr)//')')
@@ -605,6 +625,20 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
+    IF (device_path(fpath)) THEN
+       CALL set_error('write_geqdsk: '//TRIM(fpath)//' is under /dev or /proc')
+       ierr = EQU_ERR_INVALID
+       RETURN
+    END IF
+    ! EQU's writer uses unit 21 (equ_eqdsk.f90); one the host has open
+    ! would be taken over and closed.
+    INQUIRE(UNIT=21, OPENED=there)
+    IF (there) THEN
+       CALL set_error('write_geqdsk: Fortran unit 21, which EQU''s writer uses, '// &
+                      'is open in this process')
+       ierr = EQU_ERR_CALC_FAILED
+       RETURN
+    END IF
     INQUIRE(FILE=TRIM(fpath), EXIST=there)
     IF (there .AND. overwrite == 0) THEN
        CALL set_error('write_geqdsk: '//TRIM(fpath)//' exists (overwrite=0)')
@@ -696,7 +730,7 @@ CONTAINS
   SUBROUTINE check_inputs(report)
     USE geo_mod, ONLY: nr, nz
     USE eqv_mod, ONLY: nv
-    USE equ_mod, ONLY: nsumax, isep, ieqmax, msetup, iodmax, iadmax
+    USE equ_mod, ONLY: nsumax, isep, ieqmax, msetup, iodmax, iadmax, eodmax
     USE par_mod, ONLY: rwmn, rwmx, zwmx, icp
     USE vac_mod, ONLY: msfx, ncoil, ilimt, isvac, ivbnd
     USE aaa_mod, ONLY: iudsym, icvdm, nsfix
@@ -719,12 +753,13 @@ CONTAINS
     ! --- bounds the arrays need (equcomm.f90) ---
     ! NR - 1 and NZ - 1 powers of two: the Buneman solver (eqgrd's csrz,
     ! eqpde's cyclic reduction) halves both directions.
-    IF (nr < 3 .OR. nr > EQU_MAX_NR .OR. .NOT. pow2_plus_1(nr)) CALL rep('NR', &
-         EQU_DIAG_OUT_OF_RANGE, 'NR='//itoa(nr)//' must be 2**k+1 in 3..257 '// &
-         '(3, 5, 9, 17, 33, 65, 129, 257): the Buneman solver')
-    IF (nz < 3 .OR. nz > EQU_MAX_NZ .OR. .NOT. pow2_plus_1(nz)) CALL rep('NZ', &
-         EQU_DIAG_OUT_OF_RANGE, 'NZ='//itoa(nz)//' must be 2**k+1 in 3..257 '// &
-         '(3, 5, 9, 17, 33, 65, 129, 257): the Buneman solver')
+    ! NR, NZ >= 5: with 3, eqgrd's csrz recursion writes csrz(0) or loops.
+    IF (nr < 5 .OR. nr > EQU_MAX_NR .OR. .NOT. pow2_plus_1(nr)) CALL rep('NR', &
+         EQU_DIAG_OUT_OF_RANGE, 'NR='//itoa(nr)//' must be 2**k+1 in 5..257 '// &
+         '(5, 9, 17, 33, 65, 129, 257): the Buneman solver')
+    IF (nz < 5 .OR. nz > EQU_MAX_NZ .OR. .NOT. pow2_plus_1(nz)) CALL rep('NZ', &
+         EQU_DIAG_OUT_OF_RANGE, 'NZ='//itoa(nz)//' must be 2**k+1 in 5..257 '// &
+         '(5, 9, 17, 33, 65, 129, 257): the Buneman solver')
     ! NV >= 3: eqout prints rbv(nv-2), eqpfds reads pds0(nv-2).
     IF (nv < 3 .OR. nv > EQU_MAX_NV) CALL rep('NV', EQU_DIAG_OUT_OF_RANGE, &
          'NV='//itoa(nv)//' is outside 3..101 (ivdm)')
@@ -739,8 +774,10 @@ CONTAINS
             EQU_DIAG_OUT_OF_RANGE, 'NCOIL='//itoa(ncoil(n))//' is outside 0..100 '// &
             '(filaments per coil group)')
     END DO
-    IF (ilimt < 0 .OR. ilimt > 100) CALL rep('ILIMT', EQU_DIAG_OUT_OF_RANGE, &
-         'ILIMT='//itoa(ilimt)//' is outside 0..100 (limiter points)')
+    ! The limiter branch of eqlim reads locals it never sets (rzla, za,
+    ! rzla2): a question for the code's lead; refused in the library.
+    IF (ilimt /= 0) CALL rep('ILIMT', EQU_DIAG_OUT_OF_RANGE, &
+         'ILIMT must be 0: eqlim''s limiter branch reads variables it never sets')
     ! eqlim reads IVBND points of RVBND, ZVBND(50), which no input sets.
     IF (ivbnd /= 0) CALL rep('IVBND', EQU_DIAG_OUT_OF_RANGE, &
          'IVBND must be 0: the vacuum boundary points it counts (RVBND, ZVBND) '// &
@@ -757,6 +794,9 @@ CONTAINS
          'RWMX must be > RWMN')
     IF (.NOT. (zwmx > 0.0_dp)) CALL rep('ZWMX', EQU_DIAG_OUT_OF_RANGE, &
          'ZWMX must be > 0')
+    ! |ICP(1)| = 9 (eqpfds) extrapolates to the axis from pds0(nv-2..nv-1).
+    IF (ABS(icp(1)) == 9 .AND. nv < 4) CALL rep('NV', EQU_DIAG_INCONSISTENT_PAIR, &
+         'NV must be >= 4 with |ICP(1)| = 9 (eqpfds)')
     SELECT CASE (ABS(icp(1)))
     CASE (1, 2, 9, 11)
     CASE DEFAULT
@@ -772,7 +812,11 @@ CONTAINS
          'IUDSYM must be 0 or 1')
     IF (ieqmax < 0) CALL rep('IEQMAX', EQU_DIAG_OUT_OF_RANGE, 'IEQMAX must be >= 0')
     IF (msetup < 0) CALL rep('MSETUP', EQU_DIAG_OUT_OF_RANGE, 'MSETUP must be >= 0')
-    IF (iodmax < 0) CALL rep('IODMAX', EQU_DIAG_OUT_OF_RANGE, 'IODMAX must be >= 0')
+    ! eqode's loop must run once: it starts with errod = 1, and the
+    ! derivatives it uses after the loop are set only inside it.
+    IF (iodmax < 1) CALL rep('IODMAX', EQU_DIAG_OUT_OF_RANGE, 'IODMAX must be >= 1')
+    IF (.NOT. (eodmax < 1.0_dp)) CALL rep('EODMAX', EQU_DIAG_OUT_OF_RANGE, &
+         'EODMAX must be < 1 (eqode''s first error is 1)')
     IF (iadmax < 0) CALL rep('IADMAX', EQU_DIAG_OUT_OF_RANGE, 'IADMAX must be >= 0')
 
     ! --- the coil file ---
@@ -811,6 +855,11 @@ CONTAINS
                'eqchek lowers the box''s inner edge to RMAJ - 1.2*RPLA ='//TRIM(rz)// &
                ' <= 0 (RMAJ, RPLA from the markers when MSFX < 0)')
        END IF
+       ! eqadj scales the markers about (RVAC(0) + RVAC(1))/2 by a ratio
+       ! with RVAC(1) - RVAC(0) below: equal radii give 0/0 and NaN indices.
+       IF (.NOT. (ABS(rv(1) - rv(0)) > 0.0_dp)) CALL rep('RVAC[1]', &
+            EQU_DIAG_INCONSISTENT_PAIR, 'markers 0 and 1 must have different R '// &
+            '(eqadj divides by RVAC(1) - RVAC(0))')
        DO n = 0, nmark
           IF (.NOT. (rv(n) > bx_rmin .AND. rv(n) < bx_rmax .AND. ABS(zv(n)) < bx_z)) THEN
              WRITE(rz, '(2(1X,ES10.3))', IOSTAT=ios) rv(n), zv(n)
@@ -836,27 +885,32 @@ CONTAINS
   !-------------------------------------------------------------------
   ! eqchek_preview : run eqflin (unless KNAMCOIL is 'done') and eqchek as
   ! a run does, read the box, MSFX and the marker points they leave, and
-  ! put back everything they changed: the &EQU variables (the stash), the
-  ! Solovev constants and nivac eqchek sets, the coil and limiter arrays
-  ! eqflin reads. eqchek prints its notes on unit 6, as in a run.
+  ! put back everything they changed: the image's variables (the stash:
+  ! the &EQU variables and the coil and limiter arrays eqflin reads), the
+  ! Solovev constants and nivac eqchek sets. eqchek prints its notes on
+  ! unit 6, as in a run.
   !-------------------------------------------------------------------
   SUBROUTINE eqchek_preview(jerr, bx_rmin, bx_rmax, bx_z, nmark, nivac_out, rv, zv)
     USE eqinit_mod, ONLY: eqflin, eqchek, knamcoil
     USE equ_mod, ONLY: asol, esol, ssol, qsol
-    USE vac_mod, ONLY: nivac, msfx, rvac, zvac, rcoil, zcoil, ccoil, rlimt, zlimt
+    USE vac_mod, ONLY: nivac, msfx, rvac, zvac
     USE par_mod, ONLY: rwmn, rwmx, zwmx
     INTEGER, INTENT(OUT) :: jerr, nmark, nivac_out
     REAL(dp), INTENT(OUT) :: bx_rmin, bx_rmax, bx_z, rv(0:30), zv(0:30)
     REAL(dp) :: a_asol, a_esol, a_ssol, a_qsol
-    REAL(dp), ALLOCATABLE :: a_rcoil(:,:), a_zcoil(:,:), a_ccoil(:,:), &
-                             a_rlimt(:), a_zlimt(:)
-    INTEGER :: a_nivac, ferr
+    INTEGER :: a_nivac, ferr, ucoil
 
     a_asol = asol; a_esol = esol; a_ssol = ssol; a_qsol = qsol; a_nivac = nivac
-    a_rcoil = rcoil; a_zcoil = zcoil; a_ccoil = ccoil; a_rlimt = rlimt; a_zlimt = zlimt
     CALL stash_save
     ferr = 0
-    IF (TRIM(knamcoil) /= 'done') CALL eqflin(COIL_UNIT, ferr)
+    IF (TRIM(knamcoil) /= 'done') THEN
+       ucoil = free_unit()
+       IF (ucoil < 0) THEN
+          ferr = -1
+       ELSE
+          CALL eqflin(ucoil, ferr)
+       END IF
+    END IF
     IF (ferr == 0 .AND. .NOT. equ_failed()) THEN
        CALL eqchek(jerr)
     ELSE
@@ -872,7 +926,6 @@ CONTAINS
     zv = zvac
     CALL stash_restore
     asol = a_asol; esol = a_esol; ssol = a_ssol; qsol = a_qsol; nivac = a_nivac
-    rcoil = a_rcoil; zcoil = a_zcoil; ccoil = a_ccoil; rlimt = a_rlimt; zlimt = a_zlimt
   END SUBROUTINE eqchek_preview
 
   LOGICAL FUNCTION pow2_plus_1(n)
@@ -889,6 +942,7 @@ CONTAINS
   ! ILIMT lines of (2d10.3)? WHY is blank when it does.
   !-------------------------------------------------------------------
   SUBROUTINE scan_coil_file(fname, why)
+    USE, INTRINSIC :: ieee_arithmetic, ONLY: ieee_is_finite
     USE vac_mod, ONLY: ncoil, ilimt
     USE aaa_mod, ONLY: icvdm
     CHARACTER(LEN=*), INTENT(IN) :: fname
@@ -899,6 +953,10 @@ CONTAINS
     LOGICAL :: there
 
     why = ' '
+    IF (device_path(fname)) THEN
+       why = 'the coil file '//fname//' is under /dev or /proc'
+       RETURN
+    END IF
     INQUIRE(FILE=fname, EXIST=there)
     IF (.NOT. there) THEN
        why = 'no coil file '//fname//' (relative to the working directory)'
@@ -917,6 +975,15 @@ CONTAINS
        DO nn = 1, ncoil(n)
           READ(u, '(3d10.3)', IOSTAT=ios) a, b, c
           IF (ios /= 0) GOTO 800
+          ! flxfun indexes its table by the radius: a filament at R <= 0
+          ! reads it below its bounds (QUEST with -0.1545: index -25).
+          IF (.NOT. (a > 0.0_dp .AND. ieee_is_finite(a) .AND. ieee_is_finite(b) &
+                     .AND. ieee_is_finite(c))) THEN
+             why = 'the coil file '//fname//', group '//itoa(n)//', filament '// &
+                   itoa(nn)//': R must be > 0 and R, Z, weight finite'
+             CLOSE(u)
+             RETURN
+          END IF
        END DO
     END DO
     IF (ilimt > 0) THEN
@@ -937,6 +1004,16 @@ CONTAINS
           '(ILIMT='//itoa(ilimt)//')'
     CLOSE(u)
   END SUBROUTINE scan_coil_file
+
+  !-------------------------------------------------------------------
+  ! device_path : a path under /dev or /proc (after leading blanks).
+  !-------------------------------------------------------------------
+  LOGICAL FUNCTION device_path(p)
+    CHARACTER(LEN=*), INTENT(IN) :: p
+    CHARACTER(LEN=LEN(p)) :: q
+    q = ADJUSTL(p)
+    device_path = q(1:MIN(5, LEN(q))) == '/dev/' .OR. q(1:MIN(6, LEN(q))) == '/proc/'
+  END FUNCTION device_path
 
   !-------------------------------------------------------------------
   ! free_unit : the first unit of 30..99 that is not open, or -1.
