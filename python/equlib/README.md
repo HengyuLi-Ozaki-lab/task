@@ -52,7 +52,7 @@ with Equ() as equ:                  # equ_init: EQU's defaults (the JT-60U case)
 | `run(mode=1)` | mode 1 the program's `R`, mode 0 its first step; refuses with `validate`'s checks | `EqulibInvalidParamError`, `EqulibNotImplementedError`, `EqulibCalculationFailedError` |
 | `get_state()` | `EquState` of the last run | `EqulibInvalidParamError` before a run |
 | `get_psi_rz()` | psi(R, Z) as numpy `[i_r, i_z]` | as above |
-| `write_geqdsk(path, overwrite=False)` | EQU's G-EQDSK writer (the program's `E`); path at most 80 characters | `EqulibInvalidParamError`, `EqulibCalculationFailedError` |
+| `write_geqdsk(path, overwrite=False)` | EQU's G-EQDSK writer (the program's `E`); a path over 80 characters is written from its directory | `EqulibInvalidParamError`, `EqulibCalculationFailedError` |
 | `last_error()`, `reset()`, `close()` | the library's last reason; `equ_init` again; `equ_finalize` | -- |
 
 ## Parameters
@@ -61,13 +61,15 @@ The names of the `&EQU` namelist (`eqnlin`, `equ/equinit.f90`); the MCP server's
 `describe_parameters` lists them with types, groups, defaults and descriptions.
 Arrays: `IVAC`, `NCOIL`, `CVAC`, `CVACST`, `CVACWG`, `CVACT` are `[0..18]`;
 `RVAC`, `ZVAC` `[0..30]`; `ICP`, `CP`, `IEQOUT` `[1..10]`. A bare array name, a
-subscript on a scalar and a fraction for an integer are refused. `IVP`, `IVTAB`,
+subscript on a scalar and a fraction for an integer are refused. `NR` and `NZ` are
+`2**k+1` (3, 5, ..., 129, 257): EQU's Buneman solver needs it. `IVP`, `IVTAB`,
 `IVGRP`, `JEQRD`, `IEQWT`, `JEQWT` (and the dummies `EQFILE`, `RWAL`, `ZWAL`) are
 accepted by `read_parm` but nothing reads them: `set_param` refuses them.
 
 Each run starts from the inputs as set: the solver overwrites some of them
 (`RMAJ`, `RPLA`, `ELIP`, `TRIG`, the box, the markers, `KNAMCOIL`), and the
-library restores them before the next run or set.
+library restores them before the next run or set. After a run, `validate`, a refused set
+and a failed `read_parm` leave the run's result in place; a set that succeeds drops it.
 
 ## EquState
 

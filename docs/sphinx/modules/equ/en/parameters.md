@@ -17,9 +17,9 @@ it. This table is generated from the MCP server's `PARAMETER_REGISTRY`
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `NR` | `int` | `257` | grid points in R, 3..257 |
-| `NZ` | `int` | `257` | grid points in Z, 3..257 |
-| `NV` | `int` | `101` | flux surfaces, 2..101 |
+| `NR` | `int` | `257` | grid points in R: 2**k+1 in 3..257 (the Buneman solver) |
+| `NZ` | `int` | `257` | grid points in Z: 2**k+1 in 3..257 (the Buneman solver) |
+| `NV` | `int` | `101` | flux surfaces, 3..101 |
 | `NSUMAX` | `int` | `101` | points on the plasma surface, 3..1542 |
 | `IUDSYM` | `int` | `0` | up-down symmetry: 1 symmetric, 0 not |
 | `RWMN` | `float` | `1.9` | R of the box's inner edge [m] (eqchek may lower it) |
@@ -69,13 +69,13 @@ it. This table is generated from the MCP server's `PARAMETER_REGISTRY`
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `MSFX` | `int` | `9` | marker points: < 0 given by RVAC/ZVAC (|MSFX| <= 29), > 0 generated from the shape |
+| `MSFX` | `int` | `9` | marker points: < 0 given by RVAC/ZVAC (|MSFX| <= 29), > 0 generated from the shape (eqchek lowers it to 17, or 9 when symmetric) |
 | `RVAC` | `float[0..30]` | `0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ...` | R of the marker points [m] |
 | `ZVAC` | `float[0..30]` | `0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ...` | Z of the marker points [m] |
-| `ISEP` | `int` | `2` | X point: 0 none, 1 lower, 2 outer, 3 upper, 4 inner |
+| `ISEP` | `int` | `2` | X point: 0 none, 1 lower, 2 outer, 3 upper, 4 inner (-4..4: the sign is used) |
 | `DSEP` | `float` | `0.001` | separation between the X point and the last closed surface |
 | `ILIMT` | `int` | `0` | limiter points in the coil file, 0..100 |
-| `IVBND` | `int` | `0` | vacuum boundary switch |
+| `IVBND` | `int` | `0` | must be 0: the vacuum boundary points it would count (RVBND, ZVBND) are not inputs |
 | `RLOOP` | `float` | `2.786` | R of the flux-loop diagnostic point [m] |
 | `ZLOOP` | `float` | `0.952` | Z of the flux-loop diagnostic point [m] |
 

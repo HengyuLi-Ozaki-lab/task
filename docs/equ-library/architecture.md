@@ -66,9 +66,12 @@ is EQ's.
   also refuses a contour longer than its arrays. Outside library mode `equ_fail`
   stops, so the program is unchanged. The other `STOP`s of `equ/` are off the
   library's path (`python/equlib/tests/test_stop_sites.py` holds that list).
-- **Checks before the run.** Array bounds, what `eqchek` refuses, the box, the
-  profile and switch values, marker points inside the box, the coil file
+- **Checks before the run.** Array bounds (`NR`, `NZ` = 2**k+1 for the Buneman
+  solver, `NV` >= 3), what `eqchek` refuses, the box, the profile and switch
+  values, marker points inside the box as `eqchek` widens it, the coil file
   (exists, holds what `NCOIL` and `ILIMT` ask for).
+- **Off-grid reads.** `eqout` computes the unused flux-loop value `psloop` only
+  when `(RLOOP, ZLOOP)` is on the grid.
 - **Unit 6.** The solver prints its progress; the MCP server moves fd 1 to stderr.
 
 ## Each run starts from the inputs as set
@@ -81,7 +84,9 @@ is EQ's.
 `svac`, the profile `rbv` (with `ICP(2) = 2` the setup loop starts from it), and
 bpsd's `plasmaf`. `equ_init` also zeroes the marker points and coil groups 5..18.
 Measured: a second run, a run after another case and a run after a set equal a
-fresh process's (`test_repeat_run.py`).
+fresh process's (`test_repeat_run.py`). After a run, `validate`, a refused set
+and a failed read swap the inputs in for their time and leave the run's values
+(`image_swap`; `test_after_run.py`).
 
 ## The state
 

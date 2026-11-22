@@ -164,6 +164,9 @@ size_t equ_state_size(void);
   `set_param` or `read_parm` after a run, first restore the image. So `init`, sets, `run`, `run` gives two equal
   results, and a set after a run changes the input, not the value the solver left. The program's second `R`
   differs (it starts from the overwritten values); the comparison is for a first run.
+- After a run, `validate`, a refused `set_param`, a failed `read_parm` leave the run's values in place
+  (*found in review*): they swap the inputs in for their time (`image_swap`); a set or read that succeeds starts
+  new inputs and drops the result.
 
 ## 6. Parameters
 
@@ -244,20 +247,23 @@ A fixed-layout struct, valid part `1..n`, the rest zero (EQ's rule and EQ's #246
 
 Read-only; each entry names the parameter and the reason. The list, in three kinds:
 
-- **Bounds the arrays need** (each a bounds abort today): `NV ≤ 101`, `NSUMAX ≤ 1542`, `|MSFX| ≤ 29`,
-  `0 ≤ NCOIL(n) ≤ 100`, `0 ≤ ILIMT ≤ 100`. `NR` and `NZ` at most 257: `eqchek` lowers a larger value to 257
-  without a word (`equinit.f90:533-535`); the library refuses it, so a value that would not take effect is not
-  taken silently. A power-of-two rule for `NR − 1`, `NZ − 1` (the Buneman solver of `eqgrd`/`eqpde`) becomes a
-  refusal only if reading those routines shows the code needs it.
+- **Bounds the arrays need** (each a bounds abort today): `3 ≤ NV ≤ 101` (`eqout` prints `rbv(nv-2)`),
+  `NSUMAX ≤ 1542`, `MSFX ≥ −29` (a positive `MSFX` is lowered by `eqchek` to 17, or 9 when symmetric, and is not
+  refused), `0 ≤ NCOIL(n) ≤ 100`, `0 ≤ ILIMT ≤ 100`, `IVBND = 0` (it counts vacuum boundary points `RVBND`,
+  `ZVBND` that no input sets). `NR` and `NZ` are `2**k + 1` in 3..257 (*found in review*: the Buneman solver of
+  `eqgrd`/`eqpde` halves both directions; another value gives a wrong psi without an error); `eqchek` lowers a
+  value above 257 without a word (`equinit.f90:533-535`), the library refuses it.
 - **What `eqchek` refuses** (`equinit.f90:527-778`), reported before the run instead of after the coil file is
   read: `IEQRD ≠ 0` (its `ierr` 1); `NR·NZ·NV = 0` (2); more fitted coil groups (`IVAC(i) ≥ 0`) than marker points
   `|MSFX|` (3).
-- **Marker points** (*found in implementation*): for `MSFX < 0`, each `(RVAC(k), ZVAC(k))`, k = 0..|MSFX|, inside
-  the box as given (`RWMN < R < RWMX`, `|Z| < ZWMX`). `eqchek` only enlarges the box, so this keeps the markers on
-  the grid; QUEST with `ZWMX = 0.6` indexed `svac` at -177 in `eqadj0`.
+- **Marker points** (*found in implementation*, corrected in review): for `MSFX ≤ 0`, each `(RVAC(k), ZVAC(k))`,
+  k = 0..|MSFX|, inside the box as `eqchek` sets it: `RMAJ`, `RPLA` taken from the markers with R > 0 when
+  `MSFX < 0`, the box widened to `RMAJ ∓ 1.2 RPLA` and `|Z| < 1.2 ELIP RPLA`; and that box's inner edge > 0. QUEST
+  with `ZWMX = 0.6` indexed `svac` at -177 in `eqadj0`.
 - **Files and choices**: `KNAMCOIL` names an existing file unless `'done'`; the file holds the groups and lines
   `NCOIL` and `ILIMT` ask for (a read-only scan with `IOSTAT`); `RWMN > 0`, `RWMX > RWMN`, `ZWMX > 0`;
-  `ICP(1)` one of the values `eqpfds` and `eqequ` handle (±1, ±2, ±9, ±11); `ISVAC` 0 or 1; `ISEP` 0 to 4;
+  `ICP(1)` one of the values `eqpfds` and `eqequ` handle (±1, ±2, ±9, ±11); `ISVAC` 0 or 1; `ISEP` −4 to 4 (the
+  code uses its sign);
   `IEQMAX`, `MSETUP`, `IODMAX`, `IADMAX` ≥ 0.
 
 A value the code accepts but the physics may not (for example a coil far outside the box) is not refused: that
@@ -284,7 +290,8 @@ is the lead's to decide. Every `WRITE` into a message uses `IOSTAT` (EQ's `eq_ap
 | `equsub.f90:2320-2321` (`eqtrc`) | `STOP` (`s1*s2*s3*s4 = 0`) | `equ_fail` |
 | callers of `eqtrc`/`eqlin` up to `eqset` and `eqfct` (`eqequ`, `eqlin`, `eqout`, `eqrcu`, `eqsep`, …) | carry on | return when a failure is recorded (one test after each call) |
 | `equ_eqdsk.f90:137-152` | error paths return with unit 21 open | close it |
-| `eqtrc`, where it stores a contour point (*found in implementation*) | a contour longer than `isrzdm` (half of it when `IUDSYM = 1`) indexed past `zrsu` (QUEST with `RVAC(0) = 0.2`) | refuse the next point through `equ_fail` |
+| `eqtrc`, where it stores a contour point (*found in implementation*) | a contour longer than `isrzdm` (half of it when `IUDSYM = 1`) indexed past `zrsu` (QUEST with `RVAC(0) = 0.2`) | refuse the next point through `equ_fail`; the bound leaves room for `eqequ`'s read of `rsu(nsu+2)` |
+| `eqout`, the flux-loop value `psloop` (*found in review*) | `(RLOOP, ZLOOP)` off the grid indexed `psi` out of bounds (QUEST with `ZWMX = 0.9` and the JT-60U default point) | computed only on the grid, else 0; `psloop` is read nowhere, so no result changes |
 
 - A new module `equ_status_mod` holds a library-mode flag (false by default), a failure flag and a message.
   `equ_fail(msg)` writes the message to unit 6; outside library mode it then stops, as the code does today, so
