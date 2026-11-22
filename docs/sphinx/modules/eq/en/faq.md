@@ -65,8 +65,8 @@ inconsistent. Common causes:
   its psi. The exception message ends with the reason
   (`eq.last_error()`), which names the file, e.g. `EQ_READ: MODELG=5 load
   of KNAMEQ='eqdata.ITER01' failed: it does not read as a G-EQDSK file
-  (...)`; in the parentheses, the message of the read that failed, or the
-  size. A load that cannot read its file puts the grid sizes back, but
+  (...)`; in the parentheses, the message of the read that failed, the
+  size, or for 8 the R and Z ranges. A load that cannot read its file puts the grid sizes back, but
   the other parameters it read from the file before it failed (`RR`,
   `BB`, `RIP`, ...) stay: set them again before a `run(mode=0)`
 

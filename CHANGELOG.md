@@ -415,9 +415,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   and a grid outside 2 to 513 points a side return `IERR` 9 with the readers'
   shared reason, and a map without an axis `IERR` 10. This entry adds what
   those checks do not see: an R or Z range that is empty or not finite (it
-  leaves no axis to find, and ended the process on the `-O0` build with
-  run-time checks) or falling (taken as given, where `GETRZ`, which PL's field
-  lookups go through, finds no point inside a falling grid) is refused, as
+  leaves no axis to find: before #31 the process ended, on #31's reader a
+  3 x 3 map of it returns "no magnetic axis found") or falling (taken as
+  given, where `GETRZ`, which PL's field lookups go through, finds no point
+  inside a falling grid) is refused, as
   "EQ_READ: MODELG=8 load of KNAMEQ='jaea.dat' failed: it does not read as a
   QST/JAEA file (R from 5.0000E-01 to 1.0000E-01, Z from -3.0000E-01 to
   3.0000E-01: no grid)". `find_axis` (`eq/eqsub.f90`) set `IERR=102` when Newton's method did not converge, in

@@ -43,10 +43,11 @@
 
 !     IERR: FROPEN's (1 to 8) when a file was not opened; 9 when a read
 !     of either file failed, a size is beyond its array or the R and Z
-!     ranges are no grid; 10 when psi has no magnetic axis; find_axis's
-!     102 when the search for the axis ends at a point that is not
-!     finite (task-web-client #204). EQ_ERRMSG gives the reason. The process used
-!     to end at each of these. The sizes go to locals, so a first file
+!     ranges are no grid (a falling range used to load, the rest to end
+!     the process); 10 when psi has no magnetic axis; find_axis's 102
+!     when the search for the axis ends at a point that is not finite
+!     (task-web-client #204). EQ_ERRMSG gives the reason. The process used
+!     to end at the others. The sizes go to locals, so a first file
 !     that fails at its first record changes nothing; EQ_READ puts the
 !     grid sizes back after any failure.
       neqdsk=21
@@ -249,7 +250,7 @@
       CALL find_axis(IERR)
       IF(IERR.NE.0) THEN
 !        find_axis's reason starts "EQAXIS: "; name the load instead, as
-!        this reader's other reasons do.
+!        this reader's other reasons begin with it.
          IF(EQ_ERRMSG(1:8).EQ.'EQAXIS: ') EQ_ERRMSG= &
               'EQ_READ: MODELG=8 load failed: '//EQ_ERRMSG(9:)
          RETURN
