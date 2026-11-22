@@ -19,7 +19,7 @@ import warnings
 # ``eq_set_param``. Values copied verbatim from eq/in/eq.TST-2.in.
 SCALARS = {
     # MODELG=3 selects EQRTSK (TASK/EQ binary file format) per
-    # eq/eqfile.f90:180-216. The .in menu-driven flow implicitly selects
+    # eq/eqfile.f90:186-221. The .in menu-driven flow implicitly selects
     # this via 'r' after 'f'; the C ABI needs it explicit.
     "MODELG": 3,
     "RR":   0.36,

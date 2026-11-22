@@ -355,8 +355,10 @@ class Eq:
         Once the path is accepted, KNAMEQ is ``path``, also when the save
         then fails. After a failed write, what is at the path cannot be
         taken for the equilibrium that was to be saved (usually it is a
-        short file): do not load it. ``run(1)`` with ``MODELG=3`` ends the process on a file
-        that is cut off; the loader does not guard its reads.
+        short file): do not load it. ``run(1)`` with ``MODELG=3`` raises
+        :class:`EqlibCalculationFailedError` where a read of a file that is
+        cut off fails; what reads without an error is not that equilibrium
+        either.
 
         A save whose file was not opened, or is shorter than what was
         written, raises (#227 item 3):

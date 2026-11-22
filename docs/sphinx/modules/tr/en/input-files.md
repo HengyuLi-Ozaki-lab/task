@@ -25,7 +25,7 @@ loader routines:
 - `MODELG = 5` → `EQDSKR` (community EQDSK format)
 - `MODELG = 8` → `EQJAEAR`
 
-The dispatch table lives at `eq/eqfile.f90:180-216`. So
+The dispatch table lives at `eq/eqfile.f90:186-221`. So
 `MODELG = 9` is not a no-op alias — it actually loads via
 the same `EQRTSK` reader as `MODELG = 3`.
 

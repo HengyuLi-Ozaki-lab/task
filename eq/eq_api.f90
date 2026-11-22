@@ -554,7 +554,7 @@ CONTAINS
   !
   ! validate() does not know the mode of the run to come, and goes by
   ! MODELG. The file formats (MODELG 3/5/8/9/15/25, what EQ_READ reads:
-  ! eq/eqfile.f90:180-216) are taken to be loaded, run(1): they bring
+  ! eq/eqfile.f90:186-221) are taken to be loaded, run(1): they bring
   ! their own geometry (EQRTSK reads RA/RKAP/RDLT/RB from the TASK-native
   ! file; EQDSKR reconstructs RB = 1.1*RA), so their pre-run
   ! RR/RA/RB/RKAP say nothing about the run and are not checked. Any
@@ -724,7 +724,7 @@ CONTAINS
     !      scalars to 1e-11).
     !      The box is not the grid psi is tabulated on (EQTORZ: RR +/- RB).
     !      A file load (EQ_READ dispatch,
-    !      eq/eqfile.f90:180-216: MODELG=3/9 -> EQRTSK, a TASK-native file
+    !      eq/eqfile.f90:186-221: MODELG=3/9 -> EQRTSK, a TASK-native file
     !      carrying its own RG/ZG grids AND RA/RKAP/RDLT/RB; MODELG=5/25
     !      -> EQDSKR, grid rebuilt from the file's rdim/zdim; MODELG=8 ->
     !      EQJAEAR; MODELG=15 -> equread::eqdsk, which run(1) refuses) sets the geometry itself,

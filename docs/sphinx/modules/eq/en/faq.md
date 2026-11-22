@@ -56,14 +56,20 @@ inconsistent. Common causes:
   `1e-6` to `1e-4` and retry
 - `NLPMAX` (maximum iterations) is too small — increase it from the
   default `100`
-- The load (`mode=1`) cannot open the file (it is not there); the
-  exception message ends with the reason (`eq.last_error()`). With
-  `MODELG` 3, 5, 9 or 25, a file that is there but not of that format
-  gives no exception: their readers (`EQRTSK` for 3 and 9, `EQDSKR` for 5
-  and 25) do not check their reads, and the process stops with a Fortran
-  runtime error (measured for `MODELG` 3 and 5); the reader of 8
-  (`EQJAEAR`) checks them and returns the error, and `run(1)` refuses 15
-  (`eqdb.dat`) before any read
+- The load (`mode=1`) cannot open the file (it is not there), or cannot
+  read it: the file is not of the format `MODELG` names (a TASK/EQ file
+  for 3 and 9, a G-EQDSK file for 5 and 25, a QST/JAEA pair for 8), is cut
+  short (a TASK/EQ file cut inside its last record still loads, with
+  `HJTRZ` 0), gives a grid size EQ cannot take, or, for 8, R and Z ranges
+  that are no grid (empty, falling or not finite) or no magnetic axis in
+  its psi; `run(1)` refuses 15 (`eqdb.dat`) before any read. The exception
+  message ends with the reason
+  (`eq.last_error()`), which names the file, e.g. `EQ_READ: MODELG=5 load
+  of KNAMEQ='eqdata.ITER01' failed: it does not read as a G-EQDSK file
+  (...)`; in the parentheses, the message of the read that failed, the
+  size, or for 8 the R and Z ranges. A load that cannot read its file puts the grid sizes back, but
+  the other parameters it read from the file before it failed (`RR`,
+  `BB`, `RIP`, ...) stay: set them again before a `run(mode=0)`
 
 `validate()` catches grid dimensions, a missing load file (a blank `KNAMEQ` or one naming no file,
 `KNAMEQ2` for `MODELG=8`), the refused `MODELG=15` and, for the
