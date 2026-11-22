@@ -68,6 +68,7 @@ CONTAINS
     USE eqsub_mod, ONLY: flxtab
     USE eqinit_mod, ONLY: eqinit
     USE trpl_mod, ONLY: trpl_init
+    USE vac_mod, ONLY: rvac, zvac, rcoil, zcoil, ccoil
     INTEGER(C_INT) :: ierr
     INTEGER :: jerr
     ft05 = 5
@@ -75,6 +76,15 @@ CONTAINS
     out = 0
     CALL flxtab
     CALL eqinit
+    ! What eqinit leaves as it is and a fresh process has as zero: the
+    ! marker points, and the filaments of coil groups 5..18 (eqinit sets
+    ! the JT-60U groups 1..4; with KNAMCOIL = 'done' a group's filaments
+    ! are whatever is in memory).
+    rvac = 0.0_dp
+    zvac = 0.0_dp
+    rcoil(:, 5:) = 0.0_dp
+    zcoil(:, 5:) = 0.0_dp
+    ccoil(:, 5:) = 0.0_dp
     CALL trpl_init
     equ_library_mode = .TRUE.
     CALL equ_status_clear
@@ -663,7 +673,7 @@ CONTAINS
     USE eqv_mod, ONLY: nv
     USE equ_mod, ONLY: nsumax, isep, ieqmax, msetup, iodmax, iadmax
     USE par_mod, ONLY: rwmn, rwmx, zwmx, icp
-    USE vac_mod, ONLY: msfx, ncoil, ilimt, isvac, ivac
+    USE vac_mod, ONLY: msfx, ncoil, ilimt, isvac, ivac, rvac, zvac
     USE aaa_mod, ONLY: iudsym, icvdm, nsfix
     USE cnt_mod, ONLY: ieqrd
     USE eqinit_mod, ONLY: knamcoil
@@ -674,8 +684,9 @@ CONTAINS
          INTEGER(C_INT), INTENT(IN) :: code
        END SUBROUTINE report
     END INTERFACE
-    INTEGER :: n, nivac
+    INTEGER :: n, nivac, ios
     CHARACTER(LEN=128) :: why
+    CHARACTER(LEN=24) :: rz
 
     ! --- bounds the arrays need (equcomm.f90) ---
     IF (nr < 3 .OR. nr > EQU_MAX_NR) CALL report('NR', EQU_DIAG_OUT_OF_RANGE, &
@@ -730,6 +741,23 @@ CONTAINS
     IF (msetup < 0) CALL report('MSETUP', EQU_DIAG_OUT_OF_RANGE, 'MSETUP must be >= 0')
     IF (iodmax < 0) CALL report('IODMAX', EQU_DIAG_OUT_OF_RANGE, 'IODMAX must be >= 0')
     IF (iadmax < 0) CALL report('IADMAX', EQU_DIAG_OUT_OF_RANGE, 'IADMAX must be >= 0')
+
+    ! --- marker points (MSFX < 0: RVAC, ZVAC 0..|MSFX| are given) ---
+    ! eqchek only enlarges the box, so a marker inside the box as given
+    ! is inside the grid; one outside it can index the vacuum field svac
+    ! below its bounds in eqadj0 (QUEST with ZWMX = 0.6: index -177).
+    IF (msfx < 0 .AND. ABS(msfx) <= nsfix - 1) THEN
+       DO n = 0, ABS(msfx)
+          IF (.NOT. (rvac(n) > rwmn .AND. rvac(n) < rwmx .AND. &
+                     ABS(zvac(n)) < zwmx)) THEN
+             WRITE(rz, '(2(1X,ES10.3))', IOSTAT=ios) rvac(n), zvac(n)
+             IF (ios /= 0) rz = ' (not printable)'
+             CALL report('RVAC['//itoa(n)//']', EQU_DIAG_OUT_OF_RANGE, &
+                  'the marker point (R, Z) ='//TRIM(rz)//' is outside the box '// &
+                  'RWMN < R < RWMX, |Z| < ZWMX')
+          END IF
+       END DO
+    END IF
 
     ! --- the coil file ---
     IF (TRIM(knamcoil) /= 'done') THEN
