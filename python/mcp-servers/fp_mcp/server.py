@@ -495,10 +495,10 @@ def handle_set_param_str(name: str, value: str) -> str:
     ``BESEKNX`` / ``NCALC=-2`` failure that the comment block in
     ``fp/fp_param_registry.f90`` describes predates that propagation.
 
-    A file that opens but is not a TASK/EQ file is another matter:
-    ``eq/eqfile.f90`` reads its leading records without ``IOSTAT``, and
-    a Fortran runtime error there ends the server process (measured
-    with an empty file and with a text file).
+    A file that opens but is not a TASK/EQ file fails the same way:
+    ``EQRTSK`` (``eq/eqfile.f90``) returns an error where a read of it
+    fails, where it used to end the server process (measured with an
+    empty file and with a text file).
     """
     try:
         fp = STATE.ensure_open()
@@ -666,9 +666,8 @@ def build_server() -> Any:
         ``KNAMEQ`` holds 80 characters: a longer path is refused
         ("invalid parameter"), not cut. A file that does not exist
         or cannot be opened makes the next ``run`` fail with
-        "calculation failed". A file that opens but is not a TASK/EQ
-        file can end the server process with a Fortran runtime error
-        (an empty file and a text file do): name TASK/EQ files only.
+        "calculation failed". So does a file that opens but is not a
+        TASK/EQ file (an empty file, a text file).
         """
         return handle_set_param_str(name, value)
 

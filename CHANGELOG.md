@@ -297,6 +297,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **EQ: a load of a file that is not of the format `MODELG` names returns an error where it ended the process**
+  (the library-reachable abort of `CLAUDE.md`, #142). `EQRTSK` (`MODELG` 3 and 9), `EQDSKR` (5 and 25) and `EQJAEAR`
+  (8) did not check their reads: `run(1)` with a file of another format, or one cut short, ended the host process
+  with a Fortran runtime error (exit status 2; e.g. `eqdata.ITER01` with `MODELG` 5 at `eq/eq-eqdsk.f90:31`, "Bad
+  value during integer read"), and a grid size read from such a file was a loop bound before anything checked it
+  (a formatted read of a binary file can give `NRGMAX` 0; `eqdata.ITER01` read as a QST/JAEA file gives
+  -858993459). Each read now goes to an error branch that closes the unit and returns `IERR` 9, each size is checked
+  before it is used (`EQ_READ_SIZE`, `eq/eqfile.f90`: at most its array; at least 2 for `NRGMAX`, `NZGMAX`,
+  `NPSMAX`, `NSGMAX`, `NTGMAX` and `NRVMAX` and 1 for `NTVMAX`, below which `run(0)` ends the process (`EQSAVE` can
+  write less, e.g. after a G-EQDSK load with less set); at least 0 for the rest), and `eq_last_error` names the file
+  and the format, e.g. "EQ_READ: MODELG=5 load of KNAMEQ='eqdata.ITER01' failed: it does not read as a G-EQDSK file
+  (Bad value during integer read)". The sizes of a file's first records go to locals, so a file that fails there
+  changes no parameter; one that fails later leaves what was read, but `EQ_READ` puts every grid size back (`NRGMAX`
+  to `NTVMAX`) when it fails, as one that fits its array can still be wrong for the next solve. `EQJAEAR`'s second
+  file (`KNAMEQ2`) is read the same way, and where its psi has no magnetic axis it returns `IERR` 10, where it ran
+  `STOP`. In `EQRTSK` a file that ends before its last record (`HJTRZ`) is an error too; a last record that does not
+  read (too short for its list, or cut inside) still leaves `HJTRZ` 0 and loads. A file that reads, with sizes in
+  those ranges, loads as before. `fp_mcp`'s descriptions of `KNAMEQ` said such a file ends the server process; it fails
+  the run now. Not changed: the callers of the load that drop a nonzero `IERR`, as they did for a missing file
+  (`wrx/wrprep.f90`; `wm`, `wmx` and `wmseki`, which return on `IERR` 1 only; `fp/fpprep.f90` under MPI, on rank 0
+  only; the test programs `eq/pltest.f` and `eq/trtest.f`).
 - **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
   and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
   `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first
@@ -516,6 +537,56 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   terminal shows that line and no longer the library's output. Where
   `fstat` gives a descriptor no identity (Windows for a pipe or a console)
   the merged layout is not recognised and fd 1 goes to stderr as usual.
+- **CI: the pytest job no longer installs valgrind.** No step runs it, and
+  it was the job's only download from the Ubuntu mirrors: valgrind and the
+  libc6-dbg it needs, which must match libc6 exactly and so upgraded six
+  glibc packages when the image's glibc was behind the archive's (35.5 MB
+  in all). With it gone the job installs nothing (the image has gfortran,
+  gcc and make) and its tests always run on the image's glibc; before,
+  they ran on the archive's newest, or on the image's when the index fetch
+  had failed (on 2026-11-19 the two Python versions of one run planned
+  different ones). The download is what ran a job into the 10-minute
+  limit at 163 kB/s on 2026-11-19 and what failed both pytest jobs in the
+  mirror outage the same day.
+- **CI: the install steps run apt only for a package the runner image
+  lacks, and try it three times.** The four "Install Fortran/C build deps"
+  steps (the pytest and mono build jobs, `regen-baselines.yml`,
+  `clean-tree-build.yml`) call `.github/scripts/apt-install.sh`, which skips
+  apt altogether when the image has every package (it has gfortran, gcc,
+  make and jq) and otherwise runs `apt-get update` and `apt-get install` of
+  the missing ones up to three times, 30 s and 60 s apart, starting none
+  after its first 4 minutes: that retries an error that comes back fast
+  (apt's own three retries of a download, its default since apt 2.3, are
+  1, 2 and 4 s apart). On 2026-11-19 both pytest jobs of a pull request
+  failed in that step, with security.ubuntu.com answering 503 and
+  azure.archive.ubuntu.com unreachable for at least four minutes, while the
+  mono build job, which had nothing to download, passed; in such an outage
+  one attempt takes minutes (about 4 for the 3.11 job), and the step now
+  fails after one or two.
+  `clean-tree-build.yml` also runs when the script changes.
+- **wrx, wm, wmx, wmseki, fp and EQ's two test programs: the routines that
+  load the equilibrium file return on every nonzero `IERR` of the load.**
+  `wr_prep` (`wrx/wrprep.f90`) printed the `IERR` of a failed `eq_load`
+  (`MODELG` 3 and 5) or `eq_read` (8) and went on: the plasma bounds came
+  from an earlier run or were zero, the `IERR` was lost in `pl_load` and
+  `dp_prep_ns` (which sets it to 0), and `wrx_run` returned `WRX_OK` with
+  NaN powers, or ended the host process in the `STOP` of `BESSJN`
+  (`lib/libbes.f90`): the ITER01 case of `python/wrxlib` with `MODELG` 3
+  and no `eqdata` did. `wr_prep` now returns the load's `IERR` and
+  `wrx_run` returns `WRX_ERR_CALC_FAILED`
+  (`python/wrxlib/tests/test_eq_load_errors.py`); the next run loads the
+  file again. `WMXRZF` (`wm/wmsetg.f`, `wmseki/wmsetg.f`) and `wmsetg_eq`
+  (`wmx/wmsetg.f90`) returned on `IERR` 1 only, and for another code went
+  on and remembered `KNAMEQ` as loaded; they return on every nonzero code
+  and forget the last load, so the next call loads the file again. (The
+  eigenvalue search of all three, `DIAMIN`, still goes on to solve after
+  a failed `WMSETG`; with a missing file it now tries the load, and
+  prints its error, at every evaluation, and with `MODEFR` 1 asks for the
+  file name each time.)
+  Under MPI, `fp_mesh` (`fp/fpprep.f90`) returned on rank 0 alone when the
+  load failed, and the other ranks waited in `fp_eq_broadcast`; rank 0 now
+  broadcasts the code first and every rank returns. `eq/pltest.f` and
+  `eq/trtest.f` go back to their prompt on any nonzero code.
 - **tot docs and `tot_mcp`: string parameters and the tool count** (#274).
   The tot Sphinx pages showed `tot.set_param_str("fp:KNAMEQ", ...)` and
   `("wr:KNAMEQ", ...)`, which tot refuses: it passes string values on for
@@ -536,6 +607,61 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `get_state` are stubs until L-6 (#96, #124), nor that `tot_mcp` has a
   `set_param_str`; `architecture.md`'s quirks and limitations follow the
   code (eq in the fan-out, one live `Tot()` per process).
+- **EQ: T(psi) of the toroidal-current model (`MDLEQF` 0, and 5 through
+  `MOD(MDLEQF,5)`) has the factor 4*pi**2 on its pressure term.** EQ's psi
+  is the total poloidal flux and T = 2*pi*R*B_phi. Integrated from the
+  boundary, the model's j_zeta0 = -2*pi*R0*dp/dpsi - T*dT/dpsi/(2*pi*mu0*R0)
+  gives T**2 = (2*pi*BB*RR)**2 + 4*pi*mu0*R0*TJ*int(HJPSI dpsi)
+  - 8*pi**2*mu0*R0**2*p. `EQRHSV` and `EQCALP` (`TT`, `TTV`, `TTPS`) had
+  -2*mu0*R0**2*p: the conversion of 2005-01-22 from per-radian flux and
+  F = R*B_phi multiplied the current term by 2*pi and left this one as it
+  was. The psi that `EQCALC` solves was right: its current used the correct
+  -2*pi*R*dp/dpsi. Only the exported T did not belong to it.
+  - **Results change.** For `MDLEQF` 0 with `MDLEQA` 0 and positive
+    pressure, on the same poloidal-flux surface, T (`TTPS`, `TTS`, bpsd
+    `equ1D%pip`), q and the toroidal flux integrated from q (`PSIT`, `PSITA`)
+    are lower than before, and the normalised rho_t mapping changes.
+    psi(R,Z) and the current are unchanged. In `MDLEQF` 0 with `MDLEQA` 1,
+    and in `MDLEQF` 5 (whose profiles come through `EQPSITN` and q), T
+    feeds the toroidal-flux coordinate of the profiles, so psi changes too.
+    `MDLEQF` 1 to 4 and 6 to 9 are unchanged.
+  - **Reference data.** The equivalence baseline of `tot_ht6m_short`, whose
+    equilibrium CI solves with the standalone `tot` before the test, moves
+    by at most 7.3e-6 relative. It and its fallback eqdata
+    `python/totlib/tests/fixtures/eqdata-HT6M` are regenerated on the CI
+    compiler (`regen-baselines.yml`); the eqdata differs only in T and what
+    is computed from it. Data made earlier with the old T:
+    - the baselines `test_run/baselines/eq_iter01`, `eq_tst2`, `eq_jt60`
+      (standalone solves; `eq_jt60` with `MDLEQA` 1), and `tr_iter01`,
+      `tr_tst2`, which run on those equilibria;
+    - the committed `eqdata.ITER01` / `eqdata.TST-2` under
+      `python/eqlib/tests/fixtures/` and `python/trlib/tests/fixtures/`,
+      and `python/totlib/tests/fixtures/eqdata.demo2014`.
+    A test that loads one of those committed files (MODELG 3) is unchanged:
+    the load path does not compute T. In CI, `tot_ht6m_short` loads the file
+    CI has just solved instead. A fresh standalone solve of any of these
+    cases gives the new T. So a local `test_run/run_tests.sh` reports a
+    regression for `eq_iter01`, `eq_tst2` and `eq_jt60` and skips the
+    `tr_*` cases that depend on them; after it, on Linux, the eqlib
+    equivalence tests, which prefer its `test_output/<case>/` eqdata to the
+    committed fixtures, fail too. The Python-test CI does not run it.
+  - **Size.** Measured on an ITER-like case, on axis: 1.1 % at beta_t
+    0.76 %, 2.3 % at 1.5 %, 3.9 % at 2.5 %.
+  - **What the old T implied.** The current that the exported p' and TT'
+    gave was about (1 + 0.77 beta_p) times Ip. It is now Ip.
+  - **Also corrected:** the same expression in `eq/eqcalx.f`, which no make
+    target builds; and the descriptions that called T (and F, FF0 to FF2)
+    R*B_phi where EQ stores 2*pi*R*B_phi (`python/eqlib/state.py` and its
+    README, `eq_mcp`'s parameter and state descriptions, the Sphinx state
+    pages, the library manual and the quickstart notebook).
+  - **Test.** `python/eqlib/tests/test_gs_consistency.py` integrates the
+    current of the exported profiles over the plasma and compares it with
+    the solver's own, and checks that EQCALV's `TTV` and the exported
+    `TTPS` are one function of the normalised flux.
+  - **Not fixed here.** In `MDLEQF` 0 with `MDLEQA` 1, and in `MDLEQF` 5,
+    the current term of T**2 has a separate inconsistency (`HJPSID = FD/FDN`
+    in `EQJPSI` divides an integral over normalised toroidal flux by the
+    local q/psi_ta).
 - **MCP servers `ti_mcp`, `wr_mcp`, `wrx_mcp`: the same fd isolation** (#262).
   The three servers had the layout of the other three and the same exposure:
   `main()` now calls `_fd_isolation.install()` immediately before the stdio

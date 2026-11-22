@@ -25,7 +25,7 @@ with Eq() as eq:
     eq.set_param("RR", 6.5)
     eq.set_param("BB", 5.3)
     eq.set_param("RIP", 1.5)
-    eq.run()
+    eq.run(mode=0)  # Grad-Shafranov 求解. run() は mode=1 (ファイル読み込み)
     state = eq.get_state()
 # ← ブロックを抜けた瞬間に eq_finalize が走る
 ```
@@ -71,7 +71,7 @@ class Eq:
 eq = Eq()                         # ここで eq_init
 try:
     eq.set_param("RR", 6.5)
-    eq.run()
+    eq.run(mode=0)
     state = eq.get_state()
 finally:
     eq.close()                    # 例外発生時も必ず実行

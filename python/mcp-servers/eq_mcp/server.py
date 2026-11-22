@@ -20,7 +20,7 @@ Design notes
 EQ-specific extras over the canonical sister surface (tr_mcp / ti_mcp /
 wrx_mcp):
 
-* ``set_param_str`` — string parameters such as ``KNAMEQ`` (the EQDSK
+* ``set_param_str`` — string parameters such as ``KNAMEQ`` (the equilibrium
   file path) routed through :py:meth:`eqlib.Eq.set_param_str`.
 * ``get_psi_rz`` — the 2-D PSI(R,Z) field with the RG/ZG grid, through
   :py:meth:`eqlib.Eq.get_psi_rz` (needs numpy).
@@ -150,9 +150,9 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "PROFJ0": {"type": "float", "group": "profile", "description": "current profile shape PROFJ0"},
     "PROFJ1": {"type": "float", "group": "profile", "description": "current profile shape PROFJ1"},
     "PROFJ2": {"type": "float", "group": "profile", "description": "current profile shape PROFJ2"},
-    "FF0":    {"type": "float", "group": "profile", "description": "F=R*B_phi profile coefficient FF0"},
-    "FF1":    {"type": "float", "group": "profile", "description": "F=R*B_phi profile coefficient FF1"},
-    "FF2":    {"type": "float", "group": "profile", "description": "F=R*B_phi profile coefficient FF2"},
+    "FF0":    {"type": "float", "group": "profile", "description": "F=2*pi*R*B_phi profile coefficient FF0"},
+    "FF1":    {"type": "float", "group": "profile", "description": "F=2*pi*R*B_phi profile coefficient FF1"},
+    "FF2":    {"type": "float", "group": "profile", "description": "F=2*pi*R*B_phi profile coefficient FF2"},
     "PROFF0": {"type": "float", "group": "profile", "description": "F profile shape PROFF0"},
     "PROFF1": {"type": "float", "group": "profile", "description": "F profile shape PROFF1"},
     "PROFF2": {"type": "float", "group": "profile", "description": "F profile shape PROFF2"},
@@ -278,7 +278,7 @@ STATE_SCHEMA: Dict[str, Any] = {
         "TTPS": {
             "type": "array",
             "items": {"type": "number"},
-            "description": "T = R*B_phi profile (psi-surface), length = NPSMAX",
+            "description": "T = 2*pi*R*B_phi profile (psi-surface), length = NPSMAX",
         },
         "QQPS": {
             "type": "array",
@@ -295,7 +295,7 @@ STATE_SCHEMA: Dict[str, Any] = {
                     "PSIP": {"type": "number",  "description": "poloidal flux"},
                     "PSIT": {"type": "number",  "description": "toroidal flux"},
                     "PPS":  {"type": "number",  "description": "pressure"},
-                    "TTS":  {"type": "number",  "description": "T = R*B_phi"},
+                    "TTS":  {"type": "number",  "description": "T = 2*pi*R*B_phi"},
                     "QPS":  {"type": "number",  "description": "safety factor"},
                     "VPS":  {"type": "number",  "description": "differential volume"},
                     "RST":  {"type": "number",  "description": "<R> at this surface"},
@@ -445,7 +445,7 @@ def _wrap_eqlib_error(exc: Exception) -> "ToolError":  # noqa: F821
     elif isinstance(exc, EqlibCalculationFailedError):
         msg = f"calculation failed: {exc}"
     elif isinstance(exc, EqlibNotImplementedError):
-        msg = f"not implemented in this libeqapi.so build: {exc}"
+        msg = f"not implemented (eq_run takes mode 0 or 1): {exc}"
     elif isinstance(exc, EqlibInitError):
         msg = f"eq_init failed: {exc}"
     elif isinstance(exc, EqlibError):
@@ -667,10 +667,13 @@ def build_server() -> Any:
             "TASK/EQ equilibrium MCP server. "
             "Call `init` first, configure parameters with `set_param` "
             "/ `set_param_str` / `set_params`, optionally run "
-            "`validate` to check the configuration, execute the "
-            "equilibrium load with `run`, and read state with "
-            "`get_state`. `save` writes that equilibrium to a TASK/EQ "
-            "file for another module to load. Use `describe_parameters` "
+            "`validate` to check the configuration, solve or load the "
+            "equilibrium with `run` (mode 0: the Grad-Shafranov solve, "
+            "no file; mode 1, the default: load the file in the format "
+            "MODELG names, KNAMEQ for most formats; it fails with the "
+            "default MODELG=2), and read state with `get_state`. `save` writes "
+            "that equilibrium to a TASK/EQ file for another module to "
+            "load. Use `describe_parameters` "
             "to discover valid "
             "parameter names. `run_and_get_state` is a convenience "
             "one-shot wrapper. EQ-specific note: PSIB is 0-origin "
@@ -758,14 +761,18 @@ def build_server() -> Any:
     def run(mode: int = 1) -> str:
         """Execute ``eq_run`` (equilibrium load / solve).
 
-        ``mode=1`` (default) performs the real EQDSK load via
+        ``mode=1`` (default) performs the equilibrium-file load via
         ``equnit::eq_load`` using the current ``MODELG`` + ``KNAMEQ``.
+        It fails with the default ``MODELG=2``, which names no file format:
+        set ``MODELG`` to the file's format first (e.g. 3 a TASK/EQ file,
+        the format ``save`` writes; 5 a G-EQDSK file) and ``KNAMEQ`` to
+        its path.
 
-        ``mode=0`` runs the in-process analytic Grad-Shafranov solve
+        ``mode=0`` runs the in-process Grad-Shafranov solve
         (``EQCALC`` + ``EQCALQ``); use it with ``MODELG=2`` and the
         basic geometry parameters (``RR``, ``RA``, ``BB``, ``RIP``,
         ``RKAP``, ``RDLT``, ...) to produce a self-consistent
-        equilibrium without any external EQDSK file.
+        equilibrium without any equilibrium file.
         """
         return handle_run(mode)
 
@@ -846,6 +853,12 @@ def build_server() -> Any:
             set_params(params)
             run(mode)
             return get_state()
+
+        ``mode`` is as for ``run``: the default 1 loads a file, so
+        ``params`` must set a file ``MODELG`` (and, for most formats,
+        ``KNAMEQ`` unless the file is ``eqdata``), since the call starts
+        from a fresh ``init`` at the defaults; ``mode=0`` solves the
+        Grad-Shafranov equation without one.
         """
         return handle_run_and_get_state(params, mode)
 
