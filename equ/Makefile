@@ -79,3 +79,124 @@ $(OBJDIR)/equtrsvq.o : equtrsvq.f90 equtrpl.f90
 $(OBJDIR)/equtpxssl.o : equtpxssl.f90
 $(OBJDIR)/equ_eqdsk.o : equ_eqdsk.f90 equcomm.f90
 $(OBJDIR)/equ_convert.o : equ_convert.f90 equcomm.f90
+
+# =====================================================================
+# Library interface (libequapi.so) and the program without graphics
+# (equ_nogr). Additions only: the targets above are unchanged.
+# Design: docs/superpowers/specs/2026-11-22-equ-library-design.md.
+#
+# The PIC tree (obj/pic, mod_pic) mirrors eq/Makefile's; bpsd is
+# rebuilt as PIC here, as eq and tr do (make -C equ bpsd_pic).
+# =====================================================================
+OBJDIR_PIC=obj/pic
+MODDIR_PIC=mod_pic
+PIC_FLAGS=-fPIC -J$(MODDIR_PIC) -I$(MODDIR_PIC)
+MODINCLUDE_PIC=-I$(MODDIR_PIC) -I../../bpsd/$(MOD) -I../mtxp/mod_pic \
+               -I../pl/mod_pic -I../lib/mod_pic
+
+OBJC_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCC:.f90=.o))
+OBJS_PIC=$(addprefix $(OBJDIR_PIC)/, $(SRCS:.f90=.o))
+
+$(OBJDIR_PIC)/%.o: %.f90
+	@mkdir -p $(OBJDIR_PIC) $(MODDIR_PIC)
+	$(FCFREE) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+
+# --- bpsd in-tree PIC rebuild (as eq/Makefile and tr/Makefile) ---
+BPSD_SRC=../../bpsd
+OBJBPSD_PIC=$(OBJDIR_PIC)/bpsd/bpsd_kinds.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_constants.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_flags.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libchar.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libfio.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_libspl.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_types.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_types_internal.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_subs.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_shot.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_device.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_species.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_equ1D.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_metric1D.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_trsource.o \
+            $(OBJDIR_PIC)/bpsd/bpsd_base.o
+
+$(OBJDIR_PIC)/bpsd/%.o: $(BPSD_SRC)/%.f90
+	@mkdir -p $(@D) $(MODDIR_PIC)
+	$(FCFREE) $(FFLAGS) $(PIC_FLAGS) -c $< -o $@ $(MODINCLUDE_PIC)
+
+$(OBJDIR_PIC)/bpsd/bpsd_constants.o:       $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_flags.o:            $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libchar.o:          $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libfio.o:           $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_libspl.o:           $(OBJDIR_PIC)/bpsd/bpsd_kinds.o
+$(OBJDIR_PIC)/bpsd/bpsd_types.o:            $(OBJDIR_PIC)/bpsd/bpsd_kinds.o $(OBJDIR_PIC)/bpsd/bpsd_constants.o
+$(OBJDIR_PIC)/bpsd/bpsd_types_internal.o:   $(OBJDIR_PIC)/bpsd/bpsd_types.o
+$(OBJDIR_PIC)/bpsd/bpsd_subs.o:             $(OBJDIR_PIC)/bpsd/bpsd_types_internal.o $(OBJDIR_PIC)/bpsd/bpsd_libchar.o $(OBJDIR_PIC)/bpsd/bpsd_libfio.o $(OBJDIR_PIC)/bpsd/bpsd_libspl.o $(OBJDIR_PIC)/bpsd/bpsd_flags.o
+$(OBJDIR_PIC)/bpsd/bpsd_shot.o:             $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_device.o:           $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_species.o:          $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_equ1D.o:            $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_metric1D.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o:          $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_trsource.o:         $(OBJDIR_PIC)/bpsd/bpsd_subs.o
+$(OBJDIR_PIC)/bpsd/bpsd_base.o:             $(OBJDIR_PIC)/bpsd/bpsd_shot.o $(OBJDIR_PIC)/bpsd/bpsd_device.o $(OBJDIR_PIC)/bpsd/bpsd_species.o $(OBJDIR_PIC)/bpsd/bpsd_equ1D.o $(OBJDIR_PIC)/bpsd/bpsd_metric1D.o $(OBJDIR_PIC)/bpsd/bpsd_plasmaf.o $(OBJDIR_PIC)/bpsd/bpsd_trmatrix.o $(OBJDIR_PIC)/bpsd/bpsd_trsource.o
+
+.PHONY: bpsd_pic
+bpsd_pic: $(OBJBPSD_PIC)
+
+# --- The sibling PIC libraries, built on demand (as eq/Makefile) ---
+LIBS_PIC=../pl/libpl_pic.a ../lib/libtask_pic.a
+LIBMTX_PIC=../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o
+
+../pl/libpl_pic.a:
+	(cd ../pl; $(MAKE) libpl_pic.a)
+../lib/libtask_pic.a:
+	(cd ../lib; $(MAKE) libtask_pic.a)
+../lib/libgrf_pic.a:
+	(cd ../lib; $(MAKE) libgrf_pic.a)
+../mtxp/libmtxnompi_pic.o:
+	(cd ../mtxp; $(MAKE) libmtxnompi_pic.o)
+../mtxp/libmtxbnd_pic.o:
+	(cd ../mtxp; $(MAKE) libmtxbnd_pic.o)
+../../bpsd/libbpsd.a:
+	(cd ../../bpsd; $(MAKE) libbpsd.a)
+
+../lib/libgrf_pic.a: ../lib/libtask_pic.a
+../mtxp/libmtxnompi_pic.o: ../lib/libtask_pic.a
+../mtxp/libmtxbnd_pic.o: ../mtxp/libmtxnompi_pic.o
+
+# Order-only, so `make -C equ libequapi.so` and `make -C equ equ_nogr`
+# work from a clean tree (#230): bpsd's static build fills
+# ../../bpsd/mod, which pl's PIC build reads; libgrf_pic.a is here for
+# its .mod (equgout.f90 and equ_convert.f90 use libgrf).
+.PHONY: libs_pic_prereq
+libs_pic_prereq: ../../bpsd/libbpsd.a \
+                 ../lib/libtask_pic.a ../lib/libgrf_pic.a \
+                 ../mtxp/libmtxnompi_pic.o ../mtxp/libmtxbnd_pic.o \
+                 $(OBJBPSD_PIC) ../pl/libpl_pic.a
+
+$(OBJBPSD_PIC): | ../lib/libtask_pic.a
+../pl/libpl_pic.a: | ../../bpsd/libbpsd.a ../lib/libtask_pic.a \
+                     ../lib/libgrf_pic.a ../mtxp/libmtxbnd_pic.o
+$(OBJC_PIC): | libs_pic_prereq
+# Every PIC object of SRCS uses equcomm's modules.
+$(OBJS_PIC) $(OBJDIR_PIC)/equmain.o $(OBJDIR_PIC)/equ_static_stubs.o: | libs_pic_prereq $(OBJC_PIC)
+
+# --- equ_nogr: the program without graphics -------------------------
+# The same main program, menu and solver as `equ`, linked from the PIC
+# objects with equ_static_stubs.f90 in place of GSAF. Its only use is
+# the comparison of the library's G-EQDSK with the program's
+# (python/equlib/tests/test_program_parity.py). Its GSOPEN reads
+# nothing, so its standard input starts with the menu commands.
+equ_nogr: $(OBJC_PIC) $(OBJS_PIC) $(OBJDIR_PIC)/equmain.o \
+          $(OBJDIR_PIC)/equ_static_stubs.o $(OBJBPSD_PIC) \
+          ../lib/libgrf_pic.a $(LIBS_PIC) $(LIBMTX_PIC)
+	$(FCFREE) $(FFLAGS) -o $@ $(OBJDIR_PIC)/equmain.o $(OBJC_PIC) \
+	    $(OBJS_PIC) $(OBJDIR_PIC)/equ_static_stubs.o $(OBJBPSD_PIC) \
+	    ../lib/libgrf_pic.a $(LIBS_PIC) $(LIBMTX_PIC)
+
+clean_pic:
+	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) equ_nogr libequapi.so

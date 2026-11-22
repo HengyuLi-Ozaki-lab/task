@@ -149,6 +149,16 @@ eq/mod_pic/
 eq/tests/c_abi/test_run_so
 eq/tests/c_abi/test_smoke
 eq/tests/c_abi/*.o
+
+# equ: the program, equ_nogr and libequapi.so build artefacts
+equ/equ
+equ/equ_nogr
+equ/libequapi.so
+equ/obj/pic/
+equ/mod_pic/
+equ/tests/c_abi/test_run_so
+equ/tests/c_abi/test_negative
+equ/tests/c_abi/*.o
 adpost/obj/pic/
 adpost/mod_pic/
 adpost/lib-adpost_pic.a
