@@ -121,13 +121,13 @@ consumers may need to be rebuilt or version-checked.
    `double` (or correct C type), again at the struct end.
 4. **Populate the field inside `tr_api_get_state`.** Three
    blocks exist in `tr/tr_api.f90`:
-   - **Zero-init** at `:337-357` (the new field should be
+   - **Zero-init** at `:400-420` (the new field should be
      added there too if it has no sensible compute-time-
      zero baseline).
-   - **Scalar copy** at `:373-389` — the AJRFT precedent
+   - **Scalar copy** at `:436-452` — the AJRFT precedent
      lives here. For a new scalar, follow that pattern.
    - **Per-radius / per-species profile loops** at
-     `:395-405` — for a new array field, follow the
+     `:458-468` — for a new array field, follow the
      `RN` / `RT` / `AJ` / `QP` loop pattern.
 5. **Bump `TR_STATE_ABI_VERSION` in both places**: the
    `#define` in `tr/tr_api.h` and the `PARAMETER` in

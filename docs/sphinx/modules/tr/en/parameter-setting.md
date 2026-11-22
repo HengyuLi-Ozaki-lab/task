@@ -82,4 +82,11 @@ divides by them and the run would turn NaN (#189). `run()` refuses the
 same findings before `tr_prep` (`TrlibParamError`), and also `NSMAX`
 above the compile-time maximum, so raising `NSMAX` beyond a fixture's
 species count needs `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` for the
-added species.
+added species. Reported and not refused: `PN[1]` or `PNS[1]` away from the
+ions' charge density (`Σ PZ[s]·PN[s]` over `s = 2..NSMAX`, and the same
+with `PNS`) by more than 1e-3 of the larger (`INCONSISTENT_PAIR`,
+task-web-client #200; not in the UFILE modes, and not beside a finding of
+the species-profile checks, which include `RIPS` or `RIPE` below 0 with
+`MODELG = 9`), so the added species also needs `PN[1]` raised by its charge
+density `PZ[ns]·PN[ns]`, and `PNS[1]` by `PZ[ns]·PNS[ns]`, for `validate()`
+to stay clean.

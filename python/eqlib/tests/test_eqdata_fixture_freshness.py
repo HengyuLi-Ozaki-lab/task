@@ -212,7 +212,7 @@ def test_fixture_structure_is_intact(path: Path):
 #           eq/eqmenu.f90:97) and `q` before it ever enters `tr`, so
 #           eqdata-HT6M is written before trmetric can propagate anything;
 #      (ii) and for MODELG=3, trmetric's own eq_load path reaches EQRTSK,
-#           where eq/eqfile.f90:162 READS all eight header names back out
+#           where eq/eqfile.f90:365 READS all eight header names back out
 #           of the blob -- overwriting whatever eq_parm just pushed. The
 #           blob dictates these values; it does not receive them.
 #     (i) alone would lapse if someone added a post-`tr` eq/`s` to re-save

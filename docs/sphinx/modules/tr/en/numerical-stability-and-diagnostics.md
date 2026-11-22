@@ -164,14 +164,14 @@ one of five `TrDiagCode` values from the enum at
 `tr/tr_api.h:76-82` (mirrored in `python/trlib/_ffi.py:74-78`).
 The enum reserves five categories; `tr_api_validate` emits four
 of them, and `MISSING_REQUIRED` is reserved for a later category
-(`tr/tr_api.f90:530`):
+(`tr/tr_api.f90:533`):
 
 - **`OUT_OF_RANGE`** — a parameter value sits outside the
   range that `tr_api_validate` checks. Validate's `NSMAX`
   check, for example, compares against the run-time species
   bound `NSM = 4` (not the compile-time C ABI bound
   `TR_MAX_NSMAX = 8`), so `NSMAX = 5` reaches `validate()`
-  and is reported here (`tr/tr_api.f90:558`). Note: values
+  and is reported here (`tr/tr_api.f90:561`). Note: values
   beyond the registry's own range — e.g. `NSMAX > 8` — are
   rejected by `set_param` *before* validate runs
   (`tr/tr_param_registry.f90:155-157`), so you will not see
@@ -180,7 +180,7 @@ of them, and `MISSING_REQUIRED` is reserved for a later category
   use. The same code covers the per-species profiles of #189,
   the equation switches and the particle sources (section 14 of
   {doc}`parameters`), and `EXTERNAL_DRIVEN_RW <= 0` with
-  `EXTERNAL_DRIVEN_I != 0` (`tr/tr_api.f90:591-594`), a pair
+  `EXTERNAL_DRIVEN_I != 0` (`tr/tr_api.f90:595-598`), a pair
   that is reported here rather than as `INCONSISTENT_PAIR`.
 
 - **`OUT_OF_RANGE_AFTER_DEP`** — a value that passes its own
@@ -193,14 +193,20 @@ of them, and `MISSING_REQUIRED` is reserved for a later category
   cannot run together: `MDLEQE` 1 or 2 without `MDLEQN = 1`,
   and `MDLEQE = 2` outside a two-species hydrogenic plasma with
   no impurity density and no UFILE (section 14 of
-  {doc}`parameters`).
+  {doc}`parameters`); and, reported only, `PN[1]` or `PNS[1]`
+  away from the ions' charge density by more than 1e-3 of the
+  larger (quasi-neutrality, section 3 of {doc}`parameters`;
+  task-web-client #200), outside the UFILE modes and not beside
+  a finding of the species-profile checks (which include `RIPS`
+  or `RIPE` below 0 with `MODELG = 9`).
 
 - **`FILE_MISSING`** — a required file path is empty or
   points at a file the library cannot open. Typical example:
   `MODELG ∈ {3, 5, 7, 8}` paired with empty `KNAMEQ`.
 
-`tr_run` refuses the same findings except `FILE_MISSING` and the
-`EXTERNAL_DRIVEN` pair, which only `validate()` reports.
+`tr_run` refuses the same findings except `FILE_MISSING`, the
+`EXTERNAL_DRIVEN` pair and quasi-neutrality, which only
+`validate()` reports.
 
 The recommended workflow is to call `validate()` after
 `set_params()` and before `run()`, which is exactly what
