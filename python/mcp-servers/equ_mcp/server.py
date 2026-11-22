@@ -82,8 +82,10 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "CP": _p("float[1..10]", "profile", [0.1, 1.0, 1.0, 0, 0, 0, 0, 0, 0, 0.05],
              "profile coefficients: CP[1] the beta_J target, CP[2..10] the exponents of ICP[1]'s form"),
     "KNAMCOIL": _p("str[80]", "coils", "init",
-                   "coil file (relative to the working directory); 'done' keeps the coils in "
-                   "memory (after init: the JT-60U set)"),
+                   "coil file (relative to the working directory); 'done' uses the coils in "
+                   "memory: after init only the JT-60U groups 1..4 with 70, 78, 26, 10 "
+                   "filaments, so NCOIL above those, or > 0 for groups 5..18, is refused "
+                   "(a run's coil file is not kept)"),
     "IVAC": _p("int[0..18]", "coils", [0, 1, 2] + [-1] * 16,
                "coil group mode: < 0 fixed current, >= 0 fitted; IVAC[0] the surface flux"),
     "NCOIL": _p("int[0..18]", "coils", [0, 70, 78, 26, 10] + [0] * 14,

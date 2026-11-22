@@ -96,9 +96,18 @@ def test_short_coil_file(quest, workdir):
 
 
 def test_done_skips_the_coil_file(quest):
-    # 'done': the coils in memory (after init, eqinit's JT-60U set).
+    # 'done': the coils in memory (after init, eqinit's JT-60U set); QUEST's
+    # groups 5 and 6 are not there (test_review_findings.py).
     quest.set_param_str("KNAMCOIL", "done")
     assert not any(d.param == "KNAMCOIL" for d in quest.validate())
+
+
+def test_ieqrd_refused_before_eqchek(quest):
+    # eqchek_preview would report IEQRD too ("eqchek refuses the inputs"):
+    # the check of its own comes first and the preview does not run.
+    quest.set_param("IEQRD", 1)
+    diags = [d for d in quest.validate() if d.param == "IEQRD"]
+    assert len(diags) == 1 and "IEQRD must be 0" in diags[0].message, diags
 
 
 def test_run_refuses_with_the_first_check(quest):

@@ -627,8 +627,9 @@ CONTAINS
     btol = 0.0_dp
     svac = 0.0_dp
     rbv = 0.0_dp
-    ! The separatrix of the previous run: eqsep sets none of it when
-    ! ISEP = 0 (a fresh process has zeros).
+    ! The separatrix of the previous run: with ISEP = 0 eqsep sets none of
+    ! it and psep would be reported from that run (eqsol sets the three
+    ! indices at every run; they are reset for symmetry with a fresh process).
     psep = 0.0_dp
     iisep = 0
     irsep = 0

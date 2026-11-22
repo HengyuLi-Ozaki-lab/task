@@ -60,6 +60,23 @@ MODULE equ_api
   INTEGER, SAVE :: g_mode = -1
   CHARACTER(LEN=256), SAVE :: g_errmsg = ' '
 
+  ! libc, for device_path: a link or ".." can lead under /dev or /proc.
+  INTERFACE
+     FUNCTION c_realpath(path, resolved) BIND(C, NAME='realpath') RESULT(r)
+       IMPORT :: C_CHAR, C_PTR
+       CHARACTER(KIND=C_CHAR), INTENT(IN) :: path(*)
+       TYPE(C_PTR), VALUE :: resolved
+       TYPE(C_PTR) :: r
+     END FUNCTION c_realpath
+     FUNCTION c_readlink(path, buf, bufsiz) BIND(C, NAME='readlink') RESULT(n)
+       IMPORT :: C_CHAR, C_SIZE_T, C_PTRDIFF_T
+       CHARACTER(KIND=C_CHAR), INTENT(IN) :: path(*)
+       CHARACTER(KIND=C_CHAR), INTENT(OUT) :: buf(*)
+       INTEGER(C_SIZE_T), VALUE :: bufsiz
+       INTEGER(C_PTRDIFF_T) :: n      ! ssize_t
+     END FUNCTION c_readlink
+  END INTERFACE
+
 CONTAINS
 
   !-------------------------------------------------------------------
@@ -597,9 +614,11 @@ CONTAINS
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=PATH_LEN) :: fpath
     CHARACTER(LEN=LEN(KNAMEQ)) :: save_name
-    INTEGER :: save_mode, jerr
+    INTEGER :: save_mode, jerr, u, ios
     INTEGER(8) :: fsize
-    LOGICAL :: there
+    LOGICAL :: there, existed
+    CHARACTER(LEN=8) :: wr
+    CHARACTER(LEN=48) :: note
 
     IF (.NOT. g_initialized) THEN
        ierr = EQU_ERR_NOT_INIT
@@ -645,6 +664,17 @@ CONTAINS
        ierr = EQU_ERR_INVALID
        RETURN
     END IF
+    ! An existing file the process may not write: FWOPEN would open it
+    ! read-only and the first WRITE fail.
+    IF (there) THEN
+       INQUIRE(FILE=TRIM(fpath), WRITE=wr)
+       IF (wr == 'NO') THEN
+          CALL set_error('write_geqdsk: '//TRIM(fpath)//' exists and is not writable')
+          ierr = EQU_ERR_INVALID
+          RETURN
+       END IF
+    END IF
+    existed = there
     save_name = KNAMEQ
     save_mode = MODEFW
     KNAMEQ = TRIM(fpath)
@@ -657,8 +687,22 @@ CONTAINS
     KNAMEQ = save_name
     MODEFW = save_mode
     IF (jerr /= 0) THEN
+       ! A file this call created is removed, so that a part-written one
+       ! is not loaded later; a file that was there is left as it is.
+       IF (existed) THEN
+          note = '; the file that was there may be incomplete'
+       ELSE
+          note = ' '
+          INQUIRE(FILE=TRIM(fpath), EXIST=there)
+          u = free_unit()
+          IF (there .AND. u > 0) THEN
+             OPEN(UNIT=u, FILE=TRIM(fpath), STATUS='OLD', IOSTAT=ios)
+             IF (ios == 0) CLOSE(u, STATUS='DELETE', IOSTAT=ios)
+             IF (ios == 0) note = '; the part-written file was removed'
+          END IF
+       END IF
        CALL set_error('write_geqdsk: '//TRIM(fpath)//' not written (ierr='// &
-                      itoa(jerr)//')')
+                      itoa(jerr)//')'//TRIM(note))
        ierr = EQU_ERR_CALC_FAILED
        RETURN
     END IF
@@ -732,7 +776,8 @@ CONTAINS
     USE eqv_mod, ONLY: nv
     USE equ_mod, ONLY: nsumax, isep, ieqmax, msetup, iodmax, iadmax, eodmax
     USE par_mod, ONLY: rwmn, rwmx, zwmx, icp
-    USE vac_mod, ONLY: msfx, ncoil, ilimt, isvac, ivbnd
+    USE vac_mod, ONLY: msfx, ncoil, ilimt, isvac, ivbnd, rcoil, zcoil, ccoil
+    USE, INTRINSIC :: ieee_arithmetic, ONLY: ieee_is_finite
     USE aaa_mod, ONLY: iudsym, icvdm, nsfix
     USE cnt_mod, ONLY: ieqrd
     USE eqinit_mod, ONLY: knamcoil
@@ -794,7 +839,7 @@ CONTAINS
          'RWMX must be > RWMN')
     IF (.NOT. (zwmx > 0.0_dp)) CALL rep('ZWMX', EQU_DIAG_OUT_OF_RANGE, &
          'ZWMX must be > 0')
-    ! |ICP(1)| = 9 (eqpfds) extrapolates to the axis from pds0(nv-2..nv-1).
+    ! |ICP(1)| = 9: eqpfds reads pds0(3) before it sets it when NV = 3.
     IF (ABS(icp(1)) == 9 .AND. nv < 4) CALL rep('NV', EQU_DIAG_INCONSISTENT_PAIR, &
          'NV must be >= 4 with |ICP(1)| = 9 (eqpfds)')
     SELECT CASE (ABS(icp(1)))
@@ -819,11 +864,28 @@ CONTAINS
          'EODMAX must be < 1 (eqode''s first error is 1)')
     IF (iadmax < 0) CALL rep('IADMAX', EQU_DIAG_OUT_OF_RANGE, 'IADMAX must be >= 0')
 
-    ! --- the coil file ---
+    ! --- the coil file, or with 'done' the coils in memory ---
     IF (TRIM(knamcoil) /= 'done') THEN
        why = ' '
        CALL scan_coil_file(TRIM(knamcoil), why)
        IF (LEN_TRIM(why) > 0) CALL rep('KNAMCOIL', EQU_DIAG_FILE_MISSING, why)
+    ELSE
+       ! The inputs' coils: after init the JT-60U groups 1..4, zeros in the
+       ! others (a coil file a run read is not kept). A group with NCOIL > 0
+       ! and filaments at R = 0 has no flux, its current's fit fails and
+       ! eqtrc started off the grid (QUEST's namelist with 'done'); R < 0
+       ! indexes flxfun's table below its bounds, as in a file.
+       DO n = 1, icvdm
+          IF (ncoil(n) <= 0 .OR. ncoil(n) > 100) CYCLE
+          IF (.NOT. ALL(rcoil(1:ncoil(n), n) > 0.0_dp .AND. &
+                        ieee_is_finite(rcoil(1:ncoil(n), n)) .AND. &
+                        ieee_is_finite(zcoil(1:ncoil(n), n)) .AND. &
+                        ieee_is_finite(ccoil(1:ncoil(n), n)))) &
+             CALL rep('NCOIL['//itoa(n)//']', EQU_DIAG_INCONSISTENT_PAIR, &
+                  'KNAMCOIL = ''done'' and the coils in memory of group '//itoa(n)// &
+                  ' have R <= 0 or values that are not finite (after init only '// &
+                  'the JT-60U groups 1..4 are set)')
+       END DO
     END IF
 
     ! --- the box and the marker points as eqchek leaves them ---
@@ -842,8 +904,14 @@ CONTAINS
        IF (jerr == 3) CALL rep('IVAC', EQU_DIAG_INCONSISTENT_PAIR, &
             itoa(nivac)//' coil groups are fitted (IVAC(i)>=0, i>0) but there are '// &
             itoa(nmark)//' marker points (MSFX as eqchek leaves it)')
+       ! Backstops: with the checks above in place, scan_coil_file has
+       ! refused a file eqflin cannot read, and the IEQRD and NR, NZ, NV
+       ! checks what eqchek refuses (ierr 1, 2); these two report only if
+       ! eqflin or eqchek come to refuse more, or (-1) when the host holds
+       ! every Fortran unit of 30..99 open.
        IF (jerr == -1) CALL rep('KNAMCOIL', EQU_DIAG_FILE_MISSING, &
-            'eqflin could not read the coil file '//TRIM(knamcoil))
+            'eqflin could not read the coil file '//TRIM(knamcoil)// &
+            ' (or no Fortran unit of 30..99 was free)')
        IF (jerr /= 0 .AND. jerr /= 3 .AND. jerr /= -1) CALL rep('IEQRD', &
             EQU_DIAG_OUT_OF_RANGE, 'eqchek refuses the inputs (ierr='//itoa(jerr)//')')
        ! ierr 3 comes after the box is widened; -1 (eqflin) before it.
@@ -1006,14 +1074,100 @@ CONTAINS
   END SUBROUTINE scan_coil_file
 
   !-------------------------------------------------------------------
-  ! device_path : a path under /dev or /proc (after leading blanks).
+  ! device_path : a path that is, or leads to, a name under /dev or /proc:
+  ! as written (also after leading blanks), and as OPEN takes it (leading
+  ! blanks kept: ' lnk' is a name of its own) through symbolic links and
+  ! "..", or, for a file that does not exist yet, through its directory.
+  ! Linux's /proc/<pid>/fd/0 links to "pipe:[n]", which realpath cannot
+  ! resolve, so the links are also followed one at a time. A chain it
+  ! cannot decide (more than 40 links, a name longer than 4096) counts
+  ! as a device.
   !-------------------------------------------------------------------
   LOGICAL FUNCTION device_path(p)
     CHARACTER(LEN=*), INTENT(IN) :: p
-    CHARACTER(LEN=LEN(p)) :: q
-    q = ADJUSTL(p)
-    device_path = q(1:MIN(5, LEN(q))) == '/dev/' .OR. q(1:MIN(6, LEN(q))) == '/proc/'
+    CHARACTER(LEN=4096) :: cur, r, t, d
+    INTEGER :: hop
+    device_path = .TRUE.
+    IF (under_device(ADJUSTL(p))) RETURN
+    IF (LEN_TRIM(p) > LEN(cur)) RETURN
+    cur = p
+    DO hop = 1, 40
+       IF (under_device(cur)) RETURN
+       IF (resolved_path(cur, r)) THEN
+          device_path = under_device(r)
+          RETURN
+       END IF
+       IF (resolved_path(dir_of(cur), r)) THEN
+          IF (under_device(r)) RETURN
+       END IF
+       IF (.NOT. link_target(cur, t)) THEN
+          ! Not a link: a file that does not exist yet, in a directory
+          ! that is not under /dev or /proc.
+          device_path = .FALSE.
+          RETURN
+       END IF
+       IF (t(1:1) == '/') THEN
+          cur = t
+       ELSE
+          d = dir_of(cur)
+          IF (LEN_TRIM(d) + 1 + LEN_TRIM(t) > LEN(cur)) RETURN
+          cur = TRIM(d)//'/'//t
+       END IF
+    END DO
   END FUNCTION device_path
+
+  LOGICAL FUNCTION under_device(s)
+    CHARACTER(LEN=*), INTENT(IN) :: s
+    under_device = s == '/dev' .OR. s == '/proc' .OR. &
+                   s(1:MIN(5, LEN(s))) == '/dev/' .OR. s(1:MIN(6, LEN(s))) == '/proc/'
+  END FUNCTION under_device
+
+  FUNCTION dir_of(s) RESULT(d)
+    CHARACTER(LEN=*), INTENT(IN) :: s
+    CHARACTER(LEN=4096) :: d
+    INTEGER :: k
+    k = INDEX(TRIM(s), '/', BACK=.TRUE.)
+    IF (k == 0) THEN
+       d = '.'
+    ELSE IF (k == 1) THEN
+       d = '/'
+    ELSE
+       d = s(1:k-1)
+    END IF
+  END FUNCTION dir_of
+
+  ! realpath(3) into a buffer of 4096 + 1 bytes (PATH_MAX: 4096 on Linux,
+  ! 1024 on macOS); .FALSE. if the path does not resolve.
+  LOGICAL FUNCTION resolved_path(s, out)
+    CHARACTER(LEN=*), INTENT(IN) :: s
+    CHARACTER(LEN=*), INTENT(OUT) :: out
+    CHARACTER(KIND=C_CHAR), TARGET :: buf(4097)
+    INTEGER :: i
+    out = ' '
+    buf = C_NULL_CHAR
+    resolved_path = C_ASSOCIATED(c_realpath(TRIM(s)//C_NULL_CHAR, C_LOC(buf)))
+    IF (.NOT. resolved_path) RETURN
+    DO i = 1, MIN(SIZE(buf), LEN(out))
+       IF (buf(i) == C_NULL_CHAR) EXIT
+       out(i:i) = buf(i)
+    END DO
+  END FUNCTION resolved_path
+
+  ! readlink(2): .FALSE. if s is not a symbolic link.
+  LOGICAL FUNCTION link_target(s, out)
+    CHARACTER(LEN=*), INTENT(IN) :: s
+    CHARACTER(LEN=*), INTENT(OUT) :: out
+    CHARACTER(KIND=C_CHAR) :: buf(4096)
+    INTEGER(C_PTRDIFF_T) :: n
+    INTEGER :: i
+    out = ' '
+    n = c_readlink(TRIM(s)//C_NULL_CHAR, buf, INT(SIZE(buf), C_SIZE_T))
+    link_target = n > 0 .AND. n < SIZE(buf)
+    IF (.NOT. link_target) RETURN
+    DO i = 1, INT(n)
+       out(i:i) = buf(i)
+    END DO
+  END FUNCTION link_target
 
   !-------------------------------------------------------------------
   ! free_unit : the first unit of 30..99 that is not open, or -1.
