@@ -20,17 +20,33 @@
       INTEGER, INTENT(OUT) :: IERR
 
       character case(6)*10
+      CHARACTER(LEN=120) :: KMSG
       dimension rlim(NSUM),zlim(NSUM),pressw(NPSM),pwprim(NPSM), &
                 dmion(NSUM),rhovn(NSUM),ajtor(NPSM)
 
+!     IERR: FROPEN's (1 to 8) when the file was not opened; 9 when a
+!     read failed or a size is beyond its array (EQ_READ_FAILED gives
+!     the reason), where the process used to end. The sizes of the
+!     first line go to locals, so a file that fails there changes
+!     nothing; one that fails later leaves what was read before, but
+!     for the grid sizes, which EQ_READ puts back.
       neqdsk=21
       CALL FROPEN(neqdsk,KNAMEQ,1,MODEFR,'EQ',IERR)
       IF(IERR.NE.0) RETURN
 !
+      KMSG=' '
       REWIND(neqdsk)
-      read (neqdsk,2000) (case(i),i=1,6),idum,NRGMAX,NZGMAX
+      read (neqdsk,2000,ERR=900,END=900,IOMSG=KMSG) &
+           (case(i),i=1,6),idum,NRG1,NZG1
+!     NPSMAX is NRGMAX: NRGMAX has to fit both arrays.
+      CALL EQ_READ_SIZE('NRGMAX',NRG1,2,MIN(NRGM,NPSM),KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      CALL EQ_READ_SIZE('NZGMAX',NZG1,2,NZGM,KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      NRGMAX=NRG1
+      NZGMAX=NZG1
       NPSMAX=NRGMAX
-      read (neqdsk,2020) rdim,zdim,Rctr,rleft,zmid
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) rdim,zdim,Rctr,rleft,zmid
       DR=rdim/(NRGMAX-1)
       DZ=zdim/(NZGMAX-1)
       DO NRG=1,NRGMAX
@@ -39,7 +55,7 @@
       DO NZG=1,NZGMAX
          ZG(NZG)=zmid-0.5D0*zdim+DZ*(NZG-1)
       ENDDO
-      read (neqdsk,2020) RAXIS,ZAXIS,PSI0,PSIA,Bctr
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) RAXIS,ZAXIS,PSI0,PSIA,Bctr
 !
       PSI0=2.D0*PI*PSI0
       PSIA=2.D0*PI*PSIA
@@ -50,19 +66,25 @@
       DO NPS=1,NPSMAX
          PSIPS(NPS)=DPS*(NPS-1)
       ENDDO
-      read (neqdsk,2020) RIP,simag,xdum,rmaxis,xdum
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) RIP,simag,xdum,rmaxis,xdum
       RIP=RIP/1.D6
-      read (neqdsk,2020) zmaxis,xdum,sibry,xdum,xdum
-      read (neqdsk,2020) (TTPS(i),i=1,NPSMAX)
-      read (neqdsk,2020) (PPPS(i),i=1,NPSMAX)
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) zmaxis,xdum,sibry,xdum,xdum
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) (TTPS(i),i=1,NPSMAX)
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) (PPPS(i),i=1,NPSMAX)
       WRITE(6,'(5ES12.4)') (PPPS(i),i=1,NPSMAX)
-      read (neqdsk,2020) (TTDTTPS(i),i=1,NPSMAX)
-      read (neqdsk,2020) (DPPPS(i),i=1,NPSMAX)
-      read (neqdsk,2020) ((PSIRZ(i,j),i=1,NRGMAX),j=1,NZGMAX)
-      read (neqdsk,2020) (QQPS(i),i=1,NPSMAX)
-      read (neqdsk,2022) NSUMAX,limitr
-      read (neqdsk,2020) (RSU(i),ZSU(i),i=1,NSUMAX)
-      read (neqdsk,2020) (rlim(i),zlim(i),i=1,limitr)
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) (TTDTTPS(i),i=1,NPSMAX)
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) (DPPPS(i),i=1,NPSMAX)
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) &
+           ((PSIRZ(i,j),i=1,NRGMAX),j=1,NZGMAX)
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) (QQPS(i),i=1,NPSMAX)
+      read (neqdsk,2022,ERR=900,END=900,IOMSG=KMSG) NSU1,limitr
+      CALL EQ_READ_SIZE('NSUMAX',NSU1,0,NSUM,KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      CALL EQ_READ_SIZE('limitr',limitr,0,NSUM,KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      NSUMAX=NSU1
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) (RSU(i),ZSU(i),i=1,NSUMAX)
+      read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) (rlim(i),zlim(i),i=1,limitr)
 !
       RSUMAX = RSU(1)
       RSUMIN = RSU(1)
@@ -164,6 +186,11 @@
 !
 !     QQPS is the file's q column: EQCALQ must keep it.
       QQPS_FROM_FILE=.TRUE.
+      return
+!
+  900 CLOSE(neqdsk,IOSTAT=IST)
+      CALL EQ_READ_FAILED('a G-EQDSK file',KMSG)
+      IERR=9
       return
 !
  2000 format (6a8,3i4)

@@ -290,6 +290,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **EQ: a load of a file that is not of the format `MODELG` names returns an error where it ended the process**
+  (the library-reachable abort of `CLAUDE.md`, #142). `EQRTSK` (`MODELG` 3 and 9), `EQDSKR` (5 and 25) and `EQJAEAR`
+  (8) did not check their reads: `run(1)` with a file of another format, or one cut short, ended the host process
+  with a Fortran runtime error (exit status 2; e.g. `eqdata.ITER01` with `MODELG` 5 at `eq/eq-eqdsk.f90:31`, "Bad
+  value during integer read"), and a grid size read from such a file was a loop bound before anything checked it
+  (a formatted read of a binary file can give `NRGMAX` 0; `eqdata.ITER01` read as a QST/JAEA file gives
+  -858993459). Each read now goes to an error branch that closes the unit and returns `IERR` 9, each size is checked
+  before it is used (`EQ_READ_SIZE`, `eq/eqfile.f90`: at most its array; at least 2 for `NRGMAX`, `NZGMAX`,
+  `NPSMAX`, `NSGMAX`, `NTGMAX` and `NRVMAX` and 1 for `NTVMAX`, below which `run(0)` ends the process (`EQSAVE` can
+  write less, e.g. after a G-EQDSK load with less set); at least 0 for the rest), and `eq_last_error` names the file
+  and the format, e.g. "EQ_READ: MODELG=5 load of KNAMEQ='eqdata.ITER01' failed: it does not read as a G-EQDSK file
+  (Bad value during integer read)". The sizes of a file's first records go to locals, so a file that fails there
+  changes no parameter; one that fails later leaves what was read, but `EQ_READ` puts every grid size back (`NRGMAX`
+  to `NTVMAX`) when it fails, as one that fits its array can still be wrong for the next solve. `EQJAEAR`'s second
+  file (`KNAMEQ2`) is read the same way, and where its psi has no magnetic axis it returns `IERR` 10, where it ran
+  `STOP`. In `EQRTSK` a file that ends before its last record (`HJTRZ`) is an error too; a last record that does not
+  read (too short for its list, or cut inside) still leaves `HJTRZ` 0 and loads. A file that reads, with sizes in
+  those ranges, loads as before. `fp_mcp`'s descriptions of `KNAMEQ` said such a file ends the server process; it fails
+  the run now. Not changed: the callers of the load that drop a nonzero `IERR`, as they did for a missing file
+  (`wrx/wrprep.f90`; `wm`, `wmx` and `wmseki`, which return on `IERR` 1 only; `fp/fpprep.f90` under MPI, on rank 0
+  only; the test programs `eq/pltest.f` and `eq/trtest.f`).
 - **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
   and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
   `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first
@@ -385,21 +406,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the box around it (ierr=103)", where an analytic solve said "EQCALC failed
   (ierr=103)". `validate()` still cannot
   see it for a load: the axis is known only once the file is read.
-- **EQ library: `MODELG = 8`'s reader returns an error where it ended the
-  process, and an axis search that ends at a point that is not finite says
-  so** (MS10-DP-ISSP/task-web-client#204). `EQJAEAR` (`eq/eq-qst.f90`) read
-  `KNAMEQ` and `KNAMEQ2` with no `IOSTAT` and stopped with `STOP` when the
-  psi map had no axis, so a short or malformed file, a grid outside 2 to 513
-  points a side (past the arrays, or a spacing divided by zero), and a map
-  without an axis or with an R or Z range that is empty or not finite
-  (which leaves no axis to find) ended the process (measured on the `-O0`
-  build with run-time checks; an index past an array may go on unseen
-  without them), and a falling R or Z range was taken as given (`GETRZ`,
-  which PL's field lookups go through, finds no point inside a falling
-  grid). Each now returns an error, and `eq_last_error` names the
-  file and the part, e.g. "EQ_READ: MODELG=8 load failed:
-  KNAMEQ2='eqdata2' ends before its row 11 of 41". `find_axis`
-  (`eq/eqsub.f90`) set `IERR=102` when Newton's method did not converge, in
+- **EQ library: `MODELG = 8`'s reader refuses R and Z ranges that are no
+  grid, and an axis search that ends at a point that is not finite says so**
+  (MS10-DP-ISSP/task-web-client#204). `EQJAEAR` (`eq/eq-qst.f90`) read
+  `KNAMEQ` and `KNAMEQ2` with no `IOSTAT` and stopped with `STOP` when the psi
+  map had no axis. Fork PR #31, merged before this entry's pull request, gives
+  it the checks every reader of `KNAMEQ` now has: a short or malformed file
+  and a grid outside 2 to 513 points a side return `IERR` 9 with the readers'
+  shared reason, and a map without an axis `IERR` 10. This entry adds what
+  those checks do not see: an R or Z range that is empty or not finite (it
+  leaves no axis to find, and ended the process on the `-O0` build with
+  run-time checks) or falling (taken as given, where `GETRZ`, which PL's field
+  lookups go through, finds no point inside a falling grid) is refused, as
+  "EQ_READ: MODELG=8 load of KNAMEQ='jaea.dat' failed: it does not read as a
+  QST/JAEA file (R from 5.0000E-01 to 1.0000E-01, Z from -3.0000E-01 to
+  3.0000E-01: no grid)". `find_axis` (`eq/eqsub.f90`) set `IERR=102` when Newton's method did not converge, in
   a variable of its own, and its callers, `EQAXIS` (loads through `EQCALQ`,
   the Grad-Shafranov solve) and `EQJAEAR`, went on from the search's last point.
   That point is the best one the search found, and runs depend on going on
@@ -586,6 +607,29 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   one attempt takes minutes (about 4 for the 3.11 job), and the step now
   fails after one or two.
   `clean-tree-build.yml` also runs when the script changes.
+- **wrx, wm, wmx, wmseki, fp and EQ's two test programs: the routines that
+  load the equilibrium file return on every nonzero `IERR` of the load.**
+  `wr_prep` (`wrx/wrprep.f90`) printed the `IERR` of a failed `eq_load`
+  (`MODELG` 3 and 5) or `eq_read` (8) and went on: the plasma bounds came
+  from an earlier run or were zero, the `IERR` was lost in `pl_load` and
+  `dp_prep_ns` (which sets it to 0), and `wrx_run` returned `WRX_OK` with
+  NaN powers, or ended the host process in the `STOP` of `BESSJN`
+  (`lib/libbes.f90`): the ITER01 case of `python/wrxlib` with `MODELG` 3
+  and no `eqdata` did. `wr_prep` now returns the load's `IERR` and
+  `wrx_run` returns `WRX_ERR_CALC_FAILED`
+  (`python/wrxlib/tests/test_eq_load_errors.py`); the next run loads the
+  file again. `WMXRZF` (`wm/wmsetg.f`, `wmseki/wmsetg.f`) and `wmsetg_eq`
+  (`wmx/wmsetg.f90`) returned on `IERR` 1 only, and for another code went
+  on and remembered `KNAMEQ` as loaded; they return on every nonzero code
+  and forget the last load, so the next call loads the file again. (The
+  eigenvalue search of all three, `DIAMIN`, still goes on to solve after
+  a failed `WMSETG`; with a missing file it now tries the load, and
+  prints its error, at every evaluation, and with `MODEFR` 1 asks for the
+  file name each time.)
+  Under MPI, `fp_mesh` (`fp/fpprep.f90`) returned on rank 0 alone when the
+  load failed, and the other ranks waited in `fp_eq_broadcast`; rank 0 now
+  broadcasts the code first and every rank returns. `eq/pltest.f` and
+  `eq/trtest.f` go back to their prompt on any nonzero code.
 - **tot docs and `tot_mcp`: string parameters and the tool count** (#274).
   The tot Sphinx pages showed `tot.set_param_str("fp:KNAMEQ", ...)` and
   `("wr:KNAMEQ", ...)`, which tot refuses: it passes string values on for
