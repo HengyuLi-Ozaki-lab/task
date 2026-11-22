@@ -20,11 +20,11 @@ TR uses an implicit time-stepping scheme. The advancement
 coefficient is `FADV` (do not confuse with `THETA`, which is
 reserved elsewhere): `FADV = 0.5` is Crank-Nicolson and
 `FADV = 1.0` is fully implicit. The value is hard-coded inside
-the time-step routine itself — `tr/trexec.f90:516` assigns
+the time-step routine itself — `tr/trexec.f90:548` assigns
 `FADV = 1.D0` unconditionally — so TR runs fully implicit out
 of the box and there is no public knob to switch to
 Crank-Nicolson without editing the source. The scheme-selector
-comments at `tr/trexec.f90:512-514` document the meaning of
+comments at `tr/trexec.f90:544-546` document the meaning of
 each value.
 
 Concrete consequence: a strict CFL condition does NOT apply.
@@ -93,7 +93,7 @@ cell) rather than a sign of an underlying numerical problem.
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) diagnosis
 
-`tr_api_run` (`tr/tr_api.f90:364,381`) returns
+`tr_api_run` (`tr/tr_api.f90:369,386`) returns
 `TR_ERR_CALC_FAILED` for **any** non-zero result code from the
 underlying `tr_prep` / `tr_loop` routines. The wrapper
 deliberately collapses the full set of downstream failure
@@ -164,14 +164,14 @@ one of five `TrDiagCode` values from the enum at
 `tr/tr_api.h:76-82` (mirrored in `python/trlib/_ffi.py:74-78`).
 The enum reserves five categories; `tr_api_validate` emits four
 of them, and `MISSING_REQUIRED` is reserved for a later category
-(`tr/tr_api.f90:534`):
+(`tr/tr_api.f90:539`):
 
 - **`OUT_OF_RANGE`** — a parameter value sits outside the
   range that `tr_api_validate` checks. Validate's `NSMAX`
   check, for example, compares against the run-time species
   bound `NSM = 4` (not the compile-time C ABI bound
   `TR_MAX_NSMAX = 8`), so `NSMAX = 5` reaches `validate()`
-  and is reported here (`tr/tr_api.f90:564`). Note: values
+  and is reported here (`tr/tr_api.f90:569`). Note: values
   beyond the registry's own range — e.g. `NSMAX > 8` — are
   rejected by `set_param` *before* validate runs
   (`tr/tr_param_registry.f90:155-157`), so you will not see
@@ -180,7 +180,7 @@ of them, and `MISSING_REQUIRED` is reserved for a later category
   use. The same code covers the per-species profiles of #189,
   the equation switches and the particle sources (section 14 of
   {doc}`parameters`), and `EXTERNAL_DRIVEN_RW <= 0` with
-  `EXTERNAL_DRIVEN_I != 0` (`tr/tr_api.f90:616-619`), a pair
+  `EXTERNAL_DRIVEN_I != 0` (`tr/tr_api.f90:621-624`), a pair
   that is reported here rather than as `INCONSISTENT_PAIR`.
 
 - **`OUT_OF_RANGE_AFTER_DEP`** — a value that passes its own

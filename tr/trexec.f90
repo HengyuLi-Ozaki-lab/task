@@ -2,9 +2,9 @@
 
 MODULE trexec
 
-  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK
+  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK, tr_library_mode, tr_eval_nt_row, tr_eval_row_added
   PRIVATE
-  PUBLIC tr_exec,tr_eval,tr_coef_decide
+  PUBLIC tr_exec,tr_eval,tr_coef_decide,tr_eval_take_back_row
 
 CONTAINS
 
@@ -285,8 +285,12 @@ CONTAINS
       CALL TRCHCK(ICHCK)
       IF(ICHCK.EQ.1) THEN
          CALL TRGLOB
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: the failed iterate is not a row of the time history (GT, GVT), which holds the recorded
+!        steps only; tr_last_error records the failure. tr2 records it for its graphics, as before.
+         IF(.NOT.tr_library_mode) THEN
+            CALL TRATOT
+            CALL TRATOTN
+         ENDIF
          CALL TRATOG
          IERR=1
          CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
@@ -357,8 +361,11 @@ CONTAINS
 
       IF(ICHCK.EQ.1) THEN
          CALL TRGLOB
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: not a row of the time history, as above.
+         IF(.NOT.tr_library_mode) THEN
+            CALL TRATOT
+            CALL TRATOTN
+         ENDIF
          CALL TRATOG
          IERR=1
          CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
@@ -399,13 +406,14 @@ CONTAINS
 
       SUBROUTINE tr_eval(NT,IERR)
 
-      USE TRCOMM, ONLY : NGRSTP, NGTSTP, NTMAX, NTSTEP, TPRE, WPPRE, rkind
+      USE TRCOMM, ONLY : NGRSTP, NGT, NGTSTP, NTMAX, NTSTEP, TPRE, WPPRE, rkind
       USE trrslt_files, ONLY : TRSNAP
       IMPLICIT NONE
       INTEGER,INTENT(IN) :: NT
       INTEGER,INTENT(OUT) :: IERR
       integer:: IDGLOB
       REAL(rkind):: TPRE_KEEP, WPPRE_KEEP
+      INTEGER:: NGT_BEFORE
 
       CALL TRCALC(IERR)
       IF(IERR.ne.0) RETURN
@@ -419,8 +427,19 @@ CONTAINS
       IF(MOD(NT,NGTSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB
          IDGLOB=1
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: a call of tr_run starts with an evaluation of the step the call before it ended on
+!        (tr_loop's prologue). Its globals are recomputed (WPDOT is 0 at the same T) and the row would
+!        repeat that step's time, so it is not recorded. tr2 keeps its rows as before. Only this time
+!        history (GT, GVT) is guarded: the profile history TRATOG writes (GTR, GVR) and the print of
+!        TRSNAP still repeat that step at a cut; neither is exported by the library.
+         IF(NGT.EQ.0) tr_eval_nt_row=-1
+         IF(.NOT.(tr_library_mode .AND. NT.EQ.tr_eval_nt_row)) THEN
+            NGT_BEFORE=NGT
+            CALL TRATOT
+            IF(.NOT.tr_library_mode) CALL TRATOTN
+            tr_eval_nt_row=NT
+            tr_eval_row_added=(NGT.GT.NGT_BEFORE)
+         ENDIF
       ENDIF
       IF(MOD(NT,NGRSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB
@@ -443,6 +462,19 @@ CONTAINS
       IERR=0
       RETURN
     END SUBROUTINE tr_eval
+
+!     Library mode: take back the history row tr_eval recorded at step NT, when tr_loop then finds that step not
+!     finite (the run ends there with NONFINITE). The rows before it stay; nothing else is undone. tr_eval_nt_row
+!     stays NT, so a later call that starts on this step (a retry with no changed parameter) does not record it.
+    SUBROUTINE tr_eval_take_back_row(NT)
+      USE TRCOMM, ONLY : NGT
+      IMPLICIT NONE
+      INTEGER,INTENT(IN) :: NT
+      IF(NT.EQ.tr_eval_nt_row .AND. tr_eval_row_added .AND. NGT.GT.0) THEN
+         NGT=NGT-1
+         tr_eval_row_added=.FALSE.
+      ENDIF
+    END SUBROUTINE tr_eval_take_back_row
 
 !     ***********************************************************
 

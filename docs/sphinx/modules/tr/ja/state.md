@@ -14,7 +14,10 @@ state.nsmax           # 実働の粒子種数 (<= TR_MAX_NSMAX=8)
 
 ## スカラー量 (14 個, `state.scalars` 辞書)
 
-プラズマ全体を代表する時空間積分量. 以下 14 個が常に取得できます.
+プラズマ全体を代表する時空間積分量. 以下 14 個が常に取得できます. `Trlib.get_state().scalars` には名前つきの 31 個の全体量
+(`Trlib.scalar_names()`: 他に `PNFT`, `QF`, `PINT`, `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`, `AJOHT`, `AJNBT`, `AJBST`,
+`RIP`, `VLOOP`, `WPDOT`, `H98Y2`, `TAUE98`) が入り, `to_dict()` はこの 14 個のままです. 時間履歴は `Trlib.history()` で読みます
+(単精度, 最大 10001 行).
 
 | キー | 単位 | 意味 |
 |---|---|---|

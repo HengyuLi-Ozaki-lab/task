@@ -408,7 +408,7 @@ $(OBJDIR_PIC)/trcoef_neoclassical.o : $(OBJDIR_PIC)/trcoll.o
 $(OBJDIR_PIC)/trcoef_resistivity.o  : $(OBJDIR_PIC)/trcoll.o $(OBJDIR_PIC)/trlib.o
 $(OBJDIR_PIC)/trcoef_adhoc.o        : $(OBJDIR_PIC)/trcoll.o
 $(OBJDIR_PIC)/trexec.o              : $(OBJDIR_PIC)/trlib.o $(OBJDIR_PIC)/trfailure.o
-$(OBJDIR_PIC)/trloop.o              : $(OBJDIR_PIC)/trfailure.o
+$(OBJDIR_PIC)/trloop.o              : $(OBJDIR_PIC)/trfailure.o $(OBJDIR_PIC)/trexec.o
 $(OBJDIR_PIC)/trmetric.o            : $(OBJDIR_PIC)/trfailure.o
 $(OBJDIR_PIC)/tr_api.o              : $(OBJDIR_PIC)/trfailure.o
 $(OBJDIR_PIC)/trpnb.o               : $(OBJDIR_PIC)/trlib.o
@@ -654,7 +654,7 @@ $(OBJDIR)/trufile.o : trufile.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/tr_ufile_task.o : tr_ufile_task.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/tr_ufile_topics.o : tr_ufile_topics.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trufsub.o : trufsub.f90 trcomm.f90 trcom1.f90
-$(OBJDIR)/trloop.o : trloop.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trfailure.o
+$(OBJDIR)/trloop.o : trloop.f90 trcomm.f90 trcom1.f90 $(OBJDIR)/trfailure.o $(OBJDIR)/trexec.o
 $(OBJDIR)/trexec.o : trexec.f90 trcomm.f90 trcom1.f90 trcoef_neoclassical.f90 $(OBJDIR)/trrslt_files.o $(OBJDIR)/trlib.o $(OBJDIR)/trfailure.o
 $(OBJDIR)/trpl.o : trpl.f90 trcomm.f90 trcom1.f90
 $(OBJDIR)/trrslt_globals.o : trrslt_globals.f90 trcomm.f90 $(OBJDIR)/trexec.o

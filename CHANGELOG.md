@@ -31,6 +31,42 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   - `trlib`: `TrFailure`, `TrlibRunError.failure` (`None` when the `.so` predates `tr_last_error`) and
     `Trlib.last_error()`. `tr_mcp`: the run error string carries the record, and `describe_parameters` has an
     `eq_names` line. TOT and the mono build stop and record too, but `tot_api.h` and `totlib` have no accessor yet.
+- **TR library: outputs by name** (the MODELG 9 heating study of task-web, #96 PR 2).
+  - `tr_scalar_count`, `tr_scalar_name`, `tr_get_scalar(name, &value)`: 31 global results as `TRGLOB` last computed
+    them (`T`, `WPT`, `AJT`, `Q0`, the betas, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`, `AJRFT`, `PNFT`, `QF`, `PINT`,
+    `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`,
+    `TAUE98`) in the units of `tr/trrslt_globals.f90` (`PINT` includes `PNFT`, the charged fusion products' power: the
+    alpha power, `P_fus/5`, for D-T; alpha and proton together for D-He3, `MDLNF` 5 and 6, where `QF`, a D-T gain, is
+    five times the gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8 and the experimental
+    data's under `MDLUF` 1 and 3). They are current after
+    a `tr_run` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
+    0 steps evaluates no step: what the preparation sets (`T` 0; `RIP`, which is `RIPS` or, under `MODELG` 3, 5 and 8, the equilibrium's boundary current; `Q0` under `MODELG` 2, 3, 5, 7, 8 and 9) is
+    new, what only a step computes (the powers, `WPT`) is still the run before's. `tr_mcp`'s `get_state` and
+    `run_and_get_state` return `T` only among the scalars until a run of one step or more since the handle was opened
+    or a parameter was written (a refused write changes nothing), and none before the handle's first successful
+    preparation (`T` is the handle before's until then); a failed run counts as evaluated only when it left a history
+    row. `TrState.scalars` keeps the 14 values `tr_get_state` copied and reads only the others by name. An
+    unknown or inexact name returns `TR_ERR_INVALID` and leaves the value alone. `Trlib.scalar_names()`,
+    `Trlib.get_scalar()`; `TrState.scalars` holds all 31 after `get_state` (`to_dict()` keeps the 14 of the C struct,
+    which the baselines compare).
+  - `tot_get_scalar("tr:<NAME>", &value)` and `Tot.get_scalar` ask TR the same way (`tot_api.h`, `totlib`).
+  - `tr_mcp`: `get_state` returns the 31 scalars; `describe_state_schema` lists each with its unit and meaning, and a
+    test fails when the library lists a name the schema lacks.
+- **TR library: the run's history by name.** TR records a row every `NGTSTP` steps (default 2) in single precision
+  (`GT`, `GVT` of `TRATOT`); `tr_history_length`, `tr_history_full`, `tr_history_count`, `tr_history_name` and
+  `tr_history_get(name, buf, n, &got)` read it without cutting the run: 47 columns (`T`, the central and average
+  densities and temperatures `NE0`, `NEAV`, `TE0`, `TI0`, `TEAV`, `TIAV`, `NLAV`, `WPT`, the currents, `PINT`, `POHT`,
+  `PNBT`, the EC/LH/IC powers to electrons and ions, `PNFT`, `POUT`, `PRLT`, `VLOOP`, `Q0`, `RQ1`, `ALI`, the confinement
+  times, the betas, `QF`, `RIP`, ... and `BETAN`, `PRFST`, which are computed from the row). The first row is the state
+  at t = 0, a row is recorded at every step that is a multiple of `NGTSTP` (a call of `tr_run` adds `nsteps / NGTSTP` rows only when it
+  starts on one: `run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1), and `tr_prep` (every first run and every run after a
+  changed parameter) starts the history again. The history holds `NTM` = 10001 rows and TR then stops recording
+  silently; `tr_history_full` says when. A long run sets `NGTSTP` so that steps / `NGTSTP` < 10001.
+  `Trlib.history(names=None)` returns `{name: ndarray}` (float64 from the single-precision rows: about 7 digits),
+  with `history_names`, `history_length`, `history_full`; `tot_history_*` and `Tot.history` take `tr:<NAME>` names;
+  `tr_mcp` has `get_history` and `describe_history_schema` (unit and meaning of each column). Under `MODELG` 9 the row
+  of a step that ends with an EQ re-solve (a multiple of `NTEQIT`) holds the `Q0` of before the re-solve, which then
+  recomputes it (`get_scalar` gives the one after); the other shared names agree with `get_scalar`.
 - **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
   re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
   (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
@@ -259,6 +295,23 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `eqdb.dat` are no longer reached through the library. **A change of behaviour**: a `MODELG = 15` load that failed
   with `EQ_ERR_CALC_FAILED`, or ended the process, is refused.
 
+- **TR library: a run made in several `tr_run` calls records the step at each cut once in the history.** In library
+  mode every call began with an evaluation of the step the call before ended on, which wrote that step's row of
+  `GT`/`GVT` a second time (with `WPDOT` 0). It is not recorded again (`tr/trexec.f90`, `tr_eval`); the profile history
+  (`TRATOG`) and `TRSNAP`'s print still repeat the step and are not exported. `tr2` is unchanged.
+- **TR library: the failed iterate of a negative-temperature failure is not a row of the history.** `tr_exec` records
+  it for `tr2`'s graphics (`TRATOT` at the failure, at the time of the step before and outside the `NGTSTP` cadence:
+  `DT` 100 s gave a row at 800 s with `TE0` 3.7e6 after that step's own row). In library mode it is not recorded; the
+  history ends on the last recorded step and `tr_last_error` says where the run failed (`tr/trexec.f90`). `tr2` is
+  unchanged. Likewise a step that `tr_loop` finds not finite (`NONFINITE`) is taken back from the history
+  (`tr_eval_take_back_row`; `DT` 1e6 s left a row of NaN), and a preparation that fails before it starts the history
+  again (`MODEL_PNF` and `MDLNF` both set) leaves no rows: they were the run before's. A retry on the same handle
+  does not record the rejected step again, and `tr_eval` does not call `TRATOTN` in library mode (the sawtooth
+  record, which writes temperatures into `GVT` columns 89 to 104 of its own rows).
+- **`tot/Makefile`: the delegated TR targets (`../tr/libtr2.a`, `../tr/libtrapi.so`, `../tr/obj/tr_api.o`) depend on
+  TR's sources; `tr/Makefile`: `trloop.o` depends on `trexec.o` (static and PIC).** `tot_api.f90` uses `tr_api`'s new
+  names, and an incremental build compiled it against the old `tr_api.mod`, or linked an old solver, because an
+  existing library kept TR's own make from running; `trloop.f90` calls `trexec`'s new `tr_eval_take_back_row`.
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and

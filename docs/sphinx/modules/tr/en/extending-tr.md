@@ -41,7 +41,7 @@ plus a default in `tr/trinit.f90`.
 5. **Use from Python.** `tr.set_param("FOO", x)` works
    immediately. No C ABI change is needed because
    `tr_set_param` is string-keyed (verified at
-   `tr/tr_api.f90:163-167,175-218`).
+   `tr/tr_api.f90:165-169,177-220`).
 
 For array-valued parameters, the bounds-checked idiom at
 `tr/tr_param_registry.f90:161-166` is the template. The
@@ -121,13 +121,13 @@ consumers may need to be rebuilt or version-checked.
    `double` (or correct C type), again at the struct end.
 4. **Populate the field inside `tr_api_get_state`.** Three
    blocks exist in `tr/tr_api.f90`:
-   - **Zero-init** at `:400-420` (the new field should be
+   - **Zero-init** at `:405-425` (the new field should be
      added there too if it has no sensible compute-time-
      zero baseline).
-   - **Scalar copy** at `:436-452` — the AJRFT precedent
+   - **Scalar copy** at `:441-457` — the AJRFT precedent
      lives here. For a new scalar, follow that pattern.
    - **Per-radius / per-species profile loops** at
-     `:458-468` — for a new array field, follow the
+     `:463-473` — for a new array field, follow the
      `RN` / `RT` / `AJ` / `QP` loop pattern.
 5. **Bump `TR_STATE_ABI_VERSION` in both places**: the
    `#define` in `tr/tr_api.h` and the `PARAMETER` in
@@ -149,12 +149,12 @@ consumers may need to be rebuilt or version-checked.
    `python/trlib/state.py`. Two cases:
    - *Scalar field*: add the field name to the
      `SCALAR_FIELDS` list (`python/trlib/state.py:22-28`).
-     Inside `from_c` (which starts at `:74`), the scalar
-     dict-comprehension at `:87` walks `SCALAR_FIELDS` and
+     Inside `from_c` (which starts at `:76`), the scalar
+     dict-comprehension at `:89` walks `SCALAR_FIELDS` and
      populates `state.scalars["YOUR_FIELD"]` automatically;
-     the dimension dict-comprehension at `:81-84` is a
+     the dimension dict-comprehension at `:83-86` is a
      separate stage that handles `nrmax` / `nsmax`. The
-     dataclass construction at `:92-100` returns the
+     dataclass construction at `:94-103` returns the
      assembled `TrState`. The new field becomes
      accessible as `state.scalars["YOUR_FIELD"]` without
      further code changes.

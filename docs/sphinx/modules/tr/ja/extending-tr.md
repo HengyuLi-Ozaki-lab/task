@@ -39,7 +39,7 @@ TR のパラメータレジストリは `tr/tr_param_registry.f90:136+`
 4. **リビルド.** `make -C tr libtrapi.so`.
 5. **Python から使う.** `tr.set_param("FOO", x)` で即座に
    動きます. `tr_set_param` は文字列キーで動作するため
-   (`tr/tr_api.f90:163-167,175-218` で確認), C ABI 変更は
+   (`tr/tr_api.f90:165-169,177-220` で確認), C ABI 変更は
    不要です.
 
 配列値パラメータについては, `tr/tr_param_registry.f90:161-166`
@@ -116,12 +116,12 @@ numbering 規約 (`tr/trcoef_turbulence.f90:393-399` の
    `double` (適切な C 型) を, やはり struct の末尾に追加.
 4. **`tr_api_get_state` 内で field を埋める.**
    `tr/tr_api.f90` には 3 ブロックある:
-   - **zero-init** が `:400-420` (新 field に compute-time
+   - **zero-init** が `:405-425` (新 field に compute-time
      ゼロベースラインがなければここにも追加).
-   - **scalar copy** が `:436-452` — AJRFT 先例はここ.
+   - **scalar copy** が `:441-457` — AJRFT 先例はここ.
      新スカラーはこのパターンに従う.
    - **per-radius / per-species profile loops** が
-     `:458-468` — 新配列 field は `RN` / `RT` / `AJ` /
+     `:463-473` — 新配列 field は `RN` / `RT` / `AJ` /
      `QP` の loop パターンに従う.
 5. **`TR_STATE_ABI_VERSION` を 2 箇所で bump する.**
    `tr/tr_api.h` の `#define` と `tr/tr_state.f90` の
@@ -141,12 +141,12 @@ numbering 規約 (`tr/trcoef_turbulence.f90:393-399` の
    `python/trlib/state.py`. 2 ケース:
    - *スカラー field*: field 名を `SCALAR_FIELDS` リスト
      (`python/trlib/state.py:22-28`) に追加. `from_c`
-     (`:74` から始まる) 内で scalar dict-comprehension
-     (`:87`) が `SCALAR_FIELDS` を走査して
+     (`:76` から始まる) 内で scalar dict-comprehension
+     (`:89`) が `SCALAR_FIELDS` を走査して
      `state.scalars["YOUR_FIELD"]` を自動で埋める;
-     dimension dict-comprehension (`:81-84`) は
+     dimension dict-comprehension (`:83-86`) は
      `nrmax` / `nsmax` を扱う別 stage. dataclass 構築
-     (`:92-100`) が組み立てた `TrState` を返す. 新 field
+     (`:94-103`) が組み立てた `TrState` を返す. 新 field
      は `state.scalars["YOUR_FIELD"]` で他の変更なしに
      アクセス可能になる.
    - *配列 / profile field* (1 次元または 2 次元,
