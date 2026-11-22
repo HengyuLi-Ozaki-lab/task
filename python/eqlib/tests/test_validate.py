@@ -619,9 +619,10 @@ class TestEqValidateWallGate(unittest.TestCase):
                 return diags, eq.get_state()
 
     def test_no_file_format_gets_a_geometry_check(self) -> None:
-        """The six formats run(1) reads are taken to be loaded: a wall
-        inside the plasma, a box without RR and a negative current are
-        not reported for any of them (validate only: no file is read)."""
+        """The six file formats (3, 5, 8, 9, 25, and 15, whose load run(1)
+        refuses) are taken to be loaded: a wall inside the plasma, a box
+        without RR and a negative current are not reported for any of
+        them (validate only: no file is read)."""
         for modelg in (3.0, 5.0, 8.0, 9.0, 15.0, 25.0):
             with Eq() as eq:
                 eq.set_params(MODELG=modelg, RB=0.8, MDLEQF=10.0, RGMIN=3.5, RIP=-3.0)
