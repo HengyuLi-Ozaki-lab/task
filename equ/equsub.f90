@@ -479,6 +479,7 @@
 !
 !=======================================================================
       subroutine eqequ
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     SET-UP FREE-BOUNDARY EQUILIBRIUM
 !                 FOR GIVEN FUNCTIONAL FORMS OF DP/DS AND DT/DS
@@ -600,6 +601,7 @@
 !*    LOAD RCU=R*CUR(R,Z)
 !-----------------------------------------------------------------------
       call eqrcu
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
 !*    SCALE RCU SUCH THAT TCU=TCUR         : ICP(2) > 0
 !-----------------------------------------------------------------------
@@ -652,7 +654,9 @@
 !*    SEARCH STAGNATION POINT
 !-----------------------------------------------------------------------
       call eqsep
+      if(equ_failed()) return
       call eqlim
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
 !*    CONVERGENCE CHECK OF INNER LOOP
 !-----------------------------------------------------------------------
@@ -670,9 +674,11 @@
 !-----------------------------------------------------------------------
       if(icp(2).gt.0)then
        call eqlin
+       if(equ_failed()) return
       else
        psi0=0.d0
        call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+       if(equ_failed()) return
        nsu=nzsu
        do n=1,nzsu
         rsu(n)=zrsu(n)
@@ -778,6 +784,7 @@
 !    
 !=======================================================================
       subroutine eqerr(errmsg)
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     PRINT PSI
 !=======================================================================
@@ -801,7 +808,7 @@
       call prnts(ft06,'psi ',psir,nr,-siw(1))
 !----------------------------------------------------------------------
       write(6,*) '===error stop==='
-      stop
+      call equ_fail('eqerr: '//errmsg)
       end subroutine eqerr
 !   
 !=======================================================================
@@ -1174,6 +1181,7 @@
 !  
 !=======================================================================
       subroutine eqlim
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     LIMITER                                                      JAERI
 !=======================================================================
@@ -1256,6 +1264,7 @@
        psep=psep-pvbnd
        saxis=saxis-pvbnd
        call eqlin
+       if(equ_failed()) return
       endif
 !-----------------------------------------------------------------------
       return
@@ -1263,6 +1272,7 @@
 !     
 !=======================================================================
       subroutine eqlin
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     LINE INTEGRALS
 !=======================================================================
@@ -1294,7 +1304,8 @@
       enddo
       if(irst.eq.nr-1)then
        write(6,*)'stop at eqlin : irst = nr-1'
-       stop
+       call equ_fail('eqlin: irst = nr-1')
+       return
       endif
 !-----------------------------------------------------------------------
       istep=0
@@ -1308,11 +1319,13 @@
        istop=0
        do while(istop.eq.0)
         call eqtrc(psi0,rg(irst+1),zaxis,1,0,irend,izend)
+        if(equ_failed()) return
         if(irend.eq.0)then
          istep=istep+1
          if(istep.gt.20) then
             write(6,*) '  stop at eqlin : istep > 20'
-            stop
+            call equ_fail('eqlin: istep > 20')
+            return
          endif
          dps=-0.001d0*saxis
          do i=1,nrz
@@ -1383,6 +1396,7 @@
 !     
 !=======================================================================
       subroutine eqout
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
       use aaa_mod
       use par_mod
@@ -1405,6 +1419,7 @@
 !-----
       psi0=0.d0
       call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+      if(equ_failed()) return
       qaxis=qqv(1)
       qsurf=qqv(nv)
       zlen=0.d0
@@ -1426,6 +1441,7 @@
 !-----------------------------------------------------------------------
       psi0=0.05d0*saxis
       call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+      if(equ_failed()) return
       q95=1.d0/((2.d0*cnpi)**2)*btv*zaav/zsdw
 !-----
       psi0=0.05d0*saxis
@@ -1534,6 +1550,7 @@
         isep=-iabs(isep)
         call eqsep
         isep=ksep
+        if(equ_failed()) return
        endif
        rsep=0.d0
        zsep=0.d0
@@ -1786,6 +1803,7 @@
 ! 
 !=======================================================================
       subroutine eqrcu
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     LOAD RCU=R*CU(R,Z)                                           JAERI
 !=======================================================================
@@ -1816,6 +1834,7 @@
 
       psi0=0.d0
       call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+      if(equ_failed()) return
       zrsmax=zrsu(1)
       zrsmin=zrsu(1)
       zzsmax=zzsu(1)
@@ -1874,6 +1893,7 @@
 !     
 !=======================================================================
       subroutine eqsep
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     SEARCH SEPARATRIX                                            JAERI
 !=======================================================================
@@ -2070,6 +2090,7 @@
        kk=k
        psi0=1.d-03*saxis*DBLE(k)
        call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+       if(equ_failed()) return
        if(irend.ge.2)then
         if(irend.le.nr-2)then
          if(izend.ge.2)then
@@ -2186,6 +2207,7 @@
 ! 
 !=======================================================================
       subroutine eqtrc(psi0,rst,zst,irsig,irot,irend,izend)
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     LINE INTEGRALS
 !=======================================================================
@@ -2217,6 +2239,7 @@
        if(ir.le.1.or.ir.ge.nrm)then
         write(ft06,'(1p3d10.3,i4)')psi0,rst,zst,irsig
         call eqerr('==eqtrc:no starting point==')
+        if(equ_failed()) return
        endif
       enddo
       ist=i
@@ -2318,7 +2341,8 @@
         k=2
        else
           write(6,*) ' stop at eqtrc : s1*s2*s3*s4=0 '
-          stop
+          call equ_fail('eqtrc: s1*s2*s3*s4=0')
+          return
        endif
 !
        vl1=r1*r1
@@ -2678,6 +2702,7 @@
 !
 !=======================================================================
       subroutine eqeqv
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
       use aaa_mod
       use par_mod
@@ -2692,6 +2717,7 @@
 !=======================================================================
       call eqrbp
       call eqlin
+      if(equ_failed()) return
 !=======================================================================
 !-----LOAD VALUABLES ON EQUIL GRIDS:SIV(N),N=1,NV
       dsi=saxis/DBLE(nvm)

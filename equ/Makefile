@@ -27,7 +27,7 @@ MODINCLUDE= -I./$(MOD) -I../pl/$(MOD) \
 
 
 SRCC =  equcomm.f90
-SRCS =  equtpxssl.f90 equpfds.f90 equsub.f90 equinit.f90 \
+SRCS =  equ_status.f90 equtpxssl.f90 equpfds.f90 equsub.f90 equinit.f90 \
         equfct.f90 equinp.f90 equset.f90 \
         equpl.f90 equtrn.f90 equfile.f90 \
 	equgout.f90 equunit.f90 \
@@ -79,6 +79,10 @@ $(OBJDIR)/equtrsvq.o : equtrsvq.f90 equtrpl.f90
 $(OBJDIR)/equtpxssl.o : equtpxssl.f90
 $(OBJDIR)/equ_eqdsk.o : equ_eqdsk.f90 equcomm.f90
 $(OBJDIR)/equ_convert.o : equ_convert.f90 equcomm.f90
+# equ_status_mod (the failure record of the library interface) is used
+# by the routines that used to STOP and by their callers.
+$(OBJDIR)/equ_status.o : equ_status.f90
+$(OBJDIR)/equsub.o $(OBJDIR)/equinit.o $(OBJDIR)/equset.o $(OBJDIR)/equfct.o : equ_status.f90
 
 # =====================================================================
 # Library interface (libequapi.so) and the program without graphics
@@ -182,7 +186,9 @@ $(OBJBPSD_PIC): | ../lib/libtask_pic.a
 ../pl/libpl_pic.a: | ../../bpsd/libbpsd.a ../lib/libtask_pic.a \
                      ../lib/libgrf_pic.a ../mtxp/libmtxbnd_pic.o
 $(OBJC_PIC): | libs_pic_prereq
-# Every PIC object of SRCS uses equcomm's modules.
+# Every PIC object of SRCS uses equcomm's modules, and those that
+# used to STOP use equ_status_mod.
+$(OBJDIR_PIC)/equsub.o $(OBJDIR_PIC)/equinit.o $(OBJDIR_PIC)/equset.o $(OBJDIR_PIC)/equfct.o: $(OBJDIR_PIC)/equ_status.o
 $(OBJS_PIC) $(OBJDIR_PIC)/equmain.o $(OBJDIR_PIC)/equ_static_stubs.o: | libs_pic_prereq $(OBJC_PIC)
 
 # --- equ_nogr: the program without graphics -------------------------

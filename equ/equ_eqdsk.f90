@@ -135,20 +135,28 @@ CONTAINS
     RETURN
 
 9010 WRITE(6,*) 'XX equ_efit: SPL1D(siv,vlv...): ierr=',ierr
+    CLOSE(neqdsk)
     RETURN
 9020 WRITE(6,*) 'XX equ_efit: SPL1D(vlv,prv...): ierr=',ierr
+    CLOSE(neqdsk)
     RETURN
 9030 WRITE(6,*) 'XX equ_efit: SPL1D(vlv,pfv...): ierr=',ierr
+    CLOSE(neqdsk)
     RETURN
 9040 WRITE(6,*) 'XX equ_efit: SPL1D(vlv,qqv...): ierr=',ierr
+    CLOSE(neqdsk)
     RETURN
 9060 WRITE(6,*) 'XX equ_efit: SPL1DD(ps,pv...): nps,ierr=',nps,ierr
+    CLOSE(neqdsk)
     RETURN
 9070 WRITE(6,*) 'XX equ_efit: SPL1DD(pv,pres...): nps,ierr=',nps,ierr
+    CLOSE(neqdsk)
     RETURN
 9080 WRITE(6,*) 'XX equ_efit: SPL1DD(pv,pf...): nps,ierr=',nps,ierr
+    CLOSE(neqdsk)
     RETURN
 9090 WRITE(6,*) 'XX equ_efit: SPL1DF(pv,qpsi...): nps,ierr=',nps,ierr
+    CLOSE(neqdsk)
     RETURN
 
  2000 format (6a8,3i4)

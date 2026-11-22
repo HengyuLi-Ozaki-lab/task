@@ -8,6 +8,7 @@
       contains
 !=======================================================================
       subroutine eqset
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     set up free bondary equilibriium
 !             for fiven functional forms of dp/ds and TdT/ds
@@ -36,15 +37,18 @@
       psi(i)=rbp(i)
       enddo
       call eqrcu
+      if(equ_failed()) return
       bav=bav0
 !--confirm equilibrium accuracy for metrics
       write(6,*)
       write(6,*)'== check of equilibrium accuracy through ode =='
       call eqeqv
+      if(equ_failed()) return
       keqmax=ieqmax
       ieqmax=10
       call eqfct
       ieqmax=keqmax
+      if(equ_failed()) return
       return
       endif
 !=======================================================================
@@ -56,9 +60,13 @@
       call eqsol
       call eqrbp
       call eqlin
+      if(equ_failed()) return
       call eqequ
+      if(equ_failed()) return
       call eqeqv
+      if(equ_failed()) return
       call eqout
+      if(equ_failed()) return
 !--confirm equilibrium accuracy for metrics
       write(6,*)
       write(6,*)'== check of equilibrium accuracy through ode =='
@@ -66,6 +74,7 @@
       ieqmax=10
       call eqfct
       ieqmax=keqmax
+      if(equ_failed()) return
       call cpusec(cpuequ)
 !=======================================================================
       return
