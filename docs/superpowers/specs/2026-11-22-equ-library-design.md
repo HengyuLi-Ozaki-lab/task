@@ -216,8 +216,12 @@ arrays follow EQU's own declaration (as EQ's `PSIB`); the documents say so at ea
 The file `KNAMCOIL` names, in `eqflin`'s format (`equinit.f90:448-474`): for each group `n = 1..18` with
 `NCOIL(n) > 0`, one header line and `NCOIL(n)` lines of `(3d10.3)`: R [m], Z [m], weight; then, if `ILIMT > 0`,
 one header line and `ILIMT` lines of `(2d10.3)` limiter points. Groups are matched by order. A relative path is
-taken from the working directory, as in the program. `KNAMCOIL = 'done'` keeps the coils already in memory
-(after `init`, eqinit's JT-60U set). The default `'init'` names no file: `validate` reports it.
+taken from the working directory, as in the program. `KNAMCOIL = 'done'` uses the coils of the inputs: after
+`init` eqinit's JT-60U groups 1..4 and zeros in groups 5..18. A file a run read is not kept (the image holds the
+inputs, 9.3), so `validate` refuses a group with `NCOIL > 0` whose filaments in memory are not at R > 0 with
+finite values (*found in review*: QUEST's namelist with `'done'` asks for groups 5 and 6, which are zeros; they
+give no flux and the run started `eqtrc` off the grid). The default
+`'init'` names no file: `validate` reports it.
 
 ## 7. State (`equ_state_t`, `EQU_STATE_ABI_VERSION = 1`)
 
@@ -228,7 +232,7 @@ A fixed-layout struct, valid part `1..n`, the rest zero (EQ's rule and EQ's #246
 | Part | Fields (code variable) |
 |---|---|
 | counts | `nr`, `nz`, `nv`, `nsu`; `mode` of the run |
-| convergence | `fct_steps` (abs of `ieq`), `fct_converged` (`ieq < 0`), `erreq`: the last FCT loop of the run (mode 1: `equ_calc`'s; mode 0: the 10 steps `eqset` runs, which it labels "check of equilibrium accuracy through ode", `equset.f90:62-67`) |
+| convergence | `fct_steps` (abs of `ieq`), `fct_converged` (`ieq < 0`), `erreq`: the last FCT loop of the run (mode 1: `equ_calc`'s; mode 0: the 10 steps `eqset` runs, which it labels "check of equilibrium accuracy through ode", `equset.f90:62-67`). With `IEQMAX = 0` mode 1 runs no FCT step: `fct_steps` is 0 and `erreq` is still `eqset`'s |
 | axis | `raxis`, `zaxis`, `psi_axis` (`saxis`) |
 | separatrix | `xpoint_status` (`iisep`: > 0 found; the code's negative failure codes kept), `rsep`, `zsep` (`rg(irsep)`, `zg(izsep)` when found), `psi_sep` (`psep`) |
 | scalars | `ip` (`ttcu` [MA], computed), `ip_target` (`tcur` [MA]), `rbt` (`btv` [T m]), `beta_t` (`beta`), `beta_s` (`bets`), `beta_j` (`betj`), `li` (`zzli`), `q_axis` (`qqv(1)`: *found in implementation*, the variable `qaxis` is set again after `eqout`'s print by the `eqaxi` of its `eqsep`), `q_surf`, `q95`, `qqj`, `rmaj`, `rpla`, `elip`, `trig`, `el95`, `volume` (`vlv(nv)`) |
@@ -268,8 +272,8 @@ Read-only; each entry names the parameter and the reason. The list, in three kin
   defaults with `ELIPUP = 1.5` or `ZPLA = 0.4` generate markers above the box.
 - **Markers 0 and 1** at different R (*found in review*: `eqadj` divides by `RVAC(1) − RVAC(0)`).
 - **Files and choices**: `KNAMCOIL` names an existing file unless `'done'`, not under `/dev` or `/proc` (it could be
-  the process's standard input); every filament with R > 0 and finite R, Z, weight (*found in review*: `flxfun`
-  indexes its table by R); the file holds the groups and lines
+  the process's standard input; 9.1); every filament with R > 0 and finite R, Z, weight (*found in review*: `flxfun`
+  indexes its table by R), in the file or, with `'done'`, in memory (6.4); the file holds the groups and lines
   `NCOIL` and `ILIMT` ask for (a read-only scan with `IOSTAT`); `RWMN > 0`, `RWMX > RWMN`, `ZWMX > 0`;
   `ICP(1)` one of the values `eqpfds` and `eqequ` handle (±1, ±2, ±9, ±11); `ISVAC` 0 or 1; `ISEP` −4 to 4 (the
   code uses its sign);
@@ -290,7 +294,13 @@ is the lead's to decide. The internal `WRITE`s of real numbers into messages use
 - The library does not use unit 7 (the program's scratch unit for namelist lines); it reads the namelist and
   the coil file on a free unit of 30..99 (not the program's 18), and refuses to write G-EQDSK when unit 21, which
   EQU's writer uses, is open in the process. Paths under `/dev` and `/proc` are refused for `read_parm`,
-  `KNAMCOIL` and `write_geqdsk` (*found in review*: `/dev/stdin` would read the MCP server's channel).
+  `KNAMCOIL` and `write_geqdsk` (*found in review*: `/dev/stdin` would read the MCP server's channel): as
+  written, through symbolic links and `..` (`realpath(3)`), for a file that does not exist yet through its
+  directory, and link by link (`readlink(2)`) where `realpath` cannot resolve the target (Linux's
+  `/proc/<pid>/fd/0` links to `pipe:[n]`). The name is checked as `OPEN` takes it: leading blanks are part of
+  it (*found in review*: a link named `' lnk'` passed a check of the left-adjusted name). A chain the check
+  cannot decide (more than 40 links, a name over 4096 characters) is refused. `equlib`'s route for a path over 80 characters passes the base name
+  from the directory, where the same check resolves it.
 - Unit 6 stays as it is (the solver prints its progress); the MCP server isolates fd 1.
 
 ### 9.2 Process-ending statements on the library's path: the Fortran changes
@@ -299,28 +309,31 @@ is the lead's to decide. The internal `WRITE`s of real numbers into messages use
 |---|---|---|
 | `equinit.f90:449-450` (`eqflin`) | `OPEN` of the coil file without `IOSTAT`: a missing file ends the process with a runtime error | `IOSTAT`; a failure goes through `equ_fail` (below); unit 18 closed on every error return |
 | `equsub.f90:803-804` (`eqerr`, called from `eqtrc`) | `STOP` | `equ_fail` |
-| `equsub.f90:1296-1297`, `1314-1315` (`eqlin`) | `STOP` (`irst = nr-1`; more than 20 failed traces) | `equ_fail` |
+| `equsub.f90:1296-1297`, `1314-1315` (`eqlin`) | `STOP` (`irst = nr-1`; more than 20 failed traces) | `equ_fail`; the first also for `irst = nr` (*found in review*: the outward search ends there when the plasma reaches the box on the axis row, and the walk read the next row) |
 | `equsub.f90:2320-2321` (`eqtrc`) | `STOP` (`s1*s2*s3*s4 = 0`) | `equ_fail` |
 | callers of `eqtrc`/`eqlin` up to `eqset` and `eqfct` (`eqequ`, `eqlin`, `eqout`, `eqrcu`, `eqsep`, …) | carry on | return when a failure is recorded (one test after each call) |
 | `equ_eqdsk.f90:137-152` | error paths return with unit 21 open | close it |
 | `eqtrc`, where it stores a contour point (*found in implementation*) | a contour longer than `isrzdm` (half of it when `IUDSYM = 1`) indexed past `zrsu` (QUEST with `RVAC(0) = 0.2`) | refuse the next point through `equ_fail`; the bound leaves room for `eqequ`'s read of `rsu(nsu+2)` |
-| `eqind` (*found in review*) | a plasma boundary that reaches the edge of the box (QUEST with `ISEP = 0`) indexed `psi` out of bounds | `equ_fail`, exit status 2 outside library mode (the runtime error's) |
+| `eqind` (*found in review*) | a plasma boundary that reaches the edge of the box (QUEST with `ISEP = 0`) indexed `psi` out of bounds | the loop's range kept on the grid; a cell with `psi < 0` on the edge of the box, whose neighbours are off it, goes through `equ_fail`, exit status 2 outside library mode (the runtime error's) |
+| `eqlin`, the walk to the first flux-surface crossing on the axis row (*found in review*) | no lower bound: on a coarse grid (QUEST at `NR = 17`, `NZ = 33`) it read `rg` at -211 | the walk stops at the row's first cell; no crossing goes through `equ_fail`, exit status 2 |
+| `eqtrc`, the start point (*found in review*) | a start off the grid indexed `psi` before the walk's own test (QUEST's namelist with `'done'`: `psi` at -105; `validate` now refuses that input, 6.4) | `equ_fail`, exit status 2 |
 | `equ_eqdsk.f90`, every `WRITE`, `REWIND`, `CLOSE` (*found in review*) | a failed write (a full disk) ended the process | `IOSTAT`, `ierr` 11 (write) or 12 (close) |
 | `eqout`, the flux-loop value `psloop` (*found in review*) | `(RLOOP, ZLOOP)` off the grid indexed `psi` out of bounds (QUEST with `ZWMX = 0.9` and the JT-60U default point) | computed only on the grid, else 0; `psloop` is read nowhere, so no result changes |
 
 - A new module `equ_status_mod` holds a library-mode flag (false by default), a failure flag and a message.
   `equ_fail(msg, code)` stops with status 2 for the sites that used to end in a runtime error (a missing coil
-  file, `eqind`), plain `STOP` for the former `STOP`s; the library clears the flag once it has reported it.
-  `equ_fail(msg)` writes the message to unit 6; outside library mode it then stops, as the code does today, so
-  the program behaves as before in every case and `equmenu.f90` is not changed. In library mode (set by
+  file, `eqind`, `eqlin`'s walk, `eqtrc`'s start), plain `STOP` for the former `STOP`s; the library clears the flag once it has
+  reported it. Each site prints to unit 6 what it printed before and then calls `equ_fail`, which prints
+  nothing; outside library mode it then stops, as the code does today, so the program behaves as before in every
+  case and `equmenu.f90` is not changed. In library mode (set by
   `equ_init`, TR's pattern) it records the failure and returns; the callers return in turn and the library
   returns `EQU_ERR_CALC_FAILED` with the message.
 - On valid input nothing changes: the comparison test (section 14) runs the program and the library on the same
   inputs after the change.
 - The remaining `STOP`s of `equ/` are outside the library's path (`eqdsk0`, `eqinp`/`eqrest`, `trsvq`,
   `equ_convert.f90`, the program's end); a test lists them with their line so a new one on the path is seen.
-- Aborts the bounds checks catch (`eqaxi`/`eqlin` walks, `eqind` at the box edge) are not all preventable
-  before the run; `validate` closes those that follow from the inputs. A run that still reaches one ends the
+- Aborts the bounds checks catch are not all preventable before the run; `validate` closes those that follow
+  from the inputs, and the walks the reviews reached (`eqlin`, `eqind`, `eqtrc`) now fail through `equ_fail`. A run that still reaches one ends the
   process, as for EQ and TR; the tests run `--forked`.
 
 ### 9.3 A second run in one process
@@ -348,7 +361,10 @@ symbols `libgrf`, `equgout.f90` and `equ_convert.f90` reference (`GSOPEN` withou
 
 `equ_write_geqdsk(path, overwrite)` calls `equ_eqdsk_write` after a successful run, and checks afterwards that a
 non-empty file exists. Refused: no equilibrium (`EQU_ERR_INVALID`), a blank or too long path, an existing file
-without `overwrite`. The file is the program's, number for number, with its properties: title blank, `current` =
+without `overwrite`, an existing file the process may not write (*found in review*: `FWOPEN` opens it read-only and
+the first write fails). When the writer fails, a file this call created is removed, so that a part-written file is
+not loaded later; a file that was there is left as the failed write left it, and the message says it may be
+incomplete. The program's `E` is unchanged. The file is the program's, number for number, with its properties: title blank, `current` =
 the input `TCUR` × 1e6, `sibry` = 0, `pres` and `pprime` in MPa (section 20), the boundary an open polygon,
 `limitr = ILIMT`.
 

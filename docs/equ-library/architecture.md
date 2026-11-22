@@ -62,21 +62,29 @@ is EQ's.
   `task_parm` mode 0, `eqgout`). `equ_write_geqdsk` sets `MODEFW` to 0 or 3 and
   `KNAMEQ` before EQU's writer, so `FWOPEN` does not prompt.
 - **Process-ending statements.** The four `STOP`s on the path of `R` (`eqerr`,
-  `eqlin` twice, `eqtrc`), a missing coil file and a boundary that reaches the
-  box (`eqind`) go through `equ_fail`; `eqtrc` also refuses a contour longer than
-  its arrays; EQU's G-EQDSK writer returns its write errors. Outside library mode `equ_fail`
+  `eqlin` twice, `eqtrc`), a missing coil file, a boundary that reaches the
+  box (`eqind`) and `eqlin`'s walk past the axis row on a coarse grid go through
+  `equ_fail`; `eqtrc` also refuses a contour longer than its arrays and a start
+  off the grid; EQU's G-EQDSK writer returns its write errors. Outside library mode `equ_fail`
   stops, so the program is unchanged. The other `STOP`s of `equ/` are off the
   library's path (`python/equlib/tests/test_stop_sites.py` holds that list).
 - **Checks before the run.** Array bounds (`NR`, `NZ` = 2**k+1 for the Buneman
   solver, `NV` >= 3), what `eqchek` refuses, the box, the profile and switch
-  values, the coil file (exists, holds what `NCOIL` and `ILIMT` ask for), then
+  values, the coil file (exists, holds what `NCOIL` and `ILIMT` ask for; with
+  `KNAMCOIL = 'done'` the coils in memory, which after `init` are the JT-60U
+  groups 1..4 only), then
   `eqflin` and `eqchek` on a copy of the inputs: the marker points (given or
   generated) inside the box as `eqchek` widens it, and `eqchek`'s own refusal.
 - **Off-grid reads.** `eqout` computes the unused flux-loop value `psloop` only
   when `(RLOOP, ZLOOP)` is on the grid.
 - **The host's files.** The coil file is read on a free unit (not 18); a G-EQDSK
   write is refused while unit 21 (EQU's writer's) is open; paths under `/dev`
-  and `/proc` are refused (one could be the MCP server's standard input).
+  and `/proc` are refused (one could be the MCP server's standard input), also
+  through symbolic links and `..`, and for a new file through its directory;
+  the name is checked as `OPEN` takes it (leading blanks are part of it).
+  `equ_write_geqdsk` refuses an existing file the process may not write, and
+  when the write fails it removes a file it created (one that was there is
+  left as the failed write left it).
 - **Unit 6.** The solver prints its progress; the MCP server moves fd 1 to stderr.
 
 ## Each run starts from the inputs as set

@@ -56,7 +56,7 @@ it. This table is generated from the MCP server's `PARAMETER_REGISTRY`
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `KNAMCOIL` | `str[80]` | `'init'` | coil file (relative to the working directory); 'done' keeps the coils in memory (after init: the JT-60U set) |
+| `KNAMCOIL` | `str[80]` | `'init'` | coil file (relative to the working directory); 'done' uses the coils in memory: after init only the JT-60U groups 1..4 with 70, 78, 26, 10 filaments, so NCOIL above those, or > 0 for groups 5..18, is refused (a run's coil file is not kept) |
 | `IVAC` | `int[0..18]` | `0, 1, 2, -1, -1, -1, ...` | coil group mode: < 0 fixed current, >= 0 fitted; IVAC[0] the surface flux |
 | `NCOIL` | `int[0..18]` | `0, 70, 78, 26, 10, 0, ...` | filaments of each coil group in the coil file, 0..100 |
 | `CVAC` | `float[0..18]` | `0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ...` | coil currents [MA turn]; CVAC[0] the surface flux |
