@@ -17,9 +17,9 @@ it. This table is generated from the MCP server's `PARAMETER_REGISTRY`
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `NR` | `int` | `257` | grid points in R: 2**k+1 in 3..257 (the Buneman solver) |
-| `NZ` | `int` | `257` | grid points in Z: 2**k+1 in 3..257 (the Buneman solver) |
-| `NV` | `int` | `101` | flux surfaces, 3..101 |
+| `NR` | `int` | `257` | grid points in R: 2**k+1 in 5..257 (the Buneman solver) |
+| `NZ` | `int` | `257` | grid points in Z: 2**k+1 in 5..257 (the Buneman solver) |
+| `NV` | `int` | `101` | flux surfaces, 3..101 (4.. with |ICP[1]| = 9) |
 | `NSUMAX` | `int` | `101` | points on the plasma surface, 3..1542 |
 | `IUDSYM` | `int` | `0` | up-down symmetry: 1 symmetric, 0 not |
 | `RWMN` | `float` | `1.9` | R of the box's inner edge [m] (eqchek may lower it) |
@@ -74,7 +74,7 @@ it. This table is generated from the MCP server's `PARAMETER_REGISTRY`
 | `ZVAC` | `float[0..30]` | `0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ...` | Z of the marker points [m] |
 | `ISEP` | `int` | `2` | X point: 0 none, 1 lower, 2 outer, 3 upper, 4 inner (-4..4: the sign is used) |
 | `DSEP` | `float` | `0.001` | separation between the X point and the last closed surface |
-| `ILIMT` | `int` | `0` | limiter points in the coil file, 0..100 |
+| `ILIMT` | `int` | `0` | limiter points in the coil file: must be 0 in the library (eqlim's limiter branch reads unset variables) |
 | `IVBND` | `int` | `0` | must be 0: the vacuum boundary points it would count (RVBND, ZVBND) are not inputs |
 | `RLOOP` | `float` | `2.786` | R of the flux-loop diagnostic point [m] |
 | `ZLOOP` | `float` | `0.952` | Z of the flux-loop diagnostic point [m] |
@@ -87,8 +87,8 @@ it. This table is generated from the MCP server's `PARAMETER_REGISTRY`
 | `ESETUP` | `float` | `0.001` | convergence of the setup loop |
 | `IEQMAX` | `int` | `20` | steps of the FCT loop at most |
 | `EEQMAX` | `float` | `0.001` | convergence of the FCT loop |
-| `IODMAX` | `int` | `10` | steps of the ODE iteration at most |
-| `EODMAX` | `float` | `1e-05` | convergence of the ODE iteration |
+| `IODMAX` | `int` | `10` | steps of the ODE iteration at most, >= 1 |
+| `EODMAX` | `float` | `1e-05` | convergence of the ODE iteration, < 1 |
 | `IADMAX` | `int` | `1` | steps of the vacuum fit at most |
 | `EADMAX` | `float` | `0.0001` | convergence of the vacuum fit |
 | `BAVMAX` | `float` | `0.8` | FCT relaxation, upper bound |

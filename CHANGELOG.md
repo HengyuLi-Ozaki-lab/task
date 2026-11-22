@@ -18,7 +18,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   ITER#1 of `equ/example`, every number within 1e-10 (`test_program_parity.py`, against `equ_nogr`, the program
   linked without graphics). In library mode the four `STOP`s on the solve path, a missing coil file and a contour
   longer than `isrzdm` (a new bound in `eqtrc`) return an error; outside it they stop as before. `eqout` reads the
-  unused flux-loop value only on the grid. EQU's G-EQDSK gives
+  unused flux-loop value only on the grid; `eqind` stops a boundary that reaches the box and the G-EQDSK writer
+  returns its write errors (a missing coil file and `eqind` exit with status 2 outside library mode). EQU's G-EQDSK gives
   the pressure in MPa, and the FCT loop of both examples ends at `IEQMAX` without meeting `EEQMAX`: both documented,
   both questions for the lead. Design: `docs/superpowers/specs/2026-11-22-equ-library-design.md`.
 - **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, #96 PR 1).

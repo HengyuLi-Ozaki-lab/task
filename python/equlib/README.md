@@ -90,7 +90,10 @@ read through. `to_dict()` gives upper-case keys.
 - **G-EQDSK pressure is in MPa.** EQU's writer gives `pres` and `pprime` in MPa,
   not Pa (`prv` holds MPa); `write_geqdsk` writes the program's file unchanged. The
   state's `pressure` is in Pa.
-- **One instance per process.** Use one process per parallel run.
+- **One instance per process**, not for several threads at once. Use one process per parallel run.
+- **Refused in the library**, though the program takes them: a limiter (`ILIMT > 0`: `eqlim`'s limiter
+  branch reads variables it never sets), paths under `/dev` and `/proc`, and inputs that made the solver
+  index out of bounds (see `validate`).
 - **Not in this version:** the program's `C` (the mock TR step), EQU in TOT and
   the mono image, coil data as arrays, `EQUSAVE`'s binary file.
 

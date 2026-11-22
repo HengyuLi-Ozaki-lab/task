@@ -62,8 +62,9 @@ is EQ's.
   `task_parm` mode 0, `eqgout`). `equ_write_geqdsk` sets `MODEFW` to 0 or 3 and
   `KNAMEQ` before EQU's writer, so `FWOPEN` does not prompt.
 - **Process-ending statements.** The four `STOP`s on the path of `R` (`eqerr`,
-  `eqlin` twice, `eqtrc`) and a missing coil file go through `equ_fail`; `eqtrc`
-  also refuses a contour longer than its arrays. Outside library mode `equ_fail`
+  `eqlin` twice, `eqtrc`), a missing coil file and a boundary that reaches the
+  box (`eqind`) go through `equ_fail`; `eqtrc` also refuses a contour longer than
+  its arrays; EQU's G-EQDSK writer returns its write errors. Outside library mode `equ_fail`
   stops, so the program is unchanged. The other `STOP`s of `equ/` are off the
   library's path (`python/equlib/tests/test_stop_sites.py` holds that list).
 - **Checks before the run.** Array bounds (`NR`, `NZ` = 2**k+1 for the Buneman
@@ -73,6 +74,9 @@ is EQ's.
   generated) inside the box as `eqchek` widens it, and `eqchek`'s own refusal.
 - **Off-grid reads.** `eqout` computes the unused flux-loop value `psloop` only
   when `(RLOOP, ZLOOP)` is on the grid.
+- **The host's files.** The coil file is read on a free unit (not 18); a G-EQDSK
+  write is refused while unit 21 (EQU's writer's) is open; paths under `/dev`
+  and `/proc` are refused (one could be the MCP server's standard input).
 - **Unit 6.** The solver prints its progress; the MCP server moves fd 1 to stderr.
 
 ## Each run starts from the inputs as set

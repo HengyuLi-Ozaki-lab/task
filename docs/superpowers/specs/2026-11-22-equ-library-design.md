@@ -249,10 +249,13 @@ Read-only; each entry names the parameter and the reason. The list, in three kin
 
 - **Bounds the arrays need** (each a bounds abort today): `3 ≤ NV ≤ 101` (`eqout` prints `rbv(nv-2)`),
   `NSUMAX ≤ 1542`, `MSFX ≥ −29` (a positive `MSFX` is lowered by `eqchek` to 17, or 9 when symmetric, and is not
-  refused), `0 ≤ NCOIL(n) ≤ 100`, `0 ≤ ILIMT ≤ 100`, `IVBND = 0` (it counts vacuum boundary points `RVBND`,
-  `ZVBND` that no input sets). `NR` and `NZ` are `2**k + 1` in 3..257 (*found in review*: the Buneman solver of
-  `eqgrd`/`eqpde` halves both directions; another value gives a wrong psi without an error); `eqchek` lowers a
-  value above 257 without a word (`equinit.f90:533-535`), the library refuses it.
+  refused), `0 ≤ NCOIL(n) ≤ 100`, `IVBND = 0` (it counts vacuum boundary points `RVBND`, `ZVBND` that no input
+  sets), `ILIMT = 0` (*found in review*: the limiter branch of `eqlim` reads locals it never sets; a question for
+  the lead). `NR` and `NZ` are `2**k + 1` in 5..257 (*found in review*: the Buneman solver of `eqgrd`/`eqpde`
+  halves both directions, and with 3 its `csrz` recursion writes `csrz(0)` or loops; another value gives a wrong
+  psi without an error); `eqchek` lowers a value above 257 without a word (`equinit.f90:533-535`), the library
+  refuses it. `IODMAX ≥ 1` and `EODMAX < 1` (*found in review*: `eqode`'s loop must run once, its derivatives are
+  set only inside it). `NV ≥ 4` with `|ICP(1)| = 9` (`eqpfds` reads `pds0` before setting it otherwise).
 - **What `eqchek` refuses** (`equinit.f90:527-778`), reported before the run instead of after the coil file is
   read: `IEQRD ≠ 0` (its `ierr` 1); `NR·NZ·NV = 0` (2); more fitted coil groups (`IVAC(i) ≥ 0`) than marker points
   (3), with `MSFX` as `eqchek` leaves it (lowered when positive), taken from `eqchek` itself (below).
@@ -263,7 +266,10 @@ Read-only; each entry names the parameter and the reason. The list, in three kin
   (`MSFX ≤ 0`; `RMAJ`, `RPLA` taken from them) or generated from the shape (`MSFX > 0`), and the box widened to
   `RMAJ ∓ 1.2 RPLA`, `|Z| < 1.2 ELIP RPLA`. QUEST with `ZWMX = 0.6` indexed `svac` at -177 in `eqadj0`; the
   defaults with `ELIPUP = 1.5` or `ZPLA = 0.4` generate markers above the box.
-- **Files and choices**: `KNAMCOIL` names an existing file unless `'done'`; the file holds the groups and lines
+- **Markers 0 and 1** at different R (*found in review*: `eqadj` divides by `RVAC(1) − RVAC(0)`).
+- **Files and choices**: `KNAMCOIL` names an existing file unless `'done'`, not under `/dev` or `/proc` (it could be
+  the process's standard input); every filament with R > 0 and finite R, Z, weight (*found in review*: `flxfun`
+  indexes its table by R); the file holds the groups and lines
   `NCOIL` and `ILIMT` ask for (a read-only scan with `IOSTAT`); `RWMN > 0`, `RWMX > RWMN`, `ZWMX > 0`;
   `ICP(1)` one of the values `eqpfds` and `eqequ` handle (±1, ±2, ±9, ±11); `ISVAC` 0 or 1; `ISEP` −4 to 4 (the
   code uses its sign);
@@ -281,8 +287,10 @@ is the lead's to decide. The internal `WRITE`s of real numbers into messages use
 - `write_geqdsk` sets `MODEFW` to 0 (`overwrite` true) or 3 (refuse an existing file) and `KNAMEQ` to the path
   before `equ_eqdsk_write`, so `FWOPEN` never prompts; the C entry point refuses a path over 80 characters
   (`KNAMEQ`'s length), and `equlib` writes such a path from its directory under its base name.
-- The library does not use unit 7 (the program's scratch unit for namelist lines) and opens its files with
-  `NEWUNIT`.
+- The library does not use unit 7 (the program's scratch unit for namelist lines); it reads the namelist and
+  the coil file on a free unit of 30..99 (not the program's 18), and refuses to write G-EQDSK when unit 21, which
+  EQU's writer uses, is open in the process. Paths under `/dev` and `/proc` are refused for `read_parm`,
+  `KNAMCOIL` and `write_geqdsk` (*found in review*: `/dev/stdin` would read the MCP server's channel).
 - Unit 6 stays as it is (the solver prints its progress); the MCP server isolates fd 1.
 
 ### 9.2 Process-ending statements on the library's path: the Fortran changes
@@ -296,9 +304,13 @@ is the lead's to decide. The internal `WRITE`s of real numbers into messages use
 | callers of `eqtrc`/`eqlin` up to `eqset` and `eqfct` (`eqequ`, `eqlin`, `eqout`, `eqrcu`, `eqsep`, …) | carry on | return when a failure is recorded (one test after each call) |
 | `equ_eqdsk.f90:137-152` | error paths return with unit 21 open | close it |
 | `eqtrc`, where it stores a contour point (*found in implementation*) | a contour longer than `isrzdm` (half of it when `IUDSYM = 1`) indexed past `zrsu` (QUEST with `RVAC(0) = 0.2`) | refuse the next point through `equ_fail`; the bound leaves room for `eqequ`'s read of `rsu(nsu+2)` |
+| `eqind` (*found in review*) | a plasma boundary that reaches the edge of the box (QUEST with `ISEP = 0`) indexed `psi` out of bounds | `equ_fail`, exit status 2 outside library mode (the runtime error's) |
+| `equ_eqdsk.f90`, every `WRITE`, `REWIND`, `CLOSE` (*found in review*) | a failed write (a full disk) ended the process | `IOSTAT`, `ierr` 11 (write) or 12 (close) |
 | `eqout`, the flux-loop value `psloop` (*found in review*) | `(RLOOP, ZLOOP)` off the grid indexed `psi` out of bounds (QUEST with `ZWMX = 0.9` and the JT-60U default point) | computed only on the grid, else 0; `psloop` is read nowhere, so no result changes |
 
 - A new module `equ_status_mod` holds a library-mode flag (false by default), a failure flag and a message.
+  `equ_fail(msg, code)` stops with status 2 for the sites that used to end in a runtime error (a missing coil
+  file, `eqind`), plain `STOP` for the former `STOP`s; the library clears the flag once it has reported it.
   `equ_fail(msg)` writes the message to unit 6; outside library mode it then stops, as the code does today, so
   the program behaves as before in every case and `equmenu.f90` is not changed. In library mode (set by
   `equ_init`, TR's pattern) it records the failure and returns; the callers return in turn and the library
@@ -318,7 +330,10 @@ groups 5 to 18, `svac` of groups without filaments, `btol` (read at `equsub.f90:
 `SAVE`/`DATA` locals of `eqadj` and `eqadj0`, the init flags of `equpl_mod` and `trpl_mod`, and bpsd's
 `plasmaf` (which `eqpl_prof` reads on a second run), and (*found in implementation*, by restoring each module
 variable to its value before a first run in turn) the profile `rbv`: with `ICP(2) = 2` the setup loop of `eqequ`
-starts from it, so a second QUEST run moved 7,013 numbers by about 1e-9. `equ_init` and `run` reset what the library can reach;
+starts from it, so a second QUEST run moved 7,013 numbers by about 1e-9; (*found in review*) the separatrix
+`psep`, `iisep`, `irsep`, `izsep`, which `eqsep` sets none of when `ISEP = 0`; and the coil and limiter arrays,
+kept in the image (with `KNAMCOIL = 'done'` they are inputs, and a run with `IUDSYM = 1` folds `zcoil` in
+`eqvac0`). `equ_init` and `run` reset what the library can reach;
 where a reset needs a Fortran change (a `SAVE` local), it is a listed change of the same kind as 9.2. The test:
 two runs in one process, and a run after another case, give the result of a fresh process to 1e-10.
 
@@ -429,7 +444,8 @@ comment says why. No job is added or renamed, so the ruleset is unchanged.
 | FCT does not meet `EEQMAX` in either example | a caller may take an unconverged result | state fields; question to the lead |
 | G-EQDSK `pres`/`pprime` in MPa, not Pa | an EQU G-EQDSK loaded into EQ (`MODELG` 5) or TR has a pressure 1e6 too small | documented; question to the lead before any change of the program's output |
 | `EQUSAVE`: `RIP = tcu·1e-6`; `PSI0` operator precedence (`equfile.f90:60`) | its binary would be wrong | not exported; reported |
-| `eqlim` with `ILIMT > 0` reads uninitialised locals (`equsub.f90:1191-1192`, `1238-1239`) | results with a limiter are undefined | not refused (the code takes the input); documented, and a question to the lead |
+| `eqlim` with `ILIMT > 0` reads uninitialised locals (`equsub.f90:1191-1192`, `1238-1239`) | results with a limiter are undefined | refused in the library (`ILIMT = 0`); a question to the lead |
+| The parity tests compare two builds of the branch's kernel | a regression shared by the library and `equ_nogr` passes | each kernel commit records a byte-identical comparison with the program before the branch; the committed baselines of the follow-up PR close it |
 | debug lines `@@@ point 1..10` in `equsub.f90` read `rsu(nsu+1)`, `rsu(nsu+2)` | a bounds abort when `nsu` reaches the array end; uninitialised reads | reported (k-yoshimi/task#228 item); not changed here unless a test hits it |
 | `trpl_init` puts species with mass and charge 0 (`fmass`, `fchrg` never set) | bpsd consumers would see them | none consume them in this scope; reported |
 | Re-entrancy hazards not all visible by reading | a second run differs | the second-run test |
