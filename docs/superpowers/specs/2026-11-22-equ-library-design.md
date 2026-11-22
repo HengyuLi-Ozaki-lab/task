@@ -1,6 +1,7 @@
 # TASK/EQU library interface — design
 
-Status: draft for the author's approval, 2026-11-22. Branch `feat/equ-library-interface` (product line).
+Status: approved by the author on 2026-11-22; updated with what the implementation found (sections 6.1, 7, 8,
+9.2, 9.3; marked *found in implementation*). Branch `feat/equ-library-interface` (product line).
 
 EQU is TASK's free-boundary equilibrium code (M. Azumi; `equ/`). Today it runs only as the interactive program
 `equ`. This document specifies a library interface for it in the pattern of EQ's and TR's (the TR design
@@ -176,7 +177,8 @@ size_t equ_state_size(void);
   names.
 - `equ_set_param(name, value)` and `equ_set_param_str(name, value)`: the registry, a hand-written `SELECT CASE`
   as EQ's (`eq/eq_param_registry.f90`), with EQ's refusals: malformed subscript, unknown name, a value that is
-  not finite, an integer outside `-HUGE(0)..HUGE(0)`, an array index outside the declared bounds.
+  not finite, an integer outside `-HUGE(0)..HUGE(0)`, an array index outside the declared bounds; and two EQ does
+  not make: a subscript on a scalar, a fraction for an integer.
 - `set_params` (Python, MCP): a loop over `set_param`/`set_param_str`, non-transactional, as EQ's.
 
 ### 6.2 Array names and origin
@@ -226,7 +228,7 @@ A fixed-layout struct, valid part `1..n`, the rest zero (EQ's rule and EQ's #246
 | convergence | `fct_steps` (abs of `ieq`), `fct_converged` (`ieq < 0`), `erreq`: the last FCT loop of the run (mode 1: `equ_calc`'s; mode 0: the 10 steps `eqset` runs, which it labels "check of equilibrium accuracy through ode", `equset.f90:62-67`) |
 | axis | `raxis`, `zaxis`, `psi_axis` (`saxis`) |
 | separatrix | `xpoint_status` (`iisep`: > 0 found; the code's negative failure codes kept), `rsep`, `zsep` (`rg(irsep)`, `zg(izsep)` when found), `psi_sep` (`psep`) |
-| scalars | `ip` (`ttcu` [MA], computed), `ip_target` (`tcur` [MA]), `rbt` (`btv` [T m]), `beta_t`, `beta_s`, `beta_j`, `li` (`zzli`), `q_axis`, `q_surf`, `q95`, `qqj`, `rmaj`, `rpla`, `elip`, `trig`, `el95`, `volume` (`vlv(nv)`) |
+| scalars | `ip` (`ttcu` [MA], computed), `ip_target` (`tcur` [MA]), `rbt` (`btv` [T m]), `beta_t` (`beta`), `beta_s` (`bets`), `beta_j` (`betj`), `li` (`zzli`), `q_axis` (`qqv(1)`: *found in implementation*, the variable `qaxis` is set again after `eqout`'s print by the `eqaxi` of its `eqsep`), `q_surf`, `q95`, `qqj`, `rmaj`, `rpla`, `elip`, `trig`, `el95`, `volume` (`vlv(nv)`) |
 | coils | `cvac[0..18]` (the fitted and fixed currents, in the code's unit) |
 | grid | `rg[nr]`, `zg[nz]` |
 | profiles on `nv` surfaces (1 = axis) | `psi` (`siv`), `psit` (`hiv`), `pressure` (`prv`, converted to Pa), `q` (`qqv`), `f` (`rbv`, R·B_t), `vol` (`vlv`), `rminor` (`rpv`), `rcentre` (`rtv`), `kappa` (`elv`), `delta` (`dlv`) |
@@ -250,6 +252,9 @@ Read-only; each entry names the parameter and the reason. The list, in three kin
 - **What `eqchek` refuses** (`equinit.f90:527-778`), reported before the run instead of after the coil file is
   read: `IEQRD ≠ 0` (its `ierr` 1); `NR·NZ·NV = 0` (2); more fitted coil groups (`IVAC(i) ≥ 0`) than marker points
   `|MSFX|` (3).
+- **Marker points** (*found in implementation*): for `MSFX < 0`, each `(RVAC(k), ZVAC(k))`, k = 0..|MSFX|, inside
+  the box as given (`RWMN < R < RWMX`, `|Z| < ZWMX`). `eqchek` only enlarges the box, so this keeps the markers on
+  the grid; QUEST with `ZWMX = 0.6` indexed `svac` at -177 in `eqadj0`.
 - **Files and choices**: `KNAMCOIL` names an existing file unless `'done'`; the file holds the groups and lines
   `NCOIL` and `ILIMT` ask for (a read-only scan with `IOSTAT`); `RWMN > 0`, `RWMX > RWMN`, `ZWMX > 0`;
   `ICP(1)` one of the values `eqpfds` and `eqequ` handle (±1, ±2, ±9, ±11); `ISVAC` 0 or 1; `ISEP` 0 to 4;
@@ -279,6 +284,7 @@ is the lead's to decide. Every `WRITE` into a message uses `IOSTAT` (EQ's `eq_ap
 | `equsub.f90:2320-2321` (`eqtrc`) | `STOP` (`s1*s2*s3*s4 = 0`) | `equ_fail` |
 | callers of `eqtrc`/`eqlin` up to `eqset` and `eqfct` (`eqequ`, `eqlin`, `eqout`, `eqrcu`, `eqsep`, …) | carry on | return when a failure is recorded (one test after each call) |
 | `equ_eqdsk.f90:137-152` | error paths return with unit 21 open | close it |
+| `eqtrc`, where it stores a contour point (*found in implementation*) | a contour longer than `isrzdm` (half of it when `IUDSYM = 1`) indexed past `zrsu` (QUEST with `RVAC(0) = 0.2`) | refuse the next point through `equ_fail` |
 
 - A new module `equ_status_mod` holds a library-mode flag (false by default), a failure flag and a message.
   `equ_fail(msg)` writes the message to unit 6; outside library mode it then stops, as the code does today, so
@@ -298,7 +304,9 @@ is the lead's to decide. Every `WRITE` into a message uses `IOSTAT` (EQ's `eq_ap
 `eqinit` does not reset: `iad`, `ieq`, `iod`, `time`, `itime`, `iread`, `RVAC`/`ZVAC`, the coil filaments of
 groups 5 to 18, `svac` of groups without filaments, `btol` (read at `equsub.f90:2134`, never set), the
 `SAVE`/`DATA` locals of `eqadj` and `eqadj0`, the init flags of `equpl_mod` and `trpl_mod`, and bpsd's
-`plasmaf` (which `eqpl_prof` reads on a second run). `equ_init` and `run` reset what the library can reach;
+`plasmaf` (which `eqpl_prof` reads on a second run), and (*found in implementation*, by restoring each module
+variable to its value before a first run in turn) the profile `rbv`: with `ICP(2) = 2` the setup loop of `eqequ`
+starts from it, so a second QUEST run moved 7,013 numbers by about 1e-9. `equ_init` and `run` reset what the library can reach;
 where a reset needs a Fortran change (a `SAVE` local), it is a listed change of the same kind as 9.2. The test:
 two runs in one process, and a run after another case, give the result of a fresh process to 1e-10.
 
