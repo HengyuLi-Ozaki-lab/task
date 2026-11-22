@@ -2376,7 +2376,7 @@
 !      and the mirror (2*nzsu-1). nsu = nzsu-1 at the end, and eqequ reads
 !      rsu(nsu+2), so nzsu stops at isrzdm-1 (iudsym=0) or isrzdm/2.
 !      A longer contour used to index past the arrays.
-       if((iudsym.eq.0.and.nzsu.ge.isrzdm-1).or. &
+       if((iudsym.ne.1.and.nzsu.ge.isrzdm-1).or. &
           (iudsym.eq.1.and.nzsu.ge.isrzdm/2)) then
           write(6,*) ' stop at eqtrc : more points than isrzdm '
           call equ_fail('eqtrc: the contour has more points than '// &
