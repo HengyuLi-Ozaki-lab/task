@@ -1149,18 +1149,24 @@
       irmin=(rrmin-rg(1))/dr
       irmax=(rrmax-rg(1))/dr+2.d0
       if(iudsym.eq.1)zzmax=nzh
-!     The loop reads psi(i+-1) and psi(i+-nr): a boundary that reaches the
-!     edge of the box (QUEST with ISEP=0) used to index psi out of bounds.
-      if(izmin.lt.2.or.izmax.gt.nz-1.or.irmin.lt.2.or.irmax.gt.nr-1) then
-         write(6,*) ' stop at eqind : the plasma boundary reaches the box edge'
-         call equ_fail('eqind: the plasma boundary reaches the edge of '// &
-              'the box', 2)
-         return
-      endif
+!     The range is kept on the grid, and a plasma cell (sigcu*psi < 0) on
+!     the edge of the box, whose neighbours are off it, stops: a boundary
+!     that reaches the box (QUEST with ISEP=0) used to index psi out of
+!     bounds.
+      izmin=max(izmin,1)
+      izmax=min(izmax,nz)
+      irmin=max(irmin,1)
+      irmax=min(irmax,nr)
       do iz=izmin,izmax
        do ir=irmin,irmax
         i=(iz-1)*nr+ir
         if(sigcu*psi(i).lt.0.d0)then
+          if(ir.eq.1.or.ir.eq.nr.or.iz.eq.1.or.iz.eq.nz) then
+           write(6,*) ' stop at eqind : the plasma reaches the box edge'
+           call equ_fail('eqind: the plasma boundary reaches the edge of '// &
+                'the box', 2)
+           return
+          endif
           zzlp=zzlp+rbp(i)*rcu(i)/rg(ir)
           br=dz2i*(psi(i+nr)-psi(i-nr))/rg(ir)
           bz=dr2i*(psi(i+ 1)-psi(i- 1))/rg(ir)
@@ -1312,9 +1318,12 @@
         irst=irst+1
         ist= (izaxis-1)*nr + irst
       enddo
-      if(irst.eq.nr-1)then
-       write(6,*)'stop at eqlin : irst = nr-1'
-       call equ_fail('eqlin: irst = nr-1')
+!     irst = nr too: the search ends there when psi(nr) of the axis row
+!     has the plasma's sign, and the walk below read the next row.
+      if(irst.ge.nr-1)then
+       write(6,*)'stop at eqlin : irst >= nr-1'
+       call equ_fail('eqlin: irst >= nr-1 (the plasma reaches the box '// &
+            'on the axis row)')
        return
       endif
 !-----------------------------------------------------------------------
@@ -1322,10 +1331,19 @@
       do n=nv,2,-1
        psi0=dpsi*DBLE(nv-n)
        ist=(izaxis-1)*nr+irst
-       do while((psi0-psi(ist))*(psi0-psi(ist+1)).gt.0.d0)
+!      The walk had no lower bound: with a coarse grid (QUEST at NR=17,
+!      NZ=33) it ran past the row and indexed rg at -211. (The test is the
+!      old one negated, so a NaN stops the walk as it did.)
+       do while(irst.gt.1)
+        if(.not.((psi0-psi(ist))*(psi0-psi(ist+1)).gt.0.d0)) exit
         irst=irst-1
         ist=ist-1
-       enddo 
+       enddo
+       if((psi0-psi(ist))*(psi0-psi(ist+1)).gt.0.d0) then
+          write(6,*) '  stop at eqlin : no flux surface crossing in the row'
+          call equ_fail('eqlin: no crossing of a flux surface on the axis row', 2)
+          return
+       endif
        istop=0
        do while(istop.eq.0)
         call eqtrc(psi0,rg(irst+1),zaxis,1,0,irend,izend)
@@ -2249,6 +2267,15 @@
       ir=(rst-rg(1))/dr+1.
       iz=(zst-zg(1))/dz+1.
       i=nr*(iz-1)+ir
+!     The start (rst, zst) off the grid used to index psi out of bounds
+!     before the loop's own test (QUEST's namelist with KNAMCOIL='done':
+!     psi at -105, a runtime error); exit status 2 as that error's.
+      if(ir.lt.1.or.ir.ge.nr.or.iz.lt.1.or.iz.gt.nz)then
+       write(ft06,'(1p3d10.3,i4)')psi0,rst,zst,irsig
+       write(6,*) '  stop at eqtrc : the starting point is off the grid'
+       call equ_fail('eqtrc: the starting point is off the grid', 2)
+       return
+      endif
       do while((psi0-psi(i))*(psi0-psi(i+1)).gt.0.)
        i=i-irsig
        ir=ir-irsig
