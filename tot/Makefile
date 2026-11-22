@@ -144,7 +144,11 @@ $(LIB_MTX):
 	(cd ../pl; make noequlib.o)
 ../eq/libeq.a:
 	(cd ../eq; make libeq.a)
-../tr/libtr2.a:
+TR_SOURCES := $(wildcard ../tr/*.f90 ../tr/*.h)
+# The delegated TR targets depend on TR's sources (TR_SOURCES), so that a change there makes TR's own make
+# run (it decides what to rebuild): an existing libtr2.a, libtrapi.so or tr_api.o would otherwise stop it, and tot
+# would compile tot_api.f90 against an old tr_api.mod or link an old solver.
+../tr/libtr2.a: $(TR_SOURCES)
 	(cd ../tr; make libtr2.a)
 ../dp/libdp.a:
 	(cd ../dp; make libdp.a)
@@ -282,9 +286,8 @@ $(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TO
 	(cd ../eq; make eq_api.o)
 ../tr/obj/tr_state.o:
 	(cd ../tr; make obj/tr_state.o)
-# tot_api.f90 USEs tr_api's names (tr_get_scalar, tr_history_*): a change of tr_api.f90 must reach tr_api.mod
-# before tot_api.o is compiled, so these two delegated targets depend on it (TR's own Makefile does the rest).
-../tr/obj/tr_api.o: ../tr/tr_api.f90
+# tot_api.f90 USEs tr_api's names (tr_get_scalar, tr_history_*): see TR_SOURCES above.
+../tr/obj/tr_api.o: $(TR_SOURCES)
 	(cd ../tr; make obj/tr_api.o)
 ../ti/ti_state.o:
 	(cd ../ti; make ti_state.o)
@@ -474,7 +477,7 @@ $(OBJDIR_PIC)/tot_is_mono_mono.o   : tot_is_mono_mono.f90
 # Makefile — tot only needs the final .so.
 ../eq/libeqapi.so:
 	(cd ../eq; $(MAKE) libeqapi.so)
-../tr/libtrapi.so: ../tr/tr_api.f90
+../tr/libtrapi.so: $(TR_SOURCES)
 	(cd ../tr; $(MAKE) libtrapi.so)
 ../fp/libfpapi.so:
 	(cd ../fp; $(MAKE) libfpapi.so)

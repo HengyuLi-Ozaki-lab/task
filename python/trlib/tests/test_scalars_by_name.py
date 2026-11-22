@@ -215,3 +215,15 @@ def test_a_run_of_zero_steps_evaluates_no_step():
         assert t.get_scalar("PNBT") == before["PNBT"] and t.get_scalar("WPT") == before["WPT"]
         t.run(1)
         assert t.get_scalar("PNBT") == 0.0 and t.get_scalar("WPT") != before["WPT"]
+
+
+def test_get_state_keeps_the_struct_scalars_and_reads_only_the_others_by_name(monkeypatch):
+    # The baselines compare get_state().to_dict(), the 14 of tr_state_t: they must be tr_get_state's copy, not the
+    # by-name values (equal today, so a getter that answers -1 tells the two apart).
+    with Trlib() as t:
+        t.run(6)
+        monkeypatch.setattr(Trlib, "get_scalar", lambda self, name: -1.0)
+        state = t.get_state()
+        assert all(state.scalars[n] != -1.0 for n in SCALAR_FIELDS)
+        assert state.scalars["PNBT"] == -1.0 and state.scalars["H98Y2"] == -1.0
+        assert list(state.scalars)[:3] == ["T", "WPT", "AJT"]

@@ -97,3 +97,59 @@ def test_a_changed_parameter_hides_the_results_until_a_step_is_run():
         assert srv.handle_get_state()["scalars"] == {"T": 0.0}
     finally:
         srv.STATE.close()
+
+
+def test_a_failed_preparation_shows_no_result_of_the_run_before():
+    # MODELG 9 with an Ip that has no equilibrium: tr_set_metric's q-scaling fails at nt 0 and records EQ_FAILED (the
+    # first record of the run is kept, so it is not PREP_FAILED). The run before's PNBT and WPT are not this state's.
+    try:
+        srv.handle_init()
+        srv.handle_set_param("PNBTOT", 10.0)
+        srv.handle_run(5)
+        for name, value in (("MODELG", 9.0), ("RIPS", 100.0), ("RIPE", 100.0), ("NTEQIT", 5.0)):
+            srv.handle_set_param(name, value)
+        with pytest.raises(Exception):
+            srv.handle_run(1)
+        assert srv.handle_get_state()["scalars"] == {}
+    finally:
+        srv.STATE.close()
+
+
+def test_a_failure_after_the_preparation_keeps_the_results():
+    # DT = 1e6 s: NONFINITE at nt 2, after the step-0 and step-1 evaluations; the scalars are the run's.
+    try:
+        srv.handle_init()
+        srv.handle_set_param("DT", 1.0e6)
+        with pytest.raises(Exception):
+            srv.handle_run(30)
+        scalars = srv.handle_get_state()["scalars"]
+        assert "WPT" in scalars and "PNBT" in scalars and len(scalars) == 31
+    finally:
+        srv.STATE.close()
+
+
+@pytest.mark.parametrize("write", [lambda: srv.handle_set_param("NOSUCH", 1.0),
+                                   lambda: srv.handle_set_param_str("NOSUCH", "x")])
+def test_a_refused_write_does_not_hide_the_results(write):
+    try:
+        srv.handle_init()
+        srv.handle_run(5)
+        with pytest.raises(Exception):
+            write()
+        assert "WPT" in srv.handle_get_state()["scalars"]
+        srv.handle_set_params({})
+        assert "WPT" in srv.handle_get_state()["scalars"]
+    finally:
+        srv.STATE.close()
+
+
+def test_a_new_handle_shows_no_time_of_the_handle_before():
+    # tr_init resets NT, not T: before the new handle's first preparation T is the old run's.
+    try:
+        srv.handle_init()
+        srv.handle_run(5)
+        srv.handle_finalize()
+        srv.handle_init()
+        assert srv.handle_get_state()["scalars"] == {}
+    finally:
+        srv.STATE.close()

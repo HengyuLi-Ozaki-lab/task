@@ -157,7 +157,7 @@ alpha and proton together for D-He3, `MDLNF` 5 and 6, where `QF`, TRGLOB's D-T g
 gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8, the experimental data's under `MDLUF` 1 and 3,
 the current set otherwise). They are current
 after a `run` of one step or more; between `Trlib()` and the first `run` they are the previous lifecycle's, and `run(0)`
-evaluates no step: what the preparation sets (`T` 0, `RIP` = `RIPS`, `Q0` under `MODELG` 2) is new, what only
+evaluates no step: what the preparation sets (`T` 0; `RIP`, which is `RIPS` or, under `MODELG` 3, 5 and 8, the equilibrium's boundary current; `Q0` under `MODELG` 2, 3, 5, 7, 8 and 9) is new, what only
 a step computes (the powers, `WPT`) is still the run before's. An unknown or inexact name raises `TrlibParamError`. `get_state().scalars` holds all
 31; `to_dict()` keeps the 14 of the C struct. `tr_mcp`'s `describe_state_schema` gives each name its unit and meaning.
 

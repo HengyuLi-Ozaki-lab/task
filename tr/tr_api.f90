@@ -1146,7 +1146,7 @@ CONTAINS
   ! trbpsd.f90), the experimental data's under MDLUF 1 and 3 (tr_exec), the
   ! current set (RIPS to RIPE) otherwise. A tr_run of 0 steps evaluates no step
   ! (tr_loop returns before tr_eval): what the preparation sets is new (T 0,
-  ! RIP = RIPS, Q0 under MODELG 2), what only a step computes is not.
+  ! RIP; Q0 under MODELG 2, 3, 5, 7, 8 and 9), what only a step computes is not.
   !-------------------------------------------------------------------
   PURE FUNCTION scalar_table() RESULT(names)
     CHARACTER(LEN=8) :: names(N_SCALARS)

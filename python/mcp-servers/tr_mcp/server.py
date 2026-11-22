@@ -310,9 +310,11 @@ STATE_SCHEMA: Dict[str, Any] = {
             "description": (
                 "the library's named global results (31), each as of the last step TR computed them on; "
                 "units are in each entry. A run of 0 steps evaluates no step: what the preparation sets (T 0, "
-                "RIP = RIPS, Q0 under MODELG 2) is new, what only a step computes (the powers, WPT) is "
+                "RIP = RIPS or, under MODELG 3, 5 and 8, the equilibrium's boundary current; Q0 under MODELG 2, 3, 5, 7, 8 and 9) is new, what only a step computes (the powers, WPT) is "
                 "still the run before's: until a run of one step or more since the handle was opened or a parameter "
-                "was set, get_state and run_and_get_state return T only. A library built before the "
+                "was written, get_state and run_and_get_state return T only, and nothing before the handle's first "
+                "successful preparation. After a negative-temperature failure (TR_CHECK) they are the failed "
+                "iterate's, while the history ends on the last recorded step. A library built before the "
                 "scalar table gives the 14 of tr_state_t only"
             ),
             "properties": {
@@ -346,16 +348,20 @@ class _ServerState:
 
     def __init__(self) -> None:
         self.tr: Optional[Trlib] = None
-        # True once a run of one step or more has ended since the handle was opened or a parameter was set. Until
-        # then TR's global results are not this handle's: a run of 0 steps evaluates no step, and finalize then init
-        # does not clear them (CLAUDE.md, module state). The state tools then return T only among the scalars.
+        # evaluated: a run of one step or more has evaluated TR's global results since the handle was opened or a
+        # parameter was written. Until then they are not this handle's: a run of 0 steps evaluates no step, and
+        # finalize then init does not clear them (CLAUDE.md, module state). prepared: a preparation has succeeded on
+        # this handle, so T is its own (tr_init does not reset T; tr_prep does). The state tools return every scalar
+        # when evaluated, T alone when only prepared, none before that.
         self.evaluated = False
+        self.prepared = False
 
     def ensure_open(self) -> Trlib:
         """Return the live handle, opening one if needed."""
         if self.tr is None or self.tr.closed:
             self.tr = Trlib()
             self.evaluated = False
+            self.prepared = False
         return self.tr
 
     def close(self) -> None:
@@ -363,6 +369,24 @@ class _ServerState:
             self.tr.close()
         self.tr = None
         self.evaluated = False
+        self.prepared = False
+
+
+class _WriteTracker:
+    """Passes ``set_param`` and ``set_param_str`` on to the handle and notes whether one of them succeeded, so that
+    a write the library refuses (an unknown name, a bad value) or an empty bulk set does not hide valid results."""
+
+    def __init__(self, tr: Trlib) -> None:
+        self._tr = tr
+        self.wrote = False
+
+    def set_param(self, name: str, value: float) -> None:
+        self._tr.set_param(name, value)
+        self.wrote = True
+
+    def set_param_str(self, name: str, value: str) -> None:
+        self._tr.set_param_str(name, value)
+        self.wrote = True
 
 
 STATE = _ServerState()
@@ -539,8 +563,8 @@ def handle_init() -> str:
 def handle_set_param(name: str, value: float) -> str:
     try:
         tr = STATE.ensure_open()
-        STATE.evaluated = False
         tr.set_param(name, _number(name, value))
+        STATE.evaluated = False
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -557,8 +581,8 @@ def handle_set_param_str(name: str, value: str) -> str:
     """
     try:
         tr = STATE.ensure_open()
-        STATE.evaluated = False
         tr.set_param_str(name, str(value))
+        STATE.evaluated = False
         return f"set {name} = {value!r}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -571,23 +595,42 @@ def handle_set_params(params: Dict[str, SupportedValue]) -> str:
         )
     try:
         tr = STATE.ensure_open()
-        STATE.evaluated = False
-        applied = _apply_bulk_params(tr, params)
+        writes = _WriteTracker(tr)
+        try:
+            applied = _apply_bulk_params(writes, params)  # type: ignore[arg-type]
+        finally:
+            if writes.wrote:                                # a partial write changed the configuration too
+                STATE.evaluated = False
         return f"set {len(applied)} parameter(s): {applied}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _has_rows(tr: Trlib) -> bool:
+    """Whether the handle's history has a row: TR records one only after a successful preparation and the
+    evaluation of the step it starts on (TRGLOB, TRATOT); a failed preparation leaves none (tr_history_length is 0)."""
+    try:
+        return int(tr.history_length()) > 0
+    except Exception:      # a library without the history, or a handle that cannot say: treat as not evaluated
+        return False
+
+
 def _run(tr: Trlib, nsteps: int) -> None:
-    """``tr.run(nsteps)``, keeping ``STATE.evaluated``: a run of one step or more evaluates the globals, also one that
-    fails after its preparation; a failed preparation and a run of 0 steps do not."""
+    """``tr.run(nsteps)``, keeping ``STATE.prepared`` and ``STATE.evaluated``. A failed run counts as evaluated only
+    when it left a history row: a preparation can fail under any failure kind (``MODELG`` 9's q-scaling records
+    ``EQ_FAILED``, and the first record of a run is the one kept), so the kind does not tell."""
     try:
         tr.run(nsteps)
-    except TrlibRunError as exc:
-        failure = getattr(exc, "failure", None)
-        if nsteps > 0 and failure is not None and failure.kind != "PREP_FAILED":
-            STATE.evaluated = True
+    except TrlibRunError:
+        if _has_rows(tr):
+            STATE.prepared = True
+            if nsteps > 0:
+                STATE.evaluated = True
+        else:
+            STATE.prepared = False
+            STATE.evaluated = False
         raise
+    STATE.prepared = True
     if nsteps > 0:
         STATE.evaluated = True
 
@@ -603,13 +646,15 @@ def handle_run(ntmax: int = 1) -> str:
 
 def _state_dict(tr: Trlib) -> Dict[str, Any]:
     """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
-    compare) with ``scalars`` replaced by all the library's named global results, or by ``T`` alone until a run
-    of one step or more since the handle was opened or a parameter was set (``STATE.evaluated``)."""
+    compare) with ``scalars`` replaced by all the library's named global results, by ``T`` alone until a run of
+    one step or more since the handle was opened or a parameter was written (``STATE.evaluated``), and by nothing
+    before the handle's first successful preparation (``STATE.prepared``)."""
     state = tr.get_state()
     out = state.to_dict()
     out["scalars"] = dict(state.scalars)
     if not STATE.evaluated:
-        out["scalars"] = {k: v for k, v in out["scalars"].items() if k == "T"}
+        keep = {"T"} if STATE.prepared else set()
+        out["scalars"] = {k: v for k, v in out["scalars"].items() if k in keep}
     return out
 
 
