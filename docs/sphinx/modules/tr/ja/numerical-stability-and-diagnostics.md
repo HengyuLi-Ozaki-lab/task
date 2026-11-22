@@ -148,13 +148,13 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
 `TrDiagCode` 値のいずれかを持ちます. enum は 5 カテゴリを予約
 しており, `tr_api_validate` はそのうち 4 つを emit します.
 `MISSING_REQUIRED` は将来のカテゴリ用に予約されています
-(`tr/tr_api.f90:533`):
+(`tr/tr_api.f90:534`):
 
 - **`OUT_OF_RANGE`** — `tr_api_validate` がチェックする範囲を
   外れたパラメータ値. 例えば validate の `NSMAX` チェックは
   実行時の種数上限 `NSM = 4` (C ABI のコンパイル時上限
   `TR_MAX_NSMAX = 8` ではない) と比較するので, `NSMAX = 5` は
-  validate に到達しここで報告されます (`tr/tr_api.f90:561`).
+  validate に到達しここで報告されます (`tr/tr_api.f90:564`).
   注意: registry の宣言範囲を超える値 (例: `NSMAX > 8`) は
   validate が走る **前** に `set_param` で拒否されます
   (`tr/tr_param_registry.f90:155-157`) ので, この診断リストには
@@ -162,7 +162,7 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
   使えない値を catch することです. 同じコードで #189 の種ごとの
   分布, 方程式のスイッチと粒子源 ({doc}`parameters` の 14 節),
   `EXTERNAL_DRIVEN_I != 0` での `EXTERNAL_DRIVEN_RW <= 0`
-  (`tr/tr_api.f90:595-598`; 対ですが `INCONSISTENT_PAIR` ではなく
+  (`tr/tr_api.f90:616-619`; 対ですが `INCONSISTENT_PAIR` ではなく
   ここで報告) も報告されます.
 
 - **`OUT_OF_RANGE_AFTER_DEP`** — 自分の範囲は通るが他のパラメータ
@@ -178,9 +178,9 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
   UFILE モードでは報告せず, 種ごとの分布のチェック (`MODELG = 9` での
   負の `RIPS`, `RIPE` を含む) の指摘があるときも報告しません.
 
-- **`FILE_MISSING`** — 必須ファイルパスが空, またはライブラリ
-  が開けないファイルを指している. 典型例: `MODELG ∈ {3, 5, 7, 8}`
-  かつ `KNAMEQ` が空.
+- **`FILE_MISSING`** — 実行が読むファイルの名前が空, または
+  ファイルが無い: `MODELG ∈ {3, 5, 7, 8}` の `KNAMEQ` (呼び出し時の作業
+  ディレクトリから探す). `MODELG = 8` では TR が設定できない `KNAMEQ2` が空.
 
 `tr_run` は `FILE_MISSING`, `EXTERNAL_DRIVEN` の対, 準中性を除いて
 同じものを拒否します. その 3 つは `validate()` だけが報告します.

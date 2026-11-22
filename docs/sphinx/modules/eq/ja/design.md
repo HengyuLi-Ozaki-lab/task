@@ -20,7 +20,7 @@ C から呼ばれる関数は **6 つ** + `eq_validate` と `eq_save`. 標準の
 | `eq_run`            | `eq_api_run`            | `mode` 引数で動作切り替え (時間発展なし) |
 | `eq_get_state`      | `eq_api_get_state`      | EQCOMM のスカラー・ψ-面プロファイルを C 構造体にコピー |
 | `eq_finalize`       | `eq_api_finalize`       | `eq_bpsd_reset` で SAVE フラグを再起動 |
-| `eq_validate`       | `eq_api_validate`       | グリッド寸法, 読み込むファイル (`KNAMEQ`, `MODELG=8` では `KNAMEQ2`, `MODELG=15` では `eqdb.dat`), Grad-Shafranov 求解では壁・電流の符号・箱 (`parameter-setting`) |
+| `eq_validate`       | `eq_api_validate`       | グリッド寸法, 読み込むファイル (`KNAMEQ`, `MODELG=8` では `KNAMEQ2`), 拒否される `MODELG=15`, Grad-Shafranov 求解では壁・電流の符号・箱 (`parameter-setting`) |
 | `eq_save`           | `eq_api_save`           | 直前の `eq_run` の平衡を `KNAMEQ` のファイルに保存 (`EQSAVE`). ファイルを開けない, または書いた長さより短い場合はエラー |
 
 すべて `BIND(C, NAME="eq_xxx")` で C ABI シンボルを固定しています.
@@ -50,7 +50,7 @@ post-processing して `qaxis`, `qsurf`, `betat`, `betap`, `pvol` 等の
 `mode=1` は `MODELG ∈ {3, 5, 8, 9, 25}` (ファイル系) で使い, `KNAMEQ` で指定
 されたファイルを読み込みます (`eqfile.f90` の `EQ_READ`: 3 と 9 は TASK/EQ 形式,
 5 と 25 は G-EQDSK 形式, 8 は QST/JAEA 形式の 2 ファイルで `KNAMEQ2` も読む.
-`MODELG = 15` は固定の `eqdb.dat` を読みます).
+固定の `eqdb.dat` を読む `MODELG = 15` は拒否します).
 ```
 
 ### C 構造体レイアウト (`eq_state_t`)

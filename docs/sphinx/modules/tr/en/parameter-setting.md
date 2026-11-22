@@ -69,8 +69,9 @@ Diagnostic codes:
 | `MISSING_REQUIRED`       | a required parameter is unset |
 
 Checks currently performed: `NSMAX` above the compile-time maximum
-(`OUT_OF_RANGE`); `MODELG` 3/5/7/8 with a blank `KNAMEQ`
-(`FILE_MISSING`); `EXTERNAL_DRIVEN_I != 0` with `EXTERNAL_DRIVEN_RW <= 0`
+(`OUT_OF_RANGE`); `MODELG` 3/5/7/8 with a `KNAMEQ` that is blank or names
+no file (looked up relative to the working directory at the time of the
+call), and `MODELG` 8 with a blank `KNAMEQ2`, which TR cannot set (`FILE_MISSING`); `EXTERNAL_DRIVEN_I != 0` with `EXTERNAL_DRIVEN_RW <= 0`
 (`OUT_OF_RANGE`); and, outside the UFILE modes (`MDLUF` not in 1/2/3),
 the namelist profile of every active species `1..NSMAX`: `PN`/`PNS`
 negative, both zero, non-finite, `PN` zero with `PNS` positive (the density

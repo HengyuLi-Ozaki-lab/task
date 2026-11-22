@@ -512,10 +512,11 @@ CONTAINS
   !                 overflow the TRCOM0::NSM compile-time maximum used
   !                 by several pl/ak imports, so trip this check
   !                 before tr_run lets the mesh hit the mismatch.
-  !   FILE_MISSING: MODELG in {3,5,7,8} requires non-blank KNAMEQ. This
-  !                 mirrors the eq_api::eq_api_validate guard — without
-  !                 it, tr_run -> pl_prof_init -> equnit::eq_load opens
-  !                 "" silently and fills the post-load grid with garbage.
+  !   FILE_MISSING: the files a preparation reads: KNAMEQ for MODELG 3,
+  !                 5, 7 and 8, blank or naming no file, as
+  !                 eq_api::eq_api_validate reports it, and for 8 a
+  !                 KNAMEQ2 that TR cannot set (blank); the run fails on
+  !                 each (task-web-client #201).
   !
   !   OUT_OF_RANGE / OUT_OF_RANGE_AFTER_DEP (#189): per-species namelist
   !                 profile (PN/PNS/PT/PTS) that the solver cannot evolve,
@@ -539,15 +540,17 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION tr_api_validate(diag, diag_cap, ndiag) &
            RESULT(ierr) BIND(C, NAME="tr_validate")
+    USE trcomm, ONLY : KNAMEQ2
     TYPE(tr_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
-    INTEGER :: nviol, nspc, i
+    INTEGER :: nviol, nspc, i, ios
     CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
     INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
     CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN - 1) :: fmsg   ! the C field keeps 127 characters + NUL
 
     IF (.NOT. g_initialized) THEN
        ndiag = 0
@@ -560,17 +563,35 @@ CONTAINS
     ! ---- OUT_OF_RANGE: NSMAX overflow vs TRCOM0::NSM=4. -----------
     CALL push_oor("NSMAX", NSMAX, NSM)
 
-    ! ---- FILE_MISSING: MODELG in {3,5,7,8} requires non-blank KNAMEQ.
-    !      Without it, a subsequent tr_run path opens "" silently and
-    !      fills the post-load grid with garbage:
-    !        - MODELG 3/5/8: tr_run -> pl_prof_init -> equnit::eq_load
-    !        - MODELG 7:     tr_set_metric -> pl_vmec (VMEC reader,
-    !                        also takes KNAMEQ as the input filename)
-    !      --------------------------------------------------------
+    ! ---- FILE_MISSING: the files the preparation reads (tr_set_metric,
+    !      tr/trmetric.f90): KNAMEQ for MODELG 3, 5 and 8 (equnit's
+    !      eq_load) and 7 (pl_vmec, the VMEC reader), reported when blank
+    !      or naming no file, as eq_validate does (eq/eq_api.f90); a name
+    !      is looked up as the run opens it, relative to the working
+    !      directory of the process at the time of validate(). MODELG 8
+    !      reads KNAMEQ2 too (EQJAEAR, eq/eq-qst.f90), and TR passes its
+    !      own, which neither tr_set_param_str nor eq:KNAMEQ2 (refused,
+    !      eq_name_refused) sets: it stays the namelist's, blank by
+    !      default, and is reported when blank. The run fails on each too,
+    !      and its failure record says why (task-web-client #201).
     IF (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 7 .OR. MODELG == 8) THEN
        IF (LEN_TRIM(KNAMEQ) == 0) THEN
-          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, &
-               "MODELG=3/5/7/8 requires non-blank KNAMEQ (eq/VMEC file)")
+          WRITE(fmsg, '(A,I0,A)', IOSTAT=ios) "MODELG=", MODELG, &
+               " loads the file KNAMEQ names, and KNAMEQ is blank"
+          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, fmsg)
+       ELSE IF (.NOT. file_there(KNAMEQ)) THEN
+          WRITE(fmsg, '(3A,I0,A)', IOSTAT=ios) "KNAMEQ='", TRIM(KNAMEQ), &
+               "' not found: MODELG=", MODELG, " loads it"
+          IF (ios /= 0) WRITE(fmsg, '(A,I0,A)', IOSTAT=ios) &
+               "KNAMEQ not found: MODELG=", MODELG, " loads it (name unprintable)"
+          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, fmsg)
+       END IF
+       IF (MODELG == 8) THEN
+          IF (LEN_TRIM(KNAMEQ2) == 0) THEN
+             fmsg = "MODELG=8 loads the file KNAMEQ2 names too, and KNAMEQ2 is blank" // &
+                    " (neither tr_set_param_str nor eq:KNAMEQ2 sets it)"
+             CALL push_diag("KNAMEQ2", TR_DIAG_FILE_MISSING, fmsg)
+          END IF
        END IF
     END IF
 
@@ -690,6 +711,19 @@ CONTAINS
       IF (ios /= 0) m = "not quasi-neutral: the electrons' density differs from the ions' charge density"
       CALL push_diag(name_str, TR_DIAG_INCONSISTENT_PAIR, m)
     END SUBROUTINE quasi_neutrality
+
+    !---------------------------------------------------------------
+    ! .TRUE. when a file of this name exists (relative to the working
+    ! directory), as the preparation would open it (eq_validate's
+    ! file_there, eq/eq_api.f90).
+    !---------------------------------------------------------------
+    LOGICAL FUNCTION file_there(fname)
+      CHARACTER(LEN=*), INTENT(IN) :: fname
+      INTEGER :: ios_q
+      file_there = .FALSE.
+      INQUIRE(FILE=TRIM(fname), EXIST=file_there, IOSTAT=ios_q)
+      IF (ios_q /= 0) file_there = .FALSE.
+    END FUNCTION file_there
 
   END FUNCTION tr_api_validate
 
@@ -1110,6 +1144,12 @@ CONTAINS
     CASE ('RR', 'RA', 'RKAP', 'RDLT', 'BB', 'KNAMEQ')
        WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' is not settable through TR: set '//TRIM(up)// &
             " (TR's), which TR passes to EQ"
+       RETURN
+    CASE ('KNAMEQ2')
+       ! MODELG 8: tr_set_metric hands EQ TR's own KNAMEQ2 (the namelist's), which overwrote this one
+       ! (task-web-client #201).
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//" is not settable through TR: TR passes its own KNAMEQ2 "// &
+            "(the namelist's) to EQ"
        RETURN
     END SELECT
     IF (g_first_nrmax /= 0) THEN

@@ -18,7 +18,7 @@ physically meaningful results**.
 
 | Condition | Required parameter | Reason |
 |---|---|---|
-| `MODELG ∈ {3, 5, 7, 8}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If unset, `tr_validate()` returns a `FILE_MISSING` diagnostic and `tr_prep` fails inside `run()` |
+| `MODELG ∈ {3, 5, 7, 8}` | **`KNAMEQ`** (string) | Equilibrium-data filename (for `MODELG = 7`, the VMEC file). If it is blank or names no file, `tr_validate()` returns a `FILE_MISSING` diagnostic naming it, and `run()` fails. `MODELG = 8` reads `KNAMEQ2` too, which neither `tr_set_param_str` nor `eq:KNAMEQ2` sets (blank unless a namelist sets it) |
 
 `KNAMEQ` is set via `set_param_str`:
 

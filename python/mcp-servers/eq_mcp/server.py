@@ -191,7 +191,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELG": {"type": "int", "group": "models", "description": "equilibrium/geometry selector (1..9; 3 = TASK/EQ binary load)"},
     "MODELQ": {"type": "int", "group": "models", "description": "q-profile model selector"},
     "IDEBUG": {"type": "int", "group": "models", "description": "debug-output level"},
-    "MODEFR": {"type": "int", "group": "models", "description": "file-read mode of FROPEN: 0 reads the file named by KNAMEQ; 1 asks for a file name on unit 5 (not for a server)"},
+    "MODEFR": {"type": "int", "group": "models", "description": "file-read mode of FROPEN: only 0, which reads the file named by KNAMEQ, is taken (1 would ask for a file name on unit 5, the server's channel)"},
     "MODEFW": {"type": "int", "group": "models", "description": "file-write mode of FWOPEN: 0 overwrites an existing file, 3 refuses one; 1, 2 and 4 to 7 can read unit 5, and eq_save takes 0 and 3 only. The save tool sets it itself before it saves (3, or 0 with overwrite=true)"},
     "MDLEQF": {"type": "int", "group": "models", "description": "equilibrium-fixed-boundary model"},
     "MDLEQC": {"type": "int", "group": "models", "description": "equilibrium-constraint model"},

@@ -19,7 +19,7 @@ menu commands of the legacy `eqx2` CLI:
 | `mode` | Purpose | Legacy CLI command | Required setup |
 |---|---|---|---|
 | `0` | **Grad-Shafranov solve** (`EQCALC`, iterated to `EPSEQ`, + post-processing) | `R` (Run) -> `F` (Fields) | `MODELG ∈ {0, 1, 2}`, profile coefficients (`PP*`, `PJ*`, `FF*`, ...) |
-| `1` (default) | **Load an equilibrium file** (`equnit::eq_load`) | `L` (Load) | a file format: `MODELG` 3 or 9 (TASK/EQ), 5 or 25 (G-EQDSK) with `KNAMEQ` (filename), 8 (QST/JAEA) with `KNAMEQ` and `KNAMEQ2`; `MODELG = 15` reads `eqdb.dat` |
+| `1` (default) | **Load an equilibrium file** (`equnit::eq_load`) | `L` (Load) | a file format: `MODELG` 3 or 9 (TASK/EQ), 5 or 25 (G-EQDSK) with `KNAMEQ` (filename), 8 (QST/JAEA) with `KNAMEQ` and `KNAMEQ2`; `MODELG = 15` (`eqdb.dat`) is refused |
 
 `mode=1` is the default because it is the **standard file-driven
 workflow** (it fails with the default `MODELG=2`, which names no file
@@ -62,7 +62,8 @@ inconsistent. Common causes:
   short (a TASK/EQ file cut inside its last record still loads, with
   `HJTRZ` 0), gives a grid size EQ cannot take, or, for 8, R and Z ranges
   that are no grid (empty, falling or not finite) or no magnetic axis in
-  its psi. The exception message ends with the reason
+  its psi; `run(1)` refuses 15 (`eqdb.dat`) before any read. The exception
+  message ends with the reason
   (`eq.last_error()`), which names the file, e.g. `EQ_READ: MODELG=5 load
   of KNAMEQ='eqdata.ITER01' failed: it does not read as a G-EQDSK file
   (...)`; in the parentheses, the message of the read that failed, the
@@ -71,7 +72,7 @@ inconsistent. Common causes:
   `BB`, `RIP`, ...) stay: set them again before a `run(mode=0)`
 
 `validate()` catches grid dimensions, a missing load file (a blank `KNAMEQ` or one naming no file,
-`KNAMEQ2` for `MODELG=8`, `eqdb.dat` for `MODELG=15`) and, for the
+`KNAMEQ2` for `MODELG=8`), the refused `MODELG=15` and, for the
 Grad-Shafranov solve, a wall inside the plasma, a negative current and a box
 (`MDLEQF >= 10`) the solve cannot use up-front; physical consistency is
 only known after `run()`.

@@ -67,7 +67,8 @@ with Trlib() as tr:
 | `MISSING_REQUIRED`       | 必須パラメータが未設定 |
 
 現在行われる検査: `NSMAX` がコンパイル時上限を超える (`OUT_OF_RANGE`),
-`MODELG` 3/5/7/8 で `KNAMEQ` が空 (`FILE_MISSING`),
+`MODELG` 3/5/7/8 で `KNAMEQ` が空かファイルが無い (呼び出し時の作業ディレクトリから探す),
+`MODELG` 8 で TR が設定できない `KNAMEQ2` が空 (`FILE_MISSING`),
 `EXTERNAL_DRIVEN_I != 0` かつ `EXTERNAL_DRIVEN_RW <= 0` (`OUT_OF_RANGE`),
 および UFILE モード以外 (`MDLUF` が 1/2/3 でない) のとき active な粒子種
 `1..NSMAX` の namelist プロファイル: `PN`/`PNS` が負, 両方 0, 非有限,
