@@ -20,7 +20,7 @@ it. This table is generated from the MCP server's `PARAMETER_REGISTRY`
 | `NR` | `int` | `257` | grid points in R: 2**k+1 in 5..257 (the Buneman solver) |
 | `NZ` | `int` | `257` | grid points in Z: 2**k+1 in 5..257 (the Buneman solver) |
 | `NV` | `int` | `101` | flux surfaces, 3..101 (4.. with |ICP[1]| = 9) |
-| `NSUMAX` | `int` | `101` | points on the plasma surface, 3..1542 |
+| `NSUMAX` | `int` | `101` | most plasma-surface points the boundary routine eqbnd uses, 3..1542; not the G-EQDSK file's count (the traced contour, nsu) |
 | `IUDSYM` | `int` | `0` | up-down symmetry: 1 symmetric, 0 not |
 | `RWMN` | `float` | `1.9` | R of the box's inner edge [m] (eqchek may lower it) |
 | `RWMX` | `float` | `4.2` | R of the box's outer edge [m] (eqchek may raise it) |

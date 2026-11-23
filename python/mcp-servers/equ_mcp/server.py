@@ -56,7 +56,8 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "NR": _p("int", "mesh", 257, "grid points in R: 2**k+1 in 5..257 (the Buneman solver)"),
     "NZ": _p("int", "mesh", 257, "grid points in Z: 2**k+1 in 5..257 (the Buneman solver)"),
     "NV": _p("int", "mesh", 101, "flux surfaces, 3..101 (4.. with |ICP[1]| = 9)"),
-    "NSUMAX": _p("int", "mesh", 101, "points on the plasma surface, 3..1542"),
+    "NSUMAX": _p("int", "mesh", 101, "most plasma-surface points the boundary routine eqbnd uses, "
+                 "3..1542; not the G-EQDSK file's count (the traced contour, nsu)"),
     "IUDSYM": _p("int", "mesh", 0, "up-down symmetry: 1 symmetric, 0 not"),
     "RWMN": _p("float", "mesh", 1.90, "R of the box's inner edge [m] (eqchek may lower it)"),
     "RWMX": _p("float", "mesh", 4.20, "R of the box's outer edge [m] (eqchek may raise it)"),
