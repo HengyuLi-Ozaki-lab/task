@@ -169,6 +169,13 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.tot_run.restype = ctypes.c_int
     lib.tot_run.argtypes = [ctypes.c_int]
 
+    # Run control (PR 3 of #96); best-effort like the setter below.
+    try:
+        lib.tot_continue.restype = ctypes.c_int
+        lib.tot_continue.argtypes = [ctypes.c_int]
+    except AttributeError:  # pragma: no cover - only on builds before tot_continue
+        pass
+
     lib.tot_set_param.restype = ctypes.c_int
     lib.tot_set_param.argtypes = [ctypes.c_char_p, ctypes.c_double]
 

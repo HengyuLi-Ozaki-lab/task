@@ -96,6 +96,14 @@ typedef struct tr_diag_entry {
 } tr_diag_entry_t;
 
 int tr_init(void);
+/* tr_run: prepare when a parameter was set since the last preparation (any successful set, control ones too:
+   NT, T and the history start again), then advance ntmax steps. After a failed run a tr_run with nothing set goes
+   on from the failed state without preparing, as before tr_continue existed; tr_continue refuses until a
+   preparation.
+   tr_run(0) prepares (when a parameter was set) and takes no step, but the loop's exit still sets RIPS = RIPE: a
+   current ramp pending at that point is lost, and RIP stays where the preparation or the last step left it
+   (RIPS 1, RIPE 2: tr_run(0) then tr_run(10) ends at 1.0 MA, not 2.0; tr2's R with NTMAX = 0 runs the same path).
+   tr_run's behaviour is kept as it is; tr_continue(0) does not do this. */
 int tr_run(int ntmax);
 /* tr_set_param and tr_set_param_str return TR_ERR_INVALID for a name of
  * more than 64 characters, and tr_set_param_str for a value of more than
@@ -146,13 +154,14 @@ size_t tr_state_size(void);
  */
 int tr_validate(tr_diag_entry_t* diag, int diag_cap, int* ndiag_out);
 
-/* The first failure of the last tr_run, in the layout of a diagnostic entry.
-   param: NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED or OTHER (REFUSED is
-   reserved for tr_continue, PR 3; nothing records it yet);
+/* The first failure of the last tr_run or tr_continue, in the layout of a diagnostic entry.
+   param: NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED, OTHER, or REFUSED
+   (tr_continue refused to run, code 0: see tr_continue; tr_run's own refusals
+   return TR_ERR_INVALID with no record);
    code: the Fortran status; msg: "nt=<step> t=<time> s: <what failed>", cut at
    127 characters; for EQ_FAILED the text ends with EQ's own reason (EQ_ERRMSG)
    when EQ set one.
-   Cleared at the start of every tr_run. Returns 0 always. */
+   Cleared at the start of every tr_run and tr_continue. Returns 0 always. */
 int tr_last_error(tr_diag_entry_t* e);
 
 /* L-7b-ii: BPSD broker round-trip verification.
@@ -171,7 +180,7 @@ void tr_check_bpsd_pull(int *ok);
    tr_get_scalar: the value of one name (exact, upper case); TR_ERR_NOT_INIT before tr_init, TR_ERR_INVALID for a
      name not listed (*value is left as it was). After tr_init and before the first tr_run the values are those of
      the previous lifecycle in this process (as tr_get_state's scalars are), 0 in a fresh process: read them after
-     a run of one step or more. A tr_run of 0 steps evaluates no step: after a preparation (a first run, or a run
+     a tr_run or tr_continue of one step or more. A tr_run of 0 steps evaluates no step: after a preparation (a first run, or a run
      after a changed parameter) what it sets is new (T 0; RIP, which is RIPS or, under MODELG 3, 5 and 8, the equilibrium's boundary current; Q0 under MODELG 2, 3, 5, 7, 8 and 9) and what only a
      step computes (the powers, WPT) is still the run before's.
    PNFT is the power of the charged fusion products (alpha for D-T, MDLNF 1 to 4; alpha and proton for D-He3, MDLNF
@@ -186,6 +195,11 @@ int tr_get_scalar(const char* name, double* value);
    precision: the state at t = 0 first, then a row at every step that is a multiple of NGTSTP, so a call of tr_run adds the multiples among the steps it runs (nsteps / NGTSTP only when it starts on one: run(5) twice adds 3 and 3, run(1) adds 0 or 1).
    tr_prep starts the history again (tr_run prepares again after a changed parameter). NTM = 10001 rows; when they
    are full recording stops silently in TR, and tr_history_full reports it.
+   The last row is the last step's tr_get_scalar value to single precision, except under MODELG 9 when that step is
+   a multiple of NTEQIT: the row is written (tr_eval) before the step's equilibrium re-solve, so for Q0 and what
+   TRCALC recomputes after it the row holds the value before the re-solve, as tr2 prints it (TRSNAP), and
+   tr_get_scalar the value after it (measured on Q0: 7.7e-5 to 4.9e-4 relative).
+   tr_continue appends to the history as tr_run does (a row at each multiple of NGTSTP among its steps).
    tr_history_length: rows recorded (0 before a run). tr_history_full: 1 when the rows are full, else 0.
    tr_history_count / tr_history_name: the named columns, enumerated as tr_scalar_name does. "T" is the time;
      the others are TR's names in tr/trrslt_globals.f90's TRATOT, in its units (see tr_mcp's get_history schema).
@@ -194,7 +208,8 @@ int tr_get_scalar(const char* name, double* value);
    A run that fails on a negative temperature (TR_CHECK in tr_last_error) or with a state that is not finite
    (NONFINITE) ends its history on the last recorded step: the failed step is not a row (tr2 records a TR_CHECK
    one). A preparation that fails leaves no rows: tr_history_length is 0 until one succeeds. After a TR_CHECK
-   failure the scalars are the failed iterate's (tr_exec computes TRGLOB there), so they differ from the last row. Under MODELG 9 a step that ends with an EQ re-solve (a
+   failure the scalars are the failed iterate's (tr_exec computes TRGLOB there; Q0, which tr_loop computes after a step,
+   is the last completed step's), so they differ from the last row. Under MODELG 9 a step that ends with an EQ re-solve (a
    multiple of NTEQIT) is recorded before the re-solve, which then recomputes Q0: that row's Q0 differs from
    tr_get_scalar's; the other shared names agree. */
 int tr_history_length(void);
@@ -202,6 +217,38 @@ int tr_history_full(void);
 int tr_history_count(void);
 int tr_history_name(int i, char* buf, int buflen);
 int tr_history_get(const char* name, double* buf, int n, int* got);
+
+/* Run control (PR 3 of #96).
+   tr_continue: advance the prepared case nsteps more steps without preparing again. The control parameters
+     set since the last tr_run or tr_continue (tr_param_class 1: RIPE, PNBTOT, PICTOT, PECTOT, PLHTOT, NTEQIT,
+     TPRST) take effect at its first step. RIP ramps from RIPS (the last call's RIPE) to RIPE over these nsteps.
+     NT, T and the history go on: NT counts on across calls, where tr2's C starts it at 0, so the steps chosen by
+     NT (the equilibrium re-solve every NTEQIT steps; the globals every NTSTEP, NGTSTP and NGRSTP steps) are
+     counted from the preparation. It runs the same loop as tr_run, with the same prologue, and equals tr2's C at
+     the same cut when the steps before it are a multiple of those, except with NCLASS (MDNCLS != 0), where tr2's
+     C takes the classical resistivity on its first step (NT = 0, tr/trcoef_resistivity.f90:123). A run in
+     several calls is not bit for bit one call: each call begins with the loop's prologue (measured on ITER under
+     MODELG 9 with NTEQIT 50, calls of 100 steps: WPT 1e-12, the whole state 1.3e-10; on the history row after a cut
+     that falls on a re-solve WPDOT differs by 15 % to 36 %, TAUE2 and H98Y2 by 2 % to 3 %).
+     Refused (TR_ERR_INVALID with a REFUSED record in tr_last_error, a line on unit 6 for each finding, nothing run):
+      - before a preparation (tr_run prepares);
+      - after a failed tr_prep or loop of tr_run or tr_continue, until a tr_run prepares again (it does after any
+        tr_set_param or tr_set_param_str);
+      - after a structural parameter (tr_param_class 0, eq: names included) was set since the preparation: the
+        record names the last one; tr_run prepares again. Counted are the sets through tr_set_param,
+        tr_set_param_str and tot's setters; a write through EQ's own API (eq_set_param, eqlib) on the mono image,
+        which changes the inputs of the EQ that TR re-solves under MODELG 9 (taken at the next NTEQIT re-solve or
+        preparation), is not, as tr_run does not prepare again for it;
+      - nsteps < 0;
+      - a value tr_run's own checks refuse (with MODELG 9, a negative RIPE).
+     TR_ERR_NOT_INIT before tr_init. TR_ERR_CALC_FAILED when the loop fails, with its record, as tr_run.
+     tr_continue(0) makes these checks and does nothing else: no loop (its exit would set RIPS = RIPE, and a RIPE
+     set before the call would be lost), and the control sets stay pending for the next call.
+   tr_param_class: 1 for a control parameter, 0 for a structural one (a name tr_set_param or tr_set_param_str
+     takes, or any eq: name), -1 for a name they do not know; the name is read as tr_set_param reads it, its
+     subscript parsed but not range-checked. Callable before tr_init. */
+int tr_continue(int nsteps);
+int tr_param_class(const char* name);
 
 #ifdef __cplusplus
 }

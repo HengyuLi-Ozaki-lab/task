@@ -261,7 +261,8 @@ $(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TO
 # Each per-module registry .o / api .o / state .o is built by the
 # owning module's Makefile (part of its SRCS_API target). Delegate so
 # that `make tot_api_check` from a clean tree is self-bootstrapping.
-../tr/obj/tr_param_registry.o:
+# tot_param_registry.f90 USEs tr_param_registry (tr_param_note_external_set): see TR_SOURCES above.
+../tr/obj/tr_param_registry.o: $(TR_SOURCES)
 	(cd ../tr; make obj/tr_param_registry.o)
 ../fp/obj/fp_param_registry.o:
 	(cd ../fp; make obj/fp_param_registry.o)
@@ -284,7 +285,7 @@ $(TOT_API_PARAM_BIN): $(TOT_API_PARAM_O) $(OBJ_API) $(TOT_STATIC_STUBS_OBJ) $(TO
 	(cd ../eq; make eq_api_common.o)
 ../eq/eq_api.o:
 	(cd ../eq; make eq_api.o)
-../tr/obj/tr_state.o:
+../tr/obj/tr_state.o: $(TR_SOURCES)
 	(cd ../tr; make obj/tr_state.o)
 # tot_api.f90 USEs tr_api's names (tr_get_scalar, tr_history_*): see TR_SOURCES above.
 ../tr/obj/tr_api.o: $(TR_SOURCES)

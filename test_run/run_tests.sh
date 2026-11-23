@@ -408,7 +408,25 @@ run_single_test() {
     # For TR/FP/TI/WR/WRX/EQ/TOT modules, enable regression dump (env-guarded inside the dumper).
     local mod_env=()
     case "$module" in
-        tr) mod_env=(env TR_REGRESS_DUMP=1) ;;
+        tr)
+            mod_env=(env TR_REGRESS_DUMP=1)
+            # EQ's namelist for the cases that need one (tr_iter01_m9: RB and NSGMAX of the ITER equilibrium that
+            # MODELG 9 solves). The file is removed first so that a case without one never reads another run's. A
+            # MODELG 9 case without one would solve on EQ's defaults and still write a dump: it fails here instead.
+            rm -f "$test_dir/eqparm"
+            local eqparm_src="$SCRIPT_DIR/inputs/${test_name}.eqparm"
+            if [[ -f "$eqparm_src" ]]; then
+                if ! cp "$eqparm_src" "$test_dir/eqparm"; then
+                    echo -e "${RED}FAIL${NC} (could not copy $eqparm_src)"
+                    FAILED=$((FAILED + 1))
+                    return 0
+                fi
+            elif grep -qiE '(^|[[:space:],&])modelg[[:space:]]*=[[:space:]]*9([^0-9]|$)' "$full_input_path"; then
+                echo -e "${RED}FAIL${NC} (a MODELG 9 case needs inputs/${test_name}.eqparm)"
+                FAILED=$((FAILED + 1))
+                return 0
+            fi
+            ;;
         fp) mod_env=(env FP_REGRESS_DUMP=1) ;;
         ti) mod_env=(env TI_REGRESS_DUMP=1) ;;
         wr) mod_env=(env WR_REGRESS_DUMP=1) ;;

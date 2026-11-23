@@ -69,7 +69,7 @@ Or use `tot-mcp install --client claude-code --scope project`.
 
 ## Tools provided
 
-`tot_mcp` exposes **10 tools**. The use of prefixed parameter names is
+`tot_mcp` exposes **11 tools**. The use of prefixed parameter names is
 what differentiates it from the other modules' servers.
 
 | Tool | Purpose | Main arguments |
@@ -78,12 +78,20 @@ what differentiates it from the other modules' servers.
 | `set_param` | Set a prefixed parameter | `name` (e.g. `"eq:RR"`), `value` |
 | `set_params` | Bulk parameter set | `params` (e.g. `{"eq:RR": 6.5, "tr:NSMAX": 2}`) |
 | `run` | Run the integrated simulation | `ntmax` |
+| `continue_run` | Advance the prepared case `nsteps` more steps without preparing again (`tot_continue`, TR's `tr_continue`) | `nsteps` |
 | `get_state` | Fetch the integrated state | none |
 | `finalize` | Release all modules | none |
 | `describe_parameters` | List prefixes + parameters | none |
 | `describe_state_schema` | Schema of the TotState return value | none |
 | `run_and_get_state` | One-shot run | `params`, `ntmax` |
 | `run_pipeline` | Run modules in sequence, coupled through scalars (`totlib.TotPipeline`); a string value in `params` goes to the module's own string setter, so `fp:KNAMEQ` works here | `steps`, `params` |
+
+`continue_run` takes the control parameters set since the last `run` or `continue_run` (`tr:RIPE`, `tr:PNBTOT`, `tr:PICTOT`,
+`tr:PECTOT`, `tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) at its first step, and `NT`, `T` and the history go on. Every other `tr:` name
+is structural: set after a preparation it makes `continue_run` refuse (the message carries TR's record and names it) and the
+next `run` prepares again. An `eq:` set is refused itself once TR has prepared the case: until the pinned bpsd has
+k-yoshimi/bpsd#7 an EQ grid change after a preparation corrupts memory, so set `eq:` names before the first `run`. `run(0)` takes no step but sets `RIPS = RIPE`, so a ramp set before it is lost; do
+not use it as a smoke test. `continue_run(0)` only checks. See `python/trlib/README.md`, "Continuing a run".
 
 ## Usage examples
 
