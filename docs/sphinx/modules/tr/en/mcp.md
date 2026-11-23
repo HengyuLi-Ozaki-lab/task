@@ -74,7 +74,7 @@ python -m tr_mcp.server --help
 python -m tr_mcp.server --print-tools
 ```
 
-You will see 9 tools (details in "Provided tools" below).
+You will see 12 tools (details in "Provided tools" below).
 
 ### Environment health check
 
@@ -167,24 +167,40 @@ file.
 
 ## Provided tools
 
-`tr_mcp` exposes 9 tools.
+`tr_mcp` exposes 12 tools.
 
 | Tool | Purpose | Main args |
 |---|---|---|
 | `init` | initialize the library (`tr_init`) | none |
 | `set_param` | set a single parameter | `name`, `value` (arrays use `NAME[i]`) |
+| `set_param_str` | set a string parameter (`KNAMEQ`) | `name`, `value` |
 | `set_params` | bulk set (scalar / list / dict) | `params` |
 | `run` | advance time steps (`tr_run`) | `ntmax` (default=1) |
 | `get_state` | read the current state (`tr_get_state`) | none |
 | `finalize` | release resources (`tr_finalize`) | none |
 | `describe_parameters` | parameter list with types and descriptions (introspection for the LLM) | none |
-| `describe_state_schema` | JSON schema of the `get_state` return value | none |
+| `describe_state_schema` | JSON schema of the `get_state` return value (the 31 `scalars` with units) | none |
+| `get_history` | time history: a row every `NGTSTP` steps, single precision, at most 10001 rows | `names` (all columns if omitted) |
+| `describe_history_schema` | the columns of `get_history` with units | none |
 | `run_and_get_state` | bundle `init + set + run + get_state` in one call | `params`, `ntmax` |
 
 `describe_parameters` and `describe_state_schema` exist **so the LLM
 does not get parameter names wrong**. The flow is for the LLM to
 call these first to confirm names and types, then call `set_params`
 and friends.
+
+### Outputs by name (`get_state`, `get_history`)
+
+`get_state` returns the 31 named global results in `scalars` (`WPT`, `PNFT`, `PINT`, `QF`, `RIP`, ...), and
+`describe_state_schema` gives each its unit and meaning (powers in MW, currents in MA, energy in MJ). `get_history(names)`
+returns the time history, a row every `NGTSTP` steps (default 2, the first row is t = 0), as `{rows, full, columns}`;
+`describe_history_schema` lists the columns with units. The values are **single precision**, and the history holds
+**`NTM` = 10001 rows**: TR then stops recording without a message and `full` is true. For a long run set `NGTSTP` so that
+steps / `NGTSTP` stays below 10001. A run that fails on a negative temperature or with a state that is not finite ends
+its history on the last recorded step (the failed step is not a row); under `MODELG` 9 the row of a step that ends with an
+EQ re-solve holds the `Q0` of before the re-solve, while `get_state` gives the one after it. The scalars are current after
+a `run` of one step or more: a run of 0 steps evaluates none, and `get_state` and `run_and_get_state` return `T` only
+among the scalars until a run of one step or more since the handle was opened or a parameter was set.
 
 ## Usage examples
 
@@ -334,10 +350,10 @@ with `tr-mcp doctor`.
 | `calculation failed` | Check the consistency of `DT` and the equilibrium input. Reset via `finalize` → `init` |
 
 A failed `run` puts the library's failure record in the error string:
-`[failure: kind=EQ_FAILED code=103 nt=600 time=12 s; <detail>]` (`kind` is `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
+`[failure: kind=EQ_FAILED code=102 nt=600 time=12 s; <detail>]` (`kind` is `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
 `PREP_FAILED` or `OTHER`; `REFUSED` is reserved for `tr_continue`, PR 3 of the plan, and not recorded yet; see `python/trlib/README.md`). `MODELG` 0, 4, 25 and `RIPS = 0` now fail this
 way (`NONFINITE`, nt 1) where they used to return a state with non-finite scalars. A name `eq:NAME` in `set_param`
-goes to EQ's registry (`describe_parameters` says so in its `eq_names` line); `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (set TR's own; `RIPS` and `RIPE` for `eq:RIP`), and so is every `eq:` name after the process's first preparation attempt (until the pinned bpsd has k-yoshimi/bpsd#7). That guard closes only the direct route: under `MODELG` 9 any input that moves EQ's plasma grid (TR's `RA`, `RR` and other device inputs, `MODELG`, the `eq:` names, the drift between `NTEQIT` re-solves) needs a bpsd with k-yoshimi/bpsd#7, and TOT's `eq:` dispatcher is not guarded. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0.
+goes to EQ's registry (`describe_parameters` says so in its `eq_names` line); `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` are refused (set TR's own; `RIPS` and `RIPE` for `eq:RIP`), and so is every `eq:` name after the process's first preparation attempt (until the pinned bpsd has k-yoshimi/bpsd#7). That guard closes only the direct route: under `MODELG` 9 any input that moves EQ's plasma grid (TR's `RA`, `RR` and other device inputs, `MODELG`, the `eq:` names, the drift between `NTEQIT` re-solves) needs a bpsd with k-yoshimi/bpsd#7, and TOT's `eq:` dispatcher is not guarded. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0.
 
 For details, see §8 FAQ of `python/mcp-servers/tr_mcp/README.md`.
 

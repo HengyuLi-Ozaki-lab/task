@@ -15,7 +15,10 @@ state.nsmax           # actual number of species (<= TR_MAX_NSMAX=8)
 ## Scalar quantities (14 entries, dictionary `state.scalars`)
 
 Spatially / temporally integrated quantities that summarise the whole
-plasma. The 14 entries below are always available.
+plasma. The 14 entries below are always available. `Trlib.get_state().scalars` holds 31
+named global results (`Trlib.scalar_names()`: also `PNFT`, `QF`, `PINT`, `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`,
+`AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`, `TAUE98`; units in `tr_mcp`'s state schema), while
+`to_dict()` keeps these 14. The time history is read with `Trlib.history()` (single precision, at most 10001 rows).
 
 | Key | Unit | Meaning |
 |---|---|---|

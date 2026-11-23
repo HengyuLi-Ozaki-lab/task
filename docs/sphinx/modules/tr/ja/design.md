@@ -138,7 +138,29 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! 軸上 Zeff
 **挙動の変更:** `MODELG` 0, 4, 25 および `RIPS = 0` は, 非有限のスカラーを持つ RC 0 を返していましたが, `NONFINITE` で失敗します.
 
 `tr_set_param` / `tr_set_param_str` の名前 `eq:NAME` は EQ のレジストリ (`eq_param_set`) に渡されます. このため
-`libtrapi.so` は `eq_param_registry.o` をリンクし, 受理された設定の後の `tr_run` は再度準備を行います. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` は TR 経由では何もしないため拒否され, プロセスの最初の準備の試行の後は, 固定された bpsd が k-yoshimi/bpsd#7 を持つまで, すべての `eq:` 名が拒否されます. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です. このガードは bpsd#7 の溢れへの直接の経路だけを塞ぎます: `MODELG` 9 では EQ のプラズマ格子を動かす入力はすべてその bpsd を必要とします (`python/trlib/README.md` 参照). TOT の `eq:` ディスパッチャはガードされません.
+`libtrapi.so` は `eq_param_registry.o` をリンクし, 受理された設定の後の `tr_run` は再度準備を行います. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ`, `eq:KNAMEQ2` は TR 経由では何もしないため拒否され, プロセスの最初の準備の試行の後は, 固定された bpsd が k-yoshimi/bpsd#7 を持つまで, すべての `eq:` 名が拒否されます. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です. このガードは bpsd#7 の溢れへの直接の経路だけを塞ぎます: `MODELG` 9 では EQ のプラズマ格子を動かす入力はすべてその bpsd を必要とします (`python/trlib/README.md` 参照). TOT の `eq:` ディスパッチャはガードされません.
+
+## 出力の名前引き (`tr_api.f90`)
+
+`tr_state_t` のスカラーは `TRGLOB` が計算する 31 個の全体量のうち 14 個です. `tr_scalar_count`, `tr_scalar_name`,
+`tr_get_scalar(name, &value)` は 31 個すべてを名前で返します (`PNFT`, `QF`, `PINT`, `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`,
+`AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`, `TAUE98` が追加), 単位は `trrslt_globals.f90` のとおりです.
+`tot_get_scalar("tr:NAME")` はこれに委譲します.
+
+`tr_history_*` は `TRATOT` が `NGTSTP` ステップごとに書く時間履歴 `GT(NGT)`, `GVT(NGT, 1:110)` を名前で返します
+(47 列, **単精度** (`GUCLIP`), `NTM` = 10001 行). 行が満杯になると TR は黙って記録を止めます (`tr_history_full` で分かります):
+長い計算では `NGTSTP` を設定してください. `tr_prep` が `NGT` を 0 にするので, 準備のたびに履歴は最初からになります.
+ライブラリモードでは, 前の `tr_run` が終わったステップで次の呼び出しが始まるとき, そのステップの行を二重に記録しません.
+また `tr_exec` は `TRCHCK` の失敗で得た反復を記録しません (`tr2` はどちらも記録します). `tr_loop` は有限でないと分かったステップの行を
+取り消し (`tr_eval_take_back_row`), 失敗した準備は行を残しません. `MODELG` 9 では `tr_loop` がステップを記録して
+から EQ を再計算し, 新しいメトリクで `Q0` を計算し直す (`tr_bpsd_get`, `TRCALC`) ので, その行の `Q0` は再計算前の値です. 0 ステップの
+`tr_run` はステップを評価しません: `TRGLOB` は走らないので, 準備の後は準備が設定する量 (`T` 0; `RIPS`, または `MODELG` 3, 5, 8 では平衡の境界電流である `RIP`; `MODELG` 2, 3, 5, 7, 8, 9 では `Q0`)
+が新しく, ステップでしか計算されない量は前の計算のままです (そこで準備した状態を評価しないのは, `TRCALC` が `PELTIM` の
+ペレットを半ステップ以内の呼び出しごとに入射し, t = 0 での 2 回目の呼び出しで二度入射するためです). `GVT` の 89 列から
+88 + 4 `NGPST` 列は, `MDLST` /= 0 かつ `T` >= `TSST` になると鋸歯状振動の記録 (`TRATOTN`, 記録開始から数えた行) にも使われます.
+ライブラリモードでは `tr_eval` が `TRATOTN` を呼ばないので, そこでは常に `TRATOT` の値です (`TSST` は 1e9 s).
+`tr2` では, この記録が自分の行のこれらの列 (既定の `NGPST` 4 で 89 から 104 列: `PEXE` から `PICI`, `RR` から `AJTTOR`, `TAUE98`,
+`H98Y2`, `NLAV`) を上書きします.
 
 (reinit-constraints)=
 ## 再初期化の制約

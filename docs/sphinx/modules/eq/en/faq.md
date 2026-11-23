@@ -19,7 +19,7 @@ menu commands of the legacy `eqx2` CLI:
 | `mode` | Purpose | Legacy CLI command | Required setup |
 |---|---|---|---|
 | `0` | **Grad-Shafranov solve** (`EQCALC`, iterated to `EPSEQ`, + post-processing) | `R` (Run) -> `F` (Fields) | `MODELG ∈ {0, 1, 2}`, profile coefficients (`PP*`, `PJ*`, `FF*`, ...) |
-| `1` (default) | **Load an equilibrium file** (`equnit::eq_load`) | `L` (Load) | a file format: `MODELG` 3 or 9 (TASK/EQ), 5 or 25 (G-EQDSK) with `KNAMEQ` (filename), 8 (QST/JAEA) with `KNAMEQ` and `KNAMEQ2`; `MODELG = 15` reads `eqdb.dat` |
+| `1` (default) | **Load an equilibrium file** (`equnit::eq_load`) | `L` (Load) | a file format: `MODELG` 3 or 9 (TASK/EQ), 5 or 25 (G-EQDSK) with `KNAMEQ` (filename), 8 (QST/JAEA) with `KNAMEQ` and `KNAMEQ2`; `MODELG = 15` (`eqdb.dat`) is refused |
 
 `mode=1` is the default because it is the **standard file-driven
 workflow** (it fails with the default `MODELG=2`, which names no file
@@ -56,16 +56,23 @@ inconsistent. Common causes:
   `1e-6` to `1e-4` and retry
 - `NLPMAX` (maximum iterations) is too small — increase it from the
   default `100`
-- The load (`mode=1`) cannot open the file (it is not there); the
-  exception message ends with the reason (`eq.last_error()`). With
-  `MODELG` 3, 5, 8, 9 or 25, a file that is there but not of that format
-  gives no exception: their readers (`EQRTSK` for 3 and 9, `EQDSKR` for 5
-  and 25, `EQJAEAR` for 8) do not check their reads, and the process stops
-  with a Fortran runtime error (measured for `MODELG` 3, 5 and 8); the
-  reader of 15 (`eqdb.dat`) checks them and returns the error
+- The load (`mode=1`) cannot open the file (it is not there), or cannot
+  read it: the file is not of the format `MODELG` names (a TASK/EQ file
+  for 3 and 9, a G-EQDSK file for 5 and 25, a QST/JAEA pair for 8), is cut
+  short (a TASK/EQ file cut inside its last record still loads, with
+  `HJTRZ` 0), gives a grid size EQ cannot take, or, for 8, R and Z ranges
+  that are no grid (empty, falling or not finite) or no magnetic axis in
+  its psi; `run(1)` refuses 15 (`eqdb.dat`) before any read. The exception
+  message ends with the reason
+  (`eq.last_error()`), which names the file, e.g. `EQ_READ: MODELG=5 load
+  of KNAMEQ='eqdata.ITER01' failed: it does not read as a G-EQDSK file
+  (...)`; in the parentheses, the message of the read that failed, the
+  size, or for 8 the R and Z ranges. A load that cannot read its file puts the grid sizes back, but
+  the other parameters it read from the file before it failed (`RR`,
+  `BB`, `RIP`, ...) stay: set them again before a `run(mode=0)`
 
 `validate()` catches grid dimensions, a missing load file (a blank `KNAMEQ` or one naming no file,
-`KNAMEQ2` for `MODELG=8`, `eqdb.dat` for `MODELG=15`) and, for the
+`KNAMEQ2` for `MODELG=8`), the refused `MODELG=15` and, for the
 Grad-Shafranov solve, a wall inside the plasma, a negative current and a box
 (`MDLEQF >= 10`) the solve cannot use up-front; physical consistency is
 only known after `run()`.

@@ -225,9 +225,9 @@ def auto_setup(
 
         # 2. EQDSK 経由なら KNAMEQ を必須としてセット.
         #    eq_file が None なら KNAMEQ を明示的に空文字列にして
-        #    validate の FILE_MISSING に拾わせる (デフォルト
-        #    KNAMEQ='eqdata' をそのまま残すと validate を素通り
-        #    して run 時に ierr=3 で死ぬ).
+        #    validate の FILE_MISSING に拾わせる (デフォルトの
+        #    KNAMEQ='eqdata' も, 作業ディレクトリにそのファイルが
+        #    無ければ報告される).
         if params.get("MODELG") in (3, 5, 7, 8):
             tr.set_param_str("KNAMEQ", eq_file or "")
 
@@ -268,7 +268,7 @@ BETAN = 0.074
 
 ```text
 検出された問題 (1 件):
-  [FILE_MISSING] KNAMEQ: MODELG=3/5/7/8 requires non-blank KNAMEQ ...
+  [FILE_MISSING] KNAMEQ: MODELG=3 loads the file KNAMEQ names, and KNAMEQ is blank
 RuntimeError: 修正が必要な問題が 1 件残っています
 ```
 

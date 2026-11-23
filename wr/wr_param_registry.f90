@@ -122,7 +122,11 @@ CONTAINS
     CASE ("MODEL_PROF");  model_prof  = INT(value)
     CASE ("MODEL_NPROF"); model_nprof = INT(value)
     CASE ("MODEFW");      MODEFW      = INT(value)
-    CASE ("MODEFR");      MODEFR      = INT(value)
+    ! MODEFR is FROPEN's MODEP for the EQ load of MODELG 3, 5 and 8: 1 reads
+    ! the file name from standard input (unit 5, the stdio MCP servers'
+    ! channel) and other values are no mode, so only 0 is taken
+    ! (task-web-client #202).
+    CASE ("MODEFR");      IF (INT(value) /= 0) THEN; ierr = 1; ELSE; MODEFR = 0; END IF
     CASE ("IDEBUG");      IDEBUG      = INT(value)
     CASE ("MODELP");      IF (idx < 1 .OR. idx > SIZE(MODELP)) THEN; ierr = 1; ELSE; MODELP(idx) = INT(value); END IF
     CASE ("MODELV");      IF (idx < 1 .OR. idx > SIZE(MODELV)) THEN; ierr = 1; ELSE; MODELV(idx) = INT(value); END IF

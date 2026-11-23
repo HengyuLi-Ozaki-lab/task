@@ -107,10 +107,10 @@ int tr_run(int ntmax);
  * eq:NRMAX, ...; MODELG 9 sets EQ's wall and grid through them). An accepted
  * set makes the next tr_run prepare again. An unknown name returns
  * TR_ERR_INVALID. These are refused too (TR_ERR_INVALID, one line on unit 6):
- *  - eq:RR, eq:RA, eq:RKAP, eq:RDLT, eq:BB, eq:RIP and eq:KNAMEQ, which do
- *    nothing through TR (MODELG 9 overwrites EQ's copies from TR's device, and
- *    TR passes its own KNAMEQ to EQ): set TR's own RR, RA, ... instead (for
- *    eq:RIP, RIPS and RIPE);
+ *  - eq:RR, eq:RA, eq:RKAP, eq:RDLT, eq:BB, eq:RIP, eq:KNAMEQ and eq:KNAMEQ2,
+ *    which do nothing through TR (MODELG 9 overwrites EQ's copies from TR's
+ *    device, and TR passes its own KNAMEQ and KNAMEQ2 to EQ): set TR's own RR,
+ *    RA, ... instead (for eq:RIP, RIPS and RIPE; KNAMEQ2 is not settable);
  *  - every eq: name once the process has made its first preparation attempt
  *    (failed or not; across tr_finalize and tr_init): until the pinned bpsd has
  *    k-yoshimi/bpsd#7 an EQ grid change in one process corrupts memory, so eq:
@@ -162,6 +162,46 @@ int tr_last_error(tr_diag_entry_t* e);
  * pipeline. Non-mutating: pulls into local discardable types; does
  * not change tr_state_t contents. */
 void tr_check_bpsd_pull(int *ok);
+
+/* Outputs by name (PR 2 of #96). The scalars are TR's global results as TRGLOB last computed them (output steps
+   and the last step of a run), in the units of tr/trrslt_globals.f90; the names are listed by tr_scalar_name.
+   tr_scalar_count: the number of names (31).
+   tr_scalar_name: the i-th name (1-based) as a NUL-terminated string in buf of buflen characters;
+     TR_ERR_INVALID past either end or when the name and its NUL do not fit.
+   tr_get_scalar: the value of one name (exact, upper case); TR_ERR_NOT_INIT before tr_init, TR_ERR_INVALID for a
+     name not listed (*value is left as it was). After tr_init and before the first tr_run the values are those of
+     the previous lifecycle in this process (as tr_get_state's scalars are), 0 in a fresh process: read them after
+     a run of one step or more. A tr_run of 0 steps evaluates no step: after a preparation (a first run, or a run
+     after a changed parameter) what it sets is new (T 0; RIP, which is RIPS or, under MODELG 3, 5 and 8, the equilibrium's boundary current; Q0 under MODELG 2, 3, 5, 7, 8 and 9) and what only a
+     step computes (the powers, WPT) is still the run before's.
+   PNFT is the power of the charged fusion products (alpha for D-T, MDLNF 1 to 4; alpha and proton for D-He3, MDLNF
+     5 and 6) and QF = 5 PNFT / (POHT + PNBT + PRFST + PEXST) is the D-T gain whatever the reaction. RIP is the
+     equilibrium's boundary current under MODELG 3, 5 and 8, the experimental data's (RIPU) under MDLUF 1 and 3, the
+     current set (RIPS to RIPE) otherwise. */
+int tr_scalar_count(void);
+int tr_scalar_name(int i, char* buf, int buflen);
+int tr_get_scalar(const char* name, double* value);
+
+/* The run's history by name (PR 2 of #96, Task 5b). TR records a row every NGTSTP steps (default 2) in single
+   precision: the state at t = 0 first, then a row at every step that is a multiple of NGTSTP, so a call of tr_run adds the multiples among the steps it runs (nsteps / NGTSTP only when it starts on one: run(5) twice adds 3 and 3, run(1) adds 0 or 1).
+   tr_prep starts the history again (tr_run prepares again after a changed parameter). NTM = 10001 rows; when they
+   are full recording stops silently in TR, and tr_history_full reports it.
+   tr_history_length: rows recorded (0 before a run). tr_history_full: 1 when the rows are full, else 0.
+   tr_history_count / tr_history_name: the named columns, enumerated as tr_scalar_name does. "T" is the time;
+     the others are TR's names in tr/trrslt_globals.f90's TRATOT, in its units (see tr_mcp's get_history schema).
+   tr_history_get: copies the first min(n, rows) rows of the column `name` into buf and sets *got to that number.
+     TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for an unknown name or n < 0.
+   A run that fails on a negative temperature (TR_CHECK in tr_last_error) or with a state that is not finite
+   (NONFINITE) ends its history on the last recorded step: the failed step is not a row (tr2 records a TR_CHECK
+   one). A preparation that fails leaves no rows: tr_history_length is 0 until one succeeds. After a TR_CHECK
+   failure the scalars are the failed iterate's (tr_exec computes TRGLOB there), so they differ from the last row. Under MODELG 9 a step that ends with an EQ re-solve (a
+   multiple of NTEQIT) is recorded before the re-solve, which then recomputes Q0: that row's Q0 differs from
+   tr_get_scalar's; the other shared names agree. */
+int tr_history_length(void);
+int tr_history_full(void);
+int tr_history_count(void);
+int tr_history_name(int i, char* buf, int buflen);
+int tr_history_get(const char* name, double* buf, int n, int* got);
 
 #ifdef __cplusplus
 }

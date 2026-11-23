@@ -94,9 +94,9 @@ with Eq() as eq:
 `NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`, `NRVMAX`) を
 コンパイル時の上限と比べ, 読み込み (`run(mode=1)`) が読むファイルがあることを
 チェックします: `MODELG` 3, 5, 8, 9, 25 では `KNAMEQ` が空でなくファイルを指す
-こと (2 つのファイルを読む 8 では `KNAMEQ2` も), `MODELG` 15 では `KNAMEQ` の代わりに読む固定ファイル `eqdb.dat` があること
-(`MODELG` として報告). 名前は読み込みと同じく, `validate()` の時点の作業
-ディレクトリから探します. Grad-Shafranov 求解 (`run(mode=0)`.
+こと (2 つのファイルを読む 8 では `KNAMEQ2` も). 名前は読み込みと同じく, `validate()` の時点の作業
+ディレクトリから探します. `run(mode=1)` が読み込みを拒否する `MODELG` 15 は
+`MODELG` の `OUT_OF_RANGE` として報告します. Grad-Shafranov 求解 (`run(mode=0)`.
 ファイル形式以外のすべての `MODELG` はこれで解く) ではさらに次をチェックします:
 
 - 壁がプラズマを囲む: `RB >= RA` (`INCONSISTENT_PAIR`);

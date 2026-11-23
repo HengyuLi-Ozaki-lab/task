@@ -47,6 +47,42 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   - `trlib`: `TrFailure`, `TrlibRunError.failure` (`None` when the `.so` predates `tr_last_error`) and
     `Trlib.last_error()`. `tr_mcp`: the run error string carries the record, and `describe_parameters` has an
     `eq_names` line. TOT and the mono build stop and record too, but `tot_api.h` and `totlib` have no accessor yet.
+- **TR library: outputs by name** (the MODELG 9 heating study of task-web, #96 PR 2).
+  - `tr_scalar_count`, `tr_scalar_name`, `tr_get_scalar(name, &value)`: 31 global results as `TRGLOB` last computed
+    them (`T`, `WPT`, `AJT`, `Q0`, the betas, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`, `AJRFT`, `PNFT`, `QF`, `PINT`,
+    `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`,
+    `TAUE98`) in the units of `tr/trrslt_globals.f90` (`PINT` includes `PNFT`, the charged fusion products' power: the
+    alpha power, `P_fus/5`, for D-T; alpha and proton together for D-He3, `MDLNF` 5 and 6, where `QF`, a D-T gain, is
+    five times the gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8 and the experimental
+    data's under `MDLUF` 1 and 3). They are current after
+    a `tr_run` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
+    0 steps evaluates no step: what the preparation sets (`T` 0; `RIP`, which is `RIPS` or, under `MODELG` 3, 5 and 8, the equilibrium's boundary current; `Q0` under `MODELG` 2, 3, 5, 7, 8 and 9) is
+    new, what only a step computes (the powers, `WPT`) is still the run before's. `tr_mcp`'s `get_state` and
+    `run_and_get_state` return `T` only among the scalars until a run of one step or more since the handle was opened
+    or a parameter was written (a refused write changes nothing), and none before the handle's first successful
+    preparation (`T` is the handle before's until then); a failed run counts as evaluated only when it left a history
+    row. `TrState.scalars` keeps the 14 values `tr_get_state` copied and reads only the others by name. An
+    unknown or inexact name returns `TR_ERR_INVALID` and leaves the value alone. `Trlib.scalar_names()`,
+    `Trlib.get_scalar()`; `TrState.scalars` holds all 31 after `get_state` (`to_dict()` keeps the 14 of the C struct,
+    which the baselines compare).
+  - `tot_get_scalar("tr:<NAME>", &value)` and `Tot.get_scalar` ask TR the same way (`tot_api.h`, `totlib`).
+  - `tr_mcp`: `get_state` returns the 31 scalars; `describe_state_schema` lists each with its unit and meaning, and a
+    test fails when the library lists a name the schema lacks.
+- **TR library: the run's history by name.** TR records a row every `NGTSTP` steps (default 2) in single precision
+  (`GT`, `GVT` of `TRATOT`); `tr_history_length`, `tr_history_full`, `tr_history_count`, `tr_history_name` and
+  `tr_history_get(name, buf, n, &got)` read it without cutting the run: 47 columns (`T`, the central and average
+  densities and temperatures `NE0`, `NEAV`, `TE0`, `TI0`, `TEAV`, `TIAV`, `NLAV`, `WPT`, the currents, `PINT`, `POHT`,
+  `PNBT`, the EC/LH/IC powers to electrons and ions, `PNFT`, `POUT`, `PRLT`, `VLOOP`, `Q0`, `RQ1`, `ALI`, the confinement
+  times, the betas, `QF`, `RIP`, ... and `BETAN`, `PRFST`, which are computed from the row). The first row is the state
+  at t = 0, a row is recorded at every step that is a multiple of `NGTSTP` (a call of `tr_run` adds `nsteps / NGTSTP` rows only when it
+  starts on one: `run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1), and `tr_prep` (every first run and every run after a
+  changed parameter) starts the history again. The history holds `NTM` = 10001 rows and TR then stops recording
+  silently; `tr_history_full` says when. A long run sets `NGTSTP` so that steps / `NGTSTP` < 10001.
+  `Trlib.history(names=None)` returns `{name: ndarray}` (float64 from the single-precision rows: about 7 digits),
+  with `history_names`, `history_length`, `history_full`; `tot_history_*` and `Tot.history` take `tr:<NAME>` names;
+  `tr_mcp` has `get_history` and `describe_history_schema` (unit and meaning of each column). Under `MODELG` 9 the row
+  of a step that ends with an EQ re-solve (a multiple of `NTEQIT`) holds the `Q0` of before the re-solve, which then
+  recomputes it (`get_scalar` gives the one after); the other shared names agree with `get_scalar`.
 - **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
   re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
   (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
@@ -213,17 +249,93 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   defaults with `PN(2) = 0`). `validate()` now reports it as `PN[ns]`
   (`OUT_OF_RANGE`), and `tr_run` returns `TR_ERR_INVALID` before `tr_prep`,
   as for a negative density. **A change of behaviour**: such a run used to
-  be made. Not refused: a centre density far below the edge's, which fails
-  too (`PN(2)` = 1e-9, 1e-6 and 1e-4 end with `ierr=3` within 10 steps).
+  be made. Not refused: a centre density near zero, which fails too when it
+  is far below the edge's (on TR's defaults, with the plasma kept
+  quasi-neutral, `PN/PNS` = 2e-3 and below end with `ierr=3`; 0.01
+  completes). This entry first said `PN(2)` = 1e-9, 1e-6 and 1e-4 showed
+  that; those runs lowered the ions alone, under electrons at 0.5, so they
+  were far below the electrons as well (the next entry,
+  task-web-client#200) and do not tell the two causes apart.
 
+- **TR library: `validate()` reports densities that are not quasi-neutral**
+  (MS10-DP-ISSP/task-web-client#200). TR takes the electrons' density equal
+  to the ions' charge density, `PN(1) = sum PZ(s)*PN(s)` over `s = 2..NSMAX`
+  (`trprof` dilutes the main ions by the impurity model's charge, which it
+  takes in proportion to the electrons), and nothing made the namelist agree.
+  `validate()` now reports a difference above 1e-3 of the larger, at the
+  centre as `PN[1]` and at the edge as `PNS[1]` (`INCONSISTENT_PAIR`), outside
+  the UFILE modes `MDLUF` 1/2/3 and not beside a finding of the
+  species-profile checks. `tr_run` does not refuse it: on TR's defaults
+  (`PN(1) = 0.5`), `PN(2)` from 0.005 to 0.05 fails at step 0 (`NEGATIVE
+  TEMPERATURE AT STEP 0`), and 0.1 and 0.4 complete. **A change of
+  behaviour** for a caller of
+  `validate()`: a configuration it passed may now return these findings
+  (two tests of the species checks had species 3 without its electrons).
+  The measured limits are in the TR parameter documentation (section 3); no
+  lower bound on a positive centre density or on `PN/PNS` is checked.
+
+- **TR library: `validate()` reports a `KNAMEQ` that names no file, and `MODELG = 8`'s `KNAMEQ2`; a `MODELG = 7` run
+  whose VMEC file is missing or cannot be opened fails** (MS10-DP-ISSP/task-web-client#201). `validate()` reported a
+  blank `KNAMEQ` only, for `MODELG` 3, 5, 7 and 8. It now also reports a `KNAMEQ` that names no file (`FILE_MISSING`,
+  as EQ's `validate()` does since task-web-client#191; a name is looked up relative to the working directory at the
+  time of the call), and for `MODELG` 8 a blank `KNAMEQ2`: TR hands EQ its own, which `tr_set_param_str` does not
+  set, so through the library `MODELG = 8` always gets that finding; `eq:KNAMEQ2`, which `tr_set_metric` overwrote,
+  is refused like `eq:KNAMEQ`. With `MODELG = 7`, `tr_set_metric` went on after `pl_vmec` failed, the next call
+  setting `ierr` again: a run whose VMEC file was missing completed with 10 non-finite scalars (TR's defaults,
+  `NTMAX` 2); it now fails in the preparation, and so does `tr2`'s `R`, which returns to the menu. A VMEC file that
+  opens but does not read still ends the process (`pl/plvmec.f90` reads it without `IOSTAT` and has `STOP`s). The
+  failure record says why: `PREP_FAILED` "pl_vmec (ierr=7) could not open KNAMEQ='...'" for `MODELG` 7, and for 3, 5
+  and 8, where it was `PREP_FAILED` "tr_prep failed", `EQ_FAILED` "eq_load: " and EQ's reason, which for a file
+  `EQ_READ` could not read names it. `tr_last_error` keeps 102 characters of detail, so a name is whole there up to
+  about 50 characters (60 for `MODELG` 7); `validate()` names it whole. **A change of behaviour**: `validate()`
+  returns these findings for configurations it passed (the default `KNAMEQ = 'eqdata'` too, when the working
+  directory holds no such file); `eq:KNAMEQ2` raises; the `MODELG = 7` run fails where it completed; the record of a
+  failed load changes kind.
+
+- **EQ and WR libraries: `set_param` takes `MODEFR` = 0 only** (MS10-DP-ISSP/task-web-client#202). `MODEFR` is
+  `FROPEN`'s `MODEP` for every load (`lib/libfio.f90`): with 1 it reads the file name from standard input, which for
+  the stdio MCP servers is the protocol's channel, and other values are no mode (`FROPEN`'s `IERR` 3). Measured: a
+  `MODELG = 3` load through eqlib with `MODEFR = 1` took the next line of standard input as the file name and failed
+  naming `KNAMEQ`, the file that was there; through wrlib the same. EQ's and WR's registries now refuse every value
+  but 0 (after `INT`), and so do EQ's `eq:` names through TR and TOT. **A change of behaviour**: `set_param("MODEFR",
+  1)` raises, where it was taken.
+
+- **EQ library: `run(1)` refuses `MODELG = 15`** (MS10-DP-ISSP/task-web-client#203). Its reader, `EQDSK`
+  (`eq/equread.f90`), passes `equ_set_psi` (`eq/equintf.f90`) one of the three arrays it takes, as it has since
+  `equ_set_psi` took three (`11987b21`, 2017-01-05; the same in the original TASK), so the load of a well-formed
+  `eqdb.dat` ended the process with SIGSEGV in `equ_set_psi` (measured with a minimal file that both of its `READ`s
+  take); and it never passes the file's p and F profiles (`equ_set_fluxfn` is not called). `run(1)` now returns
+  `EQ_ERR_INVALID` before any work, with the reason in `eq_last_error`, and `validate()` reports `MODELG` 15 as
+  `OUT_OF_RANGE` whatever the files, in place of task-web-client#191's `FILE_MISSING` for a missing `eqdb.dat`. The
+  reader is left as it is, for the TASK developers; #191's error returns for a missing, short or unreadable
+  `eqdb.dat` are no longer reached through the library. **A change of behaviour**: a `MODELG = 15` load that failed
+  with `EQ_ERR_CALC_FAILED`, or ended the process, is refused.
+
+- **TR library: a run made in several `tr_run` calls records the step at each cut once in the history.** In library
+  mode every call began with an evaluation of the step the call before ended on, which wrote that step's row of
+  `GT`/`GVT` a second time (with `WPDOT` 0). It is not recorded again (`tr/trexec.f90`, `tr_eval`); the profile history
+  (`TRATOG`) and `TRSNAP`'s print still repeat the step and are not exported. `tr2` is unchanged.
+- **TR library: the failed iterate of a negative-temperature failure is not a row of the history.** `tr_exec` records
+  it for `tr2`'s graphics (`TRATOT` at the failure, at the time of the step before and outside the `NGTSTP` cadence:
+  `DT` 100 s gave a row at 800 s with `TE0` 3.7e6 after that step's own row). In library mode it is not recorded; the
+  history ends on the last recorded step and `tr_last_error` says where the run failed (`tr/trexec.f90`). `tr2` is
+  unchanged. Likewise a step that `tr_loop` finds not finite (`NONFINITE`) is taken back from the history
+  (`tr_eval_take_back_row`; `DT` 1e6 s left a row of NaN), and a preparation that fails before it starts the history
+  again (`MODEL_PNF` and `MDLNF` both set) leaves no rows: they were the run before's. A retry on the same handle
+  does not record the rejected step again, and `tr_eval` does not call `TRATOTN` in library mode (the sawtooth
+  record, which writes temperatures into `GVT` columns 89 to 104 of its own rows).
+- **`tot/Makefile`: the delegated TR targets (`../tr/libtr2.a`, `../tr/libtrapi.so`, `../tr/obj/tr_api.o`) depend on
+  TR's sources; `tr/Makefile`: `trloop.o` depends on `trexec.o` (static and PIC).** `tot_api.f90` uses `tr_api`'s new
+  names, and an incremental build compiled it against the old `tr_api.mod`, or linked an old solver, because an
+  existing library kept TR's own make from running; `trloop.f90` calls `trexec`'s new `tr_eval_take_back_row`.
 - **TR library: a run that ends on an EQ failure or a non-finite state fails in library mode.** The periodic
   `MODELG` 9 re-solve (`NTEQIT`) used to ignore a failing `eq_calc`, and a NaN in the state went on to the end of
   the run. Now the run stops at the first failure with a `tr_last_error` record. `MODELG` 0, 4 and 25, and
   `RIPS` = 0, which returned RC 0 with about 10 non-finite scalars, fail with `NONFINITE` at nt 1 (task-web's
   `non_finite` flag no longer sees them). On flat 9 MA ITER `MODELG` 9 with `NTEQIT` 50 and heating, the run stops
-  at t = 12 s (code 103, the axis leaves the plasma), where it printed `XX EQAXIS` lines to 37 s. `tr2` is
-  unchanged by this entry (its loop does not test the re-solve); see the #228 entry under Fixed for what changed in
-  `tr2`'s `R`.
+  at t = 12 s (code 102, the axis search ends at a point that is not finite), where it printed `XX EQAXIS` lines
+  to 37 s. `tr2` is unchanged by this entry (its loop does not test the re-solve); see the #228 entry under Fixed
+  for what changed in `tr2`'s `R`.
 - **tr / fp / ti libraries, `Tot` and `tot_mcp`: a parameter set after a
   run re-preps the module, whoever set it (#253).** `tr_set_param` /
   `fp_set_param` / `ti_set_param` used to clear the module's private
@@ -284,6 +396,27 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **EQ: a load of a file that is not of the format `MODELG` names returns an error where it ended the process**
+  (the library-reachable abort of `CLAUDE.md`, #142). `EQRTSK` (`MODELG` 3 and 9), `EQDSKR` (5 and 25) and `EQJAEAR`
+  (8) did not check their reads: `run(1)` with a file of another format, or one cut short, ended the host process
+  with a Fortran runtime error (exit status 2; e.g. `eqdata.ITER01` with `MODELG` 5 at `eq/eq-eqdsk.f90:31`, "Bad
+  value during integer read"), and a grid size read from such a file was a loop bound before anything checked it
+  (a formatted read of a binary file can give `NRGMAX` 0; `eqdata.ITER01` read as a QST/JAEA file gives
+  -858993459). Each read now goes to an error branch that closes the unit and returns `IERR` 9, each size is checked
+  before it is used (`EQ_READ_SIZE`, `eq/eqfile.f90`: at most its array; at least 2 for `NRGMAX`, `NZGMAX`,
+  `NPSMAX`, `NSGMAX`, `NTGMAX` and `NRVMAX` and 1 for `NTVMAX`, below which `run(0)` ends the process (`EQSAVE` can
+  write less, e.g. after a G-EQDSK load with less set); at least 0 for the rest), and `eq_last_error` names the file
+  and the format, e.g. "EQ_READ: MODELG=5 load of KNAMEQ='eqdata.ITER01' failed: it does not read as a G-EQDSK file
+  (Bad value during integer read)". The sizes of a file's first records go to locals, so a file that fails there
+  changes no parameter; one that fails later leaves what was read, but `EQ_READ` puts every grid size back (`NRGMAX`
+  to `NTVMAX`) when it fails, as one that fits its array can still be wrong for the next solve. `EQJAEAR`'s second
+  file (`KNAMEQ2`) is read the same way, and where its psi has no magnetic axis it returns `IERR` 10, where it ran
+  `STOP`. In `EQRTSK` a file that ends before its last record (`HJTRZ`) is an error too; a last record that does not
+  read (too short for its list, or cut inside) still leaves `HJTRZ` 0 and loads. A file that reads, with sizes in
+  those ranges, loads as before. `fp_mcp`'s descriptions of `KNAMEQ` said such a file ends the server process; it fails
+  the run now. Not changed: the callers of the load that drop a nonzero `IERR`, as they did for a missing file
+  (`wrx/wrprep.f90`; `wm`, `wmx` and `wmseki`, which return on `IERR` 1 only; `fp/fpprep.f90` under MPI, on rank 0
+  only; the test programs `eq/pltest.f` and `eq/trtest.f`).
 - **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
   and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
   `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first
@@ -379,6 +512,57 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   the box around it (ierr=103)", where an analytic solve said "EQCALC failed
   (ierr=103)". `validate()` still cannot
   see it for a load: the axis is known only once the file is read.
+- **EQ library: `MODELG = 8`'s reader refuses R and Z ranges that are no
+  grid, and an axis search that ends at a point that is not finite says so**
+  (MS10-DP-ISSP/task-web-client#204). `EQJAEAR` (`eq/eq-qst.f90`) read
+  `KNAMEQ` and `KNAMEQ2` with no `IOSTAT` and stopped with `STOP` when the psi
+  map had no axis. Fork PR #31, merged before this entry's pull request, gives
+  it the checks every reader of `KNAMEQ` now has: a short or malformed file
+  and a grid outside 2 to 513 points a side return `IERR` 9 with the readers'
+  shared reason, and a map without an axis `IERR` 10. This entry adds what
+  those checks do not see: an R or Z range that is empty or not finite (it
+  leaves no axis to find: before #31 the process ended, on #31's reader a
+  3 x 3 map of it returns "no magnetic axis found") or falling (taken as
+  given, where `GETRZ`, which PL's field lookups go through, finds no point
+  inside a falling grid) is refused, as
+  "EQ_READ: MODELG=8 load of KNAMEQ='jaea.dat' failed: it does not read as a
+  QST/JAEA file (R from 5.0000E-01 to 1.0000E-01, Z from -3.0000E-01 to
+  3.0000E-01: no grid)". `find_axis` (`eq/eqsub.f90`) set `IERR=102` when Newton's method did not converge, in
+  a variable of its own, and its callers, `EQAXIS` (loads through `EQCALQ`,
+  the Grad-Shafranov solve) and `EQJAEAR`, went on from the search's last point.
+  That point is the best one the search found, and runs depend on going on
+  from it: with `MODELG = 9`, 23 of 60 runs (TR's defaults varied, and its
+  three fixtures) met such failures in their re-solves (IER 1 and 2), and 6
+  of them completed with finite results. So
+  `find_axis` returns 102 only when the point is not finite: "EQAXIS: the
+  search for the magnetic axis from (R, Z) = (...) did not converge (NEWTN
+  IER=n): it ended at a point that is not finite (ierr=102)", where a
+  g-eqdsk load whose psi is a ramp in R, and a Grad-Shafranov solve with `RIP = 0` or
+  `NZGMAX = 2`, said "ended at (R, Z) = (NaN, NaN), outside ...
+  (ierr=103)" and a `MODELG = 8` load ended the process (a map whose
+  spline is NaN, on the `-O0` build with run-time checks). From a finite
+  point both go on as before, and no run changes (on `0e83ad3d`): the 60
+  TR runs end the same way with the same scalars, bit for bit, before and
+  after, and so do 70 Grad-Shafranov solves and a file load of task-web's six EQ
+  presets, with the shape, the current and the mesh varied (none of which
+  meets a failed search). Not changed: `find_xpoint1` and `find_xpoint2`, which
+  `MODELG = 8` calls for its X-points, keep their `IERR` to themselves the
+  same way; and a `MODELG = 8` map whose search fails at a finite point (a
+  ramp in R with a bump, a minimum of |grad psi| and no stationary point)
+  still ends the process further on, in `eqcalq.f90` (an index below an
+  array's bound, as on `0e83ad3d`). **A change of behaviour**: a
+  `MODELG = 8` file with a falling R or Z range is refused, where it was
+  read, and a search that ends at a point that is not finite reports
+  `ierr=102` where it reported 103 (task-web's wiki quotes 103 for
+  `RIP = 0` and `NZGMAX = 2`: task-web-client#205). Under TR's `MODELG = 9`,
+  whose q-scaling and library-mode re-solves record EQ's status since fork
+  PR #25, such a search ends the run with `EQ_FAILED` 102 where it ended
+  with 103, the outcome the same. Measured 2026-11-18: `RIPS` 0, 0.3 and
+  100 MA on TR's other defaults, and 10 MA with `RKAP` 2, or with `RKAP`
+  1.6 and `RDLT` 0.3; the flat 9 MA ITER case of the entry "TR library: a
+  run that ends on an EQ failure or a non-finite state fails in library
+  mode" under Changed, at nt 600, t = 12 s. 0.5 MA, whose search ends at a
+  finite point outside the box, stays 103.
 - **TR documentation: `CDH` and `CNH` weigh `chi_NC`** (the neoclassical
   `AKNC`), not `chi_NCLASS`: NCLASS needs `MDNCLS`, which the registry does
   not take (HengyuLi-Ozaki-lab/task-web-client#43). Text and comments only.
@@ -530,6 +714,29 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   one attempt takes minutes (about 4 for the 3.11 job), and the step now
   fails after one or two.
   `clean-tree-build.yml` also runs when the script changes.
+- **wrx, wm, wmx, wmseki, fp and EQ's two test programs: the routines that
+  load the equilibrium file return on every nonzero `IERR` of the load.**
+  `wr_prep` (`wrx/wrprep.f90`) printed the `IERR` of a failed `eq_load`
+  (`MODELG` 3 and 5) or `eq_read` (8) and went on: the plasma bounds came
+  from an earlier run or were zero, the `IERR` was lost in `pl_load` and
+  `dp_prep_ns` (which sets it to 0), and `wrx_run` returned `WRX_OK` with
+  NaN powers, or ended the host process in the `STOP` of `BESSJN`
+  (`lib/libbes.f90`): the ITER01 case of `python/wrxlib` with `MODELG` 3
+  and no `eqdata` did. `wr_prep` now returns the load's `IERR` and
+  `wrx_run` returns `WRX_ERR_CALC_FAILED`
+  (`python/wrxlib/tests/test_eq_load_errors.py`); the next run loads the
+  file again. `WMXRZF` (`wm/wmsetg.f`, `wmseki/wmsetg.f`) and `wmsetg_eq`
+  (`wmx/wmsetg.f90`) returned on `IERR` 1 only, and for another code went
+  on and remembered `KNAMEQ` as loaded; they return on every nonzero code
+  and forget the last load, so the next call loads the file again. (The
+  eigenvalue search of all three, `DIAMIN`, still goes on to solve after
+  a failed `WMSETG`; with a missing file it now tries the load, and
+  prints its error, at every evaluation, and with `MODEFR` 1 asks for the
+  file name each time.)
+  Under MPI, `fp_mesh` (`fp/fpprep.f90`) returned on rank 0 alone when the
+  load failed, and the other ranks waited in `fp_eq_broadcast`; rank 0 now
+  broadcasts the code first and every rank returns. `eq/pltest.f` and
+  `eq/trtest.f` go back to their prompt on any nonzero code.
 - **tot docs and `tot_mcp`: string parameters and the tool count** (#274).
   The tot Sphinx pages showed `tot.set_param_str("fp:KNAMEQ", ...)` and
   `("wr:KNAMEQ", ...)`, which tot refuses: it passes string values on for

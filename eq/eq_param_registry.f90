@@ -177,7 +177,11 @@ CONTAINS
     CASE ("MODELG"); MODELG = INT(value)
     CASE ("MODELQ"); MODELQ = INT(value)
     CASE ("IDEBUG"); IDEBUG = INT(value)
-    CASE ("MODEFR"); MODEFR = INT(value)
+    ! MODEFR is FROPEN's MODEP for every load: 1 reads the file name from
+    ! standard input (unit 5, the stdio MCP servers' channel) and other
+    ! values are no mode (FROPEN's IERR 3), so only 0 is taken
+    ! (task-web-client #202).
+    CASE ("MODEFR"); IF (INT(value) /= 0) THEN; ierr = 1; ELSE; MODEFR = 0; END IF
     CASE ("MODEFW"); MODEFW = INT(value)
     CASE ("MDLEQF"); MDLEQF = INT(value)
     CASE ("MDLEQC"); MDLEQC = INT(value)

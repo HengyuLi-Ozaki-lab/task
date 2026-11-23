@@ -168,7 +168,7 @@ Python change is required — the wrapper forwards names verbatim.
 | Plasma scalars (plcomm) | `NSMAX` | INT cast |
 | Plasma per-species (1..NSM) | `PA[i]`, `PZ[i]`, `PN[i]`, `PNS[i]`, `PTPR[i]`, `PTPP[i]`, `PTS[i]`, `PU[i]`, `PUS[i]`, `PZCL[i]` | doubles, 1-origin |
 | Profile shape (plcomm) | `PROFN1`, `PROFN2`, `PROFT1`, `PROFT2`, `PROFU1`, `PROFU2`, `RHOMIN`, `QMIN`, `RHOEDG`, `PPN0`, `PTN0`, `RF_PL` | scalars |
-| Model switches (plcomm / dpcomm) | `MODELG`, `MODELQ`, `MODEL_PROF`, `MODEL_NPROF`, `MODEFW`, `MODEFR`, `IDEBUG`, `MODELP[i]`, `MODELV[i]`, `NCMIN[i]`, `NCMAX[i]` | INT cast |
+| Model switches (plcomm / dpcomm) | `MODELG`, `MODELQ`, `MODEL_PROF`, `MODEL_NPROF`, `MODEFW`, `MODEFR`, `IDEBUG`, `MODELP[i]`, `MODELV[i]`, `NCMIN[i]`, `NCMAX[i]` | INT cast; `MODEFR` takes 0 only (1 would read a file name from standard input) |
 | WR control scalars (wrcomm) | `NRAYMAX`, `NSTPMAX`, `NRSMAX`, `NRLMAX`, `LMAXNW`, `mode_beam`, `MDLWRI`, `MDLWRG`, `MDLWRP`, `MDLWRQ`, `MDLWRW`, `MODEW`, `nres_max`, `nres_type`, `mode_wline`, `SMAX`, `DELS`, `UUMIN`, `EPSRAY`, `DELRAY`, `DELDER`, `DELKR`, `EPSNW`, `Rmax_wr`, `Rmin_wr`, `Zmax_wr`, `Zmin_wr`, `pne_threshold`, `bdr_threshold` | mixed int/double |
 | WR per-ray initial conditions (wrcomm) | `RFIN[i]`, `RPIN[i]`, `ZPIN[i]`, `PHIIN[i]`, `RKRIN[i]`, `RNZIN[i]`, `RNPHIIN[i]`, `ANGZIN[i]`, `ANGPHIN[i]`, `UUIN[i]`, `MODEWIN[i]`, `RCURVAIN[i]`, `RCURVBIN[i]`, `RBRADAIN[i]`, `RBRADBIN[i]` | 1-origin; MODEWIN INT cast |
 

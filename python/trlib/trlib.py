@@ -20,7 +20,7 @@ import re
 import weakref
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Optional
+from typing import Dict, Iterable, List, Optional, Union
 
 from . import _ffi
 from .errors import (
@@ -300,7 +300,128 @@ class Trlib:
         c = _ffi.TrStateC()
         ierr = self._lib.tr_get_state(ctypes.byref(c))
         raise_for_ierr("tr_get_state", ierr)
-        return TrState.from_c(c)
+        state = TrState.from_c(c)
+        # All the named scalars, in the library's order. The 14 of the struct keep the values tr_get_state copied
+        # (the 1e-10 baselines compare to_dict(), so a fault in that copy must still show); the others are read by
+        # name. A library built before the scalar table (PR 1's) keeps the 14 that from_c filled.
+        if hasattr(self._lib, "tr_scalar_count") and hasattr(self._lib, "tr_get_scalar"):
+            struct = dict(state.scalars)
+            named = {n: (struct[n] if n in struct else self.get_scalar(n)) for n in self.scalar_names()}
+            state.scalars = {**named, **{k: v for k, v in struct.items() if k not in named}}
+        return state
+
+    # --- outputs by name (PR 2 of #96) ----------------------------------
+    def _scalar_fn(self, symbol: str):
+        try:
+            return getattr(self._lib, symbol)
+        except AttributeError as exc:
+            raise TrlibError(
+                f"libtrapi.so does not export {symbol}; rebuild the shared library."
+            ) from exc
+
+    def scalar_names(self) -> List[str]:
+        """The names :meth:`get_scalar` accepts, in the library's order (31)."""
+        if self._closed:
+            raise TrlibError("scalar_names on closed Trlib")
+        count = int(self._scalar_fn("tr_scalar_count")())
+        fn = self._scalar_fn("tr_scalar_name")
+        names = []
+        for i in range(1, count + 1):
+            buf = ctypes.create_string_buffer(64)
+            raise_for_ierr(f"tr_scalar_name({i})", fn(i, buf, 64))
+            names.append(buf.value.decode("ascii"))
+        return names
+
+    def get_scalar(self, name: str) -> float:
+        """One global result by name, as of the last step TR computed the globals on.
+
+        TRGLOB computes them on output steps and on the last step of a run, so they are current after
+        :meth:`run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
+        run after a changed parameter) what it sets is new (``T`` 0; ``RIP``, which is ``RIPS`` or, under ``MODELG``
+        3, 5 and 8, the equilibrium's boundary current; ``Q0`` under ``MODELG`` 2, 3, 5, 7, 8 and 9) and what only a
+        step computes (the powers, ``WPT``) is still the run before's. Units are those of
+        ``tr/trrslt_globals.f90`` (``tr_mcp``'s state schema lists them; ``PNFT`` is the charged fusion products'
+        power, alpha only for D-T, and ``RIP`` the equilibrium's boundary current under ``MODELG`` 3, 5 and 8 and the
+        experimental data's under ``MDLUF`` 1 and 3).
+        An unknown name raises :class:`TrlibParamError`.
+        """
+        if self._closed:
+            raise TrlibError("get_scalar on closed Trlib")
+        fn = self._scalar_fn("tr_get_scalar")
+        value = ctypes.c_double(0.0)
+        ierr = fn(_encode_name(name), ctypes.byref(value))
+        raise_for_ierr(f"tr_get_scalar('{name}')", ierr)
+        return float(value.value)
+
+    # --- the run's history by name (PR 2 of #96, Task 5b) ----------------
+    def history_names(self) -> List[str]:
+        """The names of the recorded columns, "T" (the time) first."""
+        if self._closed:
+            raise TrlibError("history_names on closed Trlib")
+        count = int(self._scalar_fn("tr_history_count")())
+        fn = self._scalar_fn("tr_history_name")
+        names = []
+        for i in range(1, count + 1):
+            buf = ctypes.create_string_buffer(64)
+            raise_for_ierr(f"tr_history_name({i})", fn(i, buf, 64))
+            names.append(buf.value.decode("ascii"))
+        return names
+
+    def history_length(self) -> int:
+        """Rows recorded since the last preparation: the state at t = 0, then one per ``NGTSTP`` steps.
+
+        A row is recorded at every step that is a multiple of ``NGTSTP``, so a call of :meth:`run` adds the multiples among the
+        steps it runs (``nsteps // NGTSTP`` only when it starts on one: ``run(5)`` twice adds 3 and 3, ``run(1)`` adds 0 or 1). 0 before the
+        first run. ``tr_prep`` starts the history again, so a run after a changed parameter does.
+        """
+        if self._closed:
+            raise TrlibError("history_length on closed Trlib")
+        return int(self._scalar_fn("tr_history_length")())
+
+    def history_full(self) -> bool:
+        """True when the history holds 10001 rows (``NTM``): TR then stops recording, silently on its side."""
+        if self._closed:
+            raise TrlibError("history_full on closed Trlib")
+        return bool(self._scalar_fn("tr_history_full")())
+
+    def history(self, names: Union[None, str, Iterable[str]] = None) -> Dict[str, "object"]:
+        """The recorded columns by name, as ``{name: numpy.ndarray}`` of float64 (lists without numpy).
+
+        ``names`` is one name, several, or ``None`` for every column of :meth:`history_names`. The values are
+        TR's single-precision history. The last row agrees with :meth:`get_scalar` to about 1e-7 (relative) only
+        when the last step of the call was recorded (a multiple of ``NGTSTP``) and the buffer was not full: after
+        ``run(1)`` with the defaults ``history("T")["T"][-1]`` is 0 while ``get_scalar("T")`` is ``DT``, and
+        recording stops at capacity (:meth:`history_full` is true), so the history lags the state once the run
+        advances past it; a history that fills exactly at the end of a call is still current. Under ``MODELG`` 9 a
+        step that ends with an EQ re-solve (a multiple of ``NTEQIT``) is recorded before the re-solve, which then
+        recomputes ``Q0``: that row's ``Q0`` is the one of before it. A run that fails on a negative temperature
+        (``TrlibRunError``, kind ``TR_CHECK``) or with a state that is not finite (``NONFINITE``) ends the history on
+        the last recorded step; the failed step is not a row (after ``TR_CHECK`` :meth:`get_scalar` gives the failed
+        iterate's globals, which ``tr_exec`` computes there). A failed preparation leaves no rows. An unknown name
+        raises :class:`TrlibParamError`.
+        """
+        if self._closed:
+            raise TrlibError("history on closed Trlib")
+        if names is None:
+            wanted = self.history_names()
+        elif isinstance(names, str):
+            wanted = [names]
+        else:
+            wanted = list(names)
+        fn = self._scalar_fn("tr_history_get")
+        rows = self.history_length()
+        out: Dict[str, object] = {}
+        for name in wanted:
+            buf = (ctypes.c_double * max(rows, 1))()
+            got = ctypes.c_int(0)
+            raise_for_ierr(f"tr_history_get('{name}')", fn(_encode_name(name), buf, rows, ctypes.byref(got)))
+            values = buf[: int(got.value)]
+            if _ffi.HAS_NUMPY:
+                import numpy as np
+                out[name] = np.array(values, dtype=np.float64)
+            else:  # pragma: no cover - numpy is optional
+                out[name] = list(values)
+        return out
 
     # --- validation (Issue #143) ---------------------------------------
     def validate(self) -> List[TrDiagEntryPy]:

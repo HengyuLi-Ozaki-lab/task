@@ -48,6 +48,7 @@ CONTAINS
          call eq_load(modelg,knameq,ierr) ! load eq data and calculate eq
          IF(ierr.NE.0) THEN
             WRITE(6,*) 'XX eq_load: ierr=',ierr
+            call tr_load_failure(ierr,'eq_load')
             RETURN
          ENDIF
          call tr_bpsd_get(ierr)  ! 
@@ -55,6 +56,15 @@ CONTAINS
 !         call trgout
       elseif(modelg.eq.7) then
          call pl_vmec(knameq,ierr) ! load vmec data
+!        A file pl_vmec cannot open returns here: the call below set ierr
+!        again, and the run went on without the metric, to non-finite
+!        results (task-web-client #201). A file that opens but does not
+!        read still ends the process (pl/plvmec.f90 reads without IOSTAT).
+         IF(ierr.NE.0) THEN
+            WRITE(6,*) 'XX pl_vmec: ierr=',ierr
+            call tr_load_failure(ierr,'pl_vmec')
+            RETURN
+         ENDIF
          call tr_bpsd_get(ierr)  ! 
 !         call trgout
       elseif(modelg.eq.9) then
@@ -304,6 +314,39 @@ CONTAINS
       WRITE(detail,'(A,I0,A,A)') 'tr_set_metric q-scaling, iteration ',it,': ',what
       CALL tr_failure_record(TRF_EQ_FAILED,code,0,t,detail)
       END SUBROUTINE tr_qscale_failure
+
+
+!     ***********************************************************
+
+!           RECORD A FILE THE PREPARATION COULD NOT LOAD
+
+!     ***********************************************************
+
+!     tr_set_metric calls this when equnit's eq_load (MODELG 3, 5, 8) or
+!     pl_vmec (MODELG 7) fails, so that tr_last_error says why: an
+!     EQ_FAILED record carries EQ's reason (EQ_ERRMSG), which for a file
+!     EQ_READ could not read names it; pl_vmec gives none, so the record
+!     names KNAMEQ, last, as tr_last_error cuts its message at 127
+!     characters (task-web-client #201).
+
+      SUBROUTINE tr_load_failure(code,what)
+      USE trcomm, ONLY : t, knameq
+      USE trfailure, ONLY : tr_failure_record, TRF_EQ_FAILED, TRF_PREP_FAILED
+      IMPLICIT NONE
+      INTEGER, INTENT(IN) :: code
+      CHARACTER(LEN=*), INTENT(IN) :: what
+      CHARACTER(LEN=200) :: detail
+      INTEGER :: ios
+      IF(what.EQ.'eq_load') THEN
+         CALL tr_failure_record(TRF_EQ_FAILED,code,0,t,'eq_load')
+      ELSE
+         WRITE(detail,'(A,I0,3A)',IOSTAT=ios) &
+              "pl_vmec (ierr=",code,") could not open KNAMEQ='", &
+              TRIM(knameq),"'"
+         IF(ios.NE.0) detail='pl_vmec could not open KNAMEQ'
+         CALL tr_failure_record(TRF_PREP_FAILED,code,0,t,detail)
+      ENDIF
+      END SUBROUTINE tr_load_failure
 
     END MODULE trmetric
 

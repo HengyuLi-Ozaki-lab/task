@@ -18,7 +18,7 @@ import warnings
 # ``eq_set_param``. Values copied verbatim from eq/in/eq.ITER01.in.
 SCALARS = {
     # MODELG=3 selects EQRTSK (TASK/EQ binary file format) per
-    # eq/eqfile.f90:108 (EQ_READ dispatch). The .in menu-driven flow
+    # eq/eqfile.f90:186-221 (EQ_READ dispatch). The .in menu-driven flow
     # implicitly selects this via the 'r' command after typing 'f';
     # the C ABI bypasses the menu so we set MODELG explicitly here.
     "MODELG": 3,

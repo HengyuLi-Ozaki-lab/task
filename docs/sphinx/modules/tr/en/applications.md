@@ -234,9 +234,9 @@ def auto_setup(
 
         # 2. If routed via EQDSK, set KNAMEQ as required.
         #    If eq_file is None, set KNAMEQ explicitly to the empty
-        #    string so that validate's FILE_MISSING check picks it up
-        #    (leaving the default KNAMEQ='eqdata' would silently pass
-        #    validate and then die at run time with ierr=3).
+        #    string, which validate's FILE_MISSING check reports (the
+        #    default KNAMEQ='eqdata' is reported too when the working
+        #    directory holds no such file).
         if params.get("MODELG") in (3, 5, 7, 8):
             tr.set_param_str("KNAMEQ", eq_file or "")
 
@@ -277,7 +277,7 @@ When `MODELG=3` is specified but `eq_file=None`:
 
 ```text
 Detected issues (1 item(s)):
-  [FILE_MISSING] KNAMEQ: MODELG=3/5/7/8 requires non-blank KNAMEQ ...
+  [FILE_MISSING] KNAMEQ: MODELG=3 loads the file KNAMEQ names, and KNAMEQ is blank
 RuntimeError: 1 blocking issue(s) remain to be fixed
 ```
 

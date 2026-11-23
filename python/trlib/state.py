@@ -55,7 +55,9 @@ class TrState:
         nt:      time-step counter
         nrmax:   number of radial points actually in use
         nsmax:   number of species actually in use
-        scalars: dict of 14 scalar plasma quantities (T, WPT, ..., AJRFT)
+        scalars: dict of plasma scalars by name. ``from_c`` fills the 14 of the C struct (T, WPT, ..., AJRFT);
+                 ``Trlib.get_state`` fills all the library's named scalars (``Trlib.scalar_names()``).
+                 ``to_dict()`` carries the 14 only: the baselines compare it at 1e-10.
         RN:      [nrmax][nsmax] density profile
         RT:      [nrmax][nsmax] temperature profile
         AJ:      [nrmax] current profile
@@ -111,7 +113,7 @@ class TrState:
             "NT": self.nt,
             "NRMAX": self.nrmax,
             "NSMAX": self.nsmax,
-            "scalars": dict(self.scalars),
+            "scalars": {k: v for k, v in self.scalars.items() if k in SCALAR_FIELDS},
             "profile": [
                 {
                     "NR": i + 1,

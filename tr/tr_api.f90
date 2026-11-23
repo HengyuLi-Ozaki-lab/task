@@ -61,10 +61,10 @@ MODULE tr_api
   USE trfailure
   IMPLICIT NONE
   PRIVATE
-  PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, &
-            tr_api_set_param, tr_api_set_param_str, tr_api_finalize, &
-            tr_api_validate, &
-            tr_check_bpsd_pull, tr_api_last_error
+  PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, tr_api_history_get, &
+            tr_api_set_param, tr_api_set_param_str, tr_api_finalize, tr_api_history_name, &
+            tr_api_validate, tr_api_history_length, tr_api_history_full, tr_api_history_count, &
+            tr_check_bpsd_pull, tr_api_last_error, tr_api_scalar_count, tr_api_scalar_name, tr_api_get_scalar
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -95,6 +95,8 @@ MODULE tr_api
   INTEGER, SAVE :: g_first_nrmax = 0
   ! The same fact seen from the eq: names: once this process has made a preparation attempt (g_first_nrmax /= 0), an
   ! eq: set is refused (eq_name_refused), for the same bpsd reason. Both come off together with 61ff3cdf's guard.
+  ! The sizes of the scalar table and of the history table (the constructors below must match them).
+  INTEGER, PARAMETER :: N_SCALARS = 31, N_HISTORY = 47
 
   ! #246: layout query, callable before tr_init.
   PUBLIC :: tr_api_state_abi_version, tr_api_state_size
@@ -358,6 +360,9 @@ CONTAINS
        ! The first attempt fixes the mesh, failed or not: tr_prep can size
        ! bpsd's splines (tr_set_metric) and then fail later (tr_prof_impurity).
        IF (g_first_nrmax == 0) g_first_nrmax = NRMAX
+       ! Not prepared until tr_prep succeeds: a preparation that fails before it starts the history again
+       ! (NGT = 0) leaves the rows of the run before, which are not this run's (history_rows gives 0).
+       g_prepared = .FALSE.
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
           CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, T, 'tr_prep failed')
@@ -512,10 +517,11 @@ CONTAINS
   !                 overflow the TRCOM0::NSM compile-time maximum used
   !                 by several pl/ak imports, so trip this check
   !                 before tr_run lets the mesh hit the mismatch.
-  !   FILE_MISSING: MODELG in {3,5,7,8} requires non-blank KNAMEQ. This
-  !                 mirrors the eq_api::eq_api_validate guard — without
-  !                 it, tr_run -> pl_prof_init -> equnit::eq_load opens
-  !                 "" silently and fills the post-load grid with garbage.
+  !   FILE_MISSING: the files a preparation reads: KNAMEQ for MODELG 3,
+  !                 5, 7 and 8, blank or naming no file, as
+  !                 eq_api::eq_api_validate reports it, and for 8 a
+  !                 KNAMEQ2 that TR cannot set (blank); the run fails on
+  !                 each (task-web-client #201).
   !
   !   OUT_OF_RANGE / OUT_OF_RANGE_AFTER_DEP (#189): per-species namelist
   !                 profile (PN/PNS/PT/PTS) that the solver cannot evolve,
@@ -526,6 +532,9 @@ CONTAINS
   !                 particle sources (see source_and_equation_violations).
   !   OUT_OF_RANGE_AFTER_DEP: an NRMAX other than the process's first
   !                 (see mesh_violation).
+  !   INCONSISTENT_PAIR, reported only (tr_run does not refuse it):
+  !                 PN(1) or PNS(1) away from the ions' charge density
+  !                 (see quasi_neutrality, task-web-client #200).
   !
   ! Future category (a follow-up PR): MISSING_REQUIRED.
   !
@@ -536,15 +545,17 @@ CONTAINS
   !-------------------------------------------------------------------
   FUNCTION tr_api_validate(diag, diag_cap, ndiag) &
            RESULT(ierr) BIND(C, NAME="tr_validate")
+    USE trcomm, ONLY : KNAMEQ2
     TYPE(tr_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
-    INTEGER :: nviol, i
+    INTEGER :: nviol, nspc, i, ios
     CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
     INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
     CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN - 1) :: fmsg   ! the C field keeps 127 characters + NUL
 
     IF (.NOT. g_initialized) THEN
        ndiag = 0
@@ -557,17 +568,35 @@ CONTAINS
     ! ---- OUT_OF_RANGE: NSMAX overflow vs TRCOM0::NSM=4. -----------
     CALL push_oor("NSMAX", NSMAX, NSM)
 
-    ! ---- FILE_MISSING: MODELG in {3,5,7,8} requires non-blank KNAMEQ.
-    !      Without it, a subsequent tr_run path opens "" silently and
-    !      fills the post-load grid with garbage:
-    !        - MODELG 3/5/8: tr_run -> pl_prof_init -> equnit::eq_load
-    !        - MODELG 7:     tr_set_metric -> pl_vmec (VMEC reader,
-    !                        also takes KNAMEQ as the input filename)
-    !      --------------------------------------------------------
+    ! ---- FILE_MISSING: the files the preparation reads (tr_set_metric,
+    !      tr/trmetric.f90): KNAMEQ for MODELG 3, 5 and 8 (equnit's
+    !      eq_load) and 7 (pl_vmec, the VMEC reader), reported when blank
+    !      or naming no file, as eq_validate does (eq/eq_api.f90); a name
+    !      is looked up as the run opens it, relative to the working
+    !      directory of the process at the time of validate(). MODELG 8
+    !      reads KNAMEQ2 too (EQJAEAR, eq/eq-qst.f90), and TR passes its
+    !      own, which neither tr_set_param_str nor eq:KNAMEQ2 (refused,
+    !      eq_name_refused) sets: it stays the namelist's, blank by
+    !      default, and is reported when blank. The run fails on each too,
+    !      and its failure record says why (task-web-client #201).
     IF (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 7 .OR. MODELG == 8) THEN
        IF (LEN_TRIM(KNAMEQ) == 0) THEN
-          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, &
-               "MODELG=3/5/7/8 requires non-blank KNAMEQ (eq/VMEC file)")
+          WRITE(fmsg, '(A,I0,A)', IOSTAT=ios) "MODELG=", MODELG, &
+               " loads the file KNAMEQ names, and KNAMEQ is blank"
+          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, fmsg)
+       ELSE IF (.NOT. file_there(KNAMEQ)) THEN
+          WRITE(fmsg, '(3A,I0,A)', IOSTAT=ios) "KNAMEQ='", TRIM(KNAMEQ), &
+               "' not found: MODELG=", MODELG, " loads it"
+          IF (ios /= 0) WRITE(fmsg, '(A,I0,A)', IOSTAT=ios) &
+               "KNAMEQ not found: MODELG=", MODELG, " loads it (name unprintable)"
+          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, fmsg)
+       END IF
+       IF (MODELG == 8) THEN
+          IF (LEN_TRIM(KNAMEQ2) == 0) THEN
+             fmsg = "MODELG=8 loads the file KNAMEQ2 names too, and KNAMEQ2 is blank" // &
+                    " (neither tr_set_param_str nor eq:KNAMEQ2 sets it)"
+             CALL push_diag("KNAMEQ2", TR_DIAG_FILE_MISSING, fmsg)
+          END IF
        END IF
     END IF
 
@@ -575,6 +604,7 @@ CONTAINS
     !      the UFILE modes 1/2/3). Same
     !      findings that make tr_run refuse; here they are diagnostics.
     CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+    nspc = nviol
     ! ---- The equation switches and the particle source (see
     !      source_and_equation_violations), also refused by tr_run.
     CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
@@ -591,6 +621,15 @@ CONTAINS
     IF (EXTERNAL_DRIVEN_I /= 0.D0 .AND. EXTERNAL_DRIVEN_RW <= 0.D0) THEN
        CALL push_diag("EXTERNAL_DRIVEN_RW", TR_DIAG_OUT_OF_RANGE, &
             "non-positive width with non-zero EXTERNAL_DRIVEN_I; profile cannot be normalized (silent no-op)")
+    END IF
+
+    ! ---- #200: INCONSISTENT_PAIR, a diagnostic only (tr_run runs it), and
+    !      not beside a finding of species_profile_violations (a species
+    !      profile, or RIPS/RIPE below 0 with MODELG 9), which tr_run
+    !      refuses already.
+    IF (nspc == 0) THEN
+       CALL quasi_neutrality("PN[1]", PN, "centre")
+       CALL quasi_neutrality("PNS[1]", PNS, "edge")
     END IF
 
     ndiag = nlocal
@@ -643,6 +682,53 @@ CONTAINS
       END DO
       diag(nlocal)%code = code_in
     END SUBROUTINE push_diag
+
+    !---------------------------------------------------------------
+    ! #200: the electrons' density (dens(1)) against the ions' charge
+    ! density, sum PZ(s)*dens(s) for s = 2..NSMAX, at the centre (PN)
+    ! or the edge (PNS). TR takes them equal: trprof dilutes the main
+    ! ions by the impurity model's charge, which it takes in proportion
+    ! to the electrons, and nothing makes the namelist densities agree.
+    ! Measured on TR's defaults (PN(1) = 0.5): PN(2) from 0.005 to 0.05
+    ! fails at step 0 (NEGATIVE TEMPERATURE), at 0.1 and 0.4 completes,
+    ! and PN(1) = 0.4 with PN(2) = 0.5 completes. So a difference above
+    ! 1e-3 of the larger is reported and not refused: a run that does
+    ! not fail still runs. Not checked in the UFILE modes (MDLUF 1, 2,
+    ! 3), where the densities come from the UFILE. The caller skips it
+    ! after a finding of species_profile_violations, so every density
+    ! here is finite and not negative, and NSMAX >= 2 (the registry's
+    ! range). A charge sum that overflows (PN near 1e308) is reported.
+    !---------------------------------------------------------------
+    SUBROUTINE quasi_neutrality(name_str, dens, kplace)
+      USE trcomm, ONLY : PZ
+      USE tr_state, ONLY : TR_DIAG_INCONSISTENT_PAIR
+      CHARACTER(LEN=*), INTENT(IN) :: name_str, kplace
+      REAL(rkind),      INTENT(IN) :: dens(:)
+      CHARACTER(LEN=TR_DIAG_MSG_LEN) :: m
+      REAL(rkind) :: zni
+      INTEGER :: nsa, ios
+      IF (MDLUF == 1 .OR. MDLUF == 2 .OR. MDLUF == 3) RETURN
+      nsa = MIN(NSMAX, SIZE(dens), SIZE(PZ), TR_MAX_NSMAX)
+      zni = SUM(PZ(2:nsa) * dens(2:nsa))
+      IF (IEEE_IS_FINITE(zni) .AND. ABS(dens(1) - zni) <= 1.D-3 * MAX(ABS(dens(1)), ABS(zni))) RETURN
+      WRITE(m, '(3A,ES9.2,A,ES9.2,A)', IOSTAT=ios) "not quasi-neutral at the ", kplace, ": electrons ", &
+           dens(1), ", ions' charge sum PZ*n ", zni, " (1e20/m3); TR takes them equal"
+      IF (ios /= 0) m = "not quasi-neutral: the electrons' density differs from the ions' charge density"
+      CALL push_diag(name_str, TR_DIAG_INCONSISTENT_PAIR, m)
+    END SUBROUTINE quasi_neutrality
+
+    !---------------------------------------------------------------
+    ! .TRUE. when a file of this name exists (relative to the working
+    ! directory), as the preparation would open it (eq_validate's
+    ! file_there, eq/eq_api.f90).
+    !---------------------------------------------------------------
+    LOGICAL FUNCTION file_there(fname)
+      CHARACTER(LEN=*), INTENT(IN) :: fname
+      INTEGER :: ios_q
+      file_there = .FALSE.
+      INQUIRE(FILE=TRIM(fname), EXIST=file_there, IOSTAT=ios_q)
+      IF (ios_q /= 0) file_there = .FALSE.
+    END FUNCTION file_there
 
   END FUNCTION tr_api_validate
 
@@ -1064,6 +1150,12 @@ CONTAINS
        WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' is not settable through TR: set '//TRIM(up)// &
             " (TR's), which TR passes to EQ"
        RETURN
+    CASE ('KNAMEQ2')
+       ! MODELG 8: tr_set_metric hands EQ TR's own KNAMEQ2 (the namelist's), which overwrote this one
+       ! (task-web-client #201).
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//" is not settable through TR: TR passes its own KNAMEQ2 "// &
+            "(the namelist's) to EQ"
+       RETURN
     END SELECT
     IF (g_first_nrmax /= 0) THEN
        WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' refused: until the pinned bpsd has k-yoshimi/bpsd#7 an EQ '// &
@@ -1123,5 +1215,321 @@ CONTAINS
     END SUBROUTINE check
 
   END SUBROUTINE eq_mesh_violation
+
+  !-------------------------------------------------------------------
+  ! Outputs by name (PR 2 of #96): the scalar table.
+  !
+  ! The names are TRCOMM's; each one is the value TRGLOB last computed
+  ! (tr/trrslt_globals.f90; TRGLOB runs on output steps and on a run's
+  ! last step, tr/trexec.f90 tr_eval), in the unit TRGLOB gives it:
+  !   T s; WPT, WPDOT MJ and MW; AJT, AJRFT, AJOHT, AJNBT, AJBST, RIP MA;
+  !   POHT, PNBT, PNFT, PRFST, PEXST, PRLT, POUT MW (PNFT is the charged fusion
+  !   products' power: alpha for D-T, MDLNF 1-4; alpha and proton for D-He3,
+  !   MDLNF 5, 6, trpnf.f90; QF = 5 PNFT / input is TRGLOB's D-T gain);
+  !   PINT MW and includes PNFT (POHT+PNBT+PRFST+PNFT+PEXST);
+  !   VLOOP V; TAUE1, TAUE2, TAUE98 s; RQ1 m; the rest have no unit.
+  ! The order here is the order tr_scalar_name enumerates. RIP is the
+  ! equilibrium's boundary current under MODELG 3, 5 and 8 (tr_bpsd_get,
+  ! trbpsd.f90), the experimental data's under MDLUF 1 and 3 (tr_exec), the
+  ! current set (RIPS to RIPE) otherwise. A tr_run of 0 steps evaluates no step
+  ! (tr_loop returns before tr_eval): what the preparation sets is new (T 0,
+  ! RIP; Q0 under MODELG 2, 3, 5, 7, 8 and 9), what only a step computes is not.
+  !-------------------------------------------------------------------
+  PURE FUNCTION scalar_table() RESULT(names)
+    CHARACTER(LEN=8) :: names(N_SCALARS)
+    names = [ CHARACTER(LEN=8) :: &
+         'T', 'WPT', 'AJT', 'Q0', 'BETA0', 'BETAP0', 'BETAA', 'BETAN', &
+         'TAUE1', 'TAUE2', 'ZEFF0', 'ALI', 'RQ1', 'AJRFT', &
+         'PNFT', 'QF', 'PINT', 'POHT', 'PNBT', 'PRFST', 'PEXST', 'PRLT', 'POUT', &
+         'AJOHT', 'AJNBT', 'AJBST', 'RIP', 'VLOOP', 'WPDOT', 'H98Y2', 'TAUE98' ]
+  END FUNCTION scalar_table
+
+  ! The value of the scalar NAME (exact, upper case); FOUND is .FALSE. for a name not in the table.
+  SUBROUTINE scalar_value(name, v, found)
+    USE trcomm, ONLY: AJOHT, AJNBT, AJBST, PNFT, QF, PINT, POHT, PNBT, PRFST, PEXST, &
+         PRLT, POUT, RIP, VLOOP, WPDOT, H98Y2, TAUE98
+    CHARACTER(LEN=*), INTENT(IN)  :: name
+    REAL(rkind),      INTENT(OUT) :: v
+    LOGICAL,          INTENT(OUT) :: found
+
+    found = .TRUE.
+    SELECT CASE (name)
+    CASE ('T');      v = T
+    CASE ('WPT');    v = WPT
+    CASE ('AJT');    v = AJT
+    CASE ('Q0');     v = Q0
+    CASE ('BETA0');  v = BETA0
+    CASE ('BETAP0'); v = BETAP0
+    CASE ('BETAA');  v = BETAA
+    CASE ('BETAN');  v = BETAN
+    CASE ('TAUE1');  v = TAUE1
+    CASE ('TAUE2');  v = TAUE2
+    CASE ('ZEFF0');  v = ZEFF0
+    CASE ('ALI');    v = ALI
+    CASE ('RQ1');    v = RQ1
+    CASE ('AJRFT');  v = AJRFT
+    CASE ('PNFT');   v = PNFT
+    CASE ('QF');     v = QF
+    CASE ('PINT');   v = PINT
+    CASE ('POHT');   v = POHT
+    CASE ('PNBT');   v = PNBT
+    CASE ('PRFST');  v = PRFST
+    CASE ('PEXST');  v = PEXST
+    CASE ('PRLT');   v = PRLT
+    CASE ('POUT');   v = POUT
+    CASE ('AJOHT');  v = AJOHT
+    CASE ('AJNBT');  v = AJNBT
+    CASE ('AJBST');  v = AJBST
+    CASE ('RIP');    v = RIP
+    CASE ('VLOOP');  v = VLOOP
+    CASE ('WPDOT');  v = WPDOT
+    CASE ('H98Y2');  v = H98Y2
+    CASE ('TAUE98'); v = TAUE98
+    CASE DEFAULT
+       v = 0.0_rkind
+       found = .FALSE.
+    END SELECT
+  END SUBROUTINE scalar_value
+
+  ! Copy the NUL-terminated C string S into FNAME (blank padded). OK is .FALSE. when it has no NUL within
+  ! LEN(FNAME) characters, or is empty, or holds a blank: no name of this API is that long, empty or has one.
+  SUBROUTINE c_name_to_fortran(s, fname, ok)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: s
+    CHARACTER(LEN=*),                     INTENT(OUT) :: fname
+    LOGICAL,                              INTENT(OUT) :: ok
+    INTEGER :: i
+
+    fname = ' '
+    ok = .FALSE.
+    DO i = 1, LEN(fname)
+       IF (s(i) == C_NULL_CHAR) THEN
+          ok = (i > 1)
+          RETURN
+       END IF
+       IF (s(i) == ' ' .OR. s(i) < ' ') RETURN
+       fname(i:i) = s(i)
+    END DO
+  END SUBROUTINE c_name_to_fortran
+
+  ! Copy NAME into the C buffer BUF of BUFLEN characters with its NUL: 0, or TR_ERR_INVALID when it does not fit.
+  FUNCTION name_to_c_buffer(name, buf, buflen) RESULT(ierr)
+    CHARACTER(LEN=*),                     INTENT(IN)    :: name
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT),                       INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    INTEGER :: i, n
+
+    n = LEN_TRIM(name)
+    IF (buflen < n + 1) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    DO i = 1, n
+       buf(i) = name(i:i)
+    END DO
+    buf(n + 1) = C_NULL_CHAR
+    ierr = TR_OK
+  END FUNCTION name_to_c_buffer
+
+  ! tr_scalar_count : the number of named scalars.
+  FUNCTION tr_api_scalar_count() RESULT(n) BIND(C, NAME="tr_scalar_count")
+    INTEGER(C_INT) :: n
+    n = INT(SIZE(scalar_table()), C_INT)
+  END FUNCTION tr_api_scalar_count
+
+  ! tr_scalar_name : the I-th name (1-based) as a NUL-terminated string in BUF of BUFLEN characters.
+  ! TR_ERR_INVALID past either end or when the name and its NUL do not fit.
+  FUNCTION tr_api_scalar_name(i, buf, buflen) RESULT(ierr) BIND(C, NAME="tr_scalar_name")
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: i
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=8) :: tab(N_SCALARS)
+
+    tab = scalar_table()
+    IF (i < 1 .OR. i > SIZE(tab)) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    ierr = name_to_c_buffer(tab(i), buf, buflen)
+  END FUNCTION tr_api_scalar_name
+
+  ! tr_get_scalar : the value of one named scalar, as of the last step TRGLOB ran on.
+  ! TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for a name not in the table (value is left alone).
+  FUNCTION tr_api_get_scalar(name, value) RESULT(ierr) BIND(C, NAME="tr_get_scalar")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(INOUT) :: value   ! left as it was for an error
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=16) :: fname
+    REAL(rkind) :: v
+    LOGICAL :: ok, found
+
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_name_to_fortran(name, fname, ok)
+    IF (.NOT. ok) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL scalar_value(TRIM(fname), v, found)
+    IF (.NOT. found) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    value = v
+    ierr = TR_OK
+  END FUNCTION tr_api_get_scalar
+
+  !-------------------------------------------------------------------
+  ! Time history by name (PR 2 of #96, Task 5b).
+  !
+  ! TR records a row every NGTSTP steps (tr_eval, trexec.f90): GT(NGT) is
+  ! the time and GVT(NGT, 1:NCTM) the globals, both single precision
+  ! (GUCLIP), written by TRATOT in trrslt_globals.f90 (the column numbers
+  ! below are TRATOT's). NTM rows (trcom0.f90); TRATOT stops recording
+  ! when they are full. tr_prep sets NGT to 0 (trprep.f90), so a run starts a
+  ! history and a re-preparation starts it again. In library mode tr_eval does not
+  ! record the step a call of tr_run starts on when the call before it ended on
+  ! it (the same T twice), nor the failed iterate of a TRCHCK failure (tr_exec),
+  ! and tr_loop takes back the row of a step it finds not finite (NONFINITE).
+  ! A failed preparation leaves no rows (g_prepared is false until tr_prep succeeds).
+  ! Under MODELG 9 tr_loop records a step before it re-solves EQ on it (a
+  ! multiple of NTEQIT) and then recomputes Q0 on the new metric: that row
+  ! holds the Q0 of before the re-solve, tr_get_scalar the one after it.
+  ! Columns 89 to 88 + 4 NGPST are also the sawtooth record's (TRATOTN, its
+  ! own row count NGST) once MDLST /= 0 and T >= TSST (1e9 s); tr_eval does not
+  ! call TRATOTN in library mode, so there they are always TRATOT's.
+  !
+  ! COL = 0: GT (the time); COL > 0: GVT column; BETAN and PRFST have no
+  ! column of their own and are computed from columns of the same row:
+  ! BETAN = 100 BETAA / (RIP / (RA BB)) (cols 85, 88, 98, 99, as TRGLOB),
+  ! PRFST = PRFT(1) + ... + PRFT(4) (cols 42 to 45; NSM = 4 = the
+  ! species TRGLOB sums). PEXST has no such columns (GVT holds PEXT(1:2) only).
+  !-------------------------------------------------------------------
+  SUBROUTINE history_table(names, cols)
+    CHARACTER(LEN=8), INTENT(OUT) :: names(N_HISTORY)
+    INTEGER,          INTENT(OUT) :: cols(N_HISTORY)
+    names = [ CHARACTER(LEN=8) :: &
+         'T', 'NE0', 'NEAV', 'TE0', 'TI0', 'TEAV', 'TIAV', 'WPT', &
+         'AJT', 'AJOHT', 'AJNBT', 'AJRFT', 'AJBST', 'PINT', 'POHT', 'PNBT', &
+         'PRFE', 'PRFD', 'PNFT', 'POUT', 'VLOOP', 'ALI', 'RQ1', 'Q0', &
+         'WPDOT', 'TAUE1', 'TAUE2', 'BETAP0', 'BETA0', 'BETAA', 'ZEFF0', 'QF', &
+         'RIP', 'PEXE', 'PEXI', 'PECE', 'PECI', 'PLHE', 'PLHI', 'PICE', &
+         'PICI', 'TAUE98', 'H98Y2', 'NLAV', 'PRLT', &
+         'BETAN', 'PRFST' ]
+    cols = [ INTEGER :: &
+         0, 1, 5, 9, 10, 13, 14, 33, 34, 35, 36, 37, 38, 39, 40, 41, &
+         42, 43, 46, 57, 74, 75, 76, 77, 78, 79, 80, 82, 84, 85, 86, 87, &
+         88, 89, 90, 91, 92, 93, 94, 95, 96, 102, 103, 104, 110, &
+         -1, -2 ]
+  END SUBROUTINE history_table
+
+  ! Rows recorded since the last tr_prep: 0 when TR is not prepared.
+  FUNCTION history_rows() RESULT(n)
+    USE trcomm, ONLY: NGT, NTM
+    INTEGER :: n
+    IF (.NOT. g_prepared) THEN
+       n = 0
+    ELSE
+       n = MAX(0, MIN(NGT, NTM))
+    END IF
+  END FUNCTION history_rows
+
+  ! Row I of column COL (see history_table), in double precision.
+  FUNCTION history_cell(col, i) RESULT(v)
+    USE trcomm, ONLY: GT, GVT
+    INTEGER, INTENT(IN) :: col, i
+    REAL(rkind) :: v
+    IF (col == 0) THEN
+       v = REAL(GT(i), rkind)
+    ELSE IF (col == -1) THEN
+       v = 1.0E2_rkind * REAL(GVT(i, 85), rkind) / (REAL(GVT(i, 88), rkind) &
+            / (REAL(GVT(i, 98), rkind) * REAL(GVT(i, 99), rkind)))
+    ELSE IF (col == -2) THEN
+       v = REAL(GVT(i, 42), rkind) + REAL(GVT(i, 43), rkind) + REAL(GVT(i, 44), rkind) + REAL(GVT(i, 45), rkind)
+    ELSE
+       v = REAL(GVT(i, col), rkind)
+    END IF
+  END FUNCTION history_cell
+
+  ! tr_history_length : rows recorded since the last preparation (0 before one).
+  FUNCTION tr_api_history_length() RESULT(n) BIND(C, NAME="tr_history_length")
+    INTEGER(C_INT) :: n
+    n = INT(history_rows(), C_INT)
+  END FUNCTION tr_api_history_length
+
+  ! tr_history_full : 1 when the history holds NTM rows and recording has stopped, else 0.
+  FUNCTION tr_api_history_full() RESULT(full) BIND(C, NAME="tr_history_full")
+    USE trcomm, ONLY: NTM
+    INTEGER(C_INT) :: full
+    full = 0
+    IF (history_rows() >= NTM) full = 1
+  END FUNCTION tr_api_history_full
+
+  ! tr_history_count : the number of named columns.
+  FUNCTION tr_api_history_count() RESULT(n) BIND(C, NAME="tr_history_count")
+    INTEGER(C_INT) :: n
+    n = N_HISTORY
+  END FUNCTION tr_api_history_count
+
+  ! tr_history_name : the I-th column name (1-based), as tr_scalar_name does.
+  FUNCTION tr_api_history_name(i, buf, buflen) RESULT(ierr) BIND(C, NAME="tr_history_name")
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: i
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=8) :: names(N_HISTORY)
+    INTEGER :: cols(N_HISTORY)
+
+    IF (i < 1 .OR. i > N_HISTORY) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL history_table(names, cols)
+    ierr = name_to_c_buffer(names(i), buf, buflen)
+  END FUNCTION tr_api_history_name
+
+  ! tr_history_get : copy the first min(n, rows) rows of the column NAME ("T" is the time) into BUF;
+  ! *got is the number copied. TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for an unknown name or n < 0.
+  FUNCTION tr_api_history_get(name, buf, n, got) RESULT(ierr) BIND(C, NAME="tr_history_get")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(OUT) :: buf(*)
+    INTEGER(C_INT), VALUE,                INTENT(IN)  :: n
+    INTEGER(C_INT),                       INTENT(OUT) :: got
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=16) :: fname
+    CHARACTER(LEN=8) :: names(N_HISTORY)
+    INTEGER :: cols(N_HISTORY)
+    INTEGER :: j, k, m
+    LOGICAL :: ok
+
+    got = 0
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_name_to_fortran(name, fname, ok)
+    IF (.NOT. ok .OR. n < 0) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL history_table(names, cols)
+    k = 0
+    DO j = 1, N_HISTORY
+       IF (TRIM(fname) == TRIM(names(j))) k = j
+    END DO
+    IF (k == 0) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    m = MIN(INT(n), history_rows())
+    DO j = 1, m
+       buf(j) = history_cell(cols(k), j)
+    END DO
+    got = INT(m, C_INT)
+    ierr = TR_OK
+  END FUNCTION tr_api_history_get
 
 END MODULE tr_api
