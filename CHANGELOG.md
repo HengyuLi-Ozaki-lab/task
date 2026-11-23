@@ -39,10 +39,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     alpha power, `P_fus/5`, for D-T; alpha and proton together for D-He3, `MDLNF` 5 and 6, where `QF`, a D-T gain, is
     five times the gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8 and the experimental
     data's under `MDLUF` 1 and 3). They are current after
-    a `tr_run` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
+    a `tr_run` or `tr_continue` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
     0 steps evaluates no step: what the preparation sets (`T` 0; `RIP`, which is `RIPS` or, under `MODELG` 3, 5 and 8, the equilibrium's boundary current; `Q0` under `MODELG` 2, 3, 5, 7, 8 and 9) is
     new, what only a step computes (the powers, `WPT`) is still the run before's. `tr_mcp`'s `get_state` and
-    `run_and_get_state` return `T` only among the scalars until a run of one step or more since the handle was opened
+    `run_and_get_state` return `T` only among the scalars until a `run` or `continue_run` of one step or more since the handle was opened
     or a parameter was written (a refused write changes nothing), and none before the handle's first successful
     preparation (`T` is the handle before's until then); a failed run counts as evaluated only when it left a history
     row. `TrState.scalars` keeps the 14 values `tr_get_state` copied and reads only the others by name. An
@@ -58,7 +58,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   densities and temperatures `NE0`, `NEAV`, `TE0`, `TI0`, `TEAV`, `TIAV`, `NLAV`, `WPT`, the currents, `PINT`, `POHT`,
   `PNBT`, the EC/LH/IC powers to electrons and ions, `PNFT`, `POUT`, `PRLT`, `VLOOP`, `Q0`, `RQ1`, `ALI`, the confinement
   times, the betas, `QF`, `RIP`, ... and `BETAN`, `PRFST`, which are computed from the row). The first row is the state
-  at t = 0, a row is recorded at every step that is a multiple of `NGTSTP` (a call of `tr_run` adds `nsteps / NGTSTP` rows only when it
+  at t = 0, a row is recorded at every step that is a multiple of `NGTSTP` (a call of `tr_run` or `tr_continue` adds `nsteps / NGTSTP` rows only when it
   starts on one: `run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1), and `tr_prep` (every first run and every run after a
   changed parameter) starts the history again. The history holds `NTM` = 10001 rows and TR then stops recording
   silently; `tr_history_full` says when. A long run sets `NGTSTP` so that steps / `NGTSTP` < 10001.
@@ -113,7 +113,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     bpsd#7 itself).
   - `tr_mcp` and `tot_mcp`: a `continue_run` tool; `tr_mcp`'s `describe_parameters` gives each name its `class`
     (without opening the library's lifecycle: `classes_unavailable` says why when the library does not load); a refusal
-    returns the record in the form of a failed run (`[failure: kind=REFUSED ...]`, the detail once).
+    returns the record in the form of a failed run (`[failure: kind=REFUSED ...]`, the detail once). `tr_mcp`'s
+    `continue_run` of one step or more counts as an evaluation for `get_state`, as a `run` does (it showed `T` alone
+    after a control set and a continue); a failed one only when it added a history row (it keeps the rows from
+    before it, and a step that fails before an output step leaves the results of before the set); a refused one
+    changes nothing.
   - Test: the equivalence case `tr_iter01_m9` (`test_run/inputs/tr_iter01_m9.in`, `.eqparm`; `run_tests.sh` copies
     `<case>.eqparm` for tr cases): ITER under `MODELG` 9, `NTEQIT` 0, three stages `r` / `c` / `c` (1500, 2000, 6500 steps),
     against `tr2`'s dump; skipped without its baseline, which Linux generates.

@@ -427,7 +427,7 @@ CONTAINS
       IF(MOD(NT,NGTSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB
          IDGLOB=1
-!        Library mode: a call of tr_run starts with an evaluation of the step the call before it ended on
+!        Library mode: a call of tr_run or tr_continue starts with an evaluation of the step the call before it ended on
 !        (tr_loop's prologue). Its globals are recomputed (WPDOT is 0 at the same T) and the row would
 !        repeat that step's time, so it is not recorded. tr2 keeps its rows as before. Only this time
 !        history (GT, GVT) is guarded: the profile history TRATOG writes (GTR, GVR) and the print of

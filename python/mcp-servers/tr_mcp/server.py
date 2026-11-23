@@ -237,7 +237,7 @@ SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
     "AJOHT":  {"unit": "MA",  "description": "ohmic current"},
     "AJNBT":  {"unit": "MA",  "description": "neutral-beam driven current"},
     "AJBST":  {"unit": "MA",  "description": "bootstrap current"},
-    "RIP":    {"unit": "MA",  "description": "plasma current at this time: under MODELG 3, 5 and 8 the equilibrium's boundary current, which tr_bpsd_get also writes into RIPS and RIPE (tr/trbpsd.f90:413-416), so not the current that was set; under MDLUF 1 and 3 interpolated from the experimental data (RIPU, tr/trexec.f90:314-319); otherwise RIPS ramping to RIPE over a call of tr_run (tr/trloop.f90:44-45, tr/trexec.f90:310)"},
+    "RIP":    {"unit": "MA",  "description": "plasma current at this time: under MODELG 3, 5 and 8 the equilibrium's boundary current, which tr_bpsd_get also writes into RIPS and RIPE (tr/trbpsd.f90:413-416), so not the current that was set; under MDLUF 1 and 3 interpolated from the experimental data (RIPU, tr/trexec.f90:314-319); otherwise RIPS ramping to RIPE over a call of tr_run or continue_run (tr/trloop.f90:44-45, tr/trexec.f90:310)"},
     "VLOOP":  {"unit": "V",   "description": "one-turn voltage at the edge"},
     "WPDOT":  {"unit": "MW",  "description": "rate of change of WPT between the last two global evaluations"},
     "H98Y2":  {"unit": "",    "description": "H factor: TAUE2 / TAUE98"},
@@ -311,7 +311,7 @@ STATE_SCHEMA: Dict[str, Any] = {
                 "the library's named global results (31), each as of the last step TR computed them on; "
                 "units are in each entry. A run of 0 steps evaluates no step: what the preparation sets (T 0, "
                 "RIP = RIPS or, under MODELG 3, 5 and 8, the equilibrium's boundary current; Q0 under MODELG 2, 3, 5, 7, 8 and 9) is new, what only a step computes (the powers, WPT) is "
-                "still the run before's: until a run of one step or more since the handle was opened or a parameter "
+                "still the run before's: until a run or continue_run of one step or more since the handle was opened or a parameter "
                 "was written, get_state and run_and_get_state return T only, and nothing before the handle's first "
                 "successful preparation. After a negative-temperature failure (TR_CHECK) they are the failed "
                 "iterate's, while the history ends on the last recorded step. A library built before the "
@@ -348,7 +348,7 @@ class _ServerState:
 
     def __init__(self) -> None:
         self.tr: Optional[Trlib] = None
-        # evaluated: a run of one step or more has evaluated TR's global results since the handle was opened or a
+        # evaluated: a run or continue_run of one step or more has evaluated TR's global results since the handle was opened or a
         # parameter was written. Until then they are not this handle's: a run of 0 steps evaluates no step, and
         # finalize then init does not clear them (CLAUDE.md, module state). prepared: a preparation has succeeded on
         # this handle, so T is its own (tr_init does not reset T; tr_prep does). The state tools return every scalar
@@ -651,10 +651,35 @@ def handle_run(ntmax: int = 1) -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _history_rows(tr: Trlib) -> Optional[int]:
+    """The handle's history length, or ``None`` when the library cannot say (no history API)."""
+    try:
+        return int(tr.history_length())
+    except Exception:
+        return None
+
+
+def _continue(tr: Trlib, nsteps: int) -> None:
+    """``tr.continue_run(nsteps)``, keeping ``STATE.evaluated``. A successful call of one step or more ends on a step
+    that computes the global results (TRGLOB). A failed one counts only when it added a history row: it keeps the
+    rows from before it (no preparation), and its steps compute the globals on output steps only, so a step that
+    fails before one leaves the results of before the control set. A refusal runs nothing and changes no flag."""
+    before = _history_rows(tr)
+    try:
+        tr.continue_run(nsteps)
+    except TrlibRunError:
+        after = _history_rows(tr)
+        if nsteps > 0 and before is not None and after is not None and after > before:
+            STATE.evaluated = True
+        raise
+    if nsteps > 0:
+        STATE.evaluated = True
+
+
 def handle_continue_run(nsteps: int = 1) -> str:
     try:
         tr = STATE.ensure_open()
-        tr.continue_run(int(nsteps))
+        _continue(tr, int(nsteps))
         return f"continued {nsteps} time step(s)"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -662,8 +687,8 @@ def handle_continue_run(nsteps: int = 1) -> str:
 
 def _state_dict(tr: Trlib) -> Dict[str, Any]:
     """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
-    compare) with ``scalars`` replaced by all the library's named global results, by ``T`` alone until a run of
-    one step or more since the handle was opened or a parameter was written (``STATE.evaluated``), and by nothing
+    compare) with ``scalars`` replaced by all the library's named global results, by ``T`` alone until a run or
+    continue_run of one step or more since the handle was opened or a parameter was written (``STATE.evaluated``), and by nothing
     before the handle's first successful preparation (``STATE.prepared``)."""
     state = tr.get_state()
     out = state.to_dict()

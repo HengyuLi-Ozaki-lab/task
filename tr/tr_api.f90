@@ -1418,7 +1418,7 @@ CONTAINS
   ! below are TRATOT's). NTM rows (trcom0.f90); TRATOT stops recording
   ! when they are full. tr_prep sets NGT to 0 (trprep.f90), so a run starts a
   ! history and a re-preparation starts it again. In library mode tr_eval does not
-  ! record the step a call of tr_run starts on when the call before it ended on
+  ! record the step a call of tr_run or tr_continue starts on when the call before it ended on
   ! it (the same T twice), nor the failed iterate of a TRCHCK failure (tr_exec),
   ! and tr_loop takes back the row of a step it finds not finite (NONFINITE).
   ! A failed preparation leaves no rows (g_prepared is false until tr_prep succeeds).
@@ -1621,12 +1621,13 @@ CONTAINS
        CALL refuse(TRIM(step_text))
        RETURN
     END IF
-    IF (.NOT. g_prepared) THEN
-       CALL refuse('no prepared case: tr_run prepares one')
-       RETURN
-    END IF
+    ! A failure first: a failed tr_prep also clears g_prepared (its rows are not the run's), and the reason is the failure.
     IF (g_failed) THEN
        CALL refuse('the last run failed: a tr_run after a parameter set prepares the case again')
+       RETURN
+    END IF
+    IF (.NOT. g_prepared) THEN
+       CALL refuse('no prepared case: tr_run prepares one')
        RETURN
     END IF
     IF (g_prep_structural /= tr_param_structural_generation()) THEN

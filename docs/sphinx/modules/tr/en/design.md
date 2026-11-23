@@ -173,7 +173,7 @@ The scalars of `tr_state_t` are 14 of the 31 global results `TRGLOB` computes; `
 `tr_history_*` export the time history `GT(NGT)`, `GVT(NGT, 1:110)` that `TRATOT` writes every `NGTSTP` steps (`tr_eval`):
 47 columns by name, in **single precision** (`GUCLIP`), `NTM` = 10001 rows. TR stops recording silently when they are full
 (`tr_history_full` reports it): a long run sets `NGTSTP`. `tr_prep` sets `NGT` to 0, so a preparation starts the history
-again. In library mode `tr_eval` does not record the step a `tr_run` call starts on when the previous call ended on it,
+again. In library mode `tr_eval` does not record the step a `tr_run` or `tr_continue` call starts on when the previous call ended on it,
 and `tr_exec` does not record the failed iterate of a `TRCHCK` failure (`tr2` records both); `tr_loop` takes back the
 row of a step it finds not finite (`tr_eval_take_back_row`), and a preparation that fails leaves no rows. Under `MODELG` 9 `tr_loop`
 records a step before it re-solves EQ on it and then recomputes `Q0` on the new metric (`tr_bpsd_get`, `TRCALC`), so that

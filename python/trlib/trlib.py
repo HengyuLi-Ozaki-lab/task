@@ -379,7 +379,7 @@ class Trlib:
         """One global result by name, as of the last step TR computed the globals on.
 
         TRGLOB computes them on output steps and on the last step of a run, so they are current after
-        :meth:`run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
+        :meth:`run` or :meth:`continue_run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
         run after a changed parameter) what it sets is new (``T`` 0; ``RIP``, which is ``RIPS`` or, under ``MODELG``
         3, 5 and 8, the equilibrium's boundary current; ``Q0`` under ``MODELG`` 2, 3, 5, 7, 8 and 9) and what only a
         step computes (the powers, ``WPT``) is still the run before's. Units are those of

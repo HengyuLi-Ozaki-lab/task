@@ -38,7 +38,8 @@ def _message(call):
 
 def test_continue_run_calls_the_library_and_says_how_many_steps():
     fake = mock.Mock()
-    with mock.patch.object(srv.STATE, "ensure_open", return_value=fake):
+    with mock.patch.object(srv.STATE, "ensure_open", return_value=fake), \
+            mock.patch.object(srv.STATE, "evaluated", False), mock.patch.object(srv.STATE, "prepared", True):
         out = srv.handle_continue_run(20)
     fake.continue_run.assert_called_once_with(20)
     assert "20" in out
@@ -142,6 +143,66 @@ def test_continue_after_a_control_set_advances_nt():
         assert srv.handle_get_state()["NT"] == nt0 + 10
     finally:
         srv.STATE.close()
+
+
+@needs_lib
+@pytest.mark.forked
+def test_continue_after_a_control_set_shows_the_results_it_evaluated():
+    # A control set hides the results until a step is run (fork #26's flag); continue_run's steps are this state's.
+    try:
+        srv.handle_init()
+        srv.handle_set_param("PNBTOT", 10.0)
+        srv.handle_run(5)
+        srv.handle_set_param("PNBTOT", 0.0)
+        srv.handle_continue_run(0)
+        assert set(srv.handle_get_state()["scalars"]) == {"T"}
+        srv.handle_continue_run(5)
+        scalars = srv.handle_get_state()["scalars"]
+        assert len(scalars) == 31 and scalars["PNBT"] == pytest.approx(0.0, abs=1e-12)
+    finally:
+        srv.STATE.close()
+
+
+@needs_lib
+@pytest.mark.forked
+def test_a_continue_that_fails_before_a_new_row_keeps_the_results_hidden():
+    # NGTSTP 5: run(3) records step 0 only, and its last step's globals are of PECTOT 0. PECTOT 1e7 then makes the
+    # first continued step not finite (nt 4), before any output step: no global result of the new setting exists.
+    try:
+        srv.handle_init()
+        srv.handle_set_param("NGTSTP", 5.0)
+        srv.handle_run(3)
+        srv.handle_set_param("PECTOT", 1.0e7)
+        msg = _message(lambda: srv.handle_continue_run(5))
+        assert "kind=NONFINITE" in msg and "nt=4" in msg, msg
+        assert set(srv.handle_get_state()["scalars"]) == {"T"}
+    finally:
+        srv.STATE.close()
+
+
+# A continue keeps the rows from before it: only a row it added shows that its steps computed the globals.
+@pytest.mark.parametrize("rows, shown", [((3, 4), True), ((3, 3), False), ((0, 0), False)])
+def test_a_continue_that_fails_in_its_steps_keeps_the_results_it_evaluated(rows, shown):
+    f = TrFailure("NONFINITE", -3, 12, 1.2, "Q0, WPT or a central temperature is not finite")
+    tr = mock.Mock()
+    tr.continue_run.side_effect = TrlibRunError("tr_continue(10): ierr=3", failure=f)
+    tr.history_length.side_effect = list(rows)
+    with mock.patch.object(srv.STATE, "ensure_open", return_value=tr), \
+            mock.patch.object(srv.STATE, "evaluated", False), mock.patch.object(srv.STATE, "prepared", True):
+        with pytest.raises(Exception):
+            srv.handle_continue_run(10)
+        assert srv.STATE.evaluated is shown and srv.STATE.prepared is True
+
+
+def test_a_refused_continue_changes_neither_flag():
+    f = TrFailure("REFUSED", 0, 10, 0.2, "structural parameter RR set since the preparation")
+    tr = mock.Mock()
+    tr.continue_run.side_effect = TrlibParamError("tr_continue(5) refused: " + f.detail, failure=f)
+    with mock.patch.object(srv.STATE, "ensure_open", return_value=tr), \
+            mock.patch.object(srv.STATE, "evaluated", False), mock.patch.object(srv.STATE, "prepared", True):
+        with pytest.raises(Exception):
+            srv.handle_continue_run(5)
+        assert srv.STATE.evaluated is False and srv.STATE.prepared is True
 
 
 @needs_lib
