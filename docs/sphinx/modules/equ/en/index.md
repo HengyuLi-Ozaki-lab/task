@@ -25,8 +25,10 @@ it runs as the interactive program `equ`. The library interface runs the same co
 one from a file; `equ` computes the boundary from the coils. An `equ` G-EQDSK can be
 loaded into `eq` (`MODELG=5`), with two caveats: EQU writes the pressure in MPa
 (see [State](state.md)), and `eq` takes at most 1343 boundary points (`NSUM`)
-where EQU's contour arrays hold 1542 (`isrzdm`): loading a file with more fails
-(`EQ_ERR_CALC_FAILED`; IERR 9 in EQ's reader).
+where EQU's contour arrays hold 1542 (`isrzdm`). The file has the contour EQU
+traced (`nsu` points; EQU's `NSUMAX` is used only inside the solver), and with
+more than 1343 the load fails: `eq_run(1)` returns `EQ_ERR_CALC_FAILED` (`EQDSKR`
+sets IERR 9; the `NSUMAX` of its message is EQ's name for the file's count).
 ```
 
 ```{toctree}

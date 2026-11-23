@@ -25,8 +25,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   only regular files that are not the process's standard streams (`stat(2)`, `equ/equ_path.c`), creates a new
   G-EQDSK file itself, checks that it ends with the writer's last record, and removes only a file it created. EQU's G-EQDSK gives
   the pressure in MPa, and the FCT loop of both examples ends at `IEQMAX` without meeting `EEQMAX`: both documented,
-  both questions for the lead. EQ reads at most 1343 boundary points (`NSUM`; a load of more fails
-  with `EQ_ERR_CALC_FAILED`), where EQU's contour arrays hold 1542 (`isrzdm`). Design:
+  both questions for the lead. EQ reads at most 1343 boundary points (`NSUM`; with more, `eq_run(1)`
+  returns `EQ_ERR_CALC_FAILED`), where EQU's contour arrays hold 1542 (`isrzdm`); the file has the traced `nsu`
+  points, whatever `NSUMAX`. Design:
   `docs/superpowers/specs/2026-11-22-equ-library-design.md`.
 - **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, #96 PR 1).
   - `tr_set_param` and `tr_set_param_str` send a name that starts with `eq:` to EQ's registry (`eq:RB`, `eq:NRMAX`,
