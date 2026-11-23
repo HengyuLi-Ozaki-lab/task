@@ -23,8 +23,10 @@ it runs as the interactive program `equ`. The library interface runs the same co
 ```{note}
 `equ` is not `eq`. `eq` (TASK/EQ) solves the fixed-boundary equilibrium or loads
 one from a file; `equ` computes the boundary from the coils. An `equ` G-EQDSK can be
-loaded into `eq` (`MODELG=5`), with one caveat: EQU writes the pressure in MPa
-(see [State](state.md)).
+loaded into `eq` (`MODELG=5`), with two caveats: EQU writes the pressure in MPa
+(see [State](state.md)), and `eq` takes at most 1343 boundary points (`NSUM`)
+where EQU's contour arrays hold 1542 (`isrzdm`): loading a file with more fails
+(`EQ_ERR_CALC_FAILED`; IERR 9 in EQ's reader).
 ```
 
 ```{toctree}
