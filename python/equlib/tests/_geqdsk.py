@@ -5,15 +5,22 @@ line ``(6a8,3i4)`` and then blocks of ``(5e16.9)`` numbers, with integer
 counts before the boundary and limiter points. Fields run together when a
 number is negative (``0.1E+01-0.2E+00``), so the numbers are found with a
 pattern, not by splitting on blanks. A Fortran exponent of three digits drops
-its ``E`` (``0.1-100``); the pattern then reads two numbers, the same way in
-both files being compared, so the comparison is still exact.
+its ``E`` (``0.100000000-100`` is 1e-101): the pattern takes a sign and three
+digits right after the mantissa as its exponent.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
 
-_NUM = re.compile(r"[-+]?\d*\.\d+(?:[EeDd][-+]?\d+)?|[-+]?\d+")
+_NUM = re.compile(r"[-+]?\d*\.\d+(?:[EeDd][-+]?\d+|[-+]\d{3})?|[-+]?\d+")
+
+
+def _number(text: str) -> float:
+    t = text.replace("D", "E").replace("d", "e")
+    if "." in t and "E" not in t.upper() and len(t) > 4 and t[-4] in "+-":
+        t = t[:-4] + "E" + t[-4:]          # 0.100000000-100 -> 0.100000000E-100
+    return float(t)
 
 
 def read_numbers(path: str | Path) -> tuple[list[int], list[float]]:
@@ -29,7 +36,7 @@ def read_numbers(path: str | Path) -> tuple[list[int], list[float]]:
         body = f.read()
     assert not any(bad in body.lower() for bad in ("nan", "inf", "*")), f"{path}: unreadable field"
     ints = [int(x) for x in head[48:].split()]
-    nums = [float(x.replace("D", "E").replace("d", "e")) for x in _NUM.findall(body)]
+    nums = [_number(x) for x in _NUM.findall(body)]
     assert all(math.isfinite(x) for x in nums), path
     nw, nh = ints[1], ints[2]
     pre = 20 + 4 * nw + nw * nh + nw          # header block, 4 profiles, psirz, qpsi
