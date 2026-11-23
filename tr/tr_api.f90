@@ -67,7 +67,7 @@ MODULE tr_api
             tr_api_set_param, tr_api_set_param_str, tr_api_finalize, tr_api_history_name, &
             tr_api_validate, tr_api_history_length, tr_api_history_full, tr_api_history_count, &
             tr_check_bpsd_pull, tr_api_last_error, tr_api_scalar_count, tr_api_scalar_name, tr_api_get_scalar, &
-            tr_api_continue, tr_api_param_class
+            tr_api_continue, tr_api_param_class, tr_api_eq_set_refused_in_case
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -1191,6 +1191,24 @@ CONTAINS
     END IF
     refused = .FALSE.
   END FUNCTION eq_name_refused
+
+  !-------------------------------------------------------------------
+  ! tr_api_eq_set_refused_in_case : the guard of TOT's eq: setters (tot/tot_api.f90). True, and one line on unit 6,
+  ! once this lifecycle has made a preparation attempt (a tr_prep that succeeded, or a tr_prep or tr_loop that failed):
+  ! such a set would make the next tr_run prepare again (tr_param_note_external_set), which TR's own route refuses
+  ! (eq_name_refused) because an EQ grid change writes past bpsd's splines until the pinned bpsd has k-yoshimi/bpsd#7.
+  ! It reads TR's own flags, so it holds where TR's library carries its own EQ (the split build) as on the mono image.
+  ! Not applied, unlike eq_name_refused: the names TR overwrites (TOT's EQ reads them) and the rule across lifecycles
+  ! (a case after tot_finalize and tot_init takes eq: names, as before). Comes off with eq_name_refused's bpsd part.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_eq_set_refused_in_case(who, nm) RESULT(refused)
+    CHARACTER(LEN=*), INTENT(IN) :: who, nm
+    LOGICAL :: refused
+    refused = g_prepared .OR. g_failed
+    IF (refused) WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' refused: TR has prepared this case, and until '// &
+         'the pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change after a preparation corrupts memory, so eq: names '// &
+         "are set before the case's first tot_run (a new case in this process with another EQ grid is not safe either)"
+  END FUNCTION tr_api_eq_set_refused_in_case
 
   !-------------------------------------------------------------------
   ! eq_mesh_violation : EQ's mesh sizes (set through "eq:" names) against the compile-time maxima of EQ's arrays.

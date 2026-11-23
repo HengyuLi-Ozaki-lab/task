@@ -2,9 +2,13 @@
 
 ``tot_continue`` calls TR's ``tr_continue``; ``tot`` runs only TR, as ``tot_run`` does. In the mono image ``trlib`` and
 ``tot`` reach one TR, so ``Tot.continue_run`` must equal ``Trlib.continue_run`` on the same ``tr:`` inputs. TOT's
-``eq:`` setter does not go through TR's registry; it tells TR (``tr_param_note_external_set``), so an ``eq:`` set after
-a preparation is structural for ``tr_continue`` too (``Trlib`` does the same; the guard of PR 1 that refuses most
-``eq:`` names after the first preparation is not in TOT and is not added).
+``eq:`` setters refuse a set once TR has prepared the case (``tr_api_eq_set_refused_in_case``): such a set would make the
+next ``tot_run`` prepare again, which TR's own route refuses until the pinned bpsd has k-yoshimi/bpsd#7. Before a
+preparation, and in a new case after ``tot_finalize`` and ``tot_init``, they are taken as before. TR's process-wide
+guard and its always-refused names are not applied in TOT.
+
+The library is resolved before the tests enter the fixtures directory (a relative ``TOTLIB_PATH`` or
+``MONO_LIB_PATH``).
 
 One test per case (``--forked``). Run with MONO_LIB_PATH set and without.
 """
@@ -16,16 +20,24 @@ from pathlib import Path
 import pytest
 
 from totlib import Tot
+from totlib import _ffi as _tot_ffi
 from totlib.errors import TotlibError, TotlibInvalidParamError, TotlibNotInitializedError
 
-_REPO = Path(__file__).resolve().parents[3]
+# Tot()'s and Trlib()'s own resolution (MONO_LIB_PATH, TOTLIB_PATH or TRLIB_PATH, tot/ or tr/, lib/), made absolute
+# here, before the fixture below changes the directory.
+_TOT_LIB = _tot_ffi._default_lib_path().resolve()
 pytestmark = [
     pytest.mark.forked,
-    pytest.mark.skipif(
-        not (os.environ.get("MONO_LIB_PATH") or os.environ.get("TOTLIB_PATH") or (_REPO / "tot" / "libtotapi.so").exists()),
-        reason="libtotapi.so is not built",
-    ),
+    pytest.mark.skipif(not _TOT_LIB.exists(), reason=f"libtotapi.so not found at {_TOT_LIB}"),
 ]
+
+
+def _tr_lib() -> str:
+    from trlib import _ffi as _tr_ffi
+    return str(_tr_ffi._default_lib_path().resolve())
+
+
+_TR_LIB = _tr_lib()
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "trlib" / "tests" / "fixtures"
 
@@ -53,7 +65,7 @@ def _in_fixtures_dir():
 
 
 def test_tot_continue_carries_nt_and_t_after_a_control_set():
-    with Tot() as tot:
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         tot.run(10)
         s0 = tot.get_state()
@@ -66,7 +78,7 @@ def test_tot_continue_carries_nt_and_t_after_a_control_set():
 def test_tot_continue_equals_trlib_continue_on_the_same_inputs():
     from trlib import Trlib
     names = ("WPT", "PNFT", "Q0", "RIP", "PINT")
-    with Tot() as tot:
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         tot.run(10)
         tot.set_param("tr:PECTOT", 1.0)
@@ -74,7 +86,7 @@ def test_tot_continue_equals_trlib_continue_on_the_same_inputs():
         via_tot = {n: tot.get_scalar(f"tr:{n}") for n in names}
         nt_tot = tot.get_state().nt
     from trlib.tests.fixtures import tr_iter01_params as fixture
-    with Trlib() as tr:
+    with Trlib(_TR_LIB) as tr:
         for name, value in fixture.STRINGS.items():
             tr.set_param_str(name, str(value))
         for name, value in fixture.SCALARS.items():
@@ -94,7 +106,7 @@ def test_tot_continue_equals_trlib_continue_on_the_same_inputs():
 
 
 def test_tot_continue_is_refused_after_a_structural_tr_set_and_names_it():
-    with Tot() as tot:
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         tot.run(5)
         tot.set_param("tr:RR", 3.0)
@@ -103,56 +115,85 @@ def test_tot_continue_is_refused_after_a_structural_tr_set_and_names_it():
         assert "RR" in str(e.value)
 
 
-def test_tot_continue_is_refused_after_an_eq_set_and_names_it():
-    with Tot() as tot:
+def test_an_eq_set_after_a_tot_run_is_refused_and_the_case_goes_on():
+    # It would make the next tot_run prepare again (with bpsd before k-yoshimi/bpsd#7, past the splines of the first
+    # preparation; on the split build with TR's own EQ, which the set never reaches).
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         tot.run(5)
-        tot.set_param("eq:RB", 2.1)
         with pytest.raises(TotlibInvalidParamError) as e:
-            tot.continue_run(5)
+            tot.set_param("eq:RB", 2.1)
         assert "eq:RB" in str(e.value)
+        tot.continue_run(5)
+        assert tot.get_state().nt == 10
 
 
-def test_tot_continue_is_refused_after_an_eq_string_set_and_names_it():
-    with Tot() as tot:
+def test_an_eq_string_set_after_a_tot_run_is_refused_and_the_case_goes_on():
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         tot.run(5)
-        tot.set_param_str("eq:KNAMEQ", "x")
         with pytest.raises(TotlibInvalidParamError) as e:
-            tot.continue_run(5)
+            tot.set_param_str("eq:KNAMEQ", "x")
         assert "eq:KNAMEQ" in str(e.value)
-
-
-def test_a_tot_run_after_an_eq_set_prepares_again_and_continue_works_again():
-    with Tot() as tot:
-        _hot(tot)
-        tot.run(5)
-        tot.set_param("eq:RB", 2.1)
-        tot.run(5)                      # prepares again: NT starts from 0
-        assert tot.get_state().nt == 5
         tot.continue_run(5)
         assert tot.get_state().nt == 10
 
 
-def test_a_failed_eq_set_does_not_make_continue_refuse():
-    with Tot() as tot:
+def test_an_eq_set_after_a_failed_preparation_is_refused():
+    # MODEL_PNF 5: tr_prep fails (set_usigmav_nf refuses it) before it sizes anything, so this refusal is conservative;
+    # it pins the failed-preparation half of the guard (g_failed), as a tr_prep that fails later has sized the splines.
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
-        tot.run(5)
+        tot.set_param("tr:MODEL_PNF", 5.0)
         with pytest.raises(TotlibError):
-            tot.set_param("eq:NOSUCHNAME", 1.0)
+            tot.run(5)
+        with pytest.raises(TotlibInvalidParamError):
+            tot.set_param("eq:RB", 2.1)
+
+
+def test_an_eq_name_with_a_blank_before_its_colon_is_refused_through_the_c_function_too():
+    # tot_param_set takes "eq :RB" as an eq: name (the prefix is trimmed); totlib refuses it before the call.
+    from totlib import _ffi
+    import ctypes
+    with Tot(str(_TOT_LIB)) as tot:
+        _hot(tot)
+        tot.run(5)
+        lib = _ffi.load_library(str(_TOT_LIB))
+        assert lib.tot_set_param(b"eq :RB", ctypes.c_double(2.1)) == 1
         tot.continue_run(5)
         assert tot.get_state().nt == 10
+
+
+def test_an_eq_set_before_the_first_run_is_taken():
+    with Tot(str(_TOT_LIB)) as tot:
+        _hot(tot)
+        tot.set_param("eq:RB", 2.1)
+        tot.set_param_str("eq:KNAMEQ", "eqdata.ITER01")
+        tot.run(5)
+        tot.continue_run(5)
+        assert tot.get_state().nt == 10
+
+
+def test_a_new_case_takes_eq_sets_again():
+    with Tot(str(_TOT_LIB)) as tot:
+        _hot(tot)
+        tot.run(5)
+    with Tot(str(_TOT_LIB)) as tot:                 # tot_finalize, then tot_init: TR's lifecycle starts again
+        tot.set_param("eq:RB", 2.1)
+        _hot(tot)
+        tot.run(5)
+        assert tot.get_state().nt == 5
 
 
 def test_tot_continue_before_a_run_is_refused():
-    with Tot() as tot:
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         with pytest.raises(TotlibInvalidParamError):
             tot.continue_run(5)
 
 
 def test_tot_continue_refuses_a_negative_count():
-    with Tot() as tot:
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         tot.run(5)
         with pytest.raises(TotlibError):
@@ -160,7 +201,7 @@ def test_tot_continue_refuses_a_negative_count():
 
 
 def test_tot_continue_before_init_is_not_initialized():
-    tot = Tot()
+    tot = Tot(str(_TOT_LIB))
     tot.close()
     with pytest.raises(TotlibError):
         tot.continue_run(1)
@@ -168,7 +209,7 @@ def test_tot_continue_before_init_is_not_initialized():
 
 @pytest.mark.parametrize("bad", [2**31, 2**32 + 5, -1])
 def test_tot_continue_refuses_a_count_a_c_int_cannot_hold(bad):
-    with Tot() as tot:
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         tot.run(5)
         with pytest.raises(TotlibInvalidParamError):
@@ -178,7 +219,7 @@ def test_tot_continue_refuses_a_count_a_c_int_cannot_hold(bad):
 
 @pytest.mark.parametrize("bad", [2**31, 2**32 + 5, -1])
 def test_tot_run_refuses_a_count_a_c_int_cannot_hold(bad):
-    with Tot() as tot:
+    with Tot(str(_TOT_LIB)) as tot:
         _hot(tot)
         with pytest.raises(TotlibInvalidParamError):
             tot.run(bad)
@@ -187,7 +228,7 @@ def test_tot_run_refuses_a_count_a_c_int_cannot_hold(bad):
 def test_tot_continue_c_function_before_tot_init_returns_2():
     """The C entry point itself (the Python closed-handle guard above never reaches it)."""
     from totlib import _ffi
-    lib = _ffi.load_library()
+    lib = _ffi.load_library(str(_TOT_LIB))
     assert lib.tot_continue(1) == 2
     assert lib.tot_continue(-1) == 2          # not initialised comes first, as in tot_run
     assert lib.tot_run(1) == 2

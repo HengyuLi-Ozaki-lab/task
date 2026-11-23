@@ -28,7 +28,6 @@ HERE = Path(__file__).resolve()
 PYTHON_ROOT = HERE.parents[2]
 REPO = HERE.parents[3]
 SERVERS_ROOT = PYTHON_ROOT / "mcp-servers"
-DEFAULT_SO = REPO / "tr" / "libtrapi.so"
 RUNNER = HERE.parent / "continue_runner.py"
 
 for _root in (PYTHON_ROOT, SERVERS_ROOT):
@@ -36,11 +35,13 @@ for _root in (PYTHON_ROOT, SERVERS_ROOT):
         sys.path.insert(0, str(_root))
 
 from trlib import Trlib, TrlibParamError, TrlibRunError  # noqa: E402
+from trlib import _ffi as _tr_ffi  # noqa: E402
 from trlib.tests.regrid_marks import NEEDS_BPSD_FIX  # noqa: E402
 
 pytestmark = [
     pytest.mark.forked,
-    pytest.mark.skipif(not DEFAULT_SO.exists(), reason=f"libtrapi.so not built at {DEFAULT_SO}"),
+    pytest.mark.skipif(not _tr_ffi._default_lib_path().exists(),     # Trlib()'s own resolution: MONO_LIB_PATH,
+                       reason=f"libtrapi.so not found at {_tr_ffi._default_lib_path()}"),   # TRLIB_PATH, tr/, lib/
 ]
 
 CONTROL = {"RIPE", "PNBTOT", "PICTOT", "PECTOT", "PLHTOT", "NTEQIT", "TPRST"}
@@ -345,7 +346,7 @@ def test_param_class():
 @pytest.mark.parametrize("name,cls", [
     ("MDLST", 0), ("PECR0", 0), ("NTMAX", 0), ("DT", 0), ("KNAMEQ", 0), ("PN[1]", 0), ("PSCTOT[3]", 0),
     ("NRMAX", 0), ("eq:NSGMAX", 0), ("TPRST", 1), ("NTEQIT", 1), ("PLHTOT", 1),
-    ("", -1), ("eq:", -1), ("rr", -1), ("NOSUCH[1]", -1), ("PN[zz]", -1), (" eq:RB", -1),
+    ("", -1), ("eq:", -1), ("rr", -1), ("NOSUCH[1]", -1), ("PN[zz]", -1), (" eq:RB", -1), ("KNAMEQ[1]", -1), ("KNAMEQ[0]", -1),
     ("RIPE ", 1), (" RR", 0),   # the setter takes these: blanks around a name are not counted
 ])
 def test_the_class_of_a_name(name, cls):

@@ -73,7 +73,7 @@ MODULE tot_api
                     tr_api_finalize, tr_api_get_scalar, &
                     tr_api_history_length, tr_api_history_full, tr_api_history_count, &
                     tr_api_history_name, tr_api_history_get, &
-                    tr_api_continue
+                    tr_api_continue, tr_api_eq_set_refused_in_case
   USE tr_state, ONLY: tr_state_c
   USE ti_api, ONLY: ti_api_init,     ti_api_run,     ti_api_finalize
   USE fp_api, ONLY: fp_api_init,     fp_api_run,     fp_api_finalize
@@ -369,6 +369,12 @@ CONTAINS
     INTEGER :: rc
 
     CALL c_string_to_fortran(name, fname)
+    ! An eq: set after TR has prepared this case is refused (tr_api_eq_set_refused_in_case), as TR's own route refuses
+    ! one: bpsd before k-yoshimi/bpsd#7.
+    IF (eq_set_refused('tot_set_param', fname)) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
     CALL tot_param_set(TRIM(fname), value, rc)
     IF (rc == 0) THEN
        ierr = TOT_ERR_OK
@@ -395,6 +401,10 @@ CONTAINS
 
     CALL c_string_to_fortran(name,  fname)
     CALL c_string_to_fortran(value, fvalue)
+    IF (eq_set_refused('tot_set_param_str', fname)) THEN    ! as tot_api_set_param
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
     CALL tot_param_set_str(TRIM(fname), TRIM(fvalue), rc)
     IF (rc == 0) THEN
        ierr = TOT_ERR_OK
@@ -402,6 +412,19 @@ CONTAINS
        ierr = TOT_ERR_INVALID
     END IF
   END FUNCTION tot_api_set_param_str
+
+  ! eq_set_refused : true for a name that tot_param_set and tot_param_set_str would hand to EQ (their prefix "eq", parsed
+  ! as they parse it: up to the first ':', trailing blanks trimmed) while TR refuses an eq: set
+  ! (tr_api_eq_set_refused_in_case); false for every other name, which they dispatch (and refuse) as before.
+  LOGICAL FUNCTION eq_set_refused(who, fname)
+    CHARACTER(LEN=*), INTENT(IN) :: who, fname
+    INTEGER :: sep
+    eq_set_refused = .FALSE.
+    sep = INDEX(fname, ':')
+    IF (sep < 2 .OR. sep >= LEN_TRIM(fname)) RETURN
+    IF (TRIM(fname(1:sep-1)) /= 'eq') RETURN
+    eq_set_refused = tr_api_eq_set_refused_in_case(who, TRIM(fname(sep+1:)))
+  END FUNCTION eq_set_refused
 
   !-------------------------------------------------------------------
   ! tot_finalize : tear down every sub-module in REVERSE init order.

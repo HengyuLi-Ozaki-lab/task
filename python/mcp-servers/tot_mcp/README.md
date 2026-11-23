@@ -280,7 +280,7 @@ LLM は `describe_parameters` を呼び、`parameters["eq"]` を抽出して返�
 | `run_and_get_state` | init + set + run + get_state を一括 | `params`, `ntmax` |
 | `run_pipeline` | 複数モジュールを連結したスカラーカップリング実行 (L-7a) | `steps`, `params` |
 
-> `continue_run` は TR の `tr_continue` を呼びます: 前回の `run` / `continue_run` 以降に設定した制御パラメータ (`tr:RIPE`, `tr:PNBTOT`, `tr:PICTOT`, `tr:PECTOT`, `tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) は最初のステップから効き, `NT`・`T`・履歴は続きます. ほかの `tr:` 名と `eq:` 名は構造パラメータで, 準備後に設定すると拒否され (メッセージに TR の記録と名前が入ります), 次の `run` が再準備します. `run(0)` はステップを進めませんが `RIPS = RIPE` になり, 事前に設定した電流ランプが失われます (動作確認に使わないでください). `continue_run(0)` は検査だけです. 詳細は `python/trlib/README.md` の "Continuing a run".
+> `continue_run` は TR の `tr_continue` を呼びます: 前回の `run` / `continue_run` 以降に設定した制御パラメータ (`tr:RIPE`, `tr:PNBTOT`, `tr:PICTOT`, `tr:PECTOT`, `tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) は最初のステップから効き, `NT`・`T`・履歴は続きます. ほかの `tr:` 名は構造パラメータで, 準備後に設定すると `continue_run` が拒否され (メッセージに TR の記録と名前が入ります), 次の `run` が再準備します. `eq:` 名は TR がケースを準備した後は設定そのものが拒否されます (k-yoshimi/bpsd#7 より前の bpsd では準備後の EQ グリッドの変更がメモリを壊すため. 最初の `run` の前に設定してください). `run(0)` はステップを進めませんが `RIPS = RIPE` になり, 事前に設定した電流ランプが失われます (動作確認に使わないでください). `continue_run(0)` は検査だけです. 詳細は `python/trlib/README.md` の "Continuing a run".
 
 > L-6 以降、`init` / `finalize` は eq・tr・ti・fp・wr を立ち上げ / 終了し、`run` は TR の時間発展を進め、`get_state` は TR の値を返します (L-3〜L-5 ではスタブで `TOT_ERR_NOT_IMPL` を返していました)。モジュール間の結合は `run_pipeline` (7.1) が受け持ちます。
 

@@ -85,8 +85,10 @@ claude mcp add task-tot \
 | `run_pipeline` | 複数モジュールをスカラー結合で順に実行 (`totlib.TotPipeline`). `params` の文字列値は各モジュール自身の文字列設定に渡るので `fp:KNAMEQ` もここで設定できる | `steps`, `params` |
 
 `continue_run` は前回の `run` / `continue_run` 以降に設定した制御パラメータ (`tr:RIPE`, `tr:PNBTOT`, `tr:PICTOT`, `tr:PECTOT`,
-`tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) を最初のステップから反映し, `NT`・`T`・履歴は続きます. ほかの `tr:` 名と `eq:` 名は構造パラメータで,
-準備後に設定すると拒否され (メッセージに TR の記録と名前が入る), 次の `run` が再準備します. `run(0)` はステップを進めませんが
+`tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) を最初のステップから反映し, `NT`・`T`・履歴は続きます. ほかの `tr:` 名は構造パラメータで,
+準備後に設定すると `continue_run` が拒否され (メッセージに TR の記録と名前が入る), 次の `run` が再準備します. `eq:` 名は TR が
+ケースを準備した後は設定そのものが拒否されます (k-yoshimi/bpsd#7 より前の bpsd では準備後の EQ グリッドの変更がメモリを壊すため.
+最初の `run` の前に設定してください). `run(0)` はステップを進めませんが
 `RIPS = RIPE` になり, 事前に設定したランプが失われます (動作確認に使わないでください). `continue_run(0)` は検査だけです.
 詳細は `python/trlib/README.md` の "Continuing a run".
 

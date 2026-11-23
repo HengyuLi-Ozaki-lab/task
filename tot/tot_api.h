@@ -105,9 +105,13 @@ int tot_run(int ntmax);
  * tot_continue : tr_continue (tr/tr_api.h) through tot: advance the prepared case nsteps more steps without
  * preparing again. The control parameters set since the last tot_run or tot_continue ("tr:" RIPE, PNBTOT, PICTOT,
  * PECTOT, PLHTOT, NTEQIT, TPRST) take effect at its first step; NT, T and the history go on. tot runs only TR, as
- * tot_run does. Every "eq:" name set after a preparation is structural: the eq dispatcher tells TR (as tr_set_param
- * does), so the next tot_run prepares again and tot_continue refuses, naming it. TR refuses every eq: name after the process's first
- * preparation attempt (and eight names always: eq_name_refused, tr/tr_api.f90); that refusal is not applied in tot.
+ * tot_run does. tot_set_param and tot_set_param_str refuse an "eq:" name (TOT_ERR_INVALID, an XX line) once TR has
+ * prepared the case, by a tot_run that succeeded or failed: it would make the next tot_run prepare again, and until the
+ * pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change after a preparation corrupts memory. Before a preparation, and in a
+ * new case after tot_finalize and tot_init, the eq dispatcher tells TR (as tr_set_param does). TR's refusal of every
+ * eq: name after the process's first preparation attempt (and of eight names always: eq_name_refused, tr/tr_api.f90)
+ * is not applied in tot. On the split build libtrapi.so carries its own EQ, which tot's eq: sets do not reach (seen on
+ * macOS, whose two-level namespace binds tot's eq_param_set to libeqapi.so).
  * Returns 0; 1 (TOT_ERR_INVALID) when tr_continue refuses (nothing ran; the record, kind REFUSED, is TR's
  * tr_last_error, read through trlib in the same image) or nsteps < 0; 2 before tot_init; 3 when the loop fails
  * (the record is tr_last_error's).
@@ -124,7 +128,8 @@ int tot_continue(int nsteps);
  *   tot_set_param("tr:DT",  0.01);
  *   tot_set_param("fp:NSMAX", 2);
  *   tot_set_param("wrx:RF", 170.0);
- * A name without ':' is rejected with TOT_ERR_INVALID.
+ * A name without ':' is rejected with TOT_ERR_INVALID. An "eq:" name is refused (TOT_ERR_INVALID, an XX line) once TR
+ * has prepared the case: see tot_continue above.
  *
  * tot_set_param_str handles CHARACTER variables (e.g. KNAMEQ). Only
  * the `tr:` namespace is backed by a string setter in L-3; the other

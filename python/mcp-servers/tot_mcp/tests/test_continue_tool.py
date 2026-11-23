@@ -18,10 +18,11 @@ for extra in (str(MCP_ROOT.parent), str(PYTHON_ROOT)):
         sys.path.insert(0, extra)
 
 from tot_mcp import server as srv  # noqa: E402
+from totlib import _ffi as _tot_ffi  # noqa: E402
 from totlib.errors import TotlibInvalidParamError  # noqa: E402
 
 FIXTURES_DIR = PYTHON_ROOT / "trlib" / "tests" / "fixtures"
-has_lib = bool(os.environ.get("MONO_LIB_PATH") or os.environ.get("TOTLIB_PATH") or (REPO_ROOT / "tot" / "libtotapi.so").exists())
+has_lib = _tot_ffi._default_lib_path().exists()      # Tot()'s own resolution: MONO_LIB_PATH, TOTLIB_PATH, tot/, lib/
 
 
 def _message(call):
@@ -60,8 +61,9 @@ def test_the_continue_tool_is_registered_and_run_warns_about_run_zero():
 
 @pytest.mark.skipif(not has_lib, reason="libtotapi.so not built")
 @pytest.mark.forked
-def test_continue_after_an_eq_set_is_refused_naming_it():
+def test_an_eq_set_after_a_run_is_refused_naming_it_and_continue_goes_on():
     from trlib.tests.fixtures import tr_iter01_params as fixture
+    srv.handle_init()            # opens the handle here: a relative TOTLIB_PATH or MONO_LIB_PATH is resolved from this cwd
     prev = os.getcwd()
     os.chdir(FIXTURES_DIR)
     try:
@@ -75,12 +77,14 @@ def test_continue_after_an_eq_set_is_refused_naming_it():
         srv.handle_set_params(params)
         srv.handle_run(5)
         srv.handle_continue_run(5)                       # nothing set: goes on
-        srv.handle_set_param("eq:RB", 2.1)
-        msg = _message(lambda: srv.handle_continue_run(5))
+        msg = _message(lambda: srv.handle_set_param("eq:RB", 2.1))
+        srv.handle_continue_run(5)                       # the refused set changed nothing
+        nt = srv.STATE.tot.get_state().nt
     finally:
         srv.STATE.close()
         os.chdir(prev)
     assert msg.startswith("invalid parameter:") and "eq:RB" in msg, msg
+    assert nt == 15
 
 
 def test_continue_run_is_listed_by_print_tools(capsys):

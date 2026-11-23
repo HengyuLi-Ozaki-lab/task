@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,6 @@ HERE = Path(__file__).resolve()
 PYTHON_ROOT = HERE.parents[2]
 REPO = HERE.parents[3]
 TR2 = REPO / "tr" / "tr2"
-DEFAULT_SO = REPO / "tr" / "libtrapi.so"
 RUNNER = HERE.parent / "continue_runner.py"
 FIXTURES_DIR = HERE.parent / "fixtures"
 EXTRACT = REPO / "test_run" / "scripts" / "extract_tr_metrics.py"
@@ -53,11 +53,13 @@ COMPARE = REPO / "test_run" / "scripts" / "compare_metrics.py"
 if str(PYTHON_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_ROOT))
 
+from trlib import _ffi as _tr_ffi  # noqa: E402
+
 pytestmark = [
     pytest.mark.forked,
     pytest.mark.skipif(not TR2.exists(), reason=f"tr2 not built at {TR2} (make -C tr libs && make -C tr tr2)"),
-    pytest.mark.skipif(not DEFAULT_SO.exists() and not os.environ.get("MONO_LIB_PATH"),
-                       reason=f"libtrapi.so not built at {DEFAULT_SO}"),
+    pytest.mark.skipif(not _tr_ffi._default_lib_path().exists(),     # Trlib()'s own resolution, as continue_runner's
+                       reason=f"libtrapi.so not found at {_tr_ffi._default_lib_path()}"),
 ]
 
 
@@ -110,10 +112,26 @@ def _write_tr2_case(d: Path, strings, params, n1, change, n2, with_change=True):
             shutil.copy(FIXTURES_DIR / v, d / v)
 
 
+# The time every process of one test shares, under the suite's 120 s pytest timeout (--timeout=120).
+DEADLINE = 100.0
+
+
+def _left(start: float) -> float:
+    return max(1.0, start + DEADLINE - time.monotonic())
+
+
+def _reap(procs) -> None:
+    """Kill and wait for each process still running, so that a failed comparison or a timeout leaves none behind."""
+    for p in procs:
+        if p.poll() is None:
+            p.kill()
+        p.wait()
+
+
 def _start_tr2(d: Path) -> subprocess.Popen:
     env = dict(os.environ, TR_REGRESS_DUMP="1")
-    return subprocess.Popen([str(TR2)], cwd=d, stdin=open(d / "tr.in"), stdout=open(d / "out.txt", "w"),
-                            stderr=subprocess.STDOUT, env=env)
+    with open(d / "tr.in") as stdin, open(d / "out.txt", "w") as stdout:     # the child keeps its own descriptors
+        return subprocess.Popen([str(TR2)], cwd=d, stdin=stdin, stdout=stdout, stderr=subprocess.STDOUT, env=env)
 
 
 def _dump_json(d: Path, n1: int, n2: int) -> Path:
@@ -140,21 +158,27 @@ def _check(case, change, n1=100, n2=100):
         tmp = Path(tmpdir)
         _write_tr2_case(tmp / "tr2", strings, params, n1, change, n2)
         _write_tr2_case(tmp / "tr2_same", strings, params, n1, change, n2, with_change=False)
-        procs = {name: _start_tr2(tmp / name) for name in ("tr2", "tr2_same")}
-        api = tmp / "api"
-        api.mkdir()
-        for k, v in strings:
-            if k == "KNAMEQ":
-                shutil.copy(FIXTURES_DIR / v, api / v)
-        spec = {"cwd": str(api), "strings": strings, "params": params,
-                "calls": [{"call": "run", "nsteps": n1}, {"call": "continue", "nsteps": n2, "set": change}]}
-        (tmp / "spec.json").write_text(json.dumps(spec))
-        env = {k: v for k, v in os.environ.items() if k != "TR_REGRESS_DUMP"}
-        res = subprocess.run([sys.executable, str(RUNNER), str(tmp / "spec.json"), str(tmp / "api.json")],
-                             capture_output=True, text=True, timeout=300, env=env)
-        for name, p in procs.items():
-            assert p.wait(timeout=300) == 0, (name, (tmp / name / "out.txt").read_text()[-2000:])
-        assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+        start = time.monotonic()
+        procs = {}
+        try:
+            for name in ("tr2", "tr2_same"):
+                procs[name] = _start_tr2(tmp / name)
+            api = tmp / "api"
+            api.mkdir()
+            for k, v in strings:
+                if k == "KNAMEQ":
+                    shutil.copy(FIXTURES_DIR / v, api / v)
+            spec = {"cwd": str(api), "strings": strings, "params": params,
+                    "calls": [{"call": "run", "nsteps": n1}, {"call": "continue", "nsteps": n2, "set": change}]}
+            (tmp / "spec.json").write_text(json.dumps(spec))
+            env = {k: v for k, v in os.environ.items() if k != "TR_REGRESS_DUMP"}
+            res = subprocess.run([sys.executable, str(RUNNER), str(tmp / "spec.json"), str(tmp / "api.json")],
+                                 capture_output=True, text=True, timeout=_left(start), env=env)
+            assert res.returncode == 0, res.stdout[-2000:] + res.stderr[-2000:]
+            for name, p in procs.items():
+                assert p.wait(timeout=_left(start)) == 0, (name, (tmp / name / "out.txt").read_text()[-2000:])
+        finally:
+            _reap(procs.values())
         out = json.loads((tmp / "api.json").read_text())
         assert out["nt"] == [n1, n1 + n2]
         (tmp / "actual.json").write_text(json.dumps(out["state"]))
@@ -211,21 +235,29 @@ def test_with_nclass_tr2_s_c_is_not_a_continuation():
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         _write_tr2_case(tmp / "tr2", strings, params, 100, [], 100)
-        proc = _start_tr2(tmp / "tr2")
+        start = time.monotonic()
         env = {k: v for k, v in os.environ.items() if k != "TR_REGRESS_DUMP"}
+        procs = []
         runs = {}
-        for tag, calls in (("cut", [{"call": "run", "nsteps": 100}, {"call": "continue", "nsteps": 100}]),
-                           ("one", [{"call": "run", "nsteps": 200}])):
-            d = tmp / tag
-            d.mkdir()
-            shutil.copy(FIXTURES_DIR / "eqdata.ITER01", d / "eqdata.ITER01")
-            (d / "spec.json").write_text(json.dumps({"cwd": str(d), "strings": strings, "params": params,
-                                                     "calls": calls}))
-            runs[tag] = subprocess.Popen([sys.executable, str(RUNNER), str(d / "spec.json"), str(d / "out.json")],
-                                         stdout=open(d / "log", "w"), stderr=subprocess.STDOUT, env=env)
-        for tag, p in runs.items():
-            assert p.wait(timeout=300) == 0, (tmp / tag / "log").read_text()[-2000:]
-        assert proc.wait(timeout=300) == 0, (tmp / "tr2" / "out.txt").read_text()[-2000:]
+        try:
+            proc = _start_tr2(tmp / "tr2")
+            procs.append(proc)
+            for tag, calls in (("cut", [{"call": "run", "nsteps": 100}, {"call": "continue", "nsteps": 100}]),
+                               ("one", [{"call": "run", "nsteps": 200}])):
+                d = tmp / tag
+                d.mkdir()
+                shutil.copy(FIXTURES_DIR / "eqdata.ITER01", d / "eqdata.ITER01")
+                (d / "spec.json").write_text(json.dumps({"cwd": str(d), "strings": strings, "params": params,
+                                                         "calls": calls}))
+                with open(d / "log", "w") as log:
+                    runs[tag] = subprocess.Popen([sys.executable, str(RUNNER), str(d / "spec.json"),
+                                                  str(d / "out.json")], stdout=log, stderr=subprocess.STDOUT, env=env)
+                procs.append(runs[tag])
+            for tag, p in runs.items():
+                assert p.wait(timeout=_left(start)) == 0, (tmp / tag / "log").read_text()[-2000:]
+            assert proc.wait(timeout=_left(start)) == 0, (tmp / "tr2" / "out.txt").read_text()[-2000:]
+        finally:
+            _reap(procs)
         for tag in runs:
             (tmp / f"{tag}.json").write_text(json.dumps(json.loads((tmp / tag / "out.json").read_text())["state"]))
         assert _compare(tmp / "one.json", tmp / "cut.json", "1e-10").returncode == 0

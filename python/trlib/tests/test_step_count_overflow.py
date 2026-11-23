@@ -24,9 +24,14 @@ import pytest
 
 HERE = Path(__file__).resolve()
 PYTHON_ROOT = HERE.parents[2]
-DEFAULT_SO = HERE.parents[3] / "tr" / "libtrapi.so"
+if str(PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(PYTHON_ROOT))
 
-pytestmark = pytest.mark.skipif(not DEFAULT_SO.exists(), reason="libtrapi.so not built")
+from trlib import _ffi as _tr_ffi  # noqa: E402
+
+# Trlib()'s own resolution (MONO_LIB_PATH, TRLIB_PATH, tr/, lib/); the children inherit the environment and the cwd.
+pytestmark = pytest.mark.skipif(not _tr_ffi._default_lib_path().exists(),
+                                reason=f"libtrapi.so not found at {_tr_ffi._default_lib_path()}")
 
 INT_MAX = 2147483647
 

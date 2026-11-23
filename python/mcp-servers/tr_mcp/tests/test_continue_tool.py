@@ -24,8 +24,11 @@ for extra in (str(MCP_ROOT.parent), str(PYTHON_ROOT)):
 from tr_mcp import server as srv  # noqa: E402
 from trlib import TrFailure, TrlibParamError, TrlibRunError  # noqa: E402
 
-SO = REPO_ROOT / "tr" / "libtrapi.so"
-needs_lib = pytest.mark.skipif(not SO.exists(), reason="libtrapi.so not built")
+from trlib import _ffi as _tr_ffi  # noqa: E402
+
+# Trlib()'s own resolution: MONO_LIB_PATH, TRLIB_PATH, tr/, lib/.
+needs_lib = pytest.mark.skipif(not _tr_ffi._default_lib_path().exists(),
+                               reason=f"libtrapi.so not found at {_tr_ffi._default_lib_path()}")
 
 
 def _message(call):

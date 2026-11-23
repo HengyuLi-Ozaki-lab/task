@@ -297,7 +297,9 @@ the `eq:` names, and the drift of `NRPMAX` between `NTEQIT` re-solves inside one
 with `EQ_FAILED` 102 at q-scaling iteration 2 (103 on fork PR #25's build, before the axis search reported an end point
 that is not finite), with no `eq:` name set and TR's `NRMAX` unchanged. The protection
 against the overrun is bpsd#7 itself. TOT's `eq:` dispatcher (`dispatch_eq` in `tot/tot_param_registry.f90`) calls
-`eq_param_set` directly, so this guard does not apply in `totlib` or the mono build.
+`eq_param_set` directly, so this guard does not apply in `totlib` or the mono build; TOT's setters refuse an `eq:` set
+only once TR has prepared the case in the current lifecycle (`tr_api_eq_set_refused_in_case`), so a new case with
+another EQ grid in the same process is not guarded there.
 
 The registry below reflects `tr/tr_param_registry.f90` at Phase L-3.
 Add to it by extending that Fortran `SELECT CASE`; no Python change

@@ -147,7 +147,8 @@ each step, and ends the run at the first failure with the record (`EQ_FAILED`, `
 `NONFINITE`.
 
 A name `eq:NAME` in `tr_set_param` / `tr_set_param_str` is sent to EQ's registry (`eq_param_set`); `libtrapi.so` links
-`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` dispatcher is not guarded.
+`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` setters refuse a set only after TR has prepared the case in this lifecycle,
+not after the process's first preparation (below, under "Continuing a run").
 
 ## Continuing a run (`tr_continue`, `tr_api.f90`)
 
@@ -161,7 +162,8 @@ restarts it, so the steps chosen by `NT` are counted from the preparation; with 
 (`trcoef_resistivity.f90:123`). A call that ends on an `NTEQIT` re-solve leaves its last history row with the q(0) from
 before the re-solve, and the next call's first `TRGLOB` re-anchors `WPPRE`/`TPRE`, which moves `WPDOT`, `TAUE2` and `H98Y2` of
 the row after the cut and nothing in the state. `tot_continue` calls it; TOT's `eq:` setters call
-`tr_param_note_external_set`, which counts as a structural set.
+`tr_param_note_external_set`, which counts as a structural set, and refuse a set once TR has prepared the case
+(`tr_api_eq_set_refused_in_case`, for bpsd before k-yoshimi/bpsd#7, as TR's own route refuses one).
 
 ## Outputs by name (`tr_api.f90`)
 

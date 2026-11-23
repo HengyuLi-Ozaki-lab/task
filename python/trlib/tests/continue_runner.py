@@ -31,12 +31,14 @@ if str(PYTHON_ROOT) not in sys.path:
 
 def main(spec_path: str, out_path: str) -> int:
     from trlib import Trlib
+    from trlib import _ffi
 
     spec = json.loads(Path(spec_path).read_text())
+    lib = str(_ffi._default_lib_path().resolve())     # before the chdir: a relative TRLIB_PATH or MONO_LIB_PATH
     if spec.get("cwd"):
         os.chdir(spec["cwd"])
     out: dict = {"nt": []}
-    with Trlib() as t:
+    with Trlib(lib) as t:
         for name, value in spec.get("strings", []):
             t.set_param_str(name, value)
         for name, value in spec.get("params", []):

@@ -87,9 +87,10 @@ what differentiates it from the other modules' servers.
 | `run_pipeline` | Run modules in sequence, coupled through scalars (`totlib.TotPipeline`); a string value in `params` goes to the module's own string setter, so `fp:KNAMEQ` works here | `steps`, `params` |
 
 `continue_run` takes the control parameters set since the last `run` or `continue_run` (`tr:RIPE`, `tr:PNBTOT`, `tr:PICTOT`,
-`tr:PECTOT`, `tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) at its first step, and `NT`, `T` and the history go on. Every other `tr:` name and
-every `eq:` name is structural: set after a preparation it makes `continue_run` refuse (the message carries TR's record and
-names it) and the next `run` prepares again. `run(0)` takes no step but sets `RIPS = RIPE`, so a ramp set before it is lost; do
+`tr:PECTOT`, `tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) at its first step, and `NT`, `T` and the history go on. Every other `tr:` name
+is structural: set after a preparation it makes `continue_run` refuse (the message carries TR's record and names it) and the
+next `run` prepares again. An `eq:` set is refused itself once TR has prepared the case: until the pinned bpsd has
+k-yoshimi/bpsd#7 an EQ grid change after a preparation corrupts memory, so set `eq:` names before the first `run`. `run(0)` takes no step but sets `RIPS = RIPE`, so a ramp set before it is lost; do
 not use it as a smoke test. `continue_run(0)` only checks. See `python/trlib/README.md`, "Continuing a run".
 
 ## Usage examples

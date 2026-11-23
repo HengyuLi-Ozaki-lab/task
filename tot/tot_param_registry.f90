@@ -150,9 +150,12 @@ CONTAINS
     INTEGER :: rc
     CALL eq_param_set(bare, value, rc)
     IF (rc == 0) THEN
-       ! TR prepares from EQ's registry too: tell it (as tr_api_set_param does for "eq:"), so that the next tot_run
-       ! prepares again and tot_continue refuses, naming this one. TR's guard on eq: names after the first
-       ! preparation is not applied here.
+       ! Where TR prepares from this EQ registry (the mono image), tell it (as tr_api_set_param does for "eq:"), so that
+       ! the next tot_run prepares again and tot_continue refuses, naming this one. On the split build libtrapi.so
+       ! carries its own EQ and this set does not reach it (macOS's two-level namespace binds this call to
+       ! libeqapi.so's registry). tot_api's setters refuse an eq: set once TR has prepared the case
+       ! (tr_api_eq_set_refused_in_case), so until k-yoshimi/bpsd#7 this counts only before a preparation; TR's
+       ! process-wide guard and its always-refused names (eq_name_refused) are not applied here.
        CALL tr_param_note_external_set('eq:'//bare)
        ierr = 0
     ELSE

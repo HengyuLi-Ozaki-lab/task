@@ -75,7 +75,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     equals it at the same cut to 1e-10 for every control parameter (bit for bit in the macOS checks:
     `test_continue_vs_tr2.py`, and ITER under `MODELG` 9 in three stages, `tr_iter01_m9`, below).
   - `tr_param_class(name)`: 1 for a control parameter, 0 for a structural one (any other name the setters take, and every
-    `eq:` name), -1 for a name they do not know; callable before `tr_init`. `Trlib.continue_run`, `Trlib.param_class`.
+    `eq:` name), -1 for a name they do not know (`KNAMEQ[1]` too: the string setter takes no subscript); callable before
+    `tr_init`. `Trlib.continue_run`, `Trlib.param_class`.
   - `tr_continue` refuses (`TR_ERR_INVALID`, a `REFUSED` record in `tr_last_error`, a line on unit 6 for each finding,
     nothing run): before a preparation; after a failed `tr_prep` or loop, until a `tr_run` prepares again; after a
     structural set since the preparation (the record names the last one: `tr_run` prepares again); for a negative
@@ -106,11 +107,16 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     `WPT` (`tr/trrslt_globals.f90:332-338`). The state is not affected.
   - `tot_continue(nsteps)` and `Tot.continue_run` call it as `tot_run` calls `tr_run` (TOT runs only TR); TR's refusal is
     `TOT_ERR_INVALID` and the exception text carries the record. TOT has no parameter-class query: `Trlib.param_class` answers
-    for the same names. TOT's `eq:` setters (number and string) tell TR (`tr_param_note_external_set`): an `eq:` set after a
-    preparation is structural, so `tot_continue` refuses naming it and the next `tot_run` prepares again. Before, a TOT `eq:`
-    set did neither. `Tot.run` and `Tot.continue_run` check the count (0 to 2**31 - 1) before the call. This also means that a TOT `eq:` set alone now makes the next `tot_run` prepare again, which widens the
-    unguarded route to the bpsd overrun of k-yoshimi/bpsd#7 (TOT's `eq:` dispatcher has no guard; the protection is
-    bpsd#7 itself).
+    for the same names. TOT's `eq:` setters (number and string) now refuse a set once TR has prepared the case (a
+    preparation that succeeded or failed in this lifecycle; `TOT_ERR_INVALID`, one `XX` line): such a set would make the
+    next `tot_run` prepare again, and until the pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change after a preparation
+    writes past bpsd's splines, which TR's own route already refuses. Before, TOT took the set and TR went on without it.
+    Before a preparation, and in a new case after `tot_finalize` and `tot_init`, `eq:` sets are taken as before and tell TR
+    (`tr_param_note_external_set`). TR's process-wide refusal and its always-refused names are not applied in TOT, so a
+    new case with another EQ grid in the same process is still unguarded (k-yoshimi/bpsd#7). On the split build
+    `libtrapi.so` carries its own EQ: TOT's `eq:` sets reach `libeqapi.so`'s registry only, not the EQ that TR prepares
+    from (macOS; the mono image has one EQ). `Tot.run` and `Tot.continue_run` check the count (0 to 2**31 - 1) before the
+    call.
   - `tr_mcp` and `tot_mcp`: a `continue_run` tool; `tr_mcp`'s `describe_parameters` gives each name its `class`
     (without opening the library's lifecycle: `classes_unavailable` says why when the library does not load); a refusal
     returns the record in the form of a failed run (`[failure: kind=REFUSED ...]`, the detail once). `tr_mcp`'s
@@ -119,8 +125,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     before it, and a step that fails before an output step leaves the results of before the set); a refused one
     changes nothing.
   - Test: the equivalence case `tr_iter01_m9` (`test_run/inputs/tr_iter01_m9.in`, `.eqparm`; `run_tests.sh` copies
-    `<case>.eqparm` for tr cases): ITER under `MODELG` 9, `NTEQIT` 0, three stages `r` / `c` / `c` (1500, 2000, 6500 steps),
-    against `tr2`'s dump; skipped without its baseline, which Linux generates.
+    `<case>.eqparm` for tr cases, and fails a `MODELG` 9 case without one, which would solve on EQ's defaults): ITER
+    under `MODELG` 9, `NTEQIT` 0, three stages `r` / `c` / `c` (1500, 2000, 6500 steps), against `tr2`'s dump; skipped
+    without its baseline, which Linux generates. `tot/Makefile`'s delegated `../tr/obj/tr_param_registry.o` and
+    `tr_state.o` depend on TR's sources, so that an incremental TOT build after this change compiles against the new
+    `tr_param_note_external_set(name)`.
 - **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
   re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
   (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,

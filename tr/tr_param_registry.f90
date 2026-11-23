@@ -491,7 +491,8 @@ CONTAINS
   ! (a name tr_param_set or tr_param_set_str takes, or any "eq:" name:
   ! EQ's registry is not asked), -1 for a name the setter does not know.
   ! The subscript of an array name is parsed as the setter parses it
-  ! (a malformed one is -1) but not range-checked.
+  ! (a malformed one is -1) but not range-checked. KNAMEQ, the one
+  ! string name, takes no subscript: "KNAMEQ[1]" is -1.
   !
   ! KNOWN_NAMES are the CASE names of tr_param_set_impl and of
   ! tr_param_set_str_impl: a new CASE there goes into this list too
@@ -528,6 +529,7 @@ CONTAINS
     END IF
     CALL parse_array_subscript(name, b, idx)
     IF (idx < 0) RETURN
+    IF (INDEX(name, '[') > 0 .AND. b == 'KNAMEQ') RETURN   ! tr_param_set_str matches the whole name; tr_param_set has none
     IF (is_control(b)) THEN
        cls = 1
     ELSE IF (ANY(KNOWN_NAMES == b)) THEN
