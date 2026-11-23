@@ -22,7 +22,7 @@ reads `QQPS`**: the on-disk format does not store it. `EQCALQ` then
 recomputes `QPS` on the per-`NR` flux-surface grid (returned to callers
 as `profile[].QPS`) but never projected it onto `PSIPS`. So the `QQPS`
 slot in COMMON kept its zero-initialised value, and the C ABI getter
-(`eq_api_common.f:186`, `QQPS_OUT(I) = QQPS(I)`) returned all zeros.
+(`eq_api_common.f:178`, `QQPS_OUT(I) = QQPS(I)`) returned all zeros.
 
 This is a TASK source-code bug, not an MCP or Python wrapper bug.
 
@@ -74,7 +74,7 @@ arrays.
 | `eq/equnit.f90:122`     | `eq_load` calls `EQCALQ` again after every load |
 | `eq/eqcalc.f90` (`EQLOOP`) | Every re-solve (`EQCALC`, the menu's `C`) comes through here; clears the flag |
 | `eq/eqcalq.f90` (`EQCALQ`) | The `QQPS` fill |
-| `eq/eq_api_common.f:186` | `QQPS_OUT(I) = QQPS(I)`: the C ABI getter |
+| `eq/eq_api_common.f:178` | `QQPS_OUT(I) = QQPS(I)`: the C ABI getter |
 | `eq/eq_api.f90` | `eq_last_error`; `eq_init`/`eq_finalize` reset the flag |
 
 `eq/eqfile.f90` (`EQRTSK`, the `MODELG=3` binary reader):

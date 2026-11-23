@@ -148,6 +148,7 @@ eq/obj/pic/
 eq/mod_pic/
 eq/tests/c_abi/test_run_so
 eq/tests/c_abi/test_smoke
+eq/tests/c_abi/test_negative
 eq/tests/c_abi/*.o
 adpost/obj/pic/
 adpost/mod_pic/

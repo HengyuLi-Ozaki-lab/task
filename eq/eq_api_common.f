@@ -1,33 +1,25 @@
 C     eq_api_common.f
 C
-C     Phase L-2: F77 bridge between the legacy eq COMMON blocks
-C     (eqcomm.inc / eqcom0.inc / eqcom1.inc) and the F90 C-ABI layer
-C     in eq_api.f90.
-C
-C     Why a dedicated F77 file?
-C     - The eq state lives in F77 COMMON blocks accessed via
-C       INCLUDE 'eqcomm.inc'. Pulling those into a F90 MODULE would
-C       require invasive refactoring. Instead we expose small
-C       SUBROUTINE getters / setters with plain scalar / array
-C       arguments; these can be called safely from eq_api.f90.
-C     - Keeping the bridge in fixed-form Fortran keeps the existing
-C       INCLUDE directives unchanged and avoids case / continuation
-C       surprises.
+C     Phase L-2: fixed-form getters between EQ's state and the F90
+C     C-ABI layer in eq_api.f90. Each is a small SUBROUTINE with plain
+C     scalar / array arguments that USEs the modules it reads (plcomm,
+C     eqcom0_mod for the grid-size PARAMETERs, mirroring eqcom0.inc,
+C     and eqcom1_mod / eqcom3_mod for the state). eq_api.f90 calls six
+C     of them; eqlib calls EQ_COMMON_GET_PSI_RZ through ctypes.
+C     Parameters are set through eq_param_registry.f90, not here.
 C
 C     Naming: EQ_COMMON_* to make it clear these are *not* the public
 C     C ABI (eq_init / eq_run / ...), only internal helpers.
 C
-C     Implicit-typing note: eqcomm.inc pulls in
-C         USE plcomm
-C         IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
-C     so `USE` must be the first executable statement in every
-C     SUBROUTINE. All local-argument / local-variable declarations
-C     therefore go *after* the INCLUDE line.
+C     Implicit typing: each routine USEs its modules first, then gives
+C     its IMPLICIT statement, and only then its arguments and locals.
+C     All but EQ_COMMON_GET_PROFILE (IMPLICIT NONE) take the EQ
+C     sources' IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z).
 
 C     ------------------------------------------------------------------
 C     Query the compile-time grid dimension maxima (PARAMETERs in
-C     eqcom0.inc). Exposed so callers can size buffers without having
-C     to INCLUDE eqcom0.inc themselves.
+C     eqcom0_mod). Exposed so callers can size buffers without having
+C     to USE eqcom0_mod themselves.
 C     ------------------------------------------------------------------
       SUBROUTINE EQ_COMMON_GET_GRID_DIMS(NRGM_OUT, NZGM_OUT,
      &                                   NPSM_OUT,
@@ -211,25 +203,6 @@ C     ------------------------------------------------------------------
       DO I = 1, LIMZ
          ZG_OUT(I) = ZG(I)
       END DO
-      RETURN
-      END
-
-C     ------------------------------------------------------------------
-C     Scalar setter stub (Phase L-2: returns ok=0 unconditionally so
-C     callers can exercise the plumbing without disturbing any actual
-C     COMMON-block value). The real setter arrives in L-3 together
-C     with eq_param_registry.
-C     ------------------------------------------------------------------
-      SUBROUTINE EQ_COMMON_SET_SCALAR(NAME, VALUE, OK)
-      CHARACTER*(*) NAME
-      REAL*8 VALUE
-      INTEGER OK
-C     Suppress unused-argument warnings (no INCLUDE: this routine does
-C     not touch eqcomm.inc state).
-      IF (LEN(NAME) .LT. 0) OK = 0
-      IF (VALUE .NE. VALUE) OK = 0
-C     L-2: stub. Real dispatch lands in eq_param_registry.f90 (L-3).
-      OK = 0
       RETURN
       END
 
