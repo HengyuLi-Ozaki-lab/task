@@ -10,12 +10,17 @@ MODULE trfailure
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: tr_library_mode, tr_failure_clear, tr_failure_record, tr_failure_get, TR_FAILURE_DETAIL_LEN
+  PUBLIC :: tr_eval_nt_row, tr_eval_row_added
   PUBLIC :: TRF_NONE, TRF_EQ_FAILED, TRF_NONFINITE, TRF_TR_CHECK, TRF_PREP_FAILED, &
             TRF_REFUSED, TRF_OTHER
   INTEGER, PARAMETER :: TRF_NONE = 0, TRF_EQ_FAILED = 1, TRF_NONFINITE = 2, &
                         TRF_TR_CHECK = 3, TRF_PREP_FAILED = 4, TRF_REFUSED = 5, &
                         TRF_OTHER = 6
   LOGICAL, SAVE :: tr_library_mode = .FALSE.
+  ! Library-mode state of tr_eval (trexec.f90): the step of the last history row TRATOT recorded (-1 = none since
+  ! the last tr_prep, NGT = 0) and whether that call added a row (none once the NTM rows are full).
+  INTEGER, SAVE :: tr_eval_nt_row = -1
+  LOGICAL, SAVE :: tr_eval_row_added = .FALSE.
   INTEGER, SAVE :: g_kind = TRF_NONE, g_code = 0, g_nt = 0
   REAL(rkind), SAVE :: g_time = 0.0_rkind
   ! 96 characters of TR's own text and, for an EQ_FAILED record, EQ's EQ_ERRMSG (up to 200 characters) after it.

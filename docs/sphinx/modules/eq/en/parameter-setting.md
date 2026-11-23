@@ -33,7 +33,7 @@ eq.set_params({"RR": 6.5, "BB": 5.3})          # positional mapping form
 
 ## Method C — string parameters (`set_param_str`)
 
-EQDSK-family filenames are `CHARACTER(LEN=80)`, and the **dedicated
+File names (`KNAMEQ` and the other `KNAM*`) are `CHARACTER(LEN=80)`, and the **dedicated
 API** is required. They cannot be passed through `set_param`.
 
 ```python
@@ -68,10 +68,10 @@ with Eq() as eq:
     if diags:
         raise SystemExit("fix the diagnostics before running")
 
-    eq.run()  # mode=1 (EQDSK load)
+    eq.run()  # mode=1 (the file load; MODELG=3: a TASK/EQ file)
 ```
 
-For an analytic solve, pass `mode=0`:
+For the Grad-Shafranov solve, pass `mode=0`:
 
 ```python
 with Eq() as eq:
@@ -79,7 +79,7 @@ with Eq() as eq:
     diags = eq.validate()
     if diags:
         raise SystemExit("fix the diagnostics before running")
-    eq.run(mode=0)  # EQCALC + EQCALQ — solved analytically
+    eq.run(mode=0)  # EQCALC (iterated to EPSEQ) + EQCALQ
 ```
 
 The diagnostic codes are the same five shared with `tr`:
@@ -96,12 +96,11 @@ The diagnostic codes are the same five shared with `tr`:
 `NUGMAX`, `NRGMAX`, `NZGMAX`, `NPSMAX`, `NRMAX`, `NTHMAX`, `NSUMAX`,
 `NRVMAX`) against the compile-time maxima, and that the file a load
 (`run(mode=1)`) reads is there: `KNAMEQ`, not blank and naming a file, for
-`MODELG` 3, 5, 8, 9 and 25 (and `KNAMEQ2` for 8, which reads two files); for
-`MODELG` 15 the fixed file `eqdb.dat`, which
-it reads instead of `KNAMEQ` (reported as `MODELG`). A name is looked up as
+`MODELG` 3, 5, 8, 9 and 25 (and `KNAMEQ2` for 8, which reads two files). A name is looked up as
 the load opens it, relative to the working directory at the time of
-`validate()`. For the
-analytic solve (`run(mode=0)`, which every `MODELG` but the file formats
+`validate()`. `MODELG` 15, whose load `run(mode=1)` refuses, is reported as
+`OUT_OF_RANGE` on `MODELG`. For the
+Grad-Shafranov solve (`run(mode=0)`, which every `MODELG` but the file formats
 needs) it also checks:
 
 - the wall encloses the plasma: `RB >= RA` (`INCONSISTENT_PAIR`);

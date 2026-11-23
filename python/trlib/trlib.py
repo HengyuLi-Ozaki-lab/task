@@ -344,10 +344,13 @@ class Trlib:
         ierr = self._lib.tr_get_state(ctypes.byref(c))
         raise_for_ierr("tr_get_state", ierr)
         state = TrState.from_c(c)
-        # All the named scalars (the 14 of the struct are among them, read from the same globals). A library built
-        # before the scalar table (PR 1's) keeps the 14 that from_c filled.
+        # All the named scalars, in the library's order. The 14 of the struct keep the values tr_get_state copied
+        # (the 1e-10 baselines compare to_dict(), so a fault in that copy must still show); the others are read by
+        # name. A library built before the scalar table (PR 1's) keeps the 14 that from_c filled.
         if hasattr(self._lib, "tr_scalar_count") and hasattr(self._lib, "tr_get_scalar"):
-            state.scalars = {n: self.get_scalar(n) for n in self.scalar_names()}
+            struct = dict(state.scalars)
+            named = {n: (struct[n] if n in struct else self.get_scalar(n)) for n in self.scalar_names()}
+            state.scalars = {**named, **{k: v for k, v in struct.items() if k not in named}}
         return state
 
     # --- outputs by name (PR 2 of #96) ----------------------------------
@@ -376,7 +379,13 @@ class Trlib:
         """One global result by name, as of the last step TR computed the globals on.
 
         TRGLOB computes them on output steps and on the last step of a run, so they are current after
-        :meth:`run`. Units are those of ``tr/trrslt_globals.f90`` (``tr_mcp``'s state schema lists them).
+        :meth:`run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
+        run after a changed parameter) what it sets is new (``T`` 0; ``RIP``, which is ``RIPS`` or, under ``MODELG``
+        3, 5 and 8, the equilibrium's boundary current; ``Q0`` under ``MODELG`` 2, 3, 5, 7, 8 and 9) and what only a
+        step computes (the powers, ``WPT``) is still the run before's. Units are those of
+        ``tr/trrslt_globals.f90`` (``tr_mcp``'s state schema lists them; ``PNFT`` is the charged fusion products'
+        power, alpha only for D-T, and ``RIP`` the equilibrium's boundary current under ``MODELG`` 3, 5 and 8 and the
+        experimental data's under ``MDLUF`` 1 and 3).
         An unknown name raises :class:`TrlibParamError`.
         """
         if self._closed:
@@ -426,8 +435,13 @@ class Trlib:
         when the last step of the call was recorded (a multiple of ``NGTSTP`` reached before the buffer was full): after
         ``run(1)`` with the defaults ``history("T")["T"][-1]`` is 0 while ``get_scalar("T")`` is ``DT``, and
         recording stops at capacity (:meth:`history_full` is true), so the history lags the state once the run
-        advances past it; a history that fills exactly at the end of a call is still current. An unknown name raises
-        :class:`TrlibParamError`.
+        advances past it; a history that fills exactly at the end of a call is still current. Under ``MODELG`` 9 a
+        step that ends with an EQ re-solve (a multiple of ``NTEQIT``) is recorded before the re-solve, which then
+        recomputes ``Q0``: that row's ``Q0`` is the one of before it. A run that fails on a negative temperature
+        (``TrlibRunError``, kind ``TR_CHECK``) or with a state that is not finite (``NONFINITE``) ends the history on
+        the last recorded step; the failed step is not a row (after ``TR_CHECK`` :meth:`get_scalar` gives the failed
+        iterate's globals, which ``tr_exec`` computes there). A failed preparation leaves no rows. An unknown name
+        raises :class:`TrlibParamError`.
         """
         if self._closed:
             raise TrlibError("history on closed Trlib")

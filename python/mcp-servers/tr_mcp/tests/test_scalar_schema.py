@@ -1,11 +1,10 @@
 """tr_mcp: the library's output names are in ``get_state``, in the schema with units, and in ``get_history``.
 
 A name the library lists but the schema does not describe fails here, so a client never reads a number it
-cannot interpret. The integration tests need ``tr/libtrapi.so`` (or MONO_LIB_PATH).
+cannot interpret. The integration tests need the library Trlib() finds.
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -22,9 +21,10 @@ for extra in (str(MCP_ROOT.parent), str(PYTHON_ROOT)):
 
 from tr_mcp import server as srv  # noqa: E402
 
-SO = REPO_ROOT / "tr" / "libtrapi.so"
-needs_lib = pytest.mark.skipif(not SO.exists() and not os.environ.get("MONO_LIB_PATH"),
-                               reason="libtrapi.so not built")
+from trlib import _ffi as _trffi  # noqa: E402
+
+SO = _trffi._default_lib_path()          # Trlib()'s own resolution: MONO_LIB_PATH, TRLIB_PATH, tr/, lib/
+needs_lib = pytest.mark.skipif(not SO.exists(), reason=f"libtrapi.so not found at {SO}")
 pytestmark = [pytest.mark.forked, needs_lib]
 
 
@@ -57,3 +57,99 @@ def test_get_state_returns_all_the_scalars():
         assert state["scalars"]["WPT"] > 0.0
     finally:
         srv.handle_finalize()
+
+
+def test_a_one_shot_run_of_zero_steps_returns_no_result_of_the_call_before():
+    # A run of 0 steps evaluates no step, and finalize then init does not clear TR's global results (CLAUDE.md:
+    # module state): the second call would show the first call's PNBT beside its own initial profiles. It returns
+    # T only.
+    try:
+        first = srv.handle_run_and_get_state(params={"PNBTOT": 10.0}, ntmax=20)
+        assert first["scalars"]["PNBT"] == pytest.approx(10.0)
+        second = srv.handle_run_and_get_state(params={"PNBTOT": 0.0}, ntmax=0)
+        assert second["scalars"] == {"T": 0.0}
+        assert second["NT"] == 0 and len(second["profile"]) == second["NRMAX"]
+    finally:
+        srv.STATE.close()
+
+
+def test_get_state_after_a_one_shot_run_of_zero_steps_returns_no_result_of_the_call_before():
+    # The same state read again (get_state on the handle the one-shot call left open) must not show the first
+    # call's PNBT either.
+    try:
+        srv.handle_run_and_get_state(params={"PNBTOT": 10.0}, ntmax=20)
+        srv.handle_run_and_get_state(params={"PNBTOT": 0.0}, ntmax=0)
+        assert srv.handle_get_state()["scalars"] == {"T": 0.0}
+        srv.handle_run(1)
+        assert srv.handle_get_state()["scalars"]["PNBT"] == 0.0
+    finally:
+        srv.STATE.close()
+
+
+def test_a_changed_parameter_hides_the_results_until_a_step_is_run():
+    try:
+        srv.handle_init()
+        srv.handle_set_param("PNBTOT", 10.0)
+        srv.handle_run(5)
+        assert srv.handle_get_state()["scalars"]["PNBT"] == pytest.approx(10.0)
+        srv.handle_set_param("PNBTOT", 0.0)
+        srv.handle_run(0)
+        assert srv.handle_get_state()["scalars"] == {"T": 0.0}
+    finally:
+        srv.STATE.close()
+
+
+def test_a_failed_preparation_shows_no_result_of_the_run_before():
+    # MODELG 9 with an Ip that has no equilibrium: tr_set_metric's q-scaling fails at nt 0 and records EQ_FAILED (the
+    # first record of the run is kept, so it is not PREP_FAILED). The run before's PNBT and WPT are not this state's.
+    try:
+        srv.handle_init()
+        srv.handle_set_param("PNBTOT", 10.0)
+        srv.handle_run(5)
+        for name, value in (("MODELG", 9.0), ("RIPS", 100.0), ("RIPE", 100.0), ("NTEQIT", 5.0)):
+            srv.handle_set_param(name, value)
+        with pytest.raises(Exception):
+            srv.handle_run(1)
+        assert srv.handle_get_state()["scalars"] == {}
+    finally:
+        srv.STATE.close()
+
+
+def test_a_failure_after_the_preparation_keeps_the_results():
+    # DT = 1e6 s: NONFINITE at nt 2, after the step-0 and step-1 evaluations; the scalars are the run's.
+    try:
+        srv.handle_init()
+        srv.handle_set_param("DT", 1.0e6)
+        with pytest.raises(Exception):
+            srv.handle_run(30)
+        scalars = srv.handle_get_state()["scalars"]
+        assert "WPT" in scalars and "PNBT" in scalars and len(scalars) == 31
+    finally:
+        srv.STATE.close()
+
+
+@pytest.mark.parametrize("write", [lambda: srv.handle_set_param("NOSUCH", 1.0),
+                                   lambda: srv.handle_set_param_str("NOSUCH", "x")])
+def test_a_refused_write_does_not_hide_the_results(write):
+    try:
+        srv.handle_init()
+        srv.handle_run(5)
+        with pytest.raises(Exception):
+            write()
+        assert "WPT" in srv.handle_get_state()["scalars"]
+        srv.handle_set_params({})
+        assert "WPT" in srv.handle_get_state()["scalars"]
+    finally:
+        srv.STATE.close()
+
+
+def test_a_new_handle_shows_no_time_of_the_handle_before():
+    # tr_init resets NT, not T: before the new handle's first preparation T is the old run's.
+    try:
+        srv.handle_init()
+        srv.handle_run(5)
+        srv.handle_finalize()
+        srv.handle_init()
+        assert srv.handle_get_state()["scalars"] == {}
+    finally:
+        srv.STATE.close()

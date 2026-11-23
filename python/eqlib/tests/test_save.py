@@ -38,7 +38,7 @@ def _in_tmp_dir(tmp_path, monkeypatch):
 
 
 def _solved():
-    """An Eq with the analytic equilibrium of the defaults computed."""
+    """An Eq with the Grad-Shafranov equilibrium of the defaults computed."""
     e = eqlib.Eq()
     e.run(0)
     return e
@@ -80,8 +80,8 @@ def test_save_accepts_a_pathlib_path():
 
 
 def test_save_before_any_run_is_refused():
-    """There is no equilibrium to write, and the file EQSAVE would produce
-    ends the process that loads it."""
+    """There is no equilibrium to write: no solve or load has filled the
+    fields."""
     with eqlib.Eq() as e:
         with pytest.raises(eqlib.EqlibInvalidParamError):
             e.save("eq.bin")

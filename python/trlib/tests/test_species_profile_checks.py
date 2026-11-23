@@ -95,6 +95,9 @@ class TestSpeciesProfileChecks(unittest.TestCase):
     # A species-3 profile the solver can evolve (used by the accept cases).
     SPECIES_3 = {"NSMAX": 3, "PN[3]": 0.005, "PNS[3]": 0.0005,
                  "PT[3]": 0.001, "PTS[3]": 0.0001}
+    # The electrons that keep it quasi-neutral (species 3 has PZ = 1), which
+    # validate() reports otherwise (task-web-client #200).
+    ELECTRONS_FOR_SPECIES_3 = {"PN[1]": 0.015, "PNS[1]": 0.0015}
 
     # --- refused before tr_prep ------------------------------------------
 
@@ -254,7 +257,7 @@ class TestSpeciesProfileChecks(unittest.TestCase):
         with _pushd(FIXTURES_DIR):
             with Trlib() as tr:
                 base.apply(tr)
-                for name, value in self.SPECIES_3.items():
+                for name, value in {**self.SPECIES_3, **self.ELECTRONS_FOR_SPECIES_3}.items():
                     tr.set_param(name, float(value))
                 with self.assertRaises(TrlibParamError):
                     tr.set_param("PNS[3]", float("-inf"))
@@ -287,7 +290,7 @@ class TestSpeciesProfileChecks(unittest.TestCase):
         self.assertTrue(self._finite(state), state.scalars)
 
     def test_validate_clean_when_species_3_has_profiles(self):
-        diags = self._validate(self.SPECIES_3)
+        diags = self._validate({**self.SPECIES_3, **self.ELECTRONS_FOR_SPECIES_3})
         self.assertEqual(diags, [])
 
     def test_validate_only_looks_at_active_species(self):

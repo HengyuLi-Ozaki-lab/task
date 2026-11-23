@@ -18,7 +18,7 @@ import warnings
 # ``eq_set_param``. Values copied verbatim from eq/in/eq.ITER01.in.
 SCALARS = {
     # MODELG=3 selects EQRTSK (TASK/EQ binary file format) per
-    # eq/eqfile.f90:108 (EQ_READ dispatch). The .in menu-driven flow
+    # eq/eqfile.f90:186-221 (EQ_READ dispatch). The .in menu-driven flow
     # implicitly selects this via the 'r' command after typing 'f';
     # the C ABI bypasses the menu so we set MODELG explicitly here.
     "MODELG": 3,
@@ -49,8 +49,8 @@ UNREGISTERED_KEYS: tuple = ()
 # Source input file this fixture mirrors (relative to repo root).
 SOURCE_INPUT = "eq/in/eq.ITER01.in"
 
-# ``eq.run(mode=...)`` argument. mode=1 is the real EQDSK load via
-# ``equnit::eq_load`` (currently the only implemented mode).
+# ``eq.run(mode=...)`` argument. mode=1 is the file load via
+# ``equnit::eq_load``.
 MODE = 1
 
 # Name of the Phase-0 baseline directory under ``test_run/baselines/``.

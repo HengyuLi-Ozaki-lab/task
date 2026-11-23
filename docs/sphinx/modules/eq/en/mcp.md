@@ -35,7 +35,7 @@ reference.
 Differences from `tr_mcp`:
 
 - A **`set_param_str`** tool is added — for string parameters such as
-  `KNAMEQ` (EQDSK filename). `tr` recently added one too, but `eq`
+  `KNAMEQ` (the equilibrium file's name). `tr` recently added one too, but `eq`
   has needed it from the start.
 - A **`validate`** tool is exposed independently — pre-run validation
   (PR #164) is published on a dedicated endpoint. The LLM can detect
@@ -90,12 +90,12 @@ recommended location of the configuration file.
 >>> from eq_mcp.server import handle_init, handle_run, handle_get_state
 >>> handle_init()
 'eq library initialized'
->>> # ... after set_param_str("KNAMEQ", "eqdata.ITER01") ...
->>> handle_run(1)   # mode=1 (read KNAMEQ)
-'equilibrium loaded with mode=1'
+>>> # ... after set_param("MODELG", 3) and set_param_str("KNAMEQ", "eqdata.ITER01") ...
+>>> handle_run(1)   # mode=1 (read KNAMEQ, a TASK/EQ file)
+'eq_run completed (mode=1)'
 >>> state = handle_get_state()
->>> state['scalars']['raxis'], state['scalars']['qaxis']
-(6.4321, 0.9876)
+>>> round(state['scalars']['RAXIS'], 4), round(state['scalars']['QAXIS'], 4)
+(6.3415, 0.5782)
 ```
 
 ## Registering with LLM clients
@@ -119,7 +119,7 @@ Add to the configuration file (`claude_desktop_config.json`):
 }
 ```
 
-Make sure the EQDSK file referenced by `KNAMEQ` is in a directory the
+Make sure the equilibrium file `KNAMEQ` names is in a directory the
 server can reach (or specify it by absolute path).
 
 ### Claude Code
@@ -170,19 +170,20 @@ addition there too.
 
 ## Usage examples
 
-### Example 1: analytic toroidal geometry (no `KNAMEQ`)
+### Example 1: solve in toroidal geometry (no `KNAMEQ`)
 
 > Initialise EQ, solve the equilibrium with RR=6.5, BB=5.3, RIP=1.5,
 > and tell me the magnetic-axis position and qaxis.
 
 The LLM internally calls
-`run_and_get_state(params={"RR": 6.5, "BB": 5.3, "RIP": 1.5}, mode=1)`
-and returns `scalars.raxis` and `scalars.qaxis`. With `MODELG=2`
-(the default), `KNAMEQ` is not needed.
+`run_and_get_state(params={"RR": 6.5, "BB": 5.3, "RIP": 1.5}, mode=0)`
+(the Grad-Shafranov solve) and returns `scalars.RAXIS` and `scalars.QAXIS`.
+With `MODELG=2` (the default), `KNAMEQ` is not needed; `mode=1`, the
+default, would fail there, since `MODELG=2` names no file format.
 
-### Example 2: load from an EQDSK file
+### Example 2: load a TASK/EQ file
 
-> Read the ITER EQDSK file `eqdata.ITER01`, build the equilibrium,
+> Read the ITER TASK/EQ file `eqdata.ITER01`, build the equilibrium,
 > and tell me beta_t and pvol.
 
 The LLM uses `set_param` for `MODELG=3`, `set_param_str` for
@@ -195,7 +196,7 @@ and finally `run` (which opens the file).
 
 The LLM calls `validate` and shows a list of diagnostics
 (`FILE_MISSING`, `OUT_OF_RANGE`, …). This avoids loops looking for
-EQDSK files.
+equilibrium files.
 
 ### Example 4: parameter scan
 
@@ -215,17 +216,16 @@ several at once, launch them in separate processes.
 ### Dependence on the `eqdata` file
 
 When `MODELG=3,5,8,9,25` and `KNAMEQ` is set, the file must exist in the
-**current directory** of the MCP server; so must `KNAMEQ2` for `MODELG=8`, which reads two files, and
-the fixed `eqdb.dat` for `MODELG=15`. When launching from Claude
+**current directory** of the MCP server; so must `KNAMEQ2` for `MODELG=8`, which reads two files. When launching from Claude
 Desktop, either pin the `cwd` via an environment variable or specify
-absolute paths (not possible for `eqdb.dat`, whose name is fixed: pin the `cwd`).
+absolute paths. `MODELG=15`, which reads the fixed `eqdb.dat`, is refused by `run`.
 
 ### Use `validate` aggressively
 
 It is also available in `tr_mcp` but is particularly effective in
-`eq`. It detects a missing load file (`KNAMEQ` blank or naming no file, `KNAMEQ2` for `MODELG=8`, `eqdb.dat`
-for `MODELG=15`), compile-time-max overflow of grid
-sizes (`NRGMAX`, `NPSMAX`, … ten in total) and, for the analytic solve,
+`eq`. It detects a missing load file (`KNAMEQ` blank or naming no file, `KNAMEQ2` for `MODELG=8`), the refused
+`MODELG=15`, compile-time-max overflow of grid
+sizes (`NRGMAX`, `NPSMAX`, … ten in total) and, for the Grad-Shafranov solve,
 a wall inside the plasma, a negative current and a box the solve cannot
 use **without calling `run`** (`parameter-setting`). In an LLM workflow that varies many parameters,
 this directly saves tokens and retries.
@@ -237,7 +237,7 @@ this directly saves tokens and retries.
 | `libeqapi.so not found` | run `make -C eq libeqapi.so`, then set `EQLIB_PATH` to the absolute path |
 | `ModuleNotFoundError: eqlib` | add the repo's `python/` to `PYTHONPATH` |
 | `ModuleNotFoundError: mcp` | `pip install 'mcp>=1.2,<2'`; check the virtualenv |
-| `EQDSK file missing` | confirm the file referenced by `KNAMEQ` is in the current directory (`KNAMEQ2` too for `MODELG=8`; `eqdb.dat` for `MODELG=15`) |
+| `FILE_MISSING`, or a load that fails on a missing file | confirm the file referenced by `KNAMEQ` is in the current directory (`KNAMEQ2` too for `MODELG=8`) |
 | `EqlibCalculationFailedError: ierr=3` | check the physical consistency of inputs; relax `EPSEQ` or raise `NLPMAX` |
 
 ## References

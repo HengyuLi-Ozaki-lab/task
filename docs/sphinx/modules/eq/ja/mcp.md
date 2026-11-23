@@ -33,7 +33,7 @@
 
 `tr_mcp` との違い:
 
-- **`set_param_str`** ツールが追加 — `KNAMEQ` (EQDSK ファイル名) などの
+- **`set_param_str`** ツールが追加 — `KNAMEQ` (平衡ファイル名) などの
   文字列パラメータ用. `tr` も最近対応しましたが eq では設計初期から必須.
 - **`validate`** ツールが独立 — 事前検証 (PR #164) を専用エンドポイントで
   公開. LLM が EQDSK ファイル不在などを `run` 前に検出できる.
@@ -85,12 +85,12 @@ eq-mcp doctor
 >>> from eq_mcp.server import handle_init, handle_run, handle_get_state
 >>> handle_init()
 'eq library initialized'
->>> # set_param_str("KNAMEQ", "eqdata.ITER01") ... の後
->>> handle_run(1)   # mode=1 (KNAMEQ 読み込み)
-'equilibrium loaded with mode=1'
+>>> # set_param("MODELG", 3) と set_param_str("KNAMEQ", "eqdata.ITER01") ... の後
+>>> handle_run(1)   # mode=1 (KNAMEQ, TASK/EQ 形式のファイルを読み込み)
+'eq_run completed (mode=1)'
 >>> state = handle_get_state()
->>> state['scalars']['raxis'], state['scalars']['qaxis']
-(6.4321, 0.9876)
+>>> round(state['scalars']['RAXIS'], 4), round(state['scalars']['QAXIS'], 4)
+(6.3415, 0.5782)
 ```
 
 ## LLM クライアントへの登録
@@ -114,7 +114,7 @@ eq-mcp doctor
 }
 ```
 
-`KNAMEQ` で読み込む EQDSK ファイルもアクセス可能なディレクトリに配置
+`KNAMEQ` で読み込む平衡ファイルもアクセス可能なディレクトリに配置
 (または絶対パス指定) してください.
 
 ### Claude Code
@@ -164,18 +164,19 @@ eq-mcp install --client cursor --scope user
 
 ## 使い方の例
 
-### 例 1: 解析的トロイダル幾何 (KNAMEQ 不要)
+### 例 1: トロイダル形状で解く (KNAMEQ 不要)
 
 > EQ を初期化して, RR=6.5, BB=5.3, RIP=1.5 で平衡を解いて, 磁気軸位置と
 > qaxis を教えて.
 
-LLM は内部で `run_and_get_state(params={"RR": 6.5, "BB": 5.3, "RIP": 1.5}, mode=1)`
-を呼び, `scalars.raxis` と `scalars.qaxis` を返します. `MODELG=2` 既定なので
-`KNAMEQ` 不要.
+LLM は内部で `run_and_get_state(params={"RR": 6.5, "BB": 5.3, "RIP": 1.5}, mode=0)`
+(Grad-Shafranov 求解) を呼び, `scalars.RAXIS` と `scalars.QAXIS` を返します.
+`MODELG=2` 既定なので `KNAMEQ` 不要. 既定の `mode=1` では, `MODELG=2` が
+ファイル形式を指さないので失敗します.
 
-### 例 2: EQDSK ファイルから読み込み
+### 例 2: TASK/EQ 形式のファイルを読み込む
 
-> ITER の EQDSK ファイル `eqdata.ITER01` を読み込んで平衡を構築し,
+> ITER の TASK/EQ 形式のファイル `eqdata.ITER01` を読み込んで平衡を構築し,
 > beta_t と pvol を教えて.
 
 LLM は `MODELG=3` を `set_param`, `KNAMEQ="eqdata.ITER01"` を
@@ -186,7 +187,7 @@ LLM は `MODELG=3` を `set_param`, `KNAMEQ="eqdata.ITER01"` を
 > 今のパラメータ設定で run できる状態か事前検査して.
 
 LLM は `validate` を呼び, 診断 (FILE_MISSING, OUT_OF_RANGE 等) のリストを
-表示します. EQDSK ファイル探しなどでループに陥るのを防げます.
+表示します. 平衡ファイル探しなどでループに陥るのを防げます.
 
 ### 例 4: パラメータスキャン
 
@@ -206,16 +207,16 @@ EQ も `tr` 同様 1 プロセス 1 インスタンスです ({doc}`faq` Q6). �
 
 `MODELG=3,5,8,9,25` で `KNAMEQ` を指定する場合, MCP サーバの **カレント
 ディレクトリ** にそのファイルがある必要があります. 2 つのファイルを読む `MODELG=8` では
-`KNAMEQ2` も, `MODELG=15` では固定の `eqdb.dat` も同様です. Claude Desktop から
+`KNAMEQ2` も同様です. Claude Desktop から
 起動するときは `cwd` を環境変数で固定するか, 絶対パスでファイルを
-指定してください (名前が固定の `eqdb.dat` は絶対パスにできないので `cwd` を固定します).
+指定してください. 固定の `eqdb.dat` を読む `MODELG=15` は `run` が拒否します.
 
 ### `validate` の積極利用
 
 `tr_mcp` にもありますが, `eq` では特に効果的です. 読み込むファイルの欠落 (`KNAMEQ` が空かファイルが無い,
-`MODELG=8` の `KNAMEQ2`, `MODELG=15` の `eqdb.dat`),
+`MODELG=8` の `KNAMEQ2`), 拒否される `MODELG=15`,
 グリッド寸法 (`NRGMAX`, `NPSMAX` 等の 10 個) のコンパイル時最大値超過,
-解析解では壁がプラズマの内側にあること, 負の電流, ソルバーが使えない箱を
+Grad-Shafranov 求解では壁がプラズマの内側にあること, 負の電流, ソルバーが使えない箱を
 **`run` を呼ばずに** 検出できます (`parameter-setting`). パラメータを大量に振る LLM ワーク
 フローではトークンとリトライの節約に直結します.
 
@@ -226,7 +227,7 @@ EQ も `tr` 同様 1 プロセス 1 インスタンスです ({doc}`faq` Q6). �
 | `libeqapi.so not found` | `make -C eq libeqapi.so` 後, `EQLIB_PATH` を絶対パスで設定 |
 | `ModuleNotFoundError: eqlib` | `PYTHONPATH` にリポジトリ `python/` を追加 |
 | `ModuleNotFoundError: mcp` | `pip install 'mcp>=1.2,<2'`. 仮想環境を確認 |
-| `EQDSK file missing` | `KNAMEQ` のファイルがカレントディレクトリにあるか確認 (`MODELG=8` では `KNAMEQ2` も, `MODELG=15` では `eqdb.dat`) |
+| `FILE_MISSING`, またはファイルが無くて読み込みが失敗 | `KNAMEQ` のファイルがカレントディレクトリにあるか確認 (`MODELG=8` では `KNAMEQ2` も) |
 | `EqlibCalculationFailedError: ierr=3` | 入力パラメータの物理整合性, EPSEQ や NLPMAX を緩める |
 
 ## 参考資料

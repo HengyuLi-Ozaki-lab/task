@@ -198,7 +198,10 @@ tr-mcp print-config --client cursor --scope project
 各量の単位と意味を示します (電力 MW, 電流 MA, エネルギー MJ). `get_history(names)` は時間履歴を, `NGTSTP` ステップごとに 1 行
 (既定 2, 最初の行は t = 0) `{rows, full, columns}` として返します. 値は**単精度**で, 履歴は **`NTM` = 10001 行**で止まります
 (TR は黙って記録をやめ, `full` が真になります): 長い計算では steps / `NGTSTP` が 10001 未満になるよう `NGTSTP` を設定してください.
-`describe_history_schema` が列ごとの単位を示します.
+`describe_history_schema` が列ごとの単位を示します. 負の温度や有限でない状態で失敗した計算の履歴は最後に記録されたステップで
+終わります (失敗したステップは行になりません). `MODELG` 9 で EQ の再計算で終わるステップの行は再計算前の `Q0` を持ち, `get_state` は再計算後の値を
+返します. スカラーは 1 ステップ以上の `run` の後に最新です: 0 ステップの計算はステップを評価せず, ハンドルを開くかパラメータを
+設定してから 1 ステップ以上の `run` を行うまで, `get_state` と `run_and_get_state` はスカラーとして `T` だけを返します.
 
 ## 使い方の例
 
@@ -334,10 +337,10 @@ MCP サーバの標準エラー出力が LLM クライアントに渡ります.
 | `calculation failed` | `DT` と平衡入力の整合性. `finalize` → `init` でリセット |
 
 `run` が失敗すると, ライブラリの失敗記録がエラー文字列に入ります:
-`[failure: kind=EQ_FAILED code=103 nt=600 time=12 s; <詳細>]` (`kind` は `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
+`[failure: kind=EQ_FAILED code=102 nt=600 time=12 s; <詳細>]` (`kind` は `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
 `PREP_FAILED`, `OTHER` のいずれか (`REFUSED` は拒否された `tr_continue` の記録で, `continue_run` が同じ形で返します). `python/trlib/README.md` 参照). `MODELG` 0, 4, 25 および `RIPS = 0` は,
 従来は非有限のスカラーを持つ状態を返していましたが, 今は同じ形 (`NONFINITE`, nt 1) で失敗します. `set_param` の名前
-`eq:NAME` は EQ のレジストリに渡されます (`describe_parameters` の `eq_names` 行に記載). `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` は拒否されます (TR 自身の名前を設定してください. `eq:RIP` は `RIPS` と `RIPE`). また, プロセスの最初の準備の試行の後は, すべての `eq:` 名が拒否されます (固定された bpsd が k-yoshimi/bpsd#7 を持つまで). このガードは直接の経路だけを塞ぎます: `MODELG` 9 では, EQ のプラズマ格子を動かす入力 (TR の `RA`, `RR` などの装置入力, `MODELG`, `eq:` 名, `NTEQIT` 再計算間のずれ) はすべて k-yoshimi/bpsd#7 を持つ bpsd を必要とし, TOT の `eq:` ディスパッチャはガードされません. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です.
+`eq:NAME` は EQ のレジストリに渡されます (`describe_parameters` の `eq_names` 行に記載). `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ`, `eq:KNAMEQ2` は拒否されます (TR 自身の名前を設定してください. `eq:RIP` は `RIPS` と `RIPE`). また, プロセスの最初の準備の試行の後は, すべての `eq:` 名が拒否されます (固定された bpsd が k-yoshimi/bpsd#7 を持つまで). このガードは直接の経路だけを塞ぎます: `MODELG` 9 では, EQ のプラズマ格子を動かす入力 (TR の `RA`, `RR` などの装置入力, `MODELG`, `eq:` 名, `NTEQIT` 再計算間のずれ) はすべて k-yoshimi/bpsd#7 を持つ bpsd を必要とし, TOT の `eq:` ディスパッチャはガードされません. `MODELG` 3, 5, 8 では EQ の `NRMAX` は TR の `NRMAX` + 1, `NTHMAX` は 64, `NSUMAX` は 0 です.
 
 詳細は `python/mcp-servers/tr_mcp/README.md` の §8 FAQ を参照してください.
 

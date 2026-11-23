@@ -6,8 +6,9 @@ scalars, 5 array families, 7 strings). The names match the Fortran
 
 ## Required and recommended parameters
 
-Most parameters have defaults, so a minimal call to `run()` works
-without any explicit setting. However, some parameters become
+Most parameters have defaults, so a minimal call to `run(mode=0)` (the
+Grad-Shafranov solve) works without any explicit setting; `run()`, which is
+`mode=1`, also needs a file format in `MODELG` and fails with the default 2. However, some parameters become
 **required under specific conditions**, and others **should be
 overridden** to obtain physically meaningful results.
 
@@ -15,14 +16,14 @@ overridden** to obtain physically meaningful results.
 
 | Condition | Required parameter | Reason |
 |---|---|---|
-| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If it is blank or names no file, `validate()` returns a `FILE_MISSING` diagnostic and `run()` fails, naming the file. `MODELG = 8` reads `KNAMEQ2` too. `MODELG = 15` reads the fixed file `eqdb.dat` instead (a `FILE_MISSING` diagnostic for `MODELG` when it is not there). |
+| `MODELG ∈ {3, 5, 8, 9, 25}` | **`KNAMEQ`** (string) | Equilibrium-data filename. If it is blank or names no file, `validate()` returns a `FILE_MISSING` diagnostic and `run()` fails, naming the file. `MODELG = 8` reads `KNAMEQ2` too. `MODELG = 15`, which reads the fixed file `eqdb.dat` instead, is refused by `run()` (its reader passes `equ_set_psi` one of the three arrays it takes, and the load of a well-formed file ended the process); `validate()` reports it as `OUT_OF_RANGE` on `MODELG`. |
 
 ```python
 eq.set_param("MODELG", 3)
 eq.set_param_str("KNAMEQ", "eqdata.ITER01")
 ```
 
-With `MODELG=2` (analytic toroidal geometry, the default) `KNAMEQ` is
+With `MODELG=2` (toroidal geometry, the default; solved with `run(mode=0)`) `KNAMEQ` is
 unused, so **strictly speaking nothing is required**.
 
 ### Strongly recommended (defaults are too generic)
@@ -219,7 +220,7 @@ These are checked against the compile-time maxima by `validate()`.
 | `MDLEQV` | int switch | 3 | $\psi$-extrapolation order in vacuum |
 | `NPRINT` | int switch | 0 | output verbosity |
 | `IDEBUG` | int switch | 0 | debug output flag |
-| `MODEFR` | int switch | 0 | file-read mode of `FROPEN`: 0 reads the file named by `KNAMEQ`; 1 asks for a file name on unit 5 |
+| `MODEFR` | int switch | 0 | file-read mode of `FROPEN`. Only 0, which reads the file named by `KNAMEQ`, is taken: `set_param` refuses 1, which asks for a file name on unit 5 (standard input), and every other value |
 | `MODEFW` | int switch | 0 | file-write mode of `FWOPEN`: 0 overwrites an existing file, 3 refuses one; 1, 2 and 4 to 7 can read unit 5, and `eq_save` takes 0 and 3 only |
 
 Allowed values of `MODELG`:
@@ -228,12 +229,15 @@ Allowed values of `MODELG`:
 |---|---|
 | 0 | slab geometry |
 | 1 | cylindrical geometry |
-| 2 (default) | toroidal geometry (analytic) |
-| 3 | TASK/EQ output-file path (requires `KNAMEQ`) |
-| 4 | VMEC output path |
-| 5 | EQDSK file path (requires `KNAMEQ`) |
-| 6 | Boozer-coordinate output |
-| 8 | (TASK-internal path; requires `KNAMEQ`) |
+| 2 (default) | toroidal geometry (solved with `run(mode=0)`) |
+| 3 | TASK/EQ file, loaded with `run(mode=1)` (requires `KNAMEQ`) |
+| 4 | VMEC output path (no `run(mode=1)` load) |
+| 5 | G-EQDSK file, loaded with `run(mode=1)` (requires `KNAMEQ`) |
+| 6 | Boozer-coordinate output (no `run(mode=1)` load) |
+| 8 | QST/JAEA file pair, loaded with `run(mode=1)` (requires `KNAMEQ` and `KNAMEQ2`) |
+| 9 | TASK/EQ file, read by the same reader as 3 (`EQRTSK`) (requires `KNAMEQ`) |
+| 15 | the fixed file `eqdb.dat` (not `KNAMEQ`); `run(mode=1)` refuses it, as its reader cannot load a file |
+| 25 | G-EQDSK file, read by the same reader as 5 (`EQDSKR`) (requires `KNAMEQ`) |
 
 Allowed values of `MDLEQF`:
 

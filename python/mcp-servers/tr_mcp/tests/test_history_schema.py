@@ -1,10 +1,9 @@
 """tr_mcp: the history columns the library names are in ``get_history`` and in its schema with units.
 
-A column the library lists but the schema does not describe fails here. Needs ``tr/libtrapi.so`` (or MONO_LIB_PATH).
+A column the library lists but the schema does not describe fails here. Needs the library Trlib() finds.
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -21,9 +20,10 @@ for extra in (str(MCP_ROOT.parent), str(PYTHON_ROOT)):
 
 from tr_mcp import server as srv  # noqa: E402
 
-SO = REPO_ROOT / "tr" / "libtrapi.so"
-needs_lib = pytest.mark.skipif(not SO.exists() and not os.environ.get("MONO_LIB_PATH"),
-                               reason="libtrapi.so not built")
+from trlib import _ffi as _trffi  # noqa: E402
+
+SO = _trffi._default_lib_path()          # Trlib()'s own resolution: MONO_LIB_PATH, TRLIB_PATH, tr/, lib/
+needs_lib = pytest.mark.skipif(not SO.exists(), reason=f"libtrapi.so not found at {SO}")
 pytestmark = [pytest.mark.forked, needs_lib]
 
 

@@ -210,7 +210,11 @@ after such a cut differ from a one-call run (the state does not). See `python/tr
 returns the time history, a row every `NGTSTP` steps (default 2, the first row is t = 0), as `{rows, full, columns}`;
 `describe_history_schema` lists the columns with units. The values are **single precision**, and the history holds
 **`NTM` = 10001 rows**: TR then stops recording without a message and `full` is true. For a long run set `NGTSTP` so that
-steps / `NGTSTP` stays below 10001.
+steps / `NGTSTP` stays below 10001. A run that fails on a negative temperature or with a state that is not finite ends
+its history on the last recorded step (the failed step is not a row); under `MODELG` 9 the row of a step that ends with an
+EQ re-solve holds the `Q0` of before the re-solve, while `get_state` gives the one after it. The scalars are current after
+a `run` of one step or more: a run of 0 steps evaluates none, and `get_state` and `run_and_get_state` return `T` only
+among the scalars until a run of one step or more since the handle was opened or a parameter was set.
 
 ## Usage examples
 
@@ -360,10 +364,10 @@ with `tr-mcp doctor`.
 | `calculation failed` | Check the consistency of `DT` and the equilibrium input. Reset via `finalize` → `init` |
 
 A failed `run` puts the library's failure record in the error string:
-`[failure: kind=EQ_FAILED code=103 nt=600 time=12 s; <detail>]` (`kind` is `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
+`[failure: kind=EQ_FAILED code=102 nt=600 time=12 s; <detail>]` (`kind` is `EQ_FAILED`, `NONFINITE`, `TR_CHECK`,
 `PREP_FAILED` or `OTHER`; `REFUSED` is the record of a refused `tr_continue`, which `continue_run` returns in the same form; see `python/trlib/README.md`). `MODELG` 0, 4, 25 and `RIPS = 0` now fail this
 way (`NONFINITE`, nt 1) where they used to return a state with non-finite scalars. A name `eq:NAME` in `set_param`
-goes to EQ's registry (`describe_parameters` says so in its `eq_names` line); `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (set TR's own; `RIPS` and `RIPE` for `eq:RIP`), and so is every `eq:` name after the process's first preparation attempt (until the pinned bpsd has k-yoshimi/bpsd#7). That guard closes only the direct route: under `MODELG` 9 any input that moves EQ's plasma grid (TR's `RA`, `RR` and other device inputs, `MODELG`, the `eq:` names, the drift between `NTEQIT` re-solves) needs a bpsd with k-yoshimi/bpsd#7, and TOT's `eq:` dispatcher is not guarded. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0.
+goes to EQ's registry (`describe_parameters` says so in its `eq_names` line); `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` are refused (set TR's own; `RIPS` and `RIPE` for `eq:RIP`), and so is every `eq:` name after the process's first preparation attempt (until the pinned bpsd has k-yoshimi/bpsd#7). That guard closes only the direct route: under `MODELG` 9 any input that moves EQ's plasma grid (TR's `RA`, `RR` and other device inputs, `MODELG`, the `eq:` names, the drift between `NTEQIT` re-solves) needs a bpsd with k-yoshimi/bpsd#7, and TOT's `eq:` dispatcher is not guarded. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0.
 
 For details, see §8 FAQ of `python/mcp-servers/tr_mcp/README.md`.
 

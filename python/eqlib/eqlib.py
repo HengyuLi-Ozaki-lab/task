@@ -9,10 +9,10 @@ Usage::
     from eqlib import Eq
 
     with Eq() as eq:
-        eq.set_params(RR=3.0, BB=3.0, RIP=1.0)
+        eq.set_params(RR=3.0, BB=3.0, RIP=1.0, MODELG=3)  # 3: a TASK/EQ file
         eq.set_param("PSIB[0]", 0.0)        # array element (0-origin!)
         eq.set_param_str("KNAMEQ", "eqdata")  # string parameter
-        eq.run(mode=1)                       # 1 == real EQDSK load
+        eq.run(mode=1)                       # 1 == the equilibrium-file load
         state = eq.get_state()
         print(state.scalars["raxis"])
 """
@@ -285,20 +285,24 @@ class Eq:
         Args:
             mode: Solver mode.
 
-                * ``1`` (default) triggers a real EQDSK load via
+                * ``1`` (default) triggers the equilibrium-file load via
                   ``equnit::eq_load`` using the current ``MODELG`` and
                   ``KNAMEQ`` (requires a file format: ``MODELG`` 3, 5,
                   8, 9 or 25 with ``KNAMEQ``, and ``KNAMEQ2`` too for
-                  8, or 15, which reads the fixed file ``eqdb.dat``
-                  instead).
-                * ``0`` runs the in-process analytic Grad-Shafranov
-                  solve (``EQCALC`` + ``EQCALQ``); use it with
+                  8). ``MODELG`` 15, which reads the fixed file
+                  ``eqdb.dat``, raises :class:`EqlibInvalidParamError`:
+                  its reader cannot load a file.
+                * ``0`` runs the in-process Grad-Shafranov solve
+                  (``EQCALC`` + ``EQCALQ``); use it with
                   ``MODELG=2`` and the basic geometry parameters
                   (``RR``, ``RA``, ``BB``, ``RIP``, ``RKAP``,
                   ``RDLT``, ...) to produce a self-consistent
-                  equilibrium without any external EQDSK file.
+                  equilibrium without any equilibrium file.
+                * a negative ``mode`` raises
+                  :class:`EqlibInvalidParamError` (``EQ_ERR_INVALID``).
 
-                Other values return ``EQ_ERR_NOT_IMPL``.
+                A ``mode`` above 1 raises
+                :class:`EqlibNotImplementedError` (``EQ_ERR_NOT_IMPL``).
 
         On failure the exception message ends with the library's reason
         (:meth:`last_error`), e.g. which file could not be loaded.
@@ -351,8 +355,10 @@ class Eq:
         Once the path is accepted, KNAMEQ is ``path``, also when the save
         then fails. After a failed write, what is at the path cannot be
         taken for the equilibrium that was to be saved (usually it is a
-        short file): do not load it. ``run(1)`` with ``MODELG=3`` ends the process on a file
-        that is cut off; the loader does not guard its reads.
+        short file): do not load it. ``run(1)`` with ``MODELG=3`` raises
+        :class:`EqlibCalculationFailedError` where a read of a file that is
+        cut off fails; what reads without an error is not that equilibrium
+        either.
 
         A save whose file was not opened, or is shorter than what was
         written, raises (#227 item 3):
@@ -483,12 +489,12 @@ class Eq:
 
         The geometry checks (the wall ``RB`` against ``RA``, the box
         ``RGMIN``..``ZGMAX`` with ``MDLEQF >= 10``, a negative ``RIP``)
-        are made for the analytic solve only (``run(0)``), going by
+        are made for the Grad-Shafranov solve only (``run(0)``), going by
         ``MODELG``: a file format (``MODELG`` 3/5/8/9/15/25) is taken to
         be loaded with ``run(1)``, which brings its own geometry (EQRTSK
         reads RA/RKAP/RDLT/RB from the TASK-native file; EQDSKR
         reconstructs RB = 1.1*RA), so the pre-run values say nothing
-        about it; every other ``MODELG`` is the analytic solve. The box
+        about it; every other ``MODELG`` is the Grad-Shafranov solve. The box
         is flagged where the solver fails or cuts the plasma
         (``eq_validate``'s comment in ``eq/eq_api.f90`` has the
         measurements); a box that leaves out part of the plasma
@@ -498,11 +504,10 @@ class Eq:
 
         ``FILE_MISSING`` names the file a load reads when it is not
         there: ``KNAMEQ`` (blank, or naming no file) for ``MODELG`` 3, 5,
-        8, 9 and 25, ``KNAMEQ2`` too for 8, and for ``MODELG`` 15 the
-        fixed file ``eqdb.dat``,
-        reported as ``MODELG``. Names are looked up relative to the
-        working directory at the time of the call, as the load opens
-        them.
+        8, 9 and 25, and ``KNAMEQ2`` too for 8. Names are looked up
+        relative to the working directory at the time of the call, as
+        the load opens them. ``MODELG`` 15, whose load :meth:`run`
+        refuses, is reported as ``OUT_OF_RANGE`` on ``MODELG``.
         """
         if self._closed:
             raise EqlibError("validate on closed Eq")

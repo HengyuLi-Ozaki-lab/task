@@ -1089,7 +1089,7 @@ TAUE2 changes by up to 3 %, and H98Y2 with it.
   - Task 6's history test (one call against `run` + `continue_run`) excludes or bounds WPDOT, TAUE2 and H98Y2 on the
     row after a cut.
   - **Option for PR 3** (library mode only, outputs only): a call that continues keeps WPPRE/TPRE, as the last-step
-    branch does at `tr/trexec.f90:447-453`. This makes the diagnostics seamless. Propose it to the TASK developers in
+    branch does at `tr/trexec.f90:455-461`. This makes the diagnostics seamless. Propose it to the TASK developers in
     the PR body.
   - `tr2`'s `C` still writes the history row of the step at each cut a second time. A history compared against `tr2`
     drops one row per cut.
@@ -1128,6 +1128,52 @@ Every listed name gets a test that its last row equals the final scalar of PR 2'
   - the last row agrees with the final scalars;
   - a full buffer is reported.
 - **task-web** sets `NGTSTP` so that the scenario's steps / NGTSTP < 10001.
+
+### F3, the fourth Codex round (2026-11-22, after the merge of the product line `8a9f5e98`)
+
+Six findings at P2 and two at P3, each measured before it was answered:
+
+- **The failed iterate of a `TRCHCK` failure was a row.** `tr_exec` records it for `tr2`'s graphics (`DT` 100 s: a row at
+  800 s with `TE0` 3.7e6 after that step's own row; at `NGTSTP` 3 a row off the cadence). Not recorded in library mode.
+- **Under `MODELG` 9 the row of a step that ends with an EQ re-solve holds the `Q0` of before it.** `tr_loop` records the
+  step, re-solves, and recomputes `Q0` (`tr_bpsd_get`, `TRCALC`): 6.6e-5 relative in the test case, the other 29 shared
+  names agree. Documented and tested; the record before the re-solve is `tr_loop`'s choice (a consistent snapshot).
+- **`tr_run(0)` evaluates no step**, so after a preparation what it sets is new (`T` 0; `RIP`, which is `RIPS` or, under `MODELG` 3, 5 and 8, the equilibrium's boundary current; `Q0` under `MODELG` 2, 3, 5, 7, 8 and 9) and what
+  only a step computes (the powers, `WPT`) is the run before's. Documented and tested, not refused: `get_state` after
+  `run(0)` is how the initial profiles are read. (The fifth round's wording fix; evaluating the prepared state in
+  `run(0)` was considered and not done: `TRCALC` injects the `PELTIM` pellet on every call within half a step of it
+  (`tr/trcalc.f90`), so a second call at t = 0 would inject it twice.)
+- **`GVT` columns 89 to 88 + 4 `NGPST` are also `TRATOTN`'s sawtooth record** once `MDLST` /= 0 and `T` >= `TSST`. `TSST`
+  is not a library parameter (1e9 s); a test pins that, and since the sixth round `tr_eval` does not call `TRATOTN`
+  in library mode (a run can still reach 1e9 s).
+- **Descriptions:** `PNFT` is alpha and proton together for D-He3 (`MDLNF` 5, 6) and `QF` a D-T gain; `RIP` is the
+  equilibrium's boundary current under `MODELG` 3, 5 and 8.
+- **Tests:** the `tot` reference reads used `trlib`'s own library, not the image `Tot` loaded (`TOTLIB_PATH` = the mono
+  image failed them); the skip markers ignored `TRLIB_PATH` (all 126 tests skipped with the library only there).
+
+The fifth round (on `c9e7b464`), four P2 and five P3: a step `tr_loop` finds not finite was left in the history (`DT`
+1e6 s: a row of NaN; now taken back), a failed preparation left the run before's rows (`MODEL_PNF` with `MDLNF`; now no
+rows), `tr_mcp`'s `run_and_get_state` with `ntmax` 0 showed the call before's results (now `T` only), the `run(0)`
+wording above, `RIP` under `MDLUF` 1 and 3, the schema of a library older than the scalar table, and three test defects
+(a relative library path resolved after the fixture `chdir`: 29 tests failed; the `tot` skip markers; the status row).
+
+The sixth round (on `2fb03c60`), three P2 and two P3: a retry on the same handle recorded the rejected non-finite step
+again (its step now stays marked), `get_state` after a one-shot `ntmax` 0 still showed the call before's results (the
+check is now the server's, shared by both tools), `tot/Makefile`'s delegated TR targets did not notice a changed
+`tr_api.f90` (they depend on it now), `TRATOTN` could still run at 1e9 s (not called in library mode), and `Q0` is new
+after a preparation under `MODELG` 2 (`tr_prof_current`) and 3, 5, 7, 8, 9 (`tr_bpsd_get`), not under 0 (the
+seventh round corrected the sixth's "2 only").
+
+The seventh round (on `f67454ba`, with an in-house review of `c9e7b464..f67454ba`), six P2 from Codex and one HIGH,
+two MED from the review: the MCP flag took a failed `MODELG` 9 preparation for an evaluated run (its q-scaling records
+`EQ_FAILED`, and the first record is kept; now a failed run counts only when it left a history row), a refused write
+cleared the flag (now only a write that succeeds), a new handle showed the handle before's `T` (now nothing before its
+first preparation), `get_state` replaced the 14 struct scalars by by-name values so the 1e-10 baselines no longer
+checked the struct copy (now kept), `trloop.o` did not depend on `trexec.o` and `tot`'s delegated TR targets did not
+see TR's sources, the `Q0` wording above, and eight `tr/tr_api.f90` citations of the numerical-stability page shifted
+by the three lines of `tr_api_run`. Not tested: the second `TRCHCK` path of `tr_exec` (after the Picard iteration; no
+case found that passes the first check and fails the second) and `TRATOTN`'s library-mode skip (1e9 s is not reached
+with a finite state).
 
 ### F4. task-web side of the bump (for the second spec and the `deps.lock` bump)
 

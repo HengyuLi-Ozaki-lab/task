@@ -86,6 +86,8 @@ CONTAINS
                   ALL(ieee_is_finite(RT(1,1:NSMAX))))) THEN
             CALL tr_failure_record(TRF_NONFINITE, -3, NT, T, &
                  'Q0, WPT or a central temperature is not finite')
+!           tr_eval recorded this step in the history; it is not a step of the run.
+            CALL tr_eval_take_back_row(NT)
             IERR=-3
             GOTO 9000
          ENDIF

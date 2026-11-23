@@ -273,7 +273,11 @@ LLM は `describe_parameters` を呼び、`group == "transport"` を抽出して
 各量の単位と意味を示します (電力 MW, 電流 MA, エネルギー MJ). `get_history(names)` は時間履歴を, `NGTSTP` ステップごとに 1 行
 (既定 2, 最初の行は t = 0) 返します. 値は**単精度**で, 履歴は **`NTM` = 10001 行**で止まります (TR は黙って記録をやめ,
 戻り値の `full` が真になります): 長い計算では steps / `NGTSTP` が 10001 未満になるよう `NGTSTP` を設定してください.
-`describe_history_schema` が列ごとの単位を示します.
+`describe_history_schema` が列ごとの単位を示します. 負の温度 (`TR_CHECK`) や有限でない状態 (`NONFINITE`) で失敗した計算の履歴は
+最後に記録されたステップで終わり, 準備に失敗した計算は行を残しません. `MODELG` 9 で EQ の再計算で終わるステップの行は再計算前の `Q0` を
+持ちます. ハンドルを開くかパラメータを書き込んでから 1 ステップ以上の `run` を行うまで, `get_state` と `run_and_get_state` は
+スカラーとして `T` だけを返し, ハンドルの最初の準備が成功するまでは何も返しません (詳しくは `describe_state_schema`,
+`describe_history_schema`).
 
 ## 8. FAQ / トラブルシューティング
 

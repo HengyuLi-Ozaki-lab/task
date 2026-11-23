@@ -7,8 +7,8 @@ For each case (``eq_iter01``, ``eq_tst2``):
 2. replay the registered subset of the namelist fixture via
    :py:meth:`~eqlib.Eq.set_param` /
    :py:meth:`~eqlib.Eq.set_param_str`,
-3. drive ``eq_run`` with the fixture's ``MODE`` (default 1 == real
-   EQDSK load),
+3. drive ``eq_run`` with the fixture's ``MODE`` (default 1 == the
+   equilibrium-file load),
 4. serialise the resulting :class:`~eqlib.state.EqState` via
    :py:meth:`~eqlib.state.EqState.to_dict`,
 5. compare against ``test_run/baselines/<case>/metrics.json`` using
@@ -58,9 +58,10 @@ COMPARE_SCRIPT = REPO / "test_run" / "scripts" / "compare_metrics.py"
 def _pushd(target: Path):
     """chdir to ``target`` inside a ``with`` block, restore on exit.
 
-    EQRTSK / EQDSK loads in eqfile.f90 open ``KNAMEQ`` relative to the
-    current working directory, so MODELG=3/5/8/15 fixtures must run
-    from ``test_run/test_output/<case>/`` where the eqdata file lives.
+    The loads EQ_READ (eq/eqfile.f90) dispatches open ``KNAMEQ``
+    relative to the current working directory, so MODELG=3/5/8 fixtures
+    must run from ``test_run/test_output/<case>/`` where the eqdata file
+    lives (run(1) refuses MODELG=15).
     """
     prev = Path.cwd()
     os.chdir(target)

@@ -225,9 +225,9 @@ SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
     "ALI":    {"unit": "",    "description": "internal inductance"},
     "RQ1":    {"unit": "m",   "description": "distance of the q = 1 surface from the axis (0 when q0 >= 1). When q already exceeds 1 in the first cell, TRGLOB's first-cell branch (tr/trrslt_globals.f90:374) multiplies by DR, which is a normalised radius, not by RA: the value is then a fraction of the minor radius, not metres (for the TASK developers)"},
     "AJRFT":  {"unit": "MA",  "description": "RF and external driven current"},
-    "PNFT":   {"unit": "MW",  "description": "fusion alpha power (P_fus = 5 PNFT for D-T)"},
-    "QF":     {"unit": "",    "description": "fusion gain: 5 PNFT / (POHT + PNBT + PRFST + PEXST)"},
-    "PINT":   {"unit": "MW",  "description": "total input power: POHT + PNBT + PRFST + PNFT + PEXST (alpha power included)"},
+    "PNFT":   {"unit": "MW",  "description": "power of the charged fusion products (TR's PNF): the alpha power for D-T (MDLNF 1 to 4; P_fus = 5 PNFT), alpha and proton together for D-He3 (MDLNF 5, 6; tr/trpnf.f90:214)"},
+    "QF":     {"unit": "",    "description": "5 PNFT / (POHT + PNBT + PRFST + PEXST), TRGLOB's D-T fusion gain whatever the reaction (tr/trrslt_globals.f90:366): for D-He3 (MDLNF 5, 6) the fusion gain is QF / 5"},
+    "PINT":   {"unit": "MW",  "description": "total input power: POHT + PNBT + PRFST + PNFT + PEXST (the charged fusion products PNFT included)"},
     "POHT":   {"unit": "MW",  "description": "ohmic power"},
     "PNBT":   {"unit": "MW",  "description": "neutral-beam power"},
     "PRFST":  {"unit": "MW",  "description": "RF power, all species"},
@@ -237,7 +237,7 @@ SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
     "AJOHT":  {"unit": "MA",  "description": "ohmic current"},
     "AJNBT":  {"unit": "MA",  "description": "neutral-beam driven current"},
     "AJBST":  {"unit": "MA",  "description": "bootstrap current"},
-    "RIP":    {"unit": "MA",  "description": "boundary (programmed) plasma current at this time"},
+    "RIP":    {"unit": "MA",  "description": "plasma current at this time: under MODELG 3, 5 and 8 the equilibrium's boundary current, which tr_bpsd_get also writes into RIPS and RIPE (tr/trbpsd.f90:413-416), so not the current that was set; under MDLUF 1 and 3 interpolated from the experimental data (RIPU, tr/trexec.f90:314-319); otherwise RIPS ramping to RIPE over a call of tr_run (tr/trloop.f90:44-45, tr/trexec.f90:310)"},
     "VLOOP":  {"unit": "V",   "description": "one-turn voltage at the edge"},
     "WPDOT":  {"unit": "MW",  "description": "rate of change of WPT between the last two global evaluations"},
     "H98Y2":  {"unit": "",    "description": "H factor: TAUE2 / TAUE98"},
@@ -261,17 +261,17 @@ HISTORY_SCHEMA: Dict[str, Dict[str, str]] = {
     "AJNBT": {"unit": "MA", "description": "neutral-beam driven current"},
     "AJRFT": {"unit": "MA", "description": "RF and external driven current"},
     "AJBST": {"unit": "MA", "description": "bootstrap current"},
-    "PINT": {"unit": "MW", "description": "total input power, alpha power included"},
+    "PINT": {"unit": "MW", "description": "total input power, the charged fusion products PNFT included"},
     "POHT": {"unit": "MW", "description": "ohmic power"},
     "PNBT": {"unit": "MW", "description": "neutral-beam power"},
     "PRFE": {"unit": "MW", "description": "RF power into species 1 (electrons)"},
     "PRFD": {"unit": "MW", "description": "RF power into species 2 (first bulk ion)"},
-    "PNFT": {"unit": "MW", "description": "fusion alpha power"},
+    "PNFT": {"unit": "MW", "description": "power of the charged fusion products: alpha for D-T (MDLNF 1 to 4), alpha and proton for D-He3 (MDLNF 5, 6)"},
     "POUT": {"unit": "MW", "description": "total output power"},
     "VLOOP": {"unit": "V", "description": "one-turn voltage at the edge"},
     "ALI": {"unit": "", "description": "internal inductance"},
     "RQ1": {"unit": "m", "description": "distance of the q = 1 surface from the axis; in TRGLOB's first-cell branch (tr/trrslt_globals.f90:374) a normalised radius, not metres (for the TASK developers)"},
-    "Q0": {"unit": "", "description": "safety factor on axis"},
+    "Q0": {"unit": "", "description": "safety factor on axis; under MODELG 9 the row of a step that ends with an EQ re-solve (a multiple of NTEQIT) holds the Q0 of before the re-solve, while get_state's is recomputed after it"},
     "WPDOT": {"unit": "MW", "description": "rate of change of the stored energy"},
     "TAUE1": {"unit": "s", "description": "energy confinement time, steady state"},
     "TAUE2": {"unit": "s", "description": "energy confinement time, transient"},
@@ -279,8 +279,8 @@ HISTORY_SCHEMA: Dict[str, Dict[str, str]] = {
     "BETA0": {"unit": "", "description": "central toroidal beta (fraction)"},
     "BETAA": {"unit": "", "description": "volume-averaged toroidal beta (fraction)"},
     "ZEFF0": {"unit": "", "description": "effective charge number on axis"},
-    "QF": {"unit": "", "description": "fusion gain 5 PNFT / (POHT + PNBT + PRFST + PEXST)"},
-    "RIP": {"unit": "MA", "description": "boundary plasma current at the row's time"},
+    "QF": {"unit": "", "description": "5 PNFT / (POHT + PNBT + PRFST + PEXST), the D-T fusion gain whatever the reaction (QF / 5 for D-He3, MDLNF 5, 6)"},
+    "RIP": {"unit": "MA", "description": "plasma current at the row's time: the equilibrium's boundary current under MODELG 3, 5 and 8, the experimental data's under MDLUF 1 and 3, otherwise the one set (RIPS ramping to RIPE)"},
     "PEXE": {"unit": "MW", "description": "external power into species 1 (electrons)"},
     "PEXI": {"unit": "MW", "description": "external power into species 2 (first bulk ion)"},
     "PECE": {"unit": "MW", "description": "EC heating of electrons"},
@@ -309,7 +309,13 @@ STATE_SCHEMA: Dict[str, Any] = {
             "type": "object",
             "description": (
                 "the library's named global results (31), each as of the last step TR computed them on; "
-                "units are in each entry"
+                "units are in each entry. A run of 0 steps evaluates no step: what the preparation sets (T 0, "
+                "RIP = RIPS or, under MODELG 3, 5 and 8, the equilibrium's boundary current; Q0 under MODELG 2, 3, 5, 7, 8 and 9) is new, what only a step computes (the powers, WPT) is "
+                "still the run before's: until a run of one step or more since the handle was opened or a parameter "
+                "was written, get_state and run_and_get_state return T only, and nothing before the handle's first "
+                "successful preparation. After a negative-temperature failure (TR_CHECK) they are the failed "
+                "iterate's, while the history ends on the last recorded step. A library built before the "
+                "scalar table gives the 14 of tr_state_t only"
             ),
             "properties": {
                 name: {"type": "number", **entry} for name, entry in SCALAR_SCHEMA.items()
@@ -342,17 +348,45 @@ class _ServerState:
 
     def __init__(self) -> None:
         self.tr: Optional[Trlib] = None
+        # evaluated: a run of one step or more has evaluated TR's global results since the handle was opened or a
+        # parameter was written. Until then they are not this handle's: a run of 0 steps evaluates no step, and
+        # finalize then init does not clear them (CLAUDE.md, module state). prepared: a preparation has succeeded on
+        # this handle, so T is its own (tr_init does not reset T; tr_prep does). The state tools return every scalar
+        # when evaluated, T alone when only prepared, none before that.
+        self.evaluated = False
+        self.prepared = False
 
     def ensure_open(self) -> Trlib:
         """Return the live handle, opening one if needed."""
         if self.tr is None or self.tr.closed:
             self.tr = Trlib()
+            self.evaluated = False
+            self.prepared = False
         return self.tr
 
     def close(self) -> None:
         if self.tr is not None and not self.tr.closed:
             self.tr.close()
         self.tr = None
+        self.evaluated = False
+        self.prepared = False
+
+
+class _WriteTracker:
+    """Passes ``set_param`` and ``set_param_str`` on to the handle and notes whether one of them succeeded, so that
+    a write the library refuses (an unknown name, a bad value) or an empty bulk set does not hide valid results."""
+
+    def __init__(self, tr: Trlib) -> None:
+        self._tr = tr
+        self.wrote = False
+
+    def set_param(self, name: str, value: float) -> None:
+        self._tr.set_param(name, value)
+        self.wrote = True
+
+    def set_param_str(self, name: str, value: str) -> None:
+        self._tr.set_param_str(name, value)
+        self.wrote = True
 
 
 STATE = _ServerState()
@@ -537,6 +571,7 @@ def handle_set_param(name: str, value: float) -> str:
     try:
         tr = STATE.ensure_open()
         tr.set_param(name, _number(name, value))
+        STATE.evaluated = False
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -554,6 +589,7 @@ def handle_set_param_str(name: str, value: str) -> str:
     try:
         tr = STATE.ensure_open()
         tr.set_param_str(name, str(value))
+        STATE.evaluated = False
         return f"set {name} = {value!r}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -566,16 +602,50 @@ def handle_set_params(params: Dict[str, SupportedValue]) -> str:
         )
     try:
         tr = STATE.ensure_open()
-        applied = _apply_bulk_params(tr, params)
+        writes = _WriteTracker(tr)
+        try:
+            applied = _apply_bulk_params(writes, params)  # type: ignore[arg-type]
+        finally:
+            if writes.wrote:                                # a partial write changed the configuration too
+                STATE.evaluated = False
         return f"set {len(applied)} parameter(s): {applied}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _has_rows(tr: Trlib) -> bool:
+    """Whether the handle's history has a row: TR records one only after a successful preparation and the
+    evaluation of the step it starts on (TRGLOB, TRATOT); a failed preparation leaves none (tr_history_length is 0)."""
+    try:
+        return int(tr.history_length()) > 0
+    except Exception:      # a library without the history, or a handle that cannot say: treat as not evaluated
+        return False
+
+
+def _run(tr: Trlib, nsteps: int) -> None:
+    """``tr.run(nsteps)``, keeping ``STATE.prepared`` and ``STATE.evaluated``. A failed run counts as evaluated only
+    when it left a history row: a preparation can fail under any failure kind (``MODELG`` 9's q-scaling records
+    ``EQ_FAILED``, and the first record of a run is the one kept), so the kind does not tell."""
+    try:
+        tr.run(nsteps)
+    except TrlibRunError:
+        if _has_rows(tr):
+            STATE.prepared = True
+            if nsteps > 0:
+                STATE.evaluated = True
+        else:
+            STATE.prepared = False
+            STATE.evaluated = False
+        raise
+    STATE.prepared = True
+    if nsteps > 0:
+        STATE.evaluated = True
+
+
 def handle_run(ntmax: int = 1) -> str:
     try:
         tr = STATE.ensure_open()
-        tr.run(int(ntmax))
+        _run(tr, int(ntmax))
         return f"advanced {ntmax} time step(s)"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -592,10 +662,15 @@ def handle_continue_run(nsteps: int = 1) -> str:
 
 def _state_dict(tr: Trlib) -> Dict[str, Any]:
     """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
-    compare) with ``scalars`` replaced by all the library's named global results."""
+    compare) with ``scalars`` replaced by all the library's named global results, by ``T`` alone until a run of
+    one step or more since the handle was opened or a parameter was written (``STATE.evaluated``), and by nothing
+    before the handle's first successful preparation (``STATE.prepared``)."""
     state = tr.get_state()
     out = state.to_dict()
     out["scalars"] = dict(state.scalars)
+    if not STATE.evaluated:
+        keep = {"T"} if STATE.prepared else set()
+        out["scalars"] = {k: v for k, v in out["scalars"].items() if k in keep}
     return out
 
 
@@ -657,8 +732,9 @@ def handle_describe_parameters() -> Dict[str, Any]:
             "A name 'eq:NAME' (e.g. eq:RB, eq:NSGMAX) is passed to the "
             "library as is and set in EQ's registry; it is not listed "
             "here, and the library refuses an unknown one. TR prepares "
-            "again before its next run. eq:RR, RA, RKAP, RDLT, BB, RIP and "
-            "KNAMEQ are refused (set TR's own), and so is every eq: name "
+            "again before its next run. eq:RR, RA, RKAP, RDLT, BB, RIP, "
+            "KNAMEQ and KNAMEQ2 are refused (set TR's own; KNAMEQ2 is not "
+            "settable), and so is every eq: name "
             "after the process's first preparation attempt (until the "
             "pinned bpsd has k-yoshimi/bpsd#7; for eq:RIP set RIPS and "
             "RIPE). That guard closes only the direct route: under MODELG "
@@ -693,7 +769,10 @@ def handle_describe_history_schema() -> Dict[str, Any]:
             "The columns get_history can return, each with its unit and meaning. One row is recorded every "
             "NGTSTP steps (default 2), the state at t = 0 first; a row is recorded at every step that is a multiple of NGTSTP, so a "
             "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again, a control set followed by continue_run does not; at most 10001 rows are kept "
-            "('full' says when they are). Values are single precision (about 7 digits)."
+            "('full' says when they are). Values are single precision (about 7 digits). A run that fails on a negative "
+            "temperature (TR_CHECK) or with a state that is not finite (NONFINITE) ends its history on the last recorded "
+            "step: the failed step is not a row; a failed preparation leaves no rows. Under "
+            "MODELG 9 the row of a step that ends with an EQ re-solve holds the Q0 of before the re-solve."
         ),
         "columns": HISTORY_SCHEMA,
     }
@@ -739,7 +818,7 @@ def handle_run_and_get_state(
         tr = STATE.ensure_open()
         if params:
             _apply_bulk_params(tr, params)
-        tr.run(int(ntmax))
+        _run(tr, int(ntmax))
         return _state_dict(tr)
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -921,6 +1000,9 @@ def build_server() -> Any:
             set_params(params)
             run(ntmax)
             return get_state()
+
+        With ``ntmax`` 0 no step is evaluated: the profiles are the prepared
+        initial state and ``scalars`` holds ``T`` only.
         """
         return handle_run_and_get_state(params, ntmax)
 

@@ -17,36 +17,36 @@ LLM クライアントから自然言語で操作するシナリオは {doc}`mcp
 
 `eq.run()` には 2 つの経路があります ({doc}`hello-world` 参照):
 
-- `mode=0`: 解析 Grad-Shafranov 解 (`MODELG=2`, EQDSK 不要)
-- `mode=1`: 平衡ファイルを読込 (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`. `MODELG = 15` は `eqdb.dat` を読む)
+- `mode=0`: Grad-Shafranov 求解 (`MODELG=2`, ファイル不要)
+- `mode=1`: 平衡ファイルを読込 (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`. 固定の `eqdb.dat` を読む `MODELG = 15` は拒否される)
 
-ユーザが EQDSK ファイルパスを指定したか否かで自動的に切替えるラッパー.
+ユーザが平衡ファイルのパス (ここでは TASK/EQ 形式, `MODELG=3`) を指定したか否かで自動的に切替えるラッパー.
 
 ```python
 from pathlib import Path
 from eqlib import Eq
 
 
-def smart_run(eq: Eq, *, eqdsk_file: str | None = None) -> None:
-    """EQDSK ファイル指定の有無で mode=0 / mode=1 を切替.
+def smart_run(eq: Eq, *, eq_file: str | None = None) -> None:
+    """平衡ファイル指定の有無で mode=0 / mode=1 を切替.
 
-    eqdsk_file が指定されていればファイル読込 (mode=1),
-    指定されていなければ解析解 (mode=0) を実行.
+    eq_file (TASK/EQ 形式) が指定されていればファイル読込 (mode=1),
+    指定されていなければ Grad-Shafranov 求解 (mode=0) を実行.
     """
-    if eqdsk_file is None:
-        # 解析 GS 解: MODELG=2 (デフォルト) を確認するだけ
+    if eq_file is None:
+        # Grad-Shafranov 求解: MODELG=2 (デフォルト) を確認するだけ
         eq.set_param("MODELG", 2)
         eq.run(mode=0)
     else:
-        # EQDSK 読込: ファイル存在確認 + MODELG=3 + KNAMEQ
-        if not Path(eqdsk_file).exists():
-            raise FileNotFoundError(f"EQDSK file not found: {eqdsk_file}")
+        # ファイル読込: ファイル存在確認 + MODELG=3 (TASK/EQ) + KNAMEQ
+        if not Path(eq_file).exists():
+            raise FileNotFoundError(f"equilibrium file not found: {eq_file}")
         eq.set_param("MODELG", 3)
-        eq.set_param_str("KNAMEQ", eqdsk_file)
+        eq.set_param_str("KNAMEQ", eq_file)
         eq.run(mode=1)
 
 
-# 使用例 (解析解)
+# 使用例 (Grad-Shafranov 求解)
 with Eq() as eq:
     eq.set_params(RR=3.0, RA=1.0, BB=3.0, RIP=1.5)
     smart_run(eq)
@@ -60,20 +60,20 @@ with Eq() as eq:
 raxis=3.0709  qaxis=0.9918
 ```
 
-EQDSK ファイルを渡す場合は:
+TASK/EQ 形式のファイルを渡す場合は:
 
 ```python
 with Eq() as eq:
     eq.set_params(RR=6.2, RA=2.0, BB=5.3, RIP=15.0)
-    smart_run(eq, eqdsk_file="eqdata.ITER01")
+    smart_run(eq, eq_file="eqdata.ITER01")
     ...
 ```
 
 ### 拡張案
 
-- `KNAMEQ` から `MODELG` を推測する逆方向 (例: `.eqdsk` 拡張子なら 3,
-  `.vmec` なら 7) のロジックを追加
-- `eqdsk_file=None` のとき, 与えられた装置パラメータが解析解で安定に
+- `KNAMEQ` から `MODELG` を推測する逆方向 (例: G-EQDSK の `.eqdsk` なら 5,
+  TASK/EQ 形式なら 3) のロジックを追加
+- `eq_file=None` のとき, 与えられた装置パラメータが Grad-Shafranov 求解で安定に
   解けるか軽い preflight (kappa, delta が極端でないか) を入れる
 
 ---
@@ -81,7 +81,7 @@ with Eq() as eq:
 ## 2. パラメータスイープラッパー
 
 `RR × BB` のような格子状スキャンを行い, 結果を辞書のリストに集約します.
-解析 GS 解 (`mode=0`) なので各点が高速 (~50ms 程度).
+Grad-Shafranov 求解 (`mode=0`) なので各点が高速 (~50ms 程度).
 
 ```python
 import itertools
@@ -200,7 +200,7 @@ def auto_setup(
         params.update(extra_params or {})
         eq.set_params(**params)
 
-        # 2. EQDSK 経由なら KNAMEQ を必須としてセット.
+        # 2. MODELG が KNAMEQ から読む形式なら KNAMEQ を必須としてセット.
         #    eq_file が None なら KNAMEQ を明示的に空文字列にして
         #    validate の FILE_MISSING に拾わせる.
         if params.get("MODELG") in (3, 5, 8, 9, 25):
@@ -274,7 +274,7 @@ RuntimeError: 修正が必要な問題が 1 件残っています
 |---|---|
 | **mode 自動選択 + auto_setup** | `auto_setup` で装置プリセット → `smart_run` で mode 自動切替 |
 | **sweep + auto_setup** | プリセットをベースに `RR × BB` や `RKAP × RDLT` を振る |
-| **3 つ全部** | 装置プリセット起点の解析的形状スキャン. 設計検討の標準パターン |
+| **3 つ全部** | 装置プリセット起点の形状スキャン (Grad-Shafranov 求解). 設計検討の標準パターン |
 
 各モジュール (`tr`, `ti`, `fp`, `wr`, `wrx`, `tot`) でも同じパターンが
 適用できます. 物理量とエラー型 (`TrlibRunError`, `WrlibRunError` など)

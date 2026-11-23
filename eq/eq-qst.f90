@@ -12,6 +12,7 @@
 !
       SUBROUTINE EQJAEAR(IERR)
 
+      USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
       USE libfio
       USE libbrent
       USE libspl1d
@@ -25,6 +26,7 @@
 
       integer:: ir,iz
       LOGICAL:: LEX2
+      CHARACTER(LEN=16):: KR(4)
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE:: psi_temp
       DIMENSION PSIRG(NRGM,NZGM),PSIZG(NRGM,NZGM),PSIRZG(NRGM,NZGM)
       DIMENSION PSIx1(NRGM,NZGM),psix2(NRGM,NZGM),PSIx3(NRGM,NZGM)
@@ -36,16 +38,50 @@
       INTEGER,PARAMETER:: icountm=10
       INTEGER:: ic_min1,ic_min2,ic_min3
       REAL(rkind):: psic_max,psic_min
+      CHARACTER(LEN=120):: KMSG
       EXTERNAL RBB,PSIGZ0
 
+!     IERR: FROPEN's (1 to 8) when a file was not opened; 9 when a read
+!     of either file failed, a size is beyond its array or the R and Z
+!     ranges are no grid (a falling range used to load, the rest to end
+!     the process); 10 when psi has no magnetic axis; find_axis's 102
+!     when the search for the axis ends at a point that is not finite
+!     (task-web-client #204). EQ_ERRMSG gives the reason. The process used
+!     to end at the others. The sizes go to locals, so a first file
+!     that fails at its first record changes nothing; EQ_READ puts the
+!     grid sizes back after any failure.
       neqdsk=21
       CALL FROPEN(neqdsk,KNAMEQ,0,MODEFR,'EQ',IERR)
       IF(IERR.NE.0) RETURN
 !
+      KMSG=' '
       REWIND(neqdsk)
-      READ (neqdsk) NRGMAX,NZGMAX
+      READ (neqdsk,ERR=900,END=900,IOMSG=KMSG) NRG1,NZG1
+      CALL EQ_READ_SIZE('NRGMAX',NRG1,2,NRGM,KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      CALL EQ_READ_SIZE('NZGMAX',NZG1,2,NZGM,KMSG,IST)
+      IF(IST.NE.0) GOTO 900
+      NRGMAX=NRG1
+      NZGMAX=NZG1
       write(6,*) 'nrgmax,nzgmax=',nrgmax,nzgmax
-      READ (neqdsk) rmin,rmax,zmin,zmax
+      READ (neqdsk,ERR=900,END=900,IOMSG=KMSG) rmin,rmax,zmin,zmax
+!     A range that is empty (its spacing 0) or not finite is no grid, and
+!     a falling one loads but is no grid for the field lookups: GETRZ
+!     (eq/eqintf.f90) takes every point with R <= RG(1) or Z <= ZG(1) as
+!     outside, where it returns no poloidal field and no error, and PL
+!     looks the field up through it for MODELG 3, 5 and 8
+!     (task-web-client #204).
+      IF(.NOT.(IEEE_IS_FINITE(rmin).AND.IEEE_IS_FINITE(rmax).AND. &
+               IEEE_IS_FINITE(zmin).AND.IEEE_IS_FINITE(zmax).AND. &
+               rmax.GT.rmin.AND.zmax.GT.zmin)) THEN
+         WRITE(KR,'(ES11.4)',IOSTAT=IST) rmin,rmax,zmin,zmax
+         WRITE(KMSG,'(8A)',IOSTAT=IST) 'R from ',TRIM(ADJUSTL(KR(1))), &
+              ' to ',TRIM(ADJUSTL(KR(2))),', Z from ', &
+              TRIM(ADJUSTL(KR(3))),' to ',TRIM(ADJUSTL(KR(4)))
+         IF(IST.NE.0) KMSG='its R and Z ranges'
+         KMSG=TRIM(KMSG)//': no grid'
+         GOTO 900
+      ENDIF
       write(6,*) 'rmin,rmax=',rmin,rmax
       write(6,*) 'zmin,zmax=',zmin,zmax
       DR=(rmax-rmin)/(NRGMAX-1)
@@ -61,11 +97,11 @@
       ! Defensive zero-init (see PR #123 pattern): libeqapi.so finalize+reinit
       ! cycle can reuse heap chunks with stale values.
       psi_temp = 0.D0
-      READ(neqdsk) psi_temp
+      READ(neqdsk,ERR=900,END=900,IOMSG=KMSG) psi_temp
       psirz(1:nrgmax,1:nzgmax)=psi_temp(1:nrgmax,1:nzgmax)
       DEALLOCATE(psi_temp)
 
-      read (neqdsk) BtR
+      read (neqdsk,ERR=900,END=900,IOMSG=KMSG) BtR
       write(6,*) 'read BtR=',BtR
       CLOSE(neqdsk)
 
@@ -93,9 +129,9 @@
       write(6,*) 'open 2'
       npsmax=41
       REWIND(neqdsk)
-      READ(neqdsk,*)
+      READ(neqdsk,*,ERR=910,END=910,IOMSG=KMSG)
       DO nps=1,npsmax
-         READ(neqdsk,*) i,ttps(nps),ppps(nps)
+         READ(neqdsk,*,ERR=910,END=910,IOMSG=KMSG) i,ttps(nps),ppps(nps)
       ENDDO
       CLOSE(neqdsk)
 
@@ -140,7 +176,10 @@
       SELECT CASE(icountmax)
       CASE(0)
          WRITE(6,*) 'XX NO MAG AXIS FOUND'
-         STOP
+         EQ_ERRMSG='EQ_READ: MODELG=8 load of KNAMEQ='''//TRIM(KNAMEQ)// &
+              ''' failed: no magnetic axis found in its psi'
+         IERR=10
+         RETURN
       CASE(1)
          RAXIS=rc_xp(1)
          ZAXIS=zc_xp(1)
@@ -208,7 +247,14 @@
 
 ! -----
       CALL setup_psig
-      CALL find_axis
+      CALL find_axis(IERR)
+      IF(IERR.NE.0) THEN
+!        find_axis's reason starts "EQAXIS: "; name the load instead, as
+!        this reader's other reasons begin with it.
+         IF(EQ_ERRMSG(1:8).EQ.'EQAXIS: ') EQ_ERRMSG= &
+              'EQ_READ: MODELG=8 load failed: '//EQ_ERRMSG(9:)
+         RETURN
+      ENDIF
       WRITE(6,'(A,1P3E12.4)') 'RAXIS,ZAXIS,PSI_AXIS=', &
                                RAXIS,ZAXIS,PSIG(RAXIS,ZAXIS)
       IF(NXPOINT >= 1) THEN
@@ -339,6 +385,18 @@
          HJTRZ(NRG,NZG)=0.D0
       ENDDO
       ENDDO
+      RETURN
+
+  900 CLOSE(neqdsk,IOSTAT=IST)
+      CALL EQ_READ_FAILED('a QST/JAEA file',KMSG)
+      IERR=9
+      RETURN
+
+  910 CLOSE(neqdsk,IOSTAT=IST)
+      EQ_ERRMSG='EQ_READ: MODELG=8 load failed: its second file KNAMEQ2='''// &
+           TRIM(KNAMEQ2)//''' does not read as a QST/JAEA profile file ('// &
+           TRIM(KMSG)//')'
+      IERR=9
       RETURN
       END
 

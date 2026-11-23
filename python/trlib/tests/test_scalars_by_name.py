@@ -24,13 +24,12 @@ from trlib import _ffi  # noqa: E402
 from trlib.state import SCALAR_FIELDS  # noqa: E402
 
 REPO = HERE.parents[3]
-DEFAULT_SO = REPO / "tr" / "libtrapi.so"
 FIXTURES_DIR = HERE.parent / "fixtures"
 
 pytestmark = [
     pytest.mark.forked,
-    pytest.mark.skipif(not DEFAULT_SO.exists() and not os.environ.get("MONO_LIB_PATH"),
-                       reason=f"libtrapi.so not built at {DEFAULT_SO}"),
+    pytest.mark.skipif(not _ffi._default_lib_path().exists(),          # Trlib()'s own resolution: MONO_LIB_PATH,
+                       reason=f"libtrapi.so not found at {_ffi._default_lib_path()}"),   # TRLIB_PATH, tr/, lib/
 ]
 
 # The table of the plan's Task 5 (31 names), in the order the library lists them.
@@ -76,10 +75,10 @@ def _iter01_hot(t):
 
 def test_pint_includes_the_alpha_power_and_every_heating_power_is_counted():
     # trrslt_globals.f90: PINT = POHT + PNBT + PRFST + PNFT + PEXST.
-    prev = os.getcwd()
-    os.chdir(FIXTURES_DIR)
-    try:
-        with Trlib() as t:
+    with Trlib() as t:                  # before the chdir: a relative TRLIB_PATH is resolved from the start cwd
+        prev = os.getcwd()
+        os.chdir(FIXTURES_DIR)
+        try:
             _iter01_hot(t)
             t.run(10)
             g = t.get_scalar
@@ -88,8 +87,8 @@ def test_pint_includes_the_alpha_power_and_every_heating_power_is_counted():
                                               rel=1e-12)
             assert g("QF") == pytest.approx(5.0 * g("PNFT") / (g("POHT") + g("PNBT") + g("PRFST") + g("PEXST")),
                                             rel=1e-12)
-    finally:
-        os.chdir(prev)
+        finally:
+            os.chdir(prev)
 
 
 def test_struct_scalars_agree_with_the_table():
@@ -195,3 +194,36 @@ def test_get_state_on_a_library_without_the_scalar_table_holds_the_struct_scalar
                 t.get_scalar("T")
         finally:
             t._lib = real
+
+
+def test_a_run_of_zero_steps_evaluates_no_step():
+    # tr_run(0) prepares again after a changed parameter but evaluates no step (tr_loop returns before tr_eval), so
+    # TRGLOB does not run. What the preparation sets is new (T is 0, RIP is RIPS, Q0 under MODELG 2, the default);
+    # what only a step computes (PNBT, WPT) is still the run before's until a run of one step or more.
+    with Trlib() as t:
+        t.set_param("PNBTOT", 10.0)
+        t.run(20)
+        before = {n: t.get_scalar(n) for n in ("PNBT", "WPT", "RIP", "Q0")}
+        assert before["PNBT"] == pytest.approx(10.0)
+        t.set_param("PNBTOT", 0.0)
+        t.set_param("RIPS", 0.7)
+        t.set_param("RIPE", 0.7)
+        t.run(0)
+        assert t.get_scalar("T") == 0.0
+        assert t.get_scalar("RIP") == 0.7
+        assert t.get_scalar("Q0") != before["Q0"]
+        assert t.get_scalar("PNBT") == before["PNBT"] and t.get_scalar("WPT") == before["WPT"]
+        t.run(1)
+        assert t.get_scalar("PNBT") == 0.0 and t.get_scalar("WPT") != before["WPT"]
+
+
+def test_get_state_keeps_the_struct_scalars_and_reads_only_the_others_by_name(monkeypatch):
+    # The baselines compare get_state().to_dict(), the 14 of tr_state_t: they must be tr_get_state's copy, not the
+    # by-name values (equal today, so a getter that answers -1 tells the two apart).
+    with Trlib() as t:
+        t.run(6)
+        monkeypatch.setattr(Trlib, "get_scalar", lambda self, name: -1.0)
+        state = t.get_state()
+        assert all(state.scalars[n] != -1.0 for n in SCALAR_FIELDS)
+        assert state.scalars["PNBT"] == -1.0 and state.scalars["H98Y2"] == -1.0
+        assert list(state.scalars)[:3] == ["T", "WPT", "AJT"]

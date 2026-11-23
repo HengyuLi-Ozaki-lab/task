@@ -20,7 +20,7 @@ C から呼ばれる関数は **6 つ** + `eq_validate` と `eq_save`. 標準の
 | `eq_run`            | `eq_api_run`            | `mode` 引数で動作切り替え (時間発展なし) |
 | `eq_get_state`      | `eq_api_get_state`      | EQCOMM のスカラー・ψ-面プロファイルを C 構造体にコピー |
 | `eq_finalize`       | `eq_api_finalize`       | `eq_bpsd_reset` で SAVE フラグを再起動 |
-| `eq_validate`       | `eq_api_validate`       | グリッド寸法, 読み込むファイル (`KNAMEQ`, `MODELG=8` では `KNAMEQ2`, `MODELG=15` では `eqdb.dat`), 解析解では壁・電流の符号・箱 (`parameter-setting`) |
+| `eq_validate`       | `eq_api_validate`       | グリッド寸法, 読み込むファイル (`KNAMEQ`, `MODELG=8` では `KNAMEQ2`), 拒否される `MODELG=15`, Grad-Shafranov 求解では壁・電流の符号・箱 (`parameter-setting`) |
 | `eq_save`           | `eq_api_save`           | 直前の `eq_run` の平衡を `KNAMEQ` のファイルに保存 (`EQSAVE`). ファイルを開けない, または書いた長さより短い場合はエラー |
 
 すべて `BIND(C, NAME="eq_xxx")` で C ABI シンボルを固定しています.
@@ -31,22 +31,26 @@ C から呼ばれる関数は **6 つ** + `eq_validate` と `eq_save`. 標準の
 
 | `mode` | 挙動 | 元 CLI |
 |---|---|---|
-| 0 | `EQCALC` (解析的 G-S 解) + `EQCALQ` (post-processing) | `R` → `F` |
+| 0 | `EQCALC` (Grad-Shafranov 求解) + `EQCALQ` (post-processing) | `R` → `F` |
 | 1 (既定) | `equnit::eq_load` — `KNAMEQ` のファイルを読み平衡を構築 | `L` |
 | 2 以上 | (将来拡張用) — `EqlibNotImplementedError` | — |
+| 負 | `EQ_ERR_INVALID` — `EqlibInvalidParamError` | — |
 
 `tr` の `tr_run(ntmax)` とは引数の意味が違うので注意してください.
 
 ```{note}
-`mode=0` は `MODELG ∈ {0, 1, 2}` (解析的幾何) で使います. 装置パラメータ
+`mode=0` は `MODELG ∈ {0, 1, 2}` (ファイルを使わない幾何) で使います. 装置パラメータ
 (`RR`, `RA`, `BB`, `RIP`) と圧力・電流プロファイル係数 (`PP*`, `PJ*`,
-`FF*` 等) から解析的に Grad-Shafranov を解きます. 元 `eqx2` CLI の `R`
+`FF*` 等) から固定境界の Grad-Shafranov 方程式を数値的に解きます (`EQCALC` は
+ψ の相対変化が `EPSEQ` を下回るまで, 最大 `NLPMAX` 回反復). 元 `eqx2` CLI の `R`
 (Run) コマンドが対応する経路で, `EQCALC` で平衡を構築した後 `EQCALQ` で
 post-processing して `qaxis`, `qsurf`, `betat`, `betap`, `pvol` 等の
 診断量を埋めます.
 
 `mode=1` は `MODELG ∈ {3, 5, 8, 9, 25}` (ファイル系) で使い, `KNAMEQ` で指定
-されたファイルを読み込みます (`MODELG = 15` は固定の `eqdb.dat` を読みます).
+されたファイルを読み込みます (`eqfile.f90` の `EQ_READ`: 3 と 9 は TASK/EQ 形式,
+5 と 25 は G-EQDSK 形式, 8 は QST/JAEA 形式の 2 ファイルで `KNAMEQ2` も読む.
+固定の `eqdb.dat` を読む `MODELG = 15` は拒否します).
 ```
 
 ### C 構造体レイアウト (`eq_state_t`)
@@ -92,7 +96,7 @@ typedef struct {
 **6 番目** の関数 `eq_set_param_str` の存在理由です.
 
 `tr` も後から `tr_set_param_str` を追加しましたが, eq では設計初期から
-EQDSK ファイル名を扱うため必須でした.
+平衡ファイル名を扱うため必須でした.
 
 ## ライブラリ内部のソース構成
 
@@ -104,11 +108,11 @@ EQDSK ファイル名を扱うため必須でした.
 | **メインソルバ**     | `eqcalq.f90`, `eqcalc.f90`, `eqcalv.f90`, `equnit.f90` | Grad-Shafranov 反復, 自由境界計算 |
 | **プロファイル**     | `eqfunc.f90`, `eqsub.f90`, `eqsplf.f90`, `eqgetp.f90` | $p(\psi)$, $F(\psi)$, $q(\psi)$ の評価 |
 | **共通モジュール**   | `eqcom0_mod.f90`〜`eqcom3_mod.f90`, `equcom.f90` | グローバル状態 (COMMON ブロックを MODULE 化) |
-| **入出力**           | `eqfile.f90`, `equread.f90`, `eq-eqdsk.f90`, `eqgout.f90` | EQDSK 読み, 結果出力 |
+| **入出力**           | `eqfile.f90`, `equread.f90`, `eq-eqdsk.f90`, `eq-qst.f90`, `eqgout.f90` | 平衡ファイル読み (TASK/EQ, G-EQDSK, QST/JAEA, `eqdb.dat`), 結果出力 |
 | **BPSD 連携**        | `eqbpsd.f90`, `eqintf.f90`, `equintf.f90` | モジュール間データ橋渡し |
 | **グラフィクス**     | `eq_graphics_stubs.f90`, `eqgsub.f90` | ライブラリ版ではスタブ化 |
 | **対話メニュー**     | `eqmenu.f90` | `eqx2` CLI 専用 (ライブラリ版では未使用) |
-| **その他**           | `eq-qst.f90`, `eqlib.f90`, `eqrppl.f90` | 補助ルーチン |
+| **その他**           | `eqlib.f90`, `eqrppl.f90` | 補助ルーチン |
 
 ## F90 モダナイゼーション (F-1 〜 F-5)
 

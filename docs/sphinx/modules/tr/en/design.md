@@ -147,7 +147,7 @@ each step, and ends the run at the first failure with the record (`EQ_FAILED`, `
 `NONFINITE`.
 
 A name `eq:NAME` in `tr_set_param` / `tr_set_param_str` is sent to EQ's registry (`eq_param_set`); `libtrapi.so` links
-`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` dispatcher is not guarded.
+`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` dispatcher is not guarded.
 
 ## Continuing a run (`tr_continue`, `tr_api.f90`)
 
@@ -173,7 +173,18 @@ The scalars of `tr_state_t` are 14 of the 31 global results `TRGLOB` computes; `
 `tr_history_*` export the time history `GT(NGT)`, `GVT(NGT, 1:110)` that `TRATOT` writes every `NGTSTP` steps (`tr_eval`):
 47 columns by name, in **single precision** (`GUCLIP`), `NTM` = 10001 rows. TR stops recording silently when they are full
 (`tr_history_full` reports it): a long run sets `NGTSTP`. `tr_prep` sets `NGT` to 0, so a preparation starts the history
-again. In library mode `tr_eval` does not record the step a `tr_run` call starts on when the previous call ended on it.
+again. In library mode `tr_eval` does not record the step a `tr_run` call starts on when the previous call ended on it,
+and `tr_exec` does not record the failed iterate of a `TRCHCK` failure (`tr2` records both); `tr_loop` takes back the
+row of a step it finds not finite (`tr_eval_take_back_row`), and a preparation that fails leaves no rows. Under `MODELG` 9 `tr_loop`
+records a step before it re-solves EQ on it and then recomputes `Q0` on the new metric (`tr_bpsd_get`, `TRCALC`), so that
+row's `Q0` is the one of before the re-solve. A `tr_run` of 0 steps evaluates no step: `TRGLOB` does not run, so after a
+preparation what it sets is new (`T` 0; `RIP`, which is `RIPS` or, under `MODELG` 3, 5 and 8, the equilibrium's boundary current; `Q0` under `MODELG` 2, 3, 5, 7, 8 and 9) and what only a step computes is the run
+before's. (Evaluating the prepared state there is not done: `TRCALC` injects the `PELTIM` pellet on every call within half a step
+of it, so a second call at t = 0 would inject it twice.) `GVT` columns 89 to 88 + 4 `NGPST` are also the sawtooth
+record's (`TRATOTN`, rows counted from the record's start) once `MDLST` /= 0 and `T` >= `TSST` (1e9 s); `tr_eval` does not
+call `TRATOTN` in library mode, so there they are always `TRATOT`'s. In `tr2` the record
+overwrites those columns of its rows (89 to 104 at the default `NGPST` 4: `PEXE` to `PICI`, `RR` to `AJTTOR`,
+`TAUE98`, `H98Y2`, `NLAV`).
 
 (reinit-constraints)=
 ## Re-initialisation constraints

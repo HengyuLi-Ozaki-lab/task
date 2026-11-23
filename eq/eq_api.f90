@@ -10,10 +10,15 @@
 !                        and returns EQ_OK. Does NOT touch the legacy
 !                        eq COMMON blocks so existing eq / pl / ak
 !                        binaries keep bit-identical behavior.
-!   eq_run            -> L-3: mode=1 loads equilibrium via
+!   eq_run            -> mode=0 solves the fixed-boundary Grad-Shafranov
+!                        equation numerically from the parameters
+!                        (EQCALC, then EQCALQ; no file).
+!                        mode=1 loads the equilibrium file via
 !                        equnit::eq_load using the current MODELG +
-!                        KNAMEQ. Other modes still return
-!                        EQ_ERR_NOT_IMPL.
+!                        KNAMEQ (MODELG=15, the fixed eqdb.dat, is
+!                        refused: see eq_api_run).
+!                        A mode above 1 returns EQ_ERR_NOT_IMPL, a
+!                        negative one EQ_ERR_INVALID.
 !   eq_set_param      -> delegates to eq_param_registry::eq_param_set
 !                        (Phase L-3 real dispatch).
 !   eq_set_param_str  -> delegates to eq_param_registry::eq_param_set_str
@@ -115,12 +120,18 @@ CONTAINS
   END FUNCTION eq_api_init
 
   !-------------------------------------------------------------------
-  ! eq_run : dispatch on `mode` to the analytic or file-load path.
+  ! eq_run : dispatch on `mode` to the Grad-Shafranov solve or the file load.
+  ! Before the dispatch below, an uninitialised library returns
+  ! EQ_ERR_NOT_INIT and a negative mode EQ_ERR_INVALID.
   !
-  !   mode == 0 : run the analytic Grad-Shafranov solver (EQCALC).
+  !   mode == 0 : solve the fixed-boundary Grad-Shafranov equation
+  !               numerically, without an equilibrium file: EQCALC
+  !               iterates until the relative change of PSI is below
+  !               EPSEQ (at most NLPMAX times, else EQ_ERR_CALC_FAILED),
+  !               then EQCALQ computes the flux-surface quantities.
   !               Mirrors the legacy `eqx2` CLI's `R` command and is
   !               the natural run path when MODELG=2 (the default,
-  !               analytic toroidal geometry). EQCALC reads
+  !               toroidal geometry). EQCALC reads
   !               PP*/PJ*/FF*/PT*/PV* coefficients from the EQCOMM
   !               module and solves the fixed-boundary Grad-Shafranov
   !               problem; callers set those via eq_set_param
@@ -129,9 +140,10 @@ CONTAINS
   !               then run eq_bpsd_init / eqcalq / eq_bpsd_put via
   !               equnit::eq_load. Mirrors the legacy `L` command.
   !               Requires a file format, MODELG ∈ {3, 5, 8, 9, 25}
-  !               with a valid KNAMEQ (and KNAMEQ2 for 8), or 15 with
-  !               the fixed eqdb.dat.
-  !   other     : EQ_ERR_NOT_IMPL (reserved for future modes).
+  !               with a valid KNAMEQ (and KNAMEQ2 for 8); 15 (the
+  !               fixed eqdb.dat) is refused with EQ_ERR_INVALID.
+  !   mode > 1  : EQ_ERR_NOT_IMPL (reserved for future modes);
+  !   mode < 0  : EQ_ERR_INVALID.
   !-------------------------------------------------------------------
   FUNCTION eq_api_run(mode) RESULT(ierr) BIND(C, NAME="eq_run")
     USE plcomm, ONLY: RIP
@@ -168,7 +180,7 @@ CONTAINS
           ierr = EQ_ERR_INVALID
           RETURN
        END IF
-       ! Analytic Grad-Shafranov solve via EQCALC, then post-process
+       ! The Grad-Shafranov solve via EQCALC, then post-process
        ! via EQCALQ to populate the ψ-surface profile + scalar
        ! diagnostics (qaxis/qsurf/betat/betap/pvol). EQCALC alone
        ! solves the fixed-boundary GS equation but doesn't compute the
@@ -192,9 +204,21 @@ CONTAINS
        g_has_equilibrium = .TRUE.
        ierr = EQ_OK
     CASE (1)
-       ! EQDSK-based load via equnit::eq_load(MODELG, KNAMEQ, ierr).
+       ! Equilibrium-file load via equnit::eq_load(MODELG, KNAMEQ, ierr).
        ! MODELG and KNAMEQ come from plcomm_parm; callers are expected
        ! to set them via eq_set_param / eq_set_param_str beforehand.
+       ! MODELG 15 (the fixed file eqdb.dat, EQDSK in eq/equread.f90) is
+       ! refused before any work: EQDSK passes equ_set_psi (eq/equintf.f90)
+       ! one of the three arrays it takes, as it has since equ_set_psi took
+       ! three (11987b21, 2017), so the load of a well-formed file ends the
+       ! process (SIGSEGV), and it never passes the file's p and F profiles
+       ! (equ_set_fluxfn is not called). task-web-client #203.
+       IF (MODELG == 15) THEN
+          EQ_ERRMSG = 'eq_run(1): MODELG=15 is refused: its reader (EQDSK, eq/equread.f90) ' // &
+               'passes equ_set_psi one of its three arrays, so a load of eqdb.dat ends the process'
+          ierr = EQ_ERR_INVALID
+          RETURN
+       END IF
        knameq_local = KNAMEQ
        g_has_equilibrium = .FALSE.
        CALL equnit_eq_load(MODELG, knameq_local, load_ierr)
@@ -511,11 +535,11 @@ CONTAINS
   ! Categories covered:
   !   OUT_OF_RANGE  : 10 EQCHEK overflow guards (NSGMAX/NTGMAX/NUGMAX/
   !                   NRGMAX/NZGMAX/NPSMAX/NRMAX/NTHMAX/NSUMAX/NRVMAX
-  !                   vs the eqcom0_mod compile-time maxima), and a
-  !                   negative RIP for an analytic solve (see below).
+  !                   vs the eqcom0_mod compile-time maxima), a
+  !                   negative RIP for an analytic solve (see below), and
+  !                   MODELG 15, whose load run(1) refuses.
   !   FILE_MISSING  : the files a load reads: KNAMEQ blank or not there
-  !                   for MODELG 3/5/8/9/25, KNAMEQ2 too for MODELG 8;
-  !                   for MODELG 15 the fixed file eqdb.dat not there.
+  !                   for MODELG 3/5/8/9/25, KNAMEQ2 too for MODELG 8.
   !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA, for an
   !                   analytic solve (the solver can abort or give a
   !                   wrong equilibrium).
@@ -530,7 +554,7 @@ CONTAINS
   !
   ! validate() does not know the mode of the run to come, and goes by
   ! MODELG. The file formats (MODELG 3/5/8/9/15/25, what EQ_READ reads:
-  ! eq/eqfile.f90:180-216) are taken to be loaded, run(1): they bring
+  ! eq/eqfile.f90:186-221) are taken to be loaded, run(1): they bring
   ! their own geometry (EQRTSK reads RA/RKAP/RDLT/RB from the TASK-native
   ! file; EQDSKR reconstructs RB = 1.1*RA), so their pre-run
   ! RR/RA/RB/RKAP say nothing about the run and are not checked. Any
@@ -550,7 +574,6 @@ CONTAINS
                           NPSMAX, NRMAX, NTHMAX, NSUMAX, NRVMAX, &
                           RGMIN, RGMAX, ZGMIN, ZGMAX, MDLEQF
     USE plcomm, ONLY: rkind, RR, RA, RB, RKAP, RIP, KNAMEQ2
-    USE equ_params, ONLY: eqfile
     TYPE(eq_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
@@ -588,13 +611,13 @@ CONTAINS
     ! ---- FILE_MISSING: the files a load, run(1), reads (EQ_READ,
     !      eq/eqfile.f90): KNAMEQ for MODELG 3, 5, 8, 9 and 25, and for
     !      MODELG 8 KNAMEQ2 too (EQJAEAR, eq/eq-qst.f90), reported when
-    !      blank or naming no file; for MODELG 15 the fixed file
-    !      eqdb.dat (equ_params' eqfile: EQDSK in eq/equread.f90 does not
-    !      read KNAMEQ), reported as MODELG when it is not there. The load
-    !      fails on each of them too, and says which file, but only once
-    !      the run is made. A name is looked up as the load opens it,
-    !      relative to the working directory of the process at the time
-    !      of validate(). (task-web-client #191)
+    !      blank or naming no file. The load fails on each of them too,
+    !      and says which file, but only once the run is made. A name is
+    !      looked up as the load opens it, relative to the working
+    !      directory of the process at the time of validate().
+    !      (task-web-client #191) MODELG 15, which reads the fixed file
+    !      eqdb.dat, is reported as OUT_OF_RANGE whatever the files:
+    !      run(1) refuses it (task-web-client #203; see eq_api_run).
     IF (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8 .OR. &
         MODELG == 9 .OR. MODELG == 25) THEN
        IF (LEN_TRIM(KNAMEQ) == 0) THEN
@@ -620,12 +643,9 @@ CONTAINS
           END IF
        END IF
     ELSE IF (MODELG == 15) THEN
-       IF (.NOT. file_there(eqfile)) THEN
-          WRITE(msgbuf, '(5A)', IOSTAT=ios) "MODELG=15 loads the fixed file '", &
-               TRIM(eqfile), "', not KNAMEQ, and '", TRIM(eqfile), "' is not there"
-          IF (ios /= 0) msgbuf = "MODELG=15 loads a fixed file, not KNAMEQ, and it is not there"
-          CALL push_diag("MODELG", EQ_DIAG_FILE_MISSING, msgbuf)
-       END IF
+       msgbuf = "MODELG=15 cannot be loaded: its reader passes equ_set_psi one of its three arrays;" // &
+                " run(1) refuses it"
+       CALL push_diag("MODELG", EQ_DIAG_OUT_OF_RANGE, msgbuf)
     END IF
 
     ! ---- INCONSISTENT_PAIR: the wall must enclose the plasma (RB >=
@@ -660,7 +680,7 @@ CONTAINS
 
     ! ---- OUT_OF_RANGE_AFTER_DEP: the box RGMIN/RGMAX/ZGMIN/ZGMAX,
     !      where the solver reads it: an analytic solve with MDLEQF >= 10.
-    !      It is read in one place, EQAXIS (eq/eqsub.f90:57-121, from
+    !      It is read in one place, EQAXIS (eq/eqsub.f90:58-121, from
     !      EQSETP and EQCALV; otherwise its window is RR +/- RB,
     !      +/- RKAP*RB), which asks two things of it: the magnetic axis
     !      must lie inside it (or the run fails, ierr=103), and RGMAX
@@ -704,10 +724,10 @@ CONTAINS
     !      scalars to 1e-11).
     !      The box is not the grid psi is tabulated on (EQTORZ: RR +/- RB).
     !      A file load (EQ_READ dispatch,
-    !      eq/eqfile.f90:180-216: MODELG=3/9 -> EQRTSK, a TASK-native file
+    !      eq/eqfile.f90:186-221: MODELG=3/9 -> EQRTSK, a TASK-native file
     !      carrying its own RG/ZG grids AND RA/RKAP/RDLT/RB; MODELG=5/25
     !      -> EQDSKR, grid rebuilt from the file's rdim/zdim; MODELG=8 ->
-    !      EQJAEAR; MODELG=15 -> equread::eqdsk) sets the geometry itself,
+    !      EQJAEAR; MODELG=15 -> equread::eqdsk, which run(1) refuses) sets the geometry itself,
     !      so the pre-run values say nothing about the loaded plasma. Not
     !      checked, hence a false negative for a load with MDLEQF >= 10,
     !      which reads the box too (EQAXIS: run(1) fails, ierr=103, and

@@ -20,10 +20,10 @@ TR は陰的な時間積分を使います. 進行係数は `FADV` (`THETA` と
 混同しないこと; あれは別の用途で予約されている名前です):
 `FADV = 0.5` は Crank-Nicolson, `FADV = 1.0` は完全陰的です.
 値はタイムステップルーチン内に **直接書かれており** —
-`tr/trexec.f90:527` で `FADV = 1.D0` が無条件に代入されています —
+`tr/trexec.f90:548` で `FADV = 1.D0` が無条件に代入されています —
 TR は箱から出してそのままで完全陰的に動きます. ソースを書き換え
 ない限り Crank-Nicolson に切り替える公開のつまみはありません.
-スキーム選択肢のコメントは `tr/trexec.f90:523-525` にあります.
+スキーム選択肢のコメントは `tr/trexec.f90:544-546` にあります.
 
 具体的な帰結: 厳密な CFL 条件は **適用されません**. `DT` の
 選び方は移流型の安定性境界ではなく, 切断誤差と内側反復の収束
@@ -83,7 +83,7 @@ ms 以下の `DT` が必要になるのはまれですが, ソース駆動の
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) の診断
 
-`tr_api_run` (`tr/tr_api.f90:380,409`) は内部の `tr_prep` /
+`tr_api_run` (`tr/tr_api.f90:383,412`) は内部の `tr_prep` /
 `tr_loop` のいずれからの **非ゼロ戻り値** もすべて
 `TR_ERR_CALC_FAILED` に集約します. ラッパは故意に下流の
 失敗クラス全部を 1 つの ABI コードに潰しているため, `ierr=3`
@@ -148,13 +148,13 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
 `TrDiagCode` 値のいずれかを持ちます. enum は 5 カテゴリを予約
 しており, `tr_api_validate` はそのうち 4 つを emit します.
 `MISSING_REQUIRED` は将来のカテゴリ用に予約されています
-(`tr/tr_api.f90:559`):
+(`tr/tr_api.f90:566`):
 
 - **`OUT_OF_RANGE`** — `tr_api_validate` がチェックする範囲を
   外れたパラメータ値. 例えば validate の `NSMAX` チェックは
   実行時の種数上限 `NSM = 4` (C ABI のコンパイル時上限
   `TR_MAX_NSMAX = 8` ではない) と比較するので, `NSMAX = 5` は
-  validate に到達しここで報告されます (`tr/tr_api.f90:587`).
+  validate に到達しここで報告されます (`tr/tr_api.f90:596`).
   注意: registry の宣言範囲を超える値 (例: `NSMAX > 8`) は
   validate が走る **前** に `set_param` で拒否されます
   (`tr/tr_param_registry.f90:160-162`) ので, この診断リストには
@@ -162,7 +162,7 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
   使えない値を catch することです. 同じコードで #189 の種ごとの
   分布, 方程式のスイッチと粒子源 ({doc}`parameters` の 14 節),
   `EXTERNAL_DRIVEN_I != 0` での `EXTERNAL_DRIVEN_RW <= 0`
-  (`tr/tr_api.f90:620-623`; 対ですが `INCONSISTENT_PAIR` ではなく
+  (`tr/tr_api.f90:648-651`; 対ですが `INCONSISTENT_PAIR` ではなく
   ここで報告) も報告されます.
 
 - **`OUT_OF_RANGE_AFTER_DEP`** — 自分の範囲は通るが他のパラメータ
@@ -172,14 +172,18 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
 - **`INCONSISTENT_PAIR`** — それぞれは通るが一緒には動かない
   パラメータ: `MDLEQN = 1` なしの `MDLEQE` 1 か 2, 不純物密度
   なし・UFILE なしの 2 種の水素系プラズマ以外での `MDLEQE = 2`
-  ({doc}`parameters` の 14 節).
+  ({doc}`parameters` の 14 節). また報告だけのものとして, イオンの
+  電荷密度から大きい方の 1e-3 を超えて離れた `PN[1]` または
+  `PNS[1]` (準中性, {doc}`parameters` の 3 節; task-web-client #200).
+  UFILE モードでは報告せず, 種ごとの分布のチェック (`MODELG = 9` での
+  負の `RIPS`, `RIPE` を含む) の指摘があるときも報告しません.
 
-- **`FILE_MISSING`** — 必須ファイルパスが空, またはライブラリ
-  が開けないファイルを指している. 典型例: `MODELG ∈ {3, 5, 7, 8}`
-  かつ `KNAMEQ` が空.
+- **`FILE_MISSING`** — 実行が読むファイルの名前が空, または
+  ファイルが無い: `MODELG ∈ {3, 5, 7, 8}` の `KNAMEQ` (呼び出し時の作業
+  ディレクトリから探す). `MODELG = 8` では TR が設定できない `KNAMEQ2` が空.
 
-`tr_run` は `FILE_MISSING` と `EXTERNAL_DRIVEN` の対を除いて同じ
-ものを拒否します. その 2 つは `validate()` だけが報告します.
+`tr_run` は `FILE_MISSING`, `EXTERNAL_DRIVEN` の対, 準中性を除いて
+同じものを拒否します. その 3 つは `validate()` だけが報告します.
 
 推奨ワークフローは `set_params()` の後 `run()` の前に
 `validate()` を呼ぶこと. 詳しくは {doc}`parameter-setting`
