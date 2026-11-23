@@ -203,12 +203,18 @@ $(OBJS_PIC) $(OBJDIR_PIC)/equmain.o: $(SRCC) $(SRCS)
 # the comparison of the library's G-EQDSK with the program's
 # (python/equlib/tests/test_program_parity.py). Its GSOPEN reads
 # nothing, so its standard input starts with the menu commands.
+# GNU ld reads each archive once, where it stands: the libmtx objects
+# come before the archives that define what they call (libbnd's BANDRD
+# and BANDCD are in libtask_pic.a), and the archives are a group except
+# on macOS (SO_GROUP_BEGIN/END, below), as $(LIBS_PIC) is on
+# libequapi.so's line.
 equ_nogr: $(OBJC_PIC) $(OBJS_PIC) $(OBJDIR_PIC)/equmain.o \
           $(OBJDIR_PIC)/equ_static_stubs.o $(OBJBPSD_PIC) \
           ../lib/libgrf_pic.a $(LIBS_PIC) $(LIBMTX_PIC)
 	$(FCFREE) $(FFLAGS) -o $@ $(OBJDIR_PIC)/equmain.o $(OBJC_PIC) \
 	    $(OBJS_PIC) $(OBJDIR_PIC)/equ_static_stubs.o $(OBJBPSD_PIC) \
-	    ../lib/libgrf_pic.a $(LIBS_PIC) $(LIBMTX_PIC)
+	    $(LIBMTX_PIC) \
+	    $(SO_GROUP_BEGIN) ../lib/libgrf_pic.a $(LIBS_PIC) $(SO_GROUP_END)
 
 clean_pic:
 	-rm -rf $(OBJDIR_PIC) $(MODDIR_PIC) equ_nogr libequapi.so
