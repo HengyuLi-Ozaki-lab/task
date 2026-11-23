@@ -431,6 +431,7 @@
 !=======================================================================
 !     read coil data 
 !=======================================================================
+      use equ_status_mod, only: equ_fail
       use aaa_mod
       use par_mod
       use geo_mod
@@ -443,11 +444,21 @@
       real*8    eqfile ! dummy namelist
       real*8    rwal,zwal
       character aname*(10)
-      integer n,nn,il,nid1
+      integer n,nn,il,nid1,ios
 !=======================================================================
       if(knamcoil.ne.'done') then
-         if(nid.ne.5) &
-              open(nid,FILE=knamcoil,STATUS='OLD',FORM='FORMATTED')
+         if(nid.ne.5) then
+            open(nid,FILE=knamcoil,STATUS='OLD',FORM='FORMATTED', &
+                 IOSTAT=ios)
+            if(ios.ne.0) then
+               write(6,*) 'XX eqflin: cannot open the coil file ', &
+                    trim(knamcoil)
+               call equ_fail('eqflin: cannot open the coil file '// &
+                    trim(knamcoil), 2)
+               ierr=7
+               return
+            endif
+         endif
          do n=1,icvdm
             if(ncoil(n).gt.0)then
                read(nid,'(a10)',ERR=9800,END=9900)aname
@@ -477,8 +488,10 @@
       return
 !
  9800 ierr=8
+      if(nid.ne.5) close(nid)
       return
  9900 ierr=9
+      if(nid.ne.5) close(nid)
       return
       end subroutine eqflin
 !

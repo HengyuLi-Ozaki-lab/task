@@ -17,7 +17,7 @@ BUILDDIR      ?= _build
 # to tolerate warnings.
 SPHINXOPTS    ?= -W --keep-going
 
-MODULES := tr eq ti fp wr wrx tot
+MODULES := tr eq equ ti fp wr wrx tot
 LANGS   := en ja
 
 # ── Top-level targets ────────────────────────────────────────────────

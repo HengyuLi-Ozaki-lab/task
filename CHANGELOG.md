@@ -10,6 +10,24 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **EQU library interface** (`equ/libequapi.so`, `python/equlib`, `python/mcp-servers/equ_mcp`): the free-boundary
+  equilibrium code `equ/` without the menu, graphics or standard input. `equ_read_parm` (an `&EQU` namelist file),
+  `equ_set_param[_str]` (a registry of the namelist), `equ_validate` (the checks before a run), `equ_run` (mode 1 the
+  program's `R`, mode 0 its first step), `equ_get_state`, `equ_get_psi_rz`, `equ_write_geqdsk` (EQU's own writer),
+  `equ_last_error`. Each run starts from the inputs as set. The library's G-EQDSK equals the program's on QUEST and
+  ITER#1 of `equ/example`, every number within 1e-10 (`test_program_parity.py`, against `equ_nogr`, the program
+  linked without graphics). In library mode the four `STOP`s on the solve path, a missing coil file and a contour
+  longer than `isrzdm` (a new bound in `eqtrc`) return an error; outside it they stop as before. `eqout` reads the
+  unused flux-loop value only on the grid; `eqind` stops a boundary that reaches the box, `eqlin`'s walks stop at the
+  axis row's ends (a coarse grid), `eqaxi` stops its search at the box's edge, `flxfun` refuses a filament on a point
+  of its flux, `eqtrc` refuses a start whose first cell is off the grid, and the G-EQDSK writer returns its write
+  errors (these exit with status 2 outside library mode, as the runtime errors they replace did). The library opens
+  only regular files that are not the process's standard streams (`stat(2)`, `equ/equ_path.c`), creates a new
+  G-EQDSK file itself, checks that it ends with the writer's last record, and removes only a file it created. EQU's G-EQDSK gives
+  the pressure in MPa, and the FCT loop of both examples ends at `IEQMAX` without meeting `EEQMAX`: both documented,
+  both questions for the lead. EQ reads at most 1343 boundary points (`NSUM`; a load of more fails
+  with `EQ_ERR_CALC_FAILED`), where EQU's contour arrays hold 1542 (`isrzdm`). Design:
+  `docs/superpowers/specs/2026-11-22-equ-library-design.md`.
 - **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, task-web-client#96).
   - `tr_set_param` and `tr_set_param_str` send a name that starts with `eq:` to EQ's registry (`eq:RB`, `eq:NRMAX`,
     `eq:NSGMAX`, ...); an unknown name returns `TR_ERR_INVALID`, and an accepted one makes the next `tr_run` prepare

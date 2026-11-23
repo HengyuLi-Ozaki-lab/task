@@ -7,6 +7,7 @@
       contains
 !=======================================================================
       subroutine eqfct
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     MAIN PROGRAM                                                 JAERI
 !              OF FREE BOUNDARY FCT EQUILIBRIUM SOLVER
@@ -41,7 +42,9 @@
       ie=ie+1
       ieq=ie
       call eqrcu
+      if(equ_failed()) return
       call eqbnd
+      if(equ_failed()) return
       call eqpde
       do i=1,nrz
       psistr(i)=psi(i)
@@ -56,12 +59,16 @@
       psi(i)=psistr(i)
       enddo
       call eqsep
+      if(equ_failed()) return
       call eqadj
       if(iad.gt.0)then 
       call eqaxi
+      if(equ_failed()) return
       call eqsep
+      if(equ_failed()) return
       call eqrbp
       call eqlin
+      if(equ_failed()) return
       call eqode
       endif
       enddo
