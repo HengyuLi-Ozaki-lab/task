@@ -236,7 +236,7 @@ jobs:
         # Actions bash) ensures that.
         run: |
           set -e
-          for mod in tr fp ti wr wrx eq tot; do
+          for mod in tr fp ti wr wrx eq equ tot; do
             echo "::group::Building $mod/lib${mod}api.so"
             # tot has no bpsd_pic target (it links against the other
             # modules' .so directly, not per-module bpsd PIC objs).
@@ -255,11 +255,23 @@ jobs:
         # not link on macOS and they need the non-PIC chain; the dlopen
         # path is what the Python wrappers use.
         run: |
-          for mod in tr fp ti wr wrx eq; do
+          for mod in tr fp ti wr wrx eq equ; do
             echo "::group::${mod}_api_check_so"
             make -C "$mod" "${mod}_api_check_so"
             echo "::endgroup::"
           done
+
+      - name: Build equ_nogr (the EQU program without graphics); EQU's C refusal cases
+        # python/equlib/tests/test_program_parity.py compares the G-EQDSK
+        # of libequapi.so with this program's on the same input: the
+        # program equ linked from the PIC objects above with no-op GSAF
+        # entries (equ/equ_static_stubs.f90). Without it those tests skip.
+        # equ_api_check_all adds test_negative (36 refusal cases, dlopen
+        # only) to the equ_api_check_so above.
+        run: |
+          set -e
+          make -C equ equ_nogr
+          make -C equ equ_api_check_all
 
       - name: Run orchestrator Layer 2 + Layer 4 C ABI checks (tot_api_check_all)
         # Phase L-6 composite target. Builds and runs every C ABI driver:
@@ -520,7 +532,10 @@ jobs:
         # additionally build wr/libwrapi.so (6th, NOT a mono prereq)
         # for symmetry with the pytest job above and with the matrix of
         # clean-tree-build.yml, so the three places that name the six
-        # modules stay identical. The wr build adds ~30s on a job that takes ~5-8 min;
+        # modules stay identical. The other two also name equ, which is
+        # not in the mono image (pl/noequlib.f defines a module of the
+        # name of equ/equunit.f90's, and tot links it), so it is not
+        # built here. The wr build adds ~30s on a job that takes ~5-8 min;
         # the symmetry value beats the time cost.
         #
         # We deliberately do NOT build tot/libtotapi.so here (the
@@ -817,7 +832,9 @@ jobs:
   uncovered-modules-build:
     # Compile-only coverage for the modules the pytest job does NOT build.
     #
-    # The pytest job builds tr/fp/ti/wr/wrx/eq/tot; `make -C tot libs` adds
+    # The pytest job builds tr/fp/ti/wr/wrx/eq/equ/tot (for equ the PIC
+    # objects of libequapi.so and equ_nogr; libequ.a is compiled here);
+    # `make -C tot libs` adds
     # pl/dp/wmx/ob/adf11/adpost. That leaves equ/ trx/ txnew/ wf2dt/ wim/ wm/
     # trm/ wmf/ wmfn/ with NO CI coverage at all — and every one of them is
     # substantially touched by the bpsi merge. In PR #226 that gap let a batch

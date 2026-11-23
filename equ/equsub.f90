@@ -212,6 +212,7 @@
       use equ_mod
       use eqv_mod
       use cnt_mod
+      use equ_status_mod, only: equ_fail
       implicit none
 ! local variables
       integer   i, ir, ix, iy, iz, n, idd,idr,idz, ii
@@ -234,6 +235,15 @@
        ir=ir+idr
        iz=iz+idz
        i=(iz-1)*nr+ir
+!      The walk reads psi(i+-1) and psi(i+-nr): a start on the edge of the
+!      box (ZPLA in its first row, IUDSYM=0) indexed psi below 1, a
+!      runtime error; exit status 2 as that error's.
+       if(ir.lt.2.or.ir.gt.nr-1.or.iz.lt.2.or.iz.gt.nz-1)then
+        write(6,*) '  stop at eqaxi : the axis search reached the box edge'
+        call equ_fail('eqaxi: the search of the magnetic axis reached '// &
+             'the edge of the box', 2)
+        return
+       endif
        idr=0
        idz=0
        idd=0
@@ -285,6 +295,7 @@
       use equ_mod
       use eqv_mod
       use vac_mod
+      use equ_status_mod, only: equ_failed
       implicit none
 ! local variables
       integer   is, l, n, ns
@@ -348,6 +359,7 @@
 !*    set the boundary values of psi
 !-----------------------------------------------------------------------
       call flxfun(flx,rbnd,zbnd,irzbnd,rs,zs,cs,ns)
+      if(equ_failed()) return
 
       do l=1,irzbnd
        psi(lrzbnd(l))=flx(l)
@@ -479,6 +491,7 @@
 !
 !=======================================================================
       subroutine eqequ
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     SET-UP FREE-BOUNDARY EQUILIBRIUM
 !                 FOR GIVEN FUNCTIONAL FORMS OF DP/DS AND DT/DS
@@ -600,6 +613,7 @@
 !*    LOAD RCU=R*CUR(R,Z)
 !-----------------------------------------------------------------------
       call eqrcu
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
 !*    SCALE RCU SUCH THAT TCU=TCUR         : ICP(2) > 0
 !-----------------------------------------------------------------------
@@ -636,6 +650,7 @@
 !*    LOAD PSI ON THE BOUNDARY OF THE COMPUTATIONAL DOMAIN
 !-----------------------------------------------------------------------
       call eqbnd
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
 !*    SOLVE L(PSI)=RCU(R,Z)
 !-----------------------------------------------------------------------
@@ -648,11 +663,14 @@
 !*    SEARCH MAGNETIC AXIS
 !-----------------------------------------------------------------------
       call eqaxi
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
 !*    SEARCH STAGNATION POINT
 !-----------------------------------------------------------------------
       call eqsep
+      if(equ_failed()) return
       call eqlim
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
 !*    CONVERGENCE CHECK OF INNER LOOP
 !-----------------------------------------------------------------------
@@ -670,9 +688,11 @@
 !-----------------------------------------------------------------------
       if(icp(2).gt.0)then
        call eqlin
+       if(equ_failed()) return
       else
        psi0=0.d0
        call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+       if(equ_failed()) return
        nsu=nzsu
        do n=1,nzsu
         rsu(n)=zrsu(n)
@@ -690,6 +710,7 @@
 !-----------------------------------------------------------------------
       if(iabs(icp(3)).eq.2.and.xxli.gt.0.)then
        call eqind
+       if(equ_failed()) return
        erch(1)=dabs(1.d0-zzli/xxli)
        xx1=zzli
        xx2=xxli
@@ -778,6 +799,7 @@
 !    
 !=======================================================================
       subroutine eqerr(errmsg)
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     PRINT PSI
 !=======================================================================
@@ -801,7 +823,7 @@
       call prnts(ft06,'psi ',psir,nr,-siw(1))
 !----------------------------------------------------------------------
       write(6,*) '===error stop==='
-      stop
+      call equ_fail('eqerr: '//errmsg)
       end subroutine eqerr
 !   
 !=======================================================================
@@ -929,6 +951,7 @@
 !=======================================================================
       subroutine flxfun(flx,r,z,m,r0,z0,c0,n)
 !=======================================================================
+      use equ_status_mod, only: equ_fail
       implicit none
       integer   ntab, mtab
       real*8    dtab, xtab(2050), ftab(2050)
@@ -947,6 +970,15 @@
       do mm=1,m
        x=r(mm)*r0(nn)
        xx=4.d0*x/((r(mm)+r0(nn))**2+(z(mm)-z0(nn))**2)
+!      A filament on the point itself (xx = 1), a point or filament at
+!      R < 0 (xx < 0) or a value that is not a number: INT of dlog(1-xx)
+!      indexed xtab out of bounds (on x86; arm64 saturates at xx = 1).
+       if(.not.(xx.ge.0.d0.and.xx.lt.1.d0))then
+        write(6,*) '  stop at flxfun : a filament on a point of the flux, or R < 0'
+        call equ_fail('flxfun: a current filament lies on a point where '// &
+             'the flux is computed (or R < 0)', 2)
+        return
+       endif
        i=1.d0-dtab*dlog(1.d0-xx)
        i=min0(i,ntab-1)
        d=(xx-xtab(i))/(xtab(i+1)-xtab(i))
@@ -1088,6 +1120,7 @@
 !    
 !=======================================================================
       subroutine eqind
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     CALCULATE INDUCTANCE                                         JAERI
 !=======================================================================
@@ -1140,10 +1173,24 @@
       irmin=(rrmin-rg(1))/dr
       irmax=(rrmax-rg(1))/dr+2.d0
       if(iudsym.eq.1)zzmax=nzh
+!     The range is kept on the grid, and a plasma cell (sigcu*psi < 0) on
+!     the edge of the box, whose neighbours are off it, stops: a boundary
+!     that reaches the box (QUEST with ISEP=0) used to index psi out of
+!     bounds.
+      izmin=max(izmin,1)
+      izmax=min(izmax,nz)
+      irmin=max(irmin,1)
+      irmax=min(irmax,nr)
       do iz=izmin,izmax
        do ir=irmin,irmax
         i=(iz-1)*nr+ir
         if(sigcu*psi(i).lt.0.d0)then
+          if(ir.eq.1.or.ir.eq.nr.or.iz.eq.1.or.iz.eq.nz) then
+           write(6,*) ' stop at eqind : the plasma reaches the box edge'
+           call equ_fail('eqind: the plasma boundary reaches the edge of '// &
+                'the box', 2)
+           return
+          endif
           zzlp=zzlp+rbp(i)*rcu(i)/rg(ir)
           br=dz2i*(psi(i+nr)-psi(i-nr))/rg(ir)
           bz=dr2i*(psi(i+ 1)-psi(i- 1))/rg(ir)
@@ -1174,6 +1221,7 @@
 !  
 !=======================================================================
       subroutine eqlim
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     LIMITER                                                      JAERI
 !=======================================================================
@@ -1256,6 +1304,7 @@
        psep=psep-pvbnd
        saxis=saxis-pvbnd
        call eqlin
+       if(equ_failed()) return
       endif
 !-----------------------------------------------------------------------
       return
@@ -1263,6 +1312,7 @@
 !     
 !=======================================================================
       subroutine eqlin
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     LINE INTEGRALS
 !=======================================================================
@@ -1285,34 +1335,59 @@
 !=======================================================================
       sigcu=1.d0
       call eqaxi 
+      if(equ_failed()) return
       dpsi=saxis/float(nvm)
       irst=iraxis
       ist= (izaxis-1)*nr + irst
-      do while(sigcu*psi(ist+1).le.0.d0.and.irst.lt.nr)
+!     irst < nr is tested before psi(ist+1), which at irst = nr is the
+!     next row's (the old test read it); the psi test is the old one
+!     negated, so a NaN ends the search as it did.
+      do while(irst.lt.nr)
+        if(.not.(sigcu*psi(ist+1).le.0.d0)) exit
         irst=irst+1
         ist= (izaxis-1)*nr + irst
       enddo
       if(irst.eq.nr-1)then
        write(6,*)'stop at eqlin : irst = nr-1'
-       stop
+       call equ_fail('eqlin: irst = nr-1')
+       return
+      endif
+!     irst = nr: the plasma's sign up to the box on the axis row; the walk
+!     below read the next row, and eqtrc rg(nr+1).
+      if(irst.eq.nr)then
+       write(6,*)'stop at eqlin : irst = nr'
+       call equ_fail('eqlin: irst = nr (the plasma reaches the box on '// &
+            'the axis row)', 2)
+       return
       endif
 !-----------------------------------------------------------------------
       istep=0
       do n=nv,2,-1
        psi0=dpsi*DBLE(nv-n)
        ist=(izaxis-1)*nr+irst
-       do while((psi0-psi(ist))*(psi0-psi(ist+1)).gt.0.d0)
+!      The walk had no lower bound: with a coarse grid (QUEST at NR=17,
+!      NZ=33) it ran past the row and indexed rg at -211. (The test is the
+!      old one negated, so a NaN stops the walk as it did.)
+       do while(irst.gt.1)
+        if(.not.((psi0-psi(ist))*(psi0-psi(ist+1)).gt.0.d0)) exit
         irst=irst-1
         ist=ist-1
-       enddo 
+       enddo
+       if((psi0-psi(ist))*(psi0-psi(ist+1)).gt.0.d0) then
+          write(6,*) '  stop at eqlin : no flux surface crossing in the row'
+          call equ_fail('eqlin: no crossing of a flux surface on the axis row', 2)
+          return
+       endif
        istop=0
        do while(istop.eq.0)
         call eqtrc(psi0,rg(irst+1),zaxis,1,0,irend,izend)
+        if(equ_failed()) return
         if(irend.eq.0)then
          istep=istep+1
          if(istep.gt.20) then
             write(6,*) '  stop at eqlin : istep > 20'
-            stop
+            call equ_fail('eqlin: istep > 20')
+            return
          endif
          dps=-0.001d0*saxis
          do i=1,nrz
@@ -1322,6 +1397,7 @@
          psep=psep+dps
          cvac(0)=cvac(0)+dps
          call eqaxi
+         if(equ_failed()) return
         else
          istop=1
          if(istep.gt.1)write(6,*)'    surface has been moved : istep=',istep
@@ -1383,6 +1459,7 @@
 !     
 !=======================================================================
       subroutine eqout
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
       use aaa_mod
       use par_mod
@@ -1405,6 +1482,7 @@
 !-----
       psi0=0.d0
       call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+      if(equ_failed()) return
       qaxis=qqv(1)
       qsurf=qqv(nv)
       zlen=0.d0
@@ -1426,6 +1504,7 @@
 !-----------------------------------------------------------------------
       psi0=0.05d0*saxis
       call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+      if(equ_failed()) return
       q95=1.d0/((2.d0*cnpi)**2)*btv*zaav/zsdw
 !-----
       psi0=0.05d0*saxis
@@ -1480,9 +1559,14 @@
       beta=100.d0*beta
 !-----
       call eqind
+      if(equ_failed()) return
 !-----
       x=(rloop-rg(1))/dr+1.d0
       y=(zloop-zg(1))/dz+1.d0
+!     The flux-loop point (rloop, zloop) off the grid used to index psi
+!     out of bounds; psloop is then left 0 (it is not read anywhere).
+      psloop=0.d0
+      if(x.ge.1.d0.and.x.lt.dble(nr).and.y.ge.1.d0.and.y.lt.dble(nz)) then
       ix=x
       iy=y
       x=x-ix
@@ -1491,6 +1575,7 @@
       psloop=psi(i)+x*(psi(i+1)-psi(i))+y*(psi(i+nsr)-psi(i))&
              +x*y*(psi(i+nsr+1)+psi(i)-psi(i+1)-psi(i+nsr)) &
              -cvac(0)
+      endif
 !=======================================================================
 !      call clockm(mtime1)
 !      cpu=1.d-03*DBLE(mtime1)-cput
@@ -1534,6 +1619,7 @@
         isep=-iabs(isep)
         call eqsep
         isep=ksep
+        if(equ_failed()) return
        endif
        rsep=0.d0
        zsep=0.d0
@@ -1786,6 +1872,7 @@
 ! 
 !=======================================================================
       subroutine eqrcu
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     LOAD RCU=R*CU(R,Z)                                           JAERI
 !=======================================================================
@@ -1816,6 +1903,7 @@
 
       psi0=0.d0
       call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+      if(equ_failed()) return
       zrsmax=zrsu(1)
       zrsmin=zrsu(1)
       zzsmax=zzsu(1)
@@ -1874,6 +1962,7 @@
 !     
 !=======================================================================
       subroutine eqsep
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     SEARCH SEPARATRIX                                            JAERI
 !=======================================================================
@@ -2063,6 +2152,7 @@
       cvac(0)=cvac(0)-xsep
       psep=psep-xsep
       call eqaxi
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
       istp=0
       k=0
@@ -2070,6 +2160,7 @@
        kk=k
        psi0=1.d-03*saxis*DBLE(k)
        call eqtrc(psi0,raxis,zaxis,-1,0,irend,izend)
+       if(equ_failed()) return
        if(irend.ge.2)then
         if(irend.le.nr-2)then
          if(izend.ge.2)then
@@ -2103,6 +2194,7 @@
       endif
 !-----
       call eqaxi
+      if(equ_failed()) return
 !-----------------------------------------------------------------------
       return
       end subroutine eqsep
@@ -2186,6 +2278,7 @@
 ! 
 !=======================================================================
       subroutine eqtrc(psi0,rst,zst,irsig,irot,irend,izend)
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
 !     LINE INTEGRALS
 !=======================================================================
@@ -2198,6 +2291,8 @@
 ! argument
       integer   irsig, irot, irend, izend
       real*8    psi0, rst, zst
+      integer   izlo, izhi
+      real*8    xst, zzst
 ! local variables
       integer   i, i1, i2, i3, i4, ir, ist, iz, j, k, ll, lm, lp, n &
               , istop 
@@ -2208,6 +2303,28 @@
       nzsu=0
 !-----------------------------------------------------------------------
 !..SEARCH STARTING POINT
+!     The start (rst, zst) off the grid, or in a row whose first cell
+!     (rows iz-1 and iz with irot = 0, iz and iz+1 otherwise) is not on
+!     it, used to index psi out of bounds before the loops' own tests
+!     (QUEST's namelist with KNAMCOIL='done': psi at -105, a runtime
+!     error); exit status 2 as that error's. The test is on the reals,
+!     before INT, so that a NaN or a huge value is refused too.
+      xst=(rst-rg(1))/dr+1.
+      zzst=(zst-zg(1))/dz+1.
+      if(irot.eq.0)then
+       izlo=2
+       izhi=nz
+      else
+       izlo=1
+       izhi=nz-1
+      endif
+      if(.not.(xst.ge.1.d0.and.xst.lt.DBLE(nr).and. &
+               zzst.ge.DBLE(izlo).and.zzst.lt.DBLE(izhi+1)))then
+       write(ft06,'(1p3d10.3,i4)')psi0,rst,zst,irsig
+       write(6,*) '  stop at eqtrc : the starting point is off the grid'
+       call equ_fail('eqtrc: the starting point is off the grid', 2)
+       return
+      endif
       ir=(rst-rg(1))/dr+1.
       iz=(zst-zg(1))/dz+1.
       i=nr*(iz-1)+ir
@@ -2217,6 +2334,7 @@
        if(ir.le.1.or.ir.ge.nrm)then
         write(ft06,'(1p3d10.3,i4)')psi0,rst,zst,irsig
         call eqerr('==eqtrc:no starting point==')
+        if(equ_failed()) return
        endif
       enddo
       ist=i
@@ -2318,7 +2436,8 @@
         k=2
        else
           write(6,*) ' stop at eqtrc : s1*s2*s3*s4=0 '
-          stop
+          call equ_fail('eqtrc: s1*s2*s3*s4=0')
+          return
        endif
 !
        vl1=r1*r1
@@ -2343,6 +2462,17 @@
        zbiv=zbiv+dl*(bi0+bi1)/2.0
        zarv=zarv+(r1-r0)*(z1+z0)/2.0
 !-----
+!      The contour arrays hold isrzdm points: with iudsym=1 half of them
+!      and the mirror (2*nzsu-1). nsu = nzsu-1 at the end, and eqequ reads
+!      rsu(nsu+2), so nzsu stops at isrzdm-1 (iudsym=0) or isrzdm/2.
+!      A longer contour used to index past the arrays.
+       if((iudsym.ne.1.and.nzsu.ge.isrzdm-1).or. &
+          (iudsym.eq.1.and.nzsu.ge.isrzdm/2)) then
+          write(6,*) ' stop at eqtrc : more points than isrzdm '
+          call equ_fail('eqtrc: the contour has more points than '// &
+               'isrzdm (1542) holds')
+          return
+       endif
        nzsu=nzsu+1
        zrsu(nzsu)=r1
        zzsu(nzsu)=z1
@@ -2429,6 +2559,7 @@
       use equ_mod
       use vac_mod
       use cnt_mod
+      use equ_status_mod, only: equ_failed
       implicit none
 ! local variables
       integer   i, icx(10), ii, ir, iz, j, k, nc
@@ -2510,6 +2641,7 @@
       do nc=1,icvdm
       if(ncoil(nc).gt.0)then
       call eqvac0(nc,ncoil(nc),rcoil(1,nc),zcoil(1,nc),ccoil(1,nc))
+      if(equ_failed()) return
       endif
       enddo
 !-----------------------------------------------------------------------
@@ -2523,6 +2655,7 @@
       use geo_mod
       use equ_mod
       use vac_mod
+      use equ_status_mod, only: equ_failed
       implicit none
 ! argument
       integer   nc, nss, istop
@@ -2586,6 +2719,7 @@
 !-----------------------------------------------------------------------
       if(isvac.eq.0) then
        call flxfun(flx,rbnd,zbnd,irzbnd,rs,zs,cs,ns)
+       if(equ_failed()) return
        do l=1,irzbnd
         i=lrzbnd(l)
         psi(i)=flx(l)
@@ -2610,6 +2744,7 @@
          zgs(ir)=zg(iz)
         enddo
         call flxfun(flx,rgs,zgs,nsr,rs,zs,cs,ns)
+        if(equ_failed()) return
         do ir=1,nsr
          ip = ip + 1
          psi(ip)=flx(ir)
@@ -2678,6 +2813,7 @@
 !
 !=======================================================================
       subroutine eqeqv
+      use equ_status_mod, only: equ_fail, equ_failed
 !=======================================================================
       use aaa_mod
       use par_mod
@@ -2692,6 +2828,7 @@
 !=======================================================================
       call eqrbp
       call eqlin
+      if(equ_failed()) return
 !=======================================================================
 !-----LOAD VALUABLES ON EQUIL GRIDS:SIV(N),N=1,NV
       dsi=saxis/DBLE(nvm)
