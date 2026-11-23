@@ -17,8 +17,9 @@
  * EQ_ERR_NOT_INIT, also for -1.
  *
  * The test does NOT assert on any numerical value beyond the error
- * codes and raxis > 0 (EQCALC) and qaxis > 0 (EQCALQ) after
- * eq_run(0); the real regression story is that
+ * codes and raxis > 0 and qaxis > 0 after eq_run(0), which both read 0
+ * before a run (test_run_so checks that EQAXIS moved the axis off RR);
+ * the real regression story is that
  * `make eq` still produces a byte-identical binary, which is enforced
  * by the build rules in eq/Makefile (OBJ_API is not linked into
  * libeq.a).
@@ -81,8 +82,8 @@ int main(void) {
     printf("    raxis=%g zaxis=%g qaxis=%g psi0=%g betap=%g\n",
            state.raxis, state.zaxis, state.qaxis,
            state.psi0,  state.betap);
-    assert(state.raxis > 0.0);   /* EQCALC */
-    assert(state.qaxis > 0.0);   /* EQCALQ */
+    assert(state.raxis > 0.0);   /* 0 before the run */
+    assert(state.qaxis > 0.0);   /* EQCALQ's; 0 before the run */
 
     /* L-3: eq_set_param now dispatches to the real registry.
      * Setting a scalar (e.g. RR=6.5) should return EQ_OK. */
