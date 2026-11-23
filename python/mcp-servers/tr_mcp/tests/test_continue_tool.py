@@ -183,10 +183,13 @@ def test_a_continue_that_fails_before_a_new_row_keeps_the_results_hidden():
         srv.STATE.close()
 
 
-# A continue keeps the rows from before it: only a row it added shows that its steps computed the globals.
-@pytest.mark.parametrize("rows, shown", [((3, 4), True), ((3, 3), False), ((0, 0), False)])
-def test_a_continue_that_fails_in_its_steps_keeps_the_results_it_evaluated(rows, shown):
-    f = TrFailure("NONFINITE", -3, 12, 1.2, "Q0, WPT or a central temperature is not finite")
+# A continue keeps the rows from before it: a row it added, or a TR_CHECK failure (its exits compute the globals of
+# the failed iterate without a row), shows that its steps computed the globals.
+@pytest.mark.parametrize("kind, rows, shown", [("NONFINITE", (3, 4), True), ("NONFINITE", (3, 3), False),
+                                               ("NONFINITE", (0, 0), False), ("TR_CHECK", (3, 3), True),
+                                               ("EQ_FAILED", (3, 3), False)])
+def test_a_continue_that_fails_in_its_steps_keeps_the_results_it_evaluated(kind, rows, shown):
+    f = TrFailure(kind, -3, 12, 1.2, "the failure")
     tr = mock.Mock()
     tr.continue_run.side_effect = TrlibRunError("tr_continue(10): ierr=3", failure=f)
     tr.history_length.side_effect = list(rows)

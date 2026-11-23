@@ -193,6 +193,10 @@ in at the first step of the next `continue_run`), **0 structural** (every other 
 the next `run` prepares again and `continue_run` refuses, naming the last such name), **-1 unknown**. A refusal raises
 `TrlibParamError` with a `REFUSED` record as `.failure`: before a `run`, after a failed run (until a `run` prepares
 again), after a structural set, and for a value `run` refuses. A count outside 0 to 2**31 - 1 (a negative one too) is refused before the call, without a record: the C function `tr_continue` refuses a negative count with one.
+The sets counted are those through `set_param`, `set_param_str` and `tot`'s setters: a write through EQ's own API
+(`Eqlib`, `eq_set_param`) on the mono image changes the inputs of the EQ that TR re-solves under `MODELG` 9 (taken at
+the next `NTEQIT` re-solve or preparation) without either `run` or `continue_run` seeing it (until k-yoshimi/bpsd#7, a
+grid change there overruns bpsd too).
 
 - **`continue_run(0)`** makes these checks and does nothing else: the control sets stay pending for the next call. `run(0)`
   does not: it takes no step but the loop's exit sets `RIPS = RIPE`, so a ramp set before it is lost.

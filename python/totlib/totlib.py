@@ -323,8 +323,10 @@ class Tot:
         ``tot_continue`` calls TR's ``tr_continue`` (``Trlib.continue_run``), as :meth:`run` calls ``tr_run``: the
         control parameters set since the last :meth:`run` or :meth:`continue_run` (``tr:RIPE``, ``tr:PNBTOT``,
         ``tr:PICTOT``, ``tr:PECTOT``, ``tr:PLHTOT``, ``tr:NTEQIT``, ``tr:TPRST``) take effect at its first step;
-        ``nt``, ``T`` and the history go on. Every other ``tr:`` name and every ``eq:`` name is structural: set after
-        a preparation it makes :meth:`continue_run` refuse, and the next :meth:`run` prepares again. There is no
+        ``nt``, ``T`` and the history go on. Every other ``tr:`` name is structural: set after a preparation it makes
+        :meth:`continue_run` refuse, and the next :meth:`run` prepares again. An ``eq:`` set is refused itself
+        (:meth:`set_param`, :meth:`set_param_str`) once TR has prepared the case: until the pinned bpsd has
+        k-yoshimi/bpsd#7 an EQ grid change after a preparation corrupts memory. There is no
         ``param_class`` here: ``Trlib.param_class`` answers for the same names (``eq:`` names are 0).
 
         Raises :class:`TotlibInvalidParamError` when TR refuses (no preparation yet, a failed run, a structural set

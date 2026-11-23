@@ -314,7 +314,8 @@ STATE_SCHEMA: Dict[str, Any] = {
                 "still the run before's: until a run or continue_run of one step or more since the handle was opened or a parameter "
                 "was written, get_state and run_and_get_state return T only, and nothing before the handle's first "
                 "successful preparation. After a negative-temperature failure (TR_CHECK) they are the failed "
-                "iterate's, while the history ends on the last recorded step. A library built before the "
+                "iterate's (Q0, which the loop computes after a step, the last completed step's), while the "
+                "history ends on the last recorded step. A library built before the "
                 "scalar table gives the 14 of tr_state_t only"
             ),
             "properties": {
@@ -661,15 +662,19 @@ def _history_rows(tr: Trlib) -> Optional[int]:
 
 def _continue(tr: Trlib, nsteps: int) -> None:
     """``tr.continue_run(nsteps)``, keeping ``STATE.evaluated``. A successful call of one step or more ends on a step
-    that computes the global results (TRGLOB). A failed one counts only when it added a history row: it keeps the
-    rows from before it (no preparation), and its steps compute the globals on output steps only, so a step that
-    fails before one leaves the results of before the control set. A refusal runs nothing and changes no flag."""
+    that computes the global results (TRGLOB). A failed one counts when it added a history row, or when it failed in
+    ``TR_CHECK``, whose two exits compute the globals of the failed iterate (``tr/trexec.f90``, before
+    ``tr_failure_record``) without a row: it keeps the rows from before it (no preparation), and its steps compute
+    the globals on output steps only, so another failure before one is not counted. A refusal runs nothing and
+    changes no flag."""
     before = _history_rows(tr)
     try:
         tr.continue_run(nsteps)
-    except TrlibRunError:
+    except TrlibRunError as exc:
         after = _history_rows(tr)
-        if nsteps > 0 and before is not None and after is not None and after > before:
+        grew = before is not None and after is not None and after > before
+        checked = getattr(exc.failure, "kind", None) == "TR_CHECK"
+        if nsteps > 0 and (grew or checked):
             STATE.evaluated = True
         raise
     if nsteps > 0:

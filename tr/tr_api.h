@@ -208,7 +208,8 @@ int tr_get_scalar(const char* name, double* value);
    A run that fails on a negative temperature (TR_CHECK in tr_last_error) or with a state that is not finite
    (NONFINITE) ends its history on the last recorded step: the failed step is not a row (tr2 records a TR_CHECK
    one). A preparation that fails leaves no rows: tr_history_length is 0 until one succeeds. After a TR_CHECK
-   failure the scalars are the failed iterate's (tr_exec computes TRGLOB there), so they differ from the last row. Under MODELG 9 a step that ends with an EQ re-solve (a
+   failure the scalars are the failed iterate's (tr_exec computes TRGLOB there; Q0, which tr_loop computes after a step,
+   is the last completed step's), so they differ from the last row. Under MODELG 9 a step that ends with an EQ re-solve (a
    multiple of NTEQIT) is recorded before the re-solve, which then recomputes Q0: that row's Q0 differs from
    tr_get_scalar's; the other shared names agree. */
 int tr_history_length(void);
@@ -234,7 +235,10 @@ int tr_history_get(const char* name, double* buf, int n, int* got);
       - after a failed tr_prep or loop of tr_run or tr_continue, until a tr_run prepares again (it does after any
         tr_set_param or tr_set_param_str);
       - after a structural parameter (tr_param_class 0, eq: names included) was set since the preparation: the
-        record names the last one; tr_run prepares again;
+        record names the last one; tr_run prepares again. Counted are the sets through tr_set_param,
+        tr_set_param_str and tot's setters; a write through EQ's own API (eq_set_param, eqlib) on the mono image,
+        which changes the inputs of the EQ that TR re-solves under MODELG 9 (taken at the next NTEQIT re-solve or
+        preparation), is not, as tr_run does not prepare again for it;
       - nsteps < 0;
       - a value tr_run's own checks refuse (with MODELG 9, a negative RIPE).
      TR_ERR_NOT_INIT before tr_init. TR_ERR_CALC_FAILED when the loop fails, with its record, as tr_run.

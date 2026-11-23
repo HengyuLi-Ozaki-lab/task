@@ -160,6 +160,7 @@ def test_an_eq_name_with_a_blank_before_its_colon_is_refused_through_the_c_funct
         tot.run(5)
         lib = _ffi.load_library(str(_TOT_LIB))
         assert lib.tot_set_param(b"eq :RB", ctypes.c_double(2.1)) == 1
+        assert lib.tot_set_param(b"eq" + b" " * 14 + b"x:RB", ctypes.c_double(2.1)) == 1   # the prefix is cut at 16
         tot.continue_run(5)
         assert tot.get_state().nt == 10
 

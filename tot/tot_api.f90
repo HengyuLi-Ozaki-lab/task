@@ -60,7 +60,7 @@ MODULE tot_api
   USE, INTRINSIC :: ISO_C_BINDING
   USE tot_state, ONLY: TOT_STATE_ABI_VERSION
   USE tot_state, ONLY: tot_state_c, TOT_MAX_NRMAX, TOT_MAX_NSMAX
-  USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str
+  USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str, tot_param_split
   ! Per-module APIs (libraryized in L-3). We rename each *_api_*
   ! function to a tot-local alias so the namespaces do not collide
   ! when the wrap module pulls them all in.
@@ -413,17 +413,19 @@ CONTAINS
     END IF
   END FUNCTION tot_api_set_param_str
 
-  ! eq_set_refused : true for a name that tot_param_set and tot_param_set_str would hand to EQ (their prefix "eq", parsed
-  ! as they parse it: up to the first ':', trailing blanks trimmed) while TR refuses an eq: set
-  ! (tr_api_eq_set_refused_in_case); false for every other name, which they dispatch (and refuse) as before.
+  ! eq_set_refused : true for a name that tot_param_set and tot_param_set_str would hand to EQ (the namespace "eq", split
+  ! by their own tot_param_split) while TR refuses an eq: set (tr_api_eq_set_refused_in_case); false for every other
+  ! name, which they dispatch (and refuse) as before.
   LOGICAL FUNCTION eq_set_refused(who, fname)
     CHARACTER(LEN=*), INTENT(IN) :: who, fname
-    INTEGER :: sep
+    CHARACTER(LEN=16) :: prefix
+    CHARACTER(LEN=LEN(fname)) :: bare
+    LOGICAL :: ok
     eq_set_refused = .FALSE.
-    sep = INDEX(fname, ':')
-    IF (sep < 2 .OR. sep >= LEN_TRIM(fname)) RETURN
-    IF (TRIM(fname(1:sep-1)) /= 'eq') RETURN
-    eq_set_refused = tr_api_eq_set_refused_in_case(who, TRIM(fname(sep+1:)))
+    CALL tot_param_split(fname, prefix, bare, ok)
+    IF (.NOT. ok) RETURN
+    IF (TRIM(prefix) /= 'eq') RETURN
+    eq_set_refused = tr_api_eq_set_refused_in_case(who, TRIM(bare))
   END FUNCTION eq_set_refused
 
   !-------------------------------------------------------------------

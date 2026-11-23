@@ -121,9 +121,9 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     (without opening the library's lifecycle: `classes_unavailable` says why when the library does not load); a refusal
     returns the record in the form of a failed run (`[failure: kind=REFUSED ...]`, the detail once). `tr_mcp`'s
     `continue_run` of one step or more counts as an evaluation for `get_state`, as a `run` does (it showed `T` alone
-    after a control set and a continue); a failed one only when it added a history row (it keeps the rows from
-    before it, and a step that fails before an output step leaves the results of before the set); a refused one
-    changes nothing.
+    after a control set and a continue); a failed one only when it added a history row or failed in `TR_CHECK`,
+    whose exits compute the failed iterate's globals (it keeps the rows from before it; another failure before an
+    output step is not counted); a refused one changes nothing.
   - Test: the equivalence case `tr_iter01_m9` (`test_run/inputs/tr_iter01_m9.in`, `.eqparm`; `run_tests.sh` copies
     `<case>.eqparm` for tr cases, and fails a `MODELG` 9 case without one, which would solve on EQ's defaults): ITER
     under `MODELG` 9, `NTEQIT` 0, three stages `r` / `c` / `c` (1500, 2000, 6500 steps), against `tr2`'s dump; skipped

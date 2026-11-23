@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 from pathlib import Path
 
 import pytest
@@ -420,8 +421,9 @@ ITER_M9_FLAT = [
 
 def _run_case(spec: dict, tmp: Path, tag: str) -> subprocess.Popen:
     (tmp / f"{tag}.json").write_text(json.dumps(spec))
-    return subprocess.Popen([sys.executable, str(RUNNER), str(tmp / f"{tag}.json"), str(tmp / f"{tag}.out.json")],
-                            stdout=open(tmp / f"{tag}.log", "w"), stderr=subprocess.STDOUT)
+    with open(tmp / f"{tag}.log", "w") as log:       # the child keeps its own descriptor
+        return subprocess.Popen([sys.executable, str(RUNNER), str(tmp / f"{tag}.json"), str(tmp / f"{tag}.out.json")],
+                                stdout=log, stderr=subprocess.STDOUT)
 
 
 @NEEDS_BPSD_FIX
@@ -441,9 +443,18 @@ def test_aligned_calls_differ_from_one_call_by_less_than_1e_7():
         cut = {"params": ITER_M9_FLAT, "history": True,
                "calls": [{"call": "run", "nsteps": 100}, {"call": "continue", "nsteps": 100},
                          {"call": "continue", "nsteps": 100}]}
-        procs = {"one": _run_case(one, tmp, "one"), "cut": _run_case(cut, tmp, "cut")}
-        for tag, p in procs.items():
-            assert p.wait(timeout=600) == 0, (tmp / f"{tag}.log").read_text()[-2000:]
+        start, procs = time.monotonic(), {}
+        try:                                       # one 100 s deadline, under the suite's 120 s pytest timeout
+            for tag, spec in (("one", one), ("cut", cut)):
+                procs[tag] = _run_case(spec, tmp, tag)
+            for tag, p in procs.items():
+                left = max(1.0, start + 100.0 - time.monotonic())
+                assert p.wait(timeout=left) == 0, (tmp / f"{tag}.log").read_text()[-2000:]
+        finally:
+            for p in procs.values():               # kill and wait for any still running
+                if p.poll() is None:
+                    p.kill()
+                p.wait()
         a, b = (json.loads((tmp / f"{tag}.out.json").read_text()) for tag in ("one", "cut"))
     assert a["state"]["NT"] == b["state"]["NT"] == 300
     for name in ("WPT", "Q0"):

@@ -937,9 +937,11 @@ def build_server() -> Any:
         ``tr:PNBTOT``, ``tr:PICTOT``, ``tr:PECTOT``, ``tr:PLHTOT``, ``tr:NTEQIT``,
         ``tr:TPRST``) set since the last ``run`` or ``continue_run`` take effect at
         its first step; ``NT``, ``T`` and the history go on. Every other ``tr:``
-        name and every ``eq:`` name is structural: set after a preparation it makes
-        ``continue_run`` refuse, naming it (``run`` prepares again). Refused too
-        before a ``run`` and after a failed run. ``continue_run(0)`` only checks.
+        name is structural: set after a preparation it makes ``continue_run``
+        refuse, naming it (``run`` prepares again). An ``eq:`` set is refused
+        itself once TR has prepared the case (bpsd before k-yoshimi/bpsd#7): set
+        ``eq:`` names before the first ``run``. Refused too before a ``run`` and
+        after a failed run. ``continue_run(0)`` only checks.
         """
         return handle_continue_run(nsteps)
 
