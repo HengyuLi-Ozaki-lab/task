@@ -485,9 +485,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `STOP`. In `EQRTSK` a file that ends before its last record (`HJTRZ`) is an error too; a last record that does not
   read (too short for its list, or cut inside) still leaves `HJTRZ` 0 and loads. A file that reads, with sizes in
   those ranges, loads as before. `fp_mcp`'s descriptions of `KNAMEQ` said such a file ends the server process; it fails
-  the run now. Not changed: the callers of the load that drop a nonzero `IERR`, as they did for a missing file
-  (`wrx/wrprep.f90`; `wm`, `wmx` and `wmseki`, which return on `IERR` 1 only; `fp/fpprep.f90` under MPI, on rank 0
-  only; the test programs `eq/pltest.f` and `eq/trtest.f`).
+  the run now. The callers of the load that dropped a nonzero `IERR`, as they did for a missing file
+  (`wrx/wrprep.f90`; `wm`, `wmx` and `wmseki`, which returned on `IERR` 1 only; `fp/fpprep.f90` under MPI, on rank 0
+  only; the test programs `eq/pltest.f` and `eq/trtest.f`), are not changed by this entry; the entry "wrx, wm, wmx,
+  wmseki, fp and EQ's two test programs" below makes them return on every nonzero `IERR`.
 - **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
   and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
   `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first

@@ -69,7 +69,7 @@ arrays.
 | Site | Role |
 | --- | --- |
 | `eq/eqcom1_mod.f90` | `QQPS(NPSM)`; also `QQPS_FROM_FILE` and `EQ_ERRMSG`, added by the second follow-up |
-| `eq/eq-eqdsk.f90:62`   | `read (neqdsk,2020) (QQPS(i),i=1,NPSMAX)`: the **g-eqdsk text** reader `EQDSKR`, the only code that reads a q column; it now also sets `QQPS_FROM_FILE` |
+| `eq/eq-eqdsk.f90:79`   | `read (neqdsk,2020,ERR=900,END=900,IOMSG=KMSG) (QQPS(i),i=1,NPSMAX)`: the **g-eqdsk text** reader `EQDSKR`, the only code that reads a q column; it now also sets `QQPS_FROM_FILE` |
 | `eq/eqfile.f90` (`EQ_READ`) | Sends exactly `MODELG=5`/`25` to `EQDSKR`, then calls `EQCALQ`; clears the flag before every load |
 | `eq/equnit.f90:122`     | `eq_load` calls `EQCALQ` again after every load |
 | `eq/eqcalc.f90` (`EQLOOP`) | Every re-solve (`EQCALC`, the menu's `C`) comes through here; clears the flag |
@@ -80,12 +80,12 @@ arrays.
 `eq/eqfile.f90` (`EQRTSK`, the `MODELG=3` binary reader):
 
 ```fortran
-READ(21) (PSIPS(NPS),NPS=1,NPSMAX)
-READ(21) (PPPS(NPS),NPS=1,NPSMAX)
-READ(21) (TTPS(NPS),NPS=1,NPSMAX)
-READ(21) (TEPS(NPS),NPS=1,NPSMAX)
-READ(21) (OMPS(NPS),NPS=1,NPSMAX)
-!  ← no `READ(21) (QQPS(NPS),NPS=1,NPSMAX)`
+READ(21,ERR=900,END=900,IOMSG=KMSG) (PSIPS(NPS),NPS=1,NPSMAX)
+READ(21,ERR=900,END=900,IOMSG=KMSG) (PPPS(NPS),NPS=1,NPSMAX)
+READ(21,ERR=900,END=900,IOMSG=KMSG) (TTPS(NPS),NPS=1,NPSMAX)
+READ(21,ERR=900,END=900,IOMSG=KMSG) (TEPS(NPS),NPS=1,NPSMAX)
+READ(21,ERR=900,END=900,IOMSG=KMSG) (OMPS(NPS),NPS=1,NPSMAX)
+!  ← no `READ(21,...) (QQPS(NPS),NPS=1,NPSMAX)`
 ```
 
 `EQCALQ` builds q only on the per-`NR` mesh: `EQSETS` calls
@@ -99,7 +99,7 @@ interpolated `QPS` onto `PSIPS` either.
 
 `MODELG=3` (`EQRTSK` binary) and `MODELG=5` (g-eqdsk text) populate the
 psi-surface arrays differently. The text path **reads** `QQPS` from the
-file (`eq-eqdsk.f90:62`); the binary path cannot, because the legacy
+file (`eq-eqdsk.f90:79`); the binary path cannot, because the legacy
 on-disk schema never wrote it, and `EQCALC` never computed it.
 
 `EQCALQ` builds `UQPS` from the per-`NR` mesh (downstream metric
@@ -340,6 +340,10 @@ the next "silent zero" cannot sneak past CI.)
   `EQ_BPSD_PUT` round trips).
 * Document the `MODELG=3` vs `MODELG=5` semantic divergence
   (binary vs g-eqdsk text) in `docs/eq-library/`.
-* The loaders still abort the host process on a malformed file: most of
-  `EQDSKR`'s and `EQRTSK`'s `READ`s have no `ERR=`/`IOSTAT=` (issue
-  #142 class).
+* Done since (fork pull request #31, `cbdbc575`, 2026-11-22): the loaders
+  aborted the host process on a malformed file, because most of
+  `EQDSKR`'s and `EQRTSK`'s `READ`s had no `ERR=`/`IOSTAT=` (issue #142
+  class). Their reads, and `EQJAEAR`'s, now have `ERR=` and `END=`, and
+  the load returns an error. One outcome is as before: a last record of
+  `EQRTSK` (`HJTRZ`) that is there and does not read is left 0; a file
+  that ends before it is an error.
