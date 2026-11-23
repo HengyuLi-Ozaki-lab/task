@@ -267,6 +267,15 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     except AttributeError:  # pragma: no cover - only on builds before the history
         pass
 
+    # Run control (PR 3 of #96): tr_continue and tr_param_class; best-effort as above.
+    try:
+        lib.tr_continue.restype = ctypes.c_int
+        lib.tr_continue.argtypes = [ctypes.c_int]
+        lib.tr_param_class.restype = ctypes.c_int
+        lib.tr_param_class.argtypes = [ctypes.c_char_p]
+    except AttributeError:  # pragma: no cover - only on builds before tr_continue
+        pass
+
     lib.tr_finalize.restype = ctypes.c_int
     lib.tr_finalize.argtypes = []
 

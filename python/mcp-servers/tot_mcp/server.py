@@ -683,6 +683,15 @@ def handle_run(ntmax: int = 1) -> str:
         raise _wrap_totlib_error(exc) from exc
 
 
+def handle_continue_run(nsteps: int = 1) -> str:
+    try:
+        tot = STATE.ensure_open()
+        tot.continue_run(int(nsteps))
+        return f"continued {nsteps} time step(s)"
+    except Exception as exc:
+        raise _wrap_totlib_error(exc) from exc
+
+
 def handle_get_state() -> Dict[str, Any]:
     try:
         tot = STATE.ensure_open()
@@ -819,7 +828,7 @@ def handle_run_pipeline(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 10 tot tools."""
+    """Build and return a FastMCP server instance with the 11 tot tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -909,11 +918,32 @@ def build_server() -> Any:
     def run(ntmax: int = 1) -> str:
         """Advance the integrated simulation by ``ntmax`` time steps.
 
-        ``ntmax=0`` is a valid no-op (useful as a smoke test).
+        ``ntmax=0`` prepares (when a parameter was set) and takes no step, but the
+        loop's exit still sets RIPS = RIPE: ``run(0)`` after a ramp set (RIPE)
+        loses the ramp, and RIP stays where it was (the ``tr_run(0)`` note in
+        ``tr/tr_api.h``). It is a no-op only when nothing is pending: do not use
+        it as a smoke test between a set and a run. ``continue_run(0)`` only
+        checks and keeps the sets pending.
         ``tot_run`` advances the TR-authoritative loop; coupling between
         modules is `run_pipeline`'s.
         """
         return handle_run(ntmax)
+
+    @mcp.tool()
+    def continue_run(nsteps: int = 1) -> str:
+        """Advance the prepared case ``nsteps`` more steps without preparing again (``tot_continue``).
+
+        Like ``tr_mcp``'s ``continue_run``: the control parameters (``tr:RIPE``,
+        ``tr:PNBTOT``, ``tr:PICTOT``, ``tr:PECTOT``, ``tr:PLHTOT``, ``tr:NTEQIT``,
+        ``tr:TPRST``) set since the last ``run`` or ``continue_run`` take effect at
+        its first step; ``NT``, ``T`` and the history go on. Every other ``tr:``
+        name is structural: set after a preparation it makes ``continue_run``
+        refuse, naming it (``run`` prepares again). An ``eq:`` set is refused
+        itself once TR has prepared the case (bpsd before k-yoshimi/bpsd#7): set
+        ``eq:`` names before the first ``run``. Refused too before a ``run`` and
+        after a failed run. ``continue_run(0)`` only checks.
+        """
+        return handle_continue_run(nsteps)
 
     @mcp.tool()
     def get_state() -> Dict[str, Any]:
@@ -1043,6 +1073,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "set_param",
                 "set_params",
                 "run",
+                "continue_run",
                 "get_state",
                 "finalize",
                 "describe_parameters",

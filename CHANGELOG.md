@@ -29,7 +29,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   returns `EQ_ERR_CALC_FAILED`), where EQU's contour arrays hold 1542 (`isrzdm`); the file has the traced `nsu`
   points, whatever `NSUMAX`. Design:
   `docs/superpowers/specs/2026-11-22-equ-library-design.md`.
-- **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, #96 PR 1).
+- **TR library: `eq:` names, library mode and `tr_last_error`** (the MODELG 9 heating study of task-web, task-web-client#96).
   - `tr_set_param` and `tr_set_param_str` send a name that starts with `eq:` to EQ's registry (`eq:RB`, `eq:NRMAX`,
     `eq:NSGMAX`, ...); an unknown name returns `TR_ERR_INVALID`, and an accepted one makes the next `tr_run` prepare
     again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP` and `eq:KNAMEQ` are refused (they do nothing
@@ -43,14 +43,14 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     first failure instead of going on, and records it: `tr_last_error(tr_diag_entry_t*)` gives the kind
     (`EQ_FAILED` from the periodic `MODELG` 9 re-solve (`NTEQIT`) and from each exit of the q-scaling, with EQ's own
     reason appended to the detail when EQ set one,
-    `TR_CHECK` from `TRCHCK`, `NONFINITE`, `PREP_FAILED`, `OTHER`; `REFUSED` is reserved for `tr_continue`), the Fortran code and
-    `nt=.. t=.. s: detail`. The first failure is kept; `tr_init` and every `tr_run` clear it. The library-mode
+    `TR_CHECK` from `TRCHCK`, `NONFINITE`, `PREP_FAILED`, `OTHER`; `REFUSED` is the record of a refused `tr_continue`, below), the Fortran code and
+    `nt=.. t=.. s: detail`. The first failure is kept; `tr_init`, every `tr_run` and every `tr_continue` clear it. The library-mode
     behaviour is gated; `tr2`'s output is byte-identical on a single healthy `R` (tr.ITER01 with `MODELG` 9,
     `NTEQIT` 50 and 0); the two #228 fixes below apply to `tr2` too.
   - `trlib`: `TrFailure`, `TrlibRunError.failure` (`None` when the `.so` predates `tr_last_error`) and
     `Trlib.last_error()`. `tr_mcp`: the run error string carries the record, and `describe_parameters` has an
     `eq_names` line. TOT and the mono build stop and record too, but `tot_api.h` and `totlib` have no accessor yet.
-- **TR library: outputs by name** (the MODELG 9 heating study of task-web, #96 PR 2).
+- **TR library: outputs by name** (the MODELG 9 heating study of task-web, task-web-client#96).
   - `tr_scalar_count`, `tr_scalar_name`, `tr_get_scalar(name, &value)`: 31 global results as `TRGLOB` last computed
     them (`T`, `WPT`, `AJT`, `Q0`, the betas, `TAUE1`, `TAUE2`, `ZEFF0`, `ALI`, `RQ1`, `AJRFT`, `PNFT`, `QF`, `PINT`,
     `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`, `AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`,
@@ -58,10 +58,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     alpha power, `P_fus/5`, for D-T; alpha and proton together for D-He3, `MDLNF` 5 and 6, where `QF`, a D-T gain, is
     five times the gain; `RIP` is the equilibrium's boundary current under `MODELG` 3, 5 and 8 and the experimental
     data's under `MDLUF` 1 and 3). They are current after
-    a `tr_run` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
+    a `tr_run` or `tr_continue` of one step or more; before the first run of a lifecycle they are the previous one's, and a `tr_run` of
     0 steps evaluates no step: what the preparation sets (`T` 0; `RIP`, which is `RIPS` or, under `MODELG` 3, 5 and 8, the equilibrium's boundary current; `Q0` under `MODELG` 2, 3, 5, 7, 8 and 9) is
     new, what only a step computes (the powers, `WPT`) is still the run before's. `tr_mcp`'s `get_state` and
-    `run_and_get_state` return `T` only among the scalars until a run of one step or more since the handle was opened
+    `run_and_get_state` return `T` only among the scalars until a `run` or `continue_run` of one step or more since the handle was opened
     or a parameter was written (a refused write changes nothing), and none before the handle's first successful
     preparation (`T` is the handle before's until then); a failed run counts as evaluated only when it left a history
     row. `TrState.scalars` keeps the 14 values `tr_get_state` copied and reads only the others by name. An
@@ -77,7 +77,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   densities and temperatures `NE0`, `NEAV`, `TE0`, `TI0`, `TEAV`, `TIAV`, `NLAV`, `WPT`, the currents, `PINT`, `POHT`,
   `PNBT`, the EC/LH/IC powers to electrons and ions, `PNFT`, `POUT`, `PRLT`, `VLOOP`, `Q0`, `RQ1`, `ALI`, the confinement
   times, the betas, `QF`, `RIP`, ... and `BETAN`, `PRFST`, which are computed from the row). The first row is the state
-  at t = 0, a row is recorded at every step that is a multiple of `NGTSTP` (a call of `tr_run` adds `nsteps / NGTSTP` rows only when it
+  at t = 0, a row is recorded at every step that is a multiple of `NGTSTP` (a call of `tr_run` or `tr_continue` adds `nsteps / NGTSTP` rows only when it
   starts on one: `run(5)` twice adds 3 and 3, `run(1)` adds 0 or 1), and `tr_prep` (every first run and every run after a
   changed parameter) starts the history again. The history holds `NTM` = 10001 rows and TR then stops recording
   silently; `tr_history_full` says when. A long run sets `NGTSTP` so that steps / `NGTSTP` < 10001.
@@ -86,6 +86,69 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `tr_mcp` has `get_history` and `describe_history_schema` (unit and meaning of each column). Under `MODELG` 9 the row
   of a step that ends with an EQ re-solve (a multiple of `NTEQIT`) holds the `Q0` of before the re-solve, which then
   recomputes it (`get_scalar` gives the one after); the other shared names agree with `get_scalar`.
+- **TR library: `tr_continue`, parameter classes, `tot_continue`** (the MODELG 9 heating study of task-web, task-web-client#96).
+  - `tr_continue(nsteps)` advances the prepared case without preparing again. The control parameters set since the
+    last `tr_run` or `tr_continue` (`RIPE`, `PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`) take effect at its
+    first step; `NT`, `T` and the history go on, and RIP ramps from the last call's `RIPE` to `RIPE` over its steps. It
+    runs the same `tr_loop` with the same prologue (`tr_eval`, `RIP = RIPS`, `DIPDT`, `tr_bpsd_get`) as `tr2`'s `C`, and
+    equals it at the same cut to 1e-10 for every control parameter (bit for bit in the macOS checks:
+    `test_continue_vs_tr2.py`, and ITER under `MODELG` 9 in three stages, `tr_iter01_m9`, below).
+  - `tr_param_class(name)`: 1 for a control parameter, 0 for a structural one (any other name the setters take, and every
+    `eq:` name), -1 for a name they do not know (`KNAMEQ[1]` too: the string setter takes no subscript); callable before
+    `tr_init`. `Trlib.continue_run`, `Trlib.param_class`.
+  - `tr_continue` refuses (`TR_ERR_INVALID`, a `REFUSED` record in `tr_last_error`, a line on unit 6 for each finding,
+    nothing run): before a preparation; after a failed `tr_prep` or loop, until a `tr_run` prepares again; after a
+    structural set since the preparation (the record names the last one: `tr_run` prepares again); for a negative
+    count; for a count that would take the step counter `NT` past 2**31 - 1 (`NT + nsteps` overflowed: the loop left at
+    once and the call reported success without a step); and for a value `tr_run`'s own checks refuse (with `MODELG` 9, a
+    negative `RIPE`). `TrlibParamError` carries
+    the record as `.failure`, except for a negative count: the C function refuses it with a record, but `Trlib` and
+    `Tot` refuse a count outside 0 to 2**31 - 1 before the call, without one. `tr_continue(0)` makes the checks and does
+    nothing else, and the control sets stay pending.
+  - A refusal made before this lifecycle has completed a preparation, and a `PREP_FAILED` record made then, carry time 0: `tr_init` resets `NT` but not `T`, so
+    `tr_init(); tr_run(10); tr_finalize(); tr_init(); tr_continue(1)` used to record the previous lifecycle's `T`.
+  - `tr_run` has the same bound (a pre-existing overflow of `NT + ntmax_in`, fixed here): a count past `HUGE(NT) - NT` returns
+    `TR_ERR_INVALID` with an `XX tr_run` line, before `NTMAX` is changed.
+  - `tr_run(0)` is unchanged and has a flaw `tr_continue(0)` avoids: the loop's exit sets `RIPS = RIPE` even with no step,
+    so a ramp set before `run(0)` is lost (`RIPS` 1, `RIPE` 2: `run(0)` then `run(10)` ends at 1.0 MA, not 2.0). The
+    docstrings of `run` in `tr_mcp` and `tot_mcp` called `ntmax=0` a valid no-op and a smoke test; they now say that `run(0)`
+    after a ramp set loses the ramp, that it is no smoke test between a set and a run, and that `continue_run(0)` only checks.
+  - What it does not equal. (1) One call: a run in several calls is not bit for bit one call, as each call begins with
+    the prologue (ITER, `MODELG` 9, `NTEQIT` 50, calls of 100 steps: `WPT` 1e-12, the whole state 1.3e-10). (2) `NT` counts
+    on where `tr2`'s `C` starts it at 0, so the steps chosen by `NT` (the `NTEQIT` re-solve, the globals every `NTSTEP`,
+    `NGTSTP`, `NGRSTP` steps) are counted from the preparation: `tr_continue` equals `C` when the steps before the cut are
+    a multiple of them. (3) With NCLASS (`MDNCLS` != 0), `tr2`'s `C` takes the classical resistivity on its first step
+    (`NT` = 0, `tr/trcoef_resistivity.f90:123`) and `tr_continue` does not: it equals one call there, not `C`.
+  - Two notes on what a run reads back. The last history row of a call that ends on an `NTEQIT` re-solve holds the
+    q(0) from before it, as `tr2` prints it; the scalar `Q0` is what `TRCALC` recomputes after (7.7e-5 to 4.9e-4
+    relative). On the history row right after a cut that falls on a re-solve, `WPDOT` differs from a one-call run (15 % to
+    36 %) and `TAUE2` and `H98Y2` by 2 % to 3 %: the call's first `TRGLOB` re-anchors `WPPRE`/`TPRE` on the re-solved
+    `WPT` (`tr/trrslt_globals.f90:332-338`). The state is not affected.
+  - `tot_continue(nsteps)` and `Tot.continue_run` call it as `tot_run` calls `tr_run` (TOT runs only TR); TR's refusal is
+    `TOT_ERR_INVALID` and the exception text carries the record. TOT has no parameter-class query: `Trlib.param_class` answers
+    for the same names. TOT's `eq:` setters (number and string) now refuse a set once TR has prepared the case (a
+    preparation that succeeded or failed in this lifecycle; `TOT_ERR_INVALID`, one `XX` line): such a set would make the
+    next `tot_run` prepare again, and until the pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change after a preparation
+    writes past bpsd's splines, which TR's own route already refuses. Before, TOT took the set and TR went on without it.
+    Before a preparation, and in a new case after `tot_finalize` and `tot_init`, `eq:` sets are taken as before and tell TR
+    (`tr_param_note_external_set`). TR's process-wide refusal and its always-refused names are not applied in TOT, so a
+    new case with another EQ grid in the same process is still unguarded (k-yoshimi/bpsd#7). On the split build
+    `libtrapi.so` carries its own EQ: TOT's `eq:` sets reach `libeqapi.so`'s registry only, not the EQ that TR prepares
+    from (macOS; the mono image has one EQ). `Tot.run` and `Tot.continue_run` check the count (0 to 2**31 - 1) before the
+    call.
+  - `tr_mcp` and `tot_mcp`: a `continue_run` tool; `tr_mcp`'s `describe_parameters` gives each name its `class`
+    (without opening the library's lifecycle: `classes_unavailable` says why when the library does not load); a refusal
+    returns the record in the form of a failed run (`[failure: kind=REFUSED ...]`, the detail once). `tr_mcp`'s
+    `continue_run` of one step or more counts as an evaluation for `get_state`, as a `run` does (it showed `T` alone
+    after a control set and a continue); a failed one only when it added a history row or failed in `TR_CHECK`,
+    whose exits compute the failed iterate's globals (it keeps the rows from before it; another failure before an
+    output step is not counted); a refused one changes nothing.
+  - Test: the equivalence case `tr_iter01_m9` (`test_run/inputs/tr_iter01_m9.in`, `.eqparm`; `run_tests.sh` copies
+    `<case>.eqparm` for tr cases, and fails a `MODELG` 9 case without one, which would solve on EQ's defaults): ITER
+    under `MODELG` 9, `NTEQIT` 0, three stages `r` / `c` / `c` (1500, 2000, 6500 steps), against `tr2`'s dump; skipped
+    without its baseline, which Linux generates. `tot/Makefile`'s delegated `../tr/obj/tr_param_registry.o` and
+    `tr_state.o` depend on TR's sources, so that an incremental TOT build after this change compiles against the new
+    `tr_param_note_external_set(name)`.
 - **TR registry: `NTEQIT`, `TPRST` and TR's `NRMAX`** (the MODELG 9 heating study of task-web). `NTEQIT` is the EQ
   re-solve interval under `MODELG` 9 (negative refused), `TPRST` the sawtooth period (> 0), `NRMAX` TR's radial mesh
   (3..`TR_MAX_NRMAX` = 500; 1 and 2 stop the solver on an array bound). bpsd keeps the spline size of its first get,
@@ -314,7 +377,11 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `eqdb.dat` are no longer reached through the library. **A change of behaviour**: a `MODELG = 15` load that failed
   with `EQ_ERR_CALC_FAILED`, or ended the process, is refused.
 
-- **TR library: a run made in several `tr_run` calls records the step at each cut once in the history.** In library
+- **TR library: `DIPDT` is the ramp over the steps of this call.** `tr/trloop.f90` computed
+  `(RIPE - RIPS) / (NTMAX * DT)`; it is `(RIPE - RIPS) / ((NTMAX - NT) * DT)`, so that `tr_continue` ramps over its own
+  steps. In `tr2` the line is reached only with `NT` = 0 (`R`: `tr_prep` sets it; `C`: `trmenu.f90:87`; `MDLUF` 1 and 3
+  take the other branch), so it is the same number and the baselines do not move.
+- **TR library: a run made in several `tr_run` or `tr_continue` calls records the step at each cut once in the history.** In library
   mode every call began with an evaluation of the step the call before ended on, which wrote that step's row of
   `GT`/`GVT` a second time (with `WPDOT` 0). It is not recorded again (`tr/trexec.f90`, `tr_eval`); the profile history
   (`TRATOG`) and `TRSNAP`'s print still repeat the step and are not exported. `tr2` is unchanged.
@@ -399,6 +466,8 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`Tot.run` took any integer as a C int.** `2**32 + 5` ran 5 steps and `2**31` read as negative. It checks 0 to
+  2**31 - 1 as `Trlib.run` does and raises `TotlibInvalidParamError` before the call.
 - **EQ: a load of a file that is not of the format `MODELG` names returns an error where it ended the process**
   (the library-reachable abort of `CLAUDE.md`, #142). `EQRTSK` (`MODELG` 3 and 9), `EQDSKR` (5 and 25) and `EQJAEAR`
   (8) did not check their reads: `run(1)` with a file of another format, or one cut short, ended the host process
@@ -417,9 +486,10 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   `STOP`. In `EQRTSK` a file that ends before its last record (`HJTRZ`) is an error too; a last record that does not
   read (too short for its list, or cut inside) still leaves `HJTRZ` 0 and loads. A file that reads, with sizes in
   those ranges, loads as before. `fp_mcp`'s descriptions of `KNAMEQ` said such a file ends the server process; it fails
-  the run now. Not changed: the callers of the load that drop a nonzero `IERR`, as they did for a missing file
-  (`wrx/wrprep.f90`; `wm`, `wmx` and `wmseki`, which return on `IERR` 1 only; `fp/fpprep.f90` under MPI, on rank 0
-  only; the test programs `eq/pltest.f` and `eq/trtest.f`).
+  the run now. The callers of the load that dropped a nonzero `IERR`, as they did for a missing file
+  (`wrx/wrprep.f90`; `wm`, `wmx` and `wmseki`, which returned on `IERR` 1 only; `fp/fpprep.f90` under MPI, on rank 0
+  only; the test programs `eq/pltest.f` and `eq/trtest.f`), are not changed by this entry; the entry "wrx, wm, wmx,
+  wmseki, fp and EQ's two test programs" below makes them return on every nonzero `IERR`.
 - **TR: a failed `MODELG` 9 q-scaling fails the run; every preparation adopts the equilibrium** (#228 findings 3
   and 4, `0dd157d4` and `6a804077` of upstream PR #226, cherry-picked here; #226's own entries are held back by
   `d8b6e4de`, so they are written for the product line). `tr_set_metric` set `tr_eq_init` false after the first

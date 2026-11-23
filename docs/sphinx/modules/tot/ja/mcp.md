@@ -67,7 +67,7 @@ claude mcp add task-tot \
 
 ## 提供ツール一覧
 
-`tot_mcp` は **10 個** のツールを公開. パラメータ名にプレフィックスを使うのが
+`tot_mcp` は **11 個** のツールを公開. パラメータ名にプレフィックスを使うのが
 他モジュールとの違い.
 
 | ツール | 目的 | 主な引数 |
@@ -76,12 +76,21 @@ claude mcp add task-tot \
 | `set_param` | プレフィックス付きパラメータ設定 | `name` (例: `"eq:RR"`), `value` |
 | `set_params` | まとめて設定 | `params` (例: `{"eq:RR": 6.5, "tr:NSMAX": 2}`) |
 | `run` | 統合シミュレーション実行 | `ntmax` |
+| `continue_run` | 準備済みの計算を再準備せずに `nsteps` ステップ続ける (`tot_continue`, TR の `tr_continue`) | `nsteps` |
 | `get_state` | 統合状態取得 | なし |
 | `finalize` | 全モジュール解放 | なし |
 | `describe_parameters` | プレフィックス + パラメータ一覧 | なし |
 | `describe_state_schema` | TotState 戻り値 schema | なし |
 | `run_and_get_state` | 一括実行 | `params`, `ntmax` |
 | `run_pipeline` | 複数モジュールをスカラー結合で順に実行 (`totlib.TotPipeline`). `params` の文字列値は各モジュール自身の文字列設定に渡るので `fp:KNAMEQ` もここで設定できる | `steps`, `params` |
+
+`continue_run` は前回の `run` / `continue_run` 以降に設定した制御パラメータ (`tr:RIPE`, `tr:PNBTOT`, `tr:PICTOT`, `tr:PECTOT`,
+`tr:PLHTOT`, `tr:NTEQIT`, `tr:TPRST`) を最初のステップから反映し, `NT`・`T`・履歴は続きます. ほかの `tr:` 名は構造パラメータで,
+準備後に設定すると `continue_run` が拒否され (メッセージに TR の記録と名前が入る), 次の `run` が再準備します. `eq:` 名は TR が
+ケースを準備した後は設定そのものが拒否されます (k-yoshimi/bpsd#7 より前の bpsd では準備後の EQ グリッドの変更がメモリを壊すため.
+最初の `run` の前に設定してください). `run(0)` はステップを進めませんが
+`RIPS = RIPE` になり, 事前に設定したランプが失われます (動作確認に使わないでください). `continue_run(0)` は検査だけです.
+詳細は `python/trlib/README.md` の "Continuing a run".
 
 ## 使い方の例
 

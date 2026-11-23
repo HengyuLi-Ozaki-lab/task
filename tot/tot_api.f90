@@ -60,7 +60,7 @@ MODULE tot_api
   USE, INTRINSIC :: ISO_C_BINDING
   USE tot_state, ONLY: TOT_STATE_ABI_VERSION
   USE tot_state, ONLY: tot_state_c, TOT_MAX_NRMAX, TOT_MAX_NSMAX
-  USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str
+  USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str, tot_param_split
   ! Per-module APIs (libraryized in L-3). We rename each *_api_*
   ! function to a tot-local alias so the namespaces do not collide
   ! when the wrap module pulls them all in.
@@ -72,7 +72,8 @@ MODULE tot_api
   USE tr_api, ONLY: tr_api_init,     tr_api_run,     tr_api_get_state, &
                     tr_api_finalize, tr_api_get_scalar, &
                     tr_api_history_length, tr_api_history_full, tr_api_history_count, &
-                    tr_api_history_name, tr_api_history_get
+                    tr_api_history_name, tr_api_history_get, &
+                    tr_api_continue, tr_api_eq_set_refused_in_case
   USE tr_state, ONLY: tr_state_c
   USE ti_api, ONLY: ti_api_init,     ti_api_run,     ti_api_finalize
   USE fp_api, ONLY: fp_api_init,     fp_api_run,     fp_api_finalize
@@ -368,6 +369,12 @@ CONTAINS
     INTEGER :: rc
 
     CALL c_string_to_fortran(name, fname)
+    ! An eq: set after TR has prepared this case is refused (tr_api_eq_set_refused_in_case), as TR's own route refuses
+    ! one: bpsd before k-yoshimi/bpsd#7.
+    IF (eq_set_refused('tot_set_param', fname)) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
     CALL tot_param_set(TRIM(fname), value, rc)
     IF (rc == 0) THEN
        ierr = TOT_ERR_OK
@@ -394,6 +401,10 @@ CONTAINS
 
     CALL c_string_to_fortran(name,  fname)
     CALL c_string_to_fortran(value, fvalue)
+    IF (eq_set_refused('tot_set_param_str', fname)) THEN    ! as tot_api_set_param
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
     CALL tot_param_set_str(TRIM(fname), TRIM(fvalue), rc)
     IF (rc == 0) THEN
        ierr = TOT_ERR_OK
@@ -401,6 +412,21 @@ CONTAINS
        ierr = TOT_ERR_INVALID
     END IF
   END FUNCTION tot_api_set_param_str
+
+  ! eq_set_refused : true for a name that tot_param_set and tot_param_set_str would hand to EQ (the namespace "eq", split
+  ! by their own tot_param_split) while TR refuses an eq: set (tr_api_eq_set_refused_in_case); false for every other
+  ! name, which they dispatch (and refuse) as before.
+  LOGICAL FUNCTION eq_set_refused(who, fname)
+    CHARACTER(LEN=*), INTENT(IN) :: who, fname
+    CHARACTER(LEN=16) :: prefix
+    CHARACTER(LEN=LEN(fname)) :: bare
+    LOGICAL :: ok
+    eq_set_refused = .FALSE.
+    CALL tot_param_split(fname, prefix, bare, ok)
+    IF (.NOT. ok) RETURN
+    IF (TRIM(prefix) /= 'eq') RETURN
+    eq_set_refused = tr_api_eq_set_refused_in_case(who, TRIM(bare))
+  END FUNCTION eq_set_refused
 
   !-------------------------------------------------------------------
   ! tot_finalize : tear down every sub-module in REVERSE init order.
@@ -627,6 +653,36 @@ CONTAINS
     END DO
     r = .TRUE.          ! no NUL in 128 characters: the copy cut the name
   END FUNCTION c_string_ends_blank
+
+  !-------------------------------------------------------------------
+  ! tot_continue : advance the prepared case nsteps more steps without
+  ! preparing again (PR 3 of #96). Delegates to tr_api_continue, as
+  ! tot_run delegates to tr_api_run: tot runs only TR.
+  !
+  ! Returns 0 = success, 1 = TR_ERR_INVALID: tr_continue refused (the
+  ! record is TR's tr_last_error: no preparation, a failed run, a
+  ! structural set since the preparation -- an "eq:" name too, which
+  ! tot_param_registry's eq dispatcher tells TR about -- a bad value),
+  ! or nsteps < 0 (refused there); 2 = not initialised; 3 = the loop failed.
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_continue(nsteps) RESULT(ierr) BIND(C, NAME="tot_continue")
+    INTEGER(C_INT), VALUE, INTENT(IN) :: nsteps
+    INTEGER(C_INT) :: ierr
+    INTEGER(C_INT) :: rc
+
+    IF (.NOT. g_initialized) THEN      ! as tot_run: tot_init has made TR present whenever it succeeded
+       ierr = TOT_ERR_NOT_INIT
+       RETURN
+    END IF
+    rc = tr_api_continue(nsteps)      ! a negative count is refused there, with a record
+    IF (rc == 0) THEN
+       ierr = TOT_ERR_OK
+    ELSE IF (rc == 1) THEN          ! TR_ERR_INVALID: a refusal, nothing ran
+       ierr = TOT_ERR_INVALID
+    ELSE
+       ierr = TOT_ERR_RUN_FAILED
+    END IF
+  END FUNCTION tot_api_continue
 
 END MODULE tot_api
 

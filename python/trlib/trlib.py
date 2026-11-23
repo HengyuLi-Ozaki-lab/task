@@ -243,7 +243,9 @@ class Trlib:
     def run(self, ntmax: int) -> None:
         """Advance the simulation ``ntmax`` time-steps.
 
-        ``ntmax=0`` is a valid no-op used by the smoke test.
+        ``ntmax=0`` prepares (when a parameter was set) and takes no step, but the loop's exit still sets RIPS =
+        RIPE: a pending current ramp is lost and RIP stays where it was (``tr/tr_api.h``). ``continue_run(0)`` only
+        checks.
 
         Raises :class:`TrlibParamError`, before the library is called, for
         a count outside 0 to 2**31 - 1: ``tr_run`` takes a C ``int``, and a
@@ -261,17 +263,58 @@ class Trlib:
         ierr = self._lib.tr_run(count)
         if ierr == _ffi.TR_ERR_CALC_FAILED:
             # The library records the first failure of the run: say what it was.
-            try:
-                failure = self.last_error()
-            except TrlibError:  # a library built before tr_last_error
-                failure = None
-            raise TrlibRunError(f"tr_run({ntmax}): ierr={ierr}", failure=failure)
+            raise TrlibRunError(f"tr_run({ntmax}): ierr={ierr}", failure=self._failure_or_none())
         raise_for_ierr(f"tr_run({ntmax})", ierr)
 
-    def last_error(self) -> TrFailure:
-        """The first failure of the last :meth:`run`, or ``kind == "NONE"``.
+    def continue_run(self, nsteps: int) -> None:
+        """Advance the prepared case ``nsteps`` more steps without preparing again (``tr_continue``).
 
-        Cleared at the start of every ``run``. Older builds without
+        The control parameters set since the last :meth:`run` or :meth:`continue_run` (:meth:`param_class` 1:
+        RIPE, PNBTOT, PICTOT, PECTOT, PLHTOT, NTEQIT, TPRST) take effect at its first step; ``nt`` and the history
+        go on, and RIP ramps from the last call's RIPE to RIPE over these steps. It equals ``tr2``'s ``C`` on the
+        same cut (not with NCLASS: ``tr/tr_api.h``); a run in several calls is not bit for bit one call (each call
+        begins with the loop's prologue).
+
+        Raises :class:`TrlibParamError` with ``failure`` (kind ``REFUSED``) when the library refuses: no prepared
+        case, the last run failed (until a :meth:`run` prepares again: after any set), a structural parameter set
+        since the preparation (``failure.detail`` names the last one; :meth:`run` prepares again), or a value
+        :meth:`run`'s checks refuse; and, before the call, for a count outside 0 to 2**31 - 1 (``failure`` None).
+        :class:`TrlibRunError` with ``failure`` when the loop fails, as :meth:`run`.
+        """
+        if self._closed:
+            raise TrlibError("continue_run on closed Trlib")
+        count = int(nsteps)
+        if not 0 <= count <= _C_INT_MAX:
+            raise TrlibParamError(
+                f"tr_continue: the step count must be 0 to {_C_INT_MAX} "
+                "(tr_continue takes a C int)"
+            )
+        ierr = self._scalar_fn("tr_continue")(count)
+        if ierr == _ffi.TR_ERR_CALC_FAILED:
+            raise TrlibRunError(f"tr_continue({nsteps}): ierr={ierr}", failure=self._failure_or_none())
+        if ierr == _ffi.TR_ERR_INVALID:
+            failure = self._failure_or_none()
+            why = f": {failure.detail}" if failure is not None else ""
+            raise TrlibParamError(f"tr_continue({nsteps}) refused{why}", failure=failure)
+        raise_for_ierr(f"tr_continue({nsteps})", ierr)
+
+    def param_class(self, name: str) -> int:
+        """1 for a control parameter (:meth:`continue_run` takes it in), 0 for a structural one (a name the setter
+        takes, or any ``eq:`` name: :meth:`run` prepares again after it), -1 for a name the setter does not know."""
+        if self._closed:
+            raise TrlibError("param_class on closed Trlib")
+        return int(self._scalar_fn("tr_param_class")(_encode_name(name)))
+
+    def _failure_or_none(self) -> Optional[TrFailure]:
+        try:
+            return self.last_error()
+        except TrlibError:  # a library built before tr_last_error
+            return None
+
+    def last_error(self) -> TrFailure:
+        """The first failure of the last :meth:`run` or :meth:`continue_run`, or ``kind == "NONE"``.
+
+        Cleared at the start of every ``run`` and ``continue_run``. Older builds without
         ``tr_last_error`` raise :class:`TrlibError`.
         """
         if self._closed:
@@ -336,7 +379,7 @@ class Trlib:
         """One global result by name, as of the last step TR computed the globals on.
 
         TRGLOB computes them on output steps and on the last step of a run, so they are current after
-        :meth:`run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
+        :meth:`run` or :meth:`continue_run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
         run after a changed parameter) what it sets is new (``T`` 0; ``RIP``, which is ``RIPS`` or, under ``MODELG``
         3, 5 and 8, the equilibrium's boundary current; ``Q0`` under ``MODELG`` 2, 3, 5, 7, 8 and 9) and what only a
         step computes (the powers, ``WPT``) is still the run before's. Units are those of
@@ -389,7 +432,7 @@ class Trlib:
 
         ``names`` is one name, several, or ``None`` for every column of :meth:`history_names`. The values are
         TR's single-precision history. The last row agrees with :meth:`get_scalar` to about 1e-7 (relative) only
-        when the last step of the call was recorded (a multiple of ``NGTSTP``) and the buffer was not full: after
+        when the last step of the call was recorded (a multiple of ``NGTSTP`` reached before the buffer was full): after
         ``run(1)`` with the defaults ``history("T")["T"][-1]`` is 0 while ``get_scalar("T")`` is ``DT``, and
         recording stops at capacity (:meth:`history_full` is true), so the history lags the state once the run
         advances past it; a history that fills exactly at the end of a call is still current. Under ``MODELG`` 9 a
