@@ -76,4 +76,7 @@ class FplibAbiError(FplibError):
     (built before the layout check), or its version or sizeof differs from
     ``fplib._ffi.FpStateC``. The message names the fix (rebuild the
     library, or update the wrapper).
+
+    :func:`fplib._ffi.attach_fns_prototypes` raises it too, for
+    ``fp_fns_info_t`` (when ``Fplib.get_distribution`` first needs it).
     """
