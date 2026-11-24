@@ -26,6 +26,7 @@ MODULE fp_state
   PRIVATE
   PUBLIC :: FP_STATE_ABI_VERSION
   PUBLIC :: fp_state_c, FP_MAX_NRMAX, FP_MAX_NSAMAX
+  PUBLIC :: FP_FNS_INFO_ABI_VERSION, fp_fns_info_c
 
   INTEGER(C_INT), PARAMETER :: FP_MAX_NRMAX  = 100
   INTEGER(C_INT), PARAMETER :: FP_MAX_NSAMAX = 8
@@ -70,5 +71,25 @@ MODULE fp_state
      REAL(C_DOUBLE) :: ABSORPTION_WM     ! WM (full-wave) part   [MW]
      REAL(C_DOUBLE) :: PLASMA_VOLUME     ! TVOLR                 [m^3]
   END TYPE fp_state_c
+
+  ! fp_fns_info_c mirrors fp_api.h::fp_fns_info_t (task-web-client #232):
+  ! the grid sizes and the normalisation of one kinetic species's FNS.
+  ! It has a layout version of its own, kept by the rule of #246:
+  ! fields are appended at the end only, FP_FNS_INFO_ABI_VERSION goes
+  ! up here and in fp_api.h together, and python/fplib/_ffi.py::
+  ! FpFnsInfoC mirrors it.
+  INTEGER(C_INT), PARAMETER :: FP_FNS_INFO_ABI_VERSION = 1
+
+  TYPE, BIND(C) :: fp_fns_info_c
+     INTEGER(C_INT) :: nsa, ns            ! kinetic species, its namelist species
+     INTEGER(C_INT) :: nthmax, npmax, nrmax
+     INTEGER(C_INT) :: modela             ! 1: bounce-averaged (theta at B-min)
+     REAL(C_DOUBLE) :: timefp             ! [s]
+     REAL(C_DOUBLE) :: amfp, aefp         ! [kg], [C]
+     REAL(C_DOUBLE) :: rnfp0, rtfp0       ! [1e20 m^-3], [keV]
+     REAL(C_DOUBLE) :: ptfp0, vtfp0       ! [kg m/s], [m/s]
+     REAL(C_DOUBLE) :: theta0             ! T/(m c^2); 0 when MODELR = 0
+     REAL(C_DOUBLE) :: pmax, delp, delth  ! normalised momentum range, step; [rad]
+  END TYPE fp_fns_info_c
 
 END MODULE fp_state

@@ -117,12 +117,13 @@ python -m fp_mcp.server --help
 python -m fp_mcp.server --print-tools
 ```
 
-以下の 10 ツールが並びます。
+以下の 11 ツールが並びます。
 
 ```
 describe_parameters
 describe_state_schema
 finalize
+get_distribution
 get_state
 init
 run
@@ -262,6 +263,9 @@ LLM は `describe_parameters` を呼び、`group == "wave"` を抽出して返�
 | `describe_parameters` | パラメータ一覧・型・説明 + mesh caps | なし |
 | `describe_state_schema` | `get_state` の JSON schema | なし |
 | `run_and_get_state` | init + set + run + get_state を一括 | `params`, `ntmax` |
+| `get_distribution` | kinetic 種族の分布関数 `FNS` を `.npy` ファイルに書き出す (#232) | `nsa` (default=1), `filename` (default=`""`) |
+
+`get_distribution` は `FNS` を float64 の `f[ir, ip, ith]` (FP の値のまま、スケールなし) としてサーバの作業ディレクトリ (task-web ではジョブフォルダ) に書きます。既定のファイル名は `fp_fns_nsa<nsa>.npy` です。`filename` は印字可能な単純なファイル名で、`.npy` で終わり、パス区切り、`:` (ドライブ指定)、先頭のドットを含んではいけません (ライブラリを開く前に検査され、違反は拒否されます)。同名のファイルは置き換えられます (一時ファイルに書いてから置き換えるので、失敗しても元のファイルは残り、シンボリックリンクはたどりません。既定名は種族ごとなので、後の呼び出しが前のスナップショットを上書きします。複数残したいときは `filename` を指定してください)。分布そのものは JSON では返りません。返り値は `file` (ファイル名)、`path` (絶対パス)、`shape` (`[nr, np, nth]`)、`info` (`fp_fns_info_t` の全フィールド)、グリッド `pm` (規格化運動量)・`thm` (ピッチ角 [rad])・`rm` (r/a)、およびそのグリッド上の `energy_keV`, `speed_m_s`, `pitch` (`cos(thm)`) です。分布があるのは `run` の後で、`set_param` 系の後は次の `run` まで拒否されます (ファイルは書かれません)。
 
 ## 8. FP 固有の注意点
 
@@ -318,7 +322,31 @@ fp.run(ntmax=2)
 - `NSAMAX`: kinetic に時間発展させる種族の数 (`FP_MAX_NSAMAX=8` が上限)。
 - `NSBMAX`: 背景種族の数。
 
-通常は `NSAMAX + NSBMAX <= NSMAX` を満たすよう設定します。
+`NSAMAX <= NSBMAX` とし、`NS_NSA(i)` は 1〜`MIN(NSMAX, NSBMAX)`、`NS_NSB(i)` は 1〜`NSMAX` に収めてください (`run` が検査します。背景種族は kinetic 種族も含みます)。
+
+### 8.6. NBI ソースのパラメータ (#232)
+
+NBI ソースとバウンス平均を設定する次の 8 つの名前が、`describe_parameters` の一覧とレジストリに入っています。配列名は `NAME[i]` (`i` = 1〜20) で設定します。
+
+| 名前 | 型 | 意味 | 既定値 |
+|---|---|---|---|
+| `MODELA` | int | 0 = バウンス平均なし、1 = バウンス平均 | 0 |
+| `NBEAMMAX` | int | ビームの本数 (0〜20) | なし |
+| `NSSPB[i]` | int | ビーム `i` の namelist 種族 `NS` | 2 |
+| `SPBTOT[i]` | real | ソースの粒子数 [1/s] | 0 |
+| `SPBENG[i]` | real | 粒子エネルギー [eV] | 1e6 |
+| `SPBANG[i]` | real | ソースのピッチ角 [度] | 20 |
+| `SPBR0[i]` | real | ソースの中心位置 [r/a] | 0 |
+| `SPBRW[i]` | real | ソースの幅 (ガウス幅) [r/a] | 0.2 |
+
+`NBEAMMAX` には既定値がありません。`fp_init` は値を設定せず、namelist だけが設定するので、ビームを使うときは必ず設定してください。値を設定する時点では添字 (1〜20) しか検査されません。値の規則は `run` の中で `fp_prep` より前にまとめて検査され、違反ごとに `XX fp_run:` の行が 1 行出て、`run` は `invalid parameter` で拒否されます。
+
+- `MODELA` は 0 か 1、`NBEAMMAX` は 0〜20 (どちらも `MODEL_NBI` によらず検査されます)。
+- `MODEL_NBI=1` のとき: `NBEAMMAX` 以下のすべてのビームで `SPBRW > 0` (ソースの有無にかかわらず。幅 0 は 0/0 になります)。`SPBTOT /= 0` のビームは、`NBEAMMAX` 以内で、kinetic 種族上 (`NSSPB` を `NS_NSA` と照合。0 はそのスロットの番号と読む) にあり、`0 <= SPBANG < 180`、`SPBENG >= 0` であること。
+
+`fp_prep` が作るメッシュが要るため検査されないもの: `PMAX` より外のビームは何も入れません。径方向のどの点にも届かないほど狭いソースは 0/0 になります。
+
+FP の既定の `PMAX` は 7 です。3 keV のプラズマに 80 keV のビームを入れる場合 (p = sqrt(2E/T) = 7.3) は `PMAX[2] = 10` が必要です (既定のままではメッシュの外で、何も入りません)。`SPBPANG` は、`fp/` 以下に読むソースがないため登録されていません。
 
 ## 9. FAQ / トラブルシューティング
 

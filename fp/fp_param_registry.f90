@@ -24,6 +24,9 @@
 !                              MODEL_BS, MODEL_LOSS, MODEL_SYNCH,
 !                              MODEL_FOW)
 !   - model switches arrays   (MODELC[i], MODELW[i])
+!   - NBI source, bounce average (MODELA, NBEAMMAX, NSSPB[i], SPBTOT[i],
+!                              SPBENG[i], SPBANG[i], SPBR0[i], SPBRW[i];
+!                              task-web-client #232)
 !
 ! Approximately 40 unique names covering ~55 settable variables once
 ! array subscripts are counted. Additional namelist vars may be added
@@ -195,6 +198,29 @@ CONTAINS
     CASE ("MODELW")
        IF (idx < 1 .OR. idx > SIZE(MODELW)) THEN; ierr = 2; RETURN; END IF
        MODELW(idx) = NINT(value)
+    ! --- NBI source and bounce average (task-web-client #232) -----
+    ! Units and defaults: fp/fpinit.f90 (NBEAMMAX has none). SPBPANG
+    ! is not registered: no source under fp/ reads it.
+    CASE ("MODELA");   MODELA   = NINT(value)
+    CASE ("NBEAMMAX"); NBEAMMAX = NINT(value)
+    CASE ("NSSPB")
+       IF (idx < 1 .OR. idx > SIZE(NSSPB))  THEN; ierr = 2; RETURN; END IF
+       NSSPB(idx)  = NINT(value)
+    CASE ("SPBTOT")
+       IF (idx < 1 .OR. idx > SIZE(SPBTOT)) THEN; ierr = 2; RETURN; END IF
+       SPBTOT(idx) = value
+    CASE ("SPBENG")
+       IF (idx < 1 .OR. idx > SIZE(SPBENG)) THEN; ierr = 2; RETURN; END IF
+       SPBENG(idx) = value
+    CASE ("SPBANG")
+       IF (idx < 1 .OR. idx > SIZE(SPBANG)) THEN; ierr = 2; RETURN; END IF
+       SPBANG(idx) = value
+    CASE ("SPBR0")
+       IF (idx < 1 .OR. idx > SIZE(SPBR0))  THEN; ierr = 2; RETURN; END IF
+       SPBR0(idx)  = value
+    CASE ("SPBRW")
+       IF (idx < 1 .OR. idx > SIZE(SPBRW))  THEN; ierr = 2; RETURN; END IF
+       SPBRW(idx)  = value
     CASE DEFAULT
        ierr = 1   ! unknown name
     END SELECT
@@ -269,6 +295,8 @@ CONTAINS
   !                  copied into the background array at its species
   !                  number (fp/fpmpi.f90).
   !   NS_NSB(1..NSBMAX)  1 .. NSMAX.
+  !   MODELA, NBEAMMAX and the beams (task-web-client #232): the block
+  !                  at the end of the function says which and why.
   !
   ! A 0 in either map stands for the slot's own number, which
   ! fp_set_nsa_nsb substitutes when the run is prepared (fp/fpprep.f90).
@@ -276,7 +304,8 @@ CONTAINS
   FUNCTION fp_param_check(max_nrmax) RESULT(ierr)
     INTEGER, INTENT(IN) :: max_nrmax
     INTEGER :: ierr
-    INTEGER :: i, ns
+    INTEGER :: i, ns, nsa
+    LOGICAL :: kinetic
 
     ierr = 0
     IF (NRMAX < 1 .OR. NRMAX > max_nrmax) THEN
@@ -320,6 +349,68 @@ CONTAINS
           ierr = 1
        END IF
     END DO
+    ! --- NBI source and bounce average (task-web-client #232) -----
+    ! MODELA: FP has only 0 and 1 (fp/fpparm.f90). NBEAMMAX: the beam
+    ! loops run to it (fp/fpcoef.f90), and fp_init gives it no value
+    ! (only the namelist does), so any start value outside 0 .. NBEAMM
+    ! is refused here. With MODEL_NBI = 1, NBI_SOURCE_A0 takes every
+    ! beam up to NBEAMMAX, whatever its source: SPBRW must be above 0
+    ! for each (0 makes the source 0/0, NaN, even with SPBTOT = 0; a
+    ! width below 0 means nothing). A beam with a source (SPBTOT /= 0)
+    ! would deposit nothing, without a word, beyond NBEAMMAX, on no
+    ! kinetic species (NSSPB is a namelist species, matched against
+    ! NS_NSA, a 0 there read as the slot's number), with SPBANG outside
+    ! 0 <= x < 180 (no pitch cell holds it) or with SPBENG < 0 (no
+    ! momentum). Not checked here, because they need fp_prep's mesh: a
+    ! beam beyond the momentum mesh's PMAX deposits nothing, and a
+    ! source so narrow that EXP(-(RM-SPBR0)**2/SPBRW**2) is 0 at every
+    ! radial point is 0/0.
+    IF (MODELA < 0 .OR. MODELA > 1) THEN
+       WRITE(6,'(A,I0,A)') 'XX fp_run: MODELA = ', MODELA, ' is neither 0 nor 1'
+       ierr = 1
+    END IF
+    IF (NBEAMMAX < 0 .OR. NBEAMMAX > NBEAMM) THEN
+       WRITE(6,'(A,I0,A,I0)') 'XX fp_run: NBEAMMAX = ', NBEAMMAX, &
+            ' is outside 0 to ', NBEAMM
+       ierr = 1
+    END IF
+    IF (MODEL_NBI == 1) THEN
+       DO i = 1, NBEAMM
+          IF (i <= NBEAMMAX .AND. .NOT. (SPBRW(i) > 0.0_rkind)) THEN
+             WRITE(6,'(A,I0,A,ES12.4,A)') 'XX fp_run: SPBRW(', i, ') = ', SPBRW(i), &
+                  ' is not above 0'
+             ierr = 1
+          END IF
+          IF (SPBTOT(i) == 0.0_rkind) CYCLE
+          IF (i > NBEAMMAX) THEN
+             WRITE(6,'(A,I0,A,I0,A)') 'XX fp_run: SPBTOT(', i, &
+                  ') is set, but NBEAMMAX = ', NBEAMMAX, ' leaves the beam out'
+             ierr = 1
+             CYCLE
+          END IF
+          kinetic = .FALSE.
+          DO nsa = 1, MIN(NSAMAX, SIZE(NS_NSA))
+             ns = NS_NSA(nsa)
+             IF (ns == 0) ns = nsa
+             IF (ns == NSSPB(i)) kinetic = .TRUE.
+          END DO
+          IF (.NOT. kinetic) THEN
+             WRITE(6,'(A,I0,A,I0,A)') 'XX fp_run: NSSPB(', i, ') = ', NSSPB(i), &
+                  ' is no kinetic species (NS_NSA)'
+             ierr = 1
+          END IF
+          IF (.NOT. (SPBANG(i) >= 0.0_rkind .AND. SPBANG(i) < 180.0_rkind)) THEN
+             WRITE(6,'(A,I0,A,ES12.4,A)') 'XX fp_run: SPBANG(', i, ') = ', SPBANG(i), &
+                  ' is outside 0 to below 180'
+             ierr = 1
+          END IF
+          IF (.NOT. (SPBENG(i) >= 0.0_rkind)) THEN
+             WRITE(6,'(A,I0,A,ES12.4,A)') 'XX fp_run: SPBENG(', i, ') = ', SPBENG(i), &
+                  ' is below 0'
+             ierr = 1
+          END IF
+       END DO
+    END IF
     IF (ierr /= 0) FLUSH(6)
   END FUNCTION fp_param_check
 
