@@ -640,6 +640,71 @@ class TestEqValidateWallGate(unittest.TestCase):
             self.assertEqual(state.scalars[key], value, key)
 
 
+_PLATO = dict(MODELG=2.0, RR=0.7, RA=0.18, RKAP=1.9, RDLT=0.4, BB=0.3, RIP=0.04)
+
+
+@unittest.skipUnless(
+    DEFAULT_SO.exists(),
+    f"libeqapi.so not built at {DEFAULT_SO}; run `make -C eq libeqapi.so`",
+)
+class TestEqValidateGridReachesRZero(unittest.TestCase):
+    """An analytic solve tabulates psi on RR -/+ RB (EQTORZ, eq/eqcalc.f90),
+    whatever MDLEQF: with RB >= RR that grid reaches R <= 0, the run goes on,
+    and its result depends on RB (tw#217: PLATO's QSURF 5.646 with the
+    default RB 1.2, 6.471 with RB = 1.2 RA). validate() flags it on RB,
+    INCONSISTENT_PAIR; a file load brings its own grid."""
+
+    @staticmethod
+    def _rb(diags):
+        return [(d.param, d.code, d.message) for d in diags if d.param == "RB"]
+
+    def test_the_default_wall_of_a_small_device_is_flagged_and_the_run_still_completes(self) -> None:
+        diags, err, state = TestEqValidateBoxGate._validate_then_run(**_PLATO)
+        self.assertEqual(self._rb(diags), [(
+            "RB", EqDiagCode.INCONSISTENT_PAIR,
+            "RR -/+ RB = [-0.500, 1.900] reaches R <= 0 (RB=1.200 >= RR=0.700): "
+            "set RB below RR (e.g. RB = 1.2*RA)")])
+        self.assertIsNone(err)                       # validate() changes no run
+        self.assertAlmostEqual(state.scalars["qsurf"], 5.646440769840485, places=9)
+
+    def test_a_wall_of_1_2_ra_is_clean(self) -> None:
+        diags, err, _ = TestEqValidateBoxGate._validate_then_run(**_PLATO, RB=0.216)
+        self.assertEqual(diags, [])
+        self.assertIsNone(err)
+
+    def test_a_wall_equal_to_rr_is_flagged(self) -> None:
+        with Eq() as eq:
+            eq.set_params(**_PLATO, RB=0.7)
+            rb = self._rb(eq.validate())
+        self.assertEqual([(p, c) for p, c, _ in rb], [("RB", EqDiagCode.INCONSISTENT_PAIR)])
+        self.assertIn("[0.000, 1.400] reaches R <= 0", rb[0][2])
+
+    def test_a_wall_just_inside_rr_is_clean(self) -> None:
+        with Eq() as eq:
+            eq.set_params(**_PLATO, RB=0.6999)
+            self.assertEqual(eq.validate(), [])
+
+    def test_with_mdleqf_10_the_grid_is_checked_too(self) -> None:
+        with Eq() as eq:
+            eq.set_params(**_PLATO, MDLEQF=10.0, RGMIN=0.4, RGMAX=1.0, ZGMIN=-0.5, ZGMAX=0.5)
+            self.assertEqual([(p, c) for p, c, _ in self._rb(eq.validate())],
+                             [("RB", EqDiagCode.INCONSISTENT_PAIR)])
+
+    def test_no_file_format_is_checked(self) -> None:
+        for modelg in (3.0, 5.0, 8.0, 9.0, 15.0, 25.0):
+            with Eq() as eq:
+                eq.set_params(**{**_PLATO, "MODELG": modelg})
+                self.assertEqual(self._rb(eq.validate()), [], f"MODELG={modelg}")
+
+    def test_an_unprintable_wall_falls_back_to_a_static_message(self) -> None:
+        with Eq() as eq:
+            eq.set_params(MODELG=2.0, RB=1.0e30)
+            rb = self._rb(eq.validate())
+        self.assertEqual([(p, c) for p, c, _ in rb], [("RB", EqDiagCode.INCONSISTENT_PAIR)])
+        self.assertIn("reaches R <= 0", rb[0][2])
+        self.assertIn("values unprintable", rb[0][2])
+
+
 class TestFFIBindings(unittest.TestCase):
     """Smoke tests for the new _ffi exports (no .so needed)."""
 

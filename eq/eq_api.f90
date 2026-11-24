@@ -542,7 +542,8 @@ CONTAINS
   !                   for MODELG 3/5/8/9/25, KNAMEQ2 too for MODELG 8.
   !   INCONSISTENT_PAIR      : wall radius RB < minor radius RA, for an
   !                   analytic solve (the solver can abort or give a
-  !                   wrong equilibrium).
+  !                   wrong equilibrium); RB >= RR, whose grid RR -/+ RB
+  !                   reaches R <= 0 (the result depends on RB).
   !   OUT_OF_RANGE_AFTER_DEP : the box RGMIN..ZGMAX leaves out RR or
   !                   Z = 0, or RGMAX is below RR+RA: where the solver
   !                   fails or cuts the plasma. Checked for an analytic
@@ -678,6 +679,26 @@ CONTAINS
        CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
     END IF
 
+    ! ---- INCONSISTENT_PAIR: the psi grid RR -/+ RB reaches R <= 0 in an
+    !      analytic solve (task-web-client #217). EQTORZ tabulates psi on
+    !      RR -/+ RB for every analytic solve, whatever MDLEQF (the box
+    !      RGMIN..ZGMAX is not that grid, see below). With RB >= RR the grid
+    !      takes R <= 0, the run goes on, and the result depends on RB:
+    !      measured 2026-11-24 at 44a0d010, PLATO (RR 0.7, RA 0.18, RKAP 1.9,
+    !      RDLT 0.4) with the default RB 1.2 (grid -0.5..1.9): QSURF 5.646,
+    !      PVOL 0.7848; RB 0.216 (1.2 RA): 6.471, 0.8102; RB 0.7 (= RR, the
+    !      first point at R = 0): 6.052, 0.7997. A file load brings its own
+    !      grid and is not checked.
+    IF (analytic .AND. RR - RB <= 0.D0) THEN
+       WRITE(msgbuf, '(9A)', IOSTAT=ios) &
+            "RR -/+ RB = [", TRIM(f3(RR - RB)), ", ", TRIM(f3(RR + RB)), &
+            "] reaches R <= 0 (RB=", TRIM(f3(RB)), " >= RR=", TRIM(f3(RR)), &
+            "): set RB below RR (e.g. RB = 1.2*RA)"
+       IF (ios /= 0) msgbuf = &
+            "RR -/+ RB reaches R <= 0 (RB >= RR): set RB below RR (e.g. RB = 1.2*RA; values unprintable)"
+       CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
+    END IF
+
     ! ---- OUT_OF_RANGE_AFTER_DEP: the box RGMIN/RGMAX/ZGMIN/ZGMAX,
     !      where the solver reads it: an analytic solve with MDLEQF >= 10.
     !      It is read in one place, EQAXIS (eq/eqsub.f90:58-121, from
@@ -712,6 +733,8 @@ CONTAINS
     !      the default box. Not seen before the run: an axis that leaves
     !      the box as it moves (RDLT=0.4 with RGMIN=RR fails, ierr=103),
     !      and a Z bound inside the axis's rounding (ZGMIN=-1e-14 fails).
+    !      EQAXIS's message says which bound the axis crossed, by how much,
+    !      and in which iteration of the solve (task-web-client #188, #214).
     !      After the solve EQCALQP overwrites the four with the traced
     !      plasma extent for any MDLEQF (eqcalq.f90:630-640; EQCALQV
     !      again for MDLEQF < 10, 1026-1037), so for MDLEQF < 10 they are
@@ -842,6 +865,25 @@ CONTAINS
       INQUIRE(FILE=TRIM(fname), EXIST=file_there, IOSTAT=ios_q)
       IF (ios_q /= 0) file_there = .FALSE.
     END FUNCTION file_there
+
+    ! A value as F0.3 with its leading zero (gfortran writes 0.7 as ".700"),
+    ! for the R <= 0 check's message; "*" if it does not fit.
+    FUNCTION f3(x) RESULT(s)
+      REAL(rkind), INTENT(IN) :: x
+      CHARACTER(LEN=48) :: s
+      INTEGER :: k
+      WRITE(s, '(F0.3)', IOSTAT=k) x
+      IF (k /= 0) THEN
+         s = '*'
+         RETURN
+      END IF
+      s = ADJUSTL(s)
+      IF (s(1:1) == '.') THEN
+         s = '0' // s
+      ELSE IF (s(1:2) == '-.') THEN
+         s = '-0' // s(2:)
+      END IF
+    END FUNCTION f3
 
   END FUNCTION eq_api_validate
 
