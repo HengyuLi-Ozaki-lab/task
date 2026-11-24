@@ -487,7 +487,8 @@ class Eq:
         (rebuild via ``make -C eq libeqapi.so``). The method does not
         modify any eq state.
 
-        The geometry checks (the wall ``RB`` against ``RA``, the box
+        The geometry checks (the wall ``RB`` against ``RA`` and its grid,
+        ``RB < RR``, the box
         ``RGMIN``..``ZGMAX`` with ``MDLEQF >= 10``, a negative ``RIP``)
         are made for the Grad-Shafranov solve only (``run(0)``), going by
         ``MODELG``: a file format (``MODELG`` 3/5/8/9/15/25) is taken to

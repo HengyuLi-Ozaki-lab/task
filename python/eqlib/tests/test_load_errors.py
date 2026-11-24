@@ -13,6 +13,7 @@ happened to hold, and so pins the behaviour more than it shows the change.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -76,6 +77,7 @@ def test_a_load_whose_axis_lies_outside_the_box_says_so():
     assert f"the search for the magnetic axis ended at (R, Z) = ({axis:.4f}, " in message
     assert "outside the box RGMIN..RGMAX = [1.5000, 4.5000], ZGMIN..ZGMAX = [-2.0000, 2.0000]" in message
     assert "MDLEQF >= 10 holds the axis to" in message
+    assert ", 1.1E+00 below RGMIN, outside the box" in message
     assert message.endswith("(ierr=103)")
 
 
@@ -95,7 +97,92 @@ def test_an_analytic_solve_whose_axis_leaves_the_box_says_so():
     message = str(err.value)
     assert "the search for the magnetic axis ended at (R, Z) = (3.0000, " in message
     assert "RGMIN..RGMAX = [3.0010, 4.5000]" in message
+    assert "), 1.0E-03 below RGMIN, outside the box" in message
     assert message.endswith("(ierr=103)")
+
+
+_IN_LOOP = re.compile(
+    r"^EQAXIS: the axis is (\d\.\dE[-+]\d\d) below RGMIN = (\d+\.\d{4}) at "
+    r"\(R, Z\) = \((-?\d+\.\d{4}), (-?\d+\.\d{4})\), in iteration (\d+) of the solve: "
+    r"it moves as the solve goes on, and the box \(MDLEQF >= 10\) must hold its path "
+    r"\(ierr=103\)$")
+
+
+def _analytic_failure(**params):
+    with eqlib.Eq() as e:
+        e.set_params(MODELG=2, **params)
+        with pytest.raises(eqlib.EqlibCalculationFailedError) as err:
+            e.run(0)
+        return str(err.value), e.last_error()
+
+
+def test_an_axis_that_triangularity_moves_out_of_the_box_names_the_iteration():
+    # tw#188: RR = RGMIN + 0.03 at RDLT 0.4; the axis starts inside and leaves on the way.
+    message, last = _analytic_failure(MDLEQF=10, RDLT=0.4, RGMIN=2.97)
+    m = _IN_LOOP.match(last)
+    assert m, last
+    assert int(m.group(5)) >= 2
+    assert m.group(2) == "2.9700"
+    assert float(m.group(1)) == pytest.approx(2.97 - float(m.group(3)), rel=0.02)
+    assert len(last) <= 255 and "unprintable" not in last
+    assert message.endswith(last)
+    # TR's tr_last_error keeps about 72 characters of EQ's message: the crossing is within them
+    assert last[:72].startswith("EQAXIS: the axis is ") and "below RGMIN" in last[:72]
+
+
+def test_an_axis_that_ends_inside_but_leaves_on_the_way_names_the_iteration():
+    # tw#188: at RDLT 0.2 the axis ends at 3.0219 with the default box, yet RGMIN 2.9995 fails.
+    # The axis path's minimum is R = 2.9991 (the R the message prints); the start, R = 3.0, is
+    # 5e-4 inside RGMIN, so iteration 1 passes and the failure is in the loop.
+    _, last = _analytic_failure(MDLEQF=10, RDLT=0.2, RGMIN=2.9995)
+    m = _IN_LOOP.match(last)
+    assert m and int(m.group(5)) >= 2 and m.group(2) == "2.9995", last
+
+
+def test_a_zgmax_just_below_the_axis_says_by_how_much():
+    # tw#214: the axis's Z (about 0) and the bound ZGMAX = -2e-5 print alike at four decimals
+    # (-0.0000); the clause gives the distance.
+    _, last = _analytic_failure(MDLEQF=10, ZGMAX=-2.0e-5)
+    assert "in iteration" not in last, last
+    assert ", 2.0E-05 above ZGMAX, outside the box" in last
+    assert "ZGMIN..ZGMAX = [-2.0000, -0.0000]" in last
+    assert "that MDLEQF >= 10 holds the axis to (ierr=103)" in last
+
+
+def test_a_load_after_a_solve_in_the_same_instance_uses_the_box_form():
+    # EQ_NLOOP goes back to 0 when EQLOOP ends: a later failure outside the loop is not "in iteration".
+    import shutil
+    shutil.copy(_FIXTURES / "eqdata.TST-2", "eqdata.TST-2")
+    with eqlib.Eq() as e:
+        e.set_params(MODELG=2)
+        e.run(0)
+        e.set_param("MODELG", 3)
+        e.set_param("MDLEQF", 10)
+        e.set_param_str("KNAMEQ", "eqdata.TST-2")
+        with pytest.raises(eqlib.EqlibCalculationFailedError):
+            e.run(1)
+        last = e.last_error()
+    assert "in iteration" not in last, last
+    # the solve has reset RGMIN..ZGMAX to the box around its own plasma, so the numbers are not 1.5..4.5
+    assert "outside the box RGMIN..RGMAX = [" in last, last
+
+
+def test_a_load_after_a_failed_solve_in_the_same_instance_uses_the_box_form():
+    # EQLOOP's error return resets EQ_NLOOP too: a load that fails after a failed solve is not "in iteration".
+    import shutil
+    shutil.copy(_FIXTURES / "eqdata.TST-2", "eqdata.TST-2")
+    with eqlib.Eq() as e:
+        e.set_params(MODELG=2, MDLEQF=10, RDLT=0.4, RGMIN=2.97)
+        with pytest.raises(eqlib.EqlibCalculationFailedError):
+            e.run(0)
+        assert "in iteration" in e.last_error()
+        e.set_param("MODELG", 3)
+        e.set_param_str("KNAMEQ", "eqdata.TST-2")
+        with pytest.raises(eqlib.EqlibCalculationFailedError):
+            e.run(1)
+        last = e.last_error()
+    assert "in iteration" not in last, last
+    assert "outside the box RGMIN..RGMAX = [" in last, last
 
 
 # --- task-web-client #191, #203: MODELG=15 (the fixed eqdb.dat) is refused before the load ---

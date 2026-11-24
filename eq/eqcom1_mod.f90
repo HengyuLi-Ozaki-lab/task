@@ -89,5 +89,9 @@ MODULE eqcom1_mod
   !     clears it on entry.
   LOGICAL :: QQPS_FROM_FILE = .FALSE.
   CHARACTER(LEN=256) :: EQ_ERRMSG = ' '
+  !   EQ_NLOOP: the iteration of EQLOOP running (1..NLPMAX), 0 outside
+  !     it; EQLOOP sets it and puts it back to 0 on every way out, and
+  !     EQAXIS reads it for its message (task-web-client #188).
+  INTEGER :: EQ_NLOOP = 0
 
 END MODULE eqcom1_mod

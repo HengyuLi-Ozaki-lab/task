@@ -21,7 +21,7 @@ string parameters) on top of the standard five.
 | `eq_run`            | `eq_api_run`            | switches behaviour by `mode` (no time evolution) |
 | `eq_get_state`      | `eq_api_get_state`      | copies EQCOMM scalars and ψ-surface profiles into the C structure |
 | `eq_finalize`       | `eq_api_finalize`       | re-arms the SAVE flag via `eq_bpsd_reset` |
-| `eq_validate`       | `eq_api_validate`       | grid dimensions, the files a load reads (`KNAMEQ`, `KNAMEQ2` for `MODELG=8`), the refused `MODELG=15`, and for the Grad-Shafranov solve the wall, the current's sign and the box (`parameter-setting`) |
+| `eq_validate`       | `eq_api_validate`       | grid dimensions, the files a load reads (`KNAMEQ`, `KNAMEQ2` for `MODELG=8`), the refused `MODELG=15`, and for the Grad-Shafranov solve the wall and its grid (`RB >= RA`, `RB < RR`), the current's sign and the box (`parameter-setting`) |
 | `eq_save`           | `eq_api_save`           | writes the equilibrium of the last `eq_run` to the file named by `KNAMEQ` (`EQSAVE`); an error when the file was not opened or is shorter than what was written |
 
 All are bound to fixed C ABI symbols via `BIND(C, NAME="eq_xxx")`.

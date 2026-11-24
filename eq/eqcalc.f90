@@ -340,9 +340,13 @@
       SULMP=1.D30
 !
       DO NLOOP=1,NLPMAX
+         EQ_NLOOP=NLOOP
          CALL EQBAND
          CALL EQRHSV(IERR)
-         IF(IERR.NE.0) RETURN
+         IF(IERR.NE.0) THEN
+            EQ_NLOOP=0
+            RETURN
+         ENDIF
          CALL EQSOLV
 
          SUM0=0.D0
@@ -375,6 +379,7 @@
                WRITE(6,'(A,1P4E14.6,I5)') &
                  'SUML,R/ZAXIS,PSI0=',SUML,RAXIS,ZAXIS,PSI0,NLOOP
             ENDIF
+            EQ_NLOOP=0
             RETURN
          ELSE
             IF((NPRINT.EQ.1.AND.NLOOP.EQ.1).OR. &
@@ -384,6 +389,7 @@
             ENDIF
          ENDIF
       ENDDO
+      EQ_NLOOP=0
 
       IF(NPRINT.GE.1) THEN
          WRITE(6,'(A,1P4E14.6,I5)') &
