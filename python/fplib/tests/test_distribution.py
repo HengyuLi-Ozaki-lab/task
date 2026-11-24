@@ -4,9 +4,11 @@ from __future__ import annotations
 import array
 import ctypes
 import math
+import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
@@ -103,6 +105,39 @@ class TestLayout(unittest.TestCase):
             back = np.load(path)
         self.assertEqual((10 + int.from_bytes(raw[8:10], "little")) % 64, 0)
         self.assertTrue(np.array_equal(back, d.to_numpy()))
+
+    @unittest.skipIf(np is None, "numpy not installed")
+    def test_save_npy_replaces_a_symlink_and_leaves_its_target(self):
+        d = _dist()
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target.bin"
+            target.write_bytes(b"keep me")
+            link = Path(tmp) / "f.npy"
+            os.symlink(target, link)
+            d.save_npy(link)
+            self.assertFalse(link.is_symlink())
+            self.assertEqual(target.read_bytes(), b"keep me")
+            self.assertTrue(np.array_equal(np.load(link), d.to_numpy()))
+
+    @unittest.skipIf(np is None, "numpy not installed")
+    def test_save_npy_replaces_an_existing_file(self):
+        d = _dist()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.npy"
+            path.write_bytes(b"old content")
+            d.save_npy(path)
+            self.assertTrue(np.array_equal(np.load(path), d.to_numpy()))
+
+    def test_a_failed_write_keeps_the_old_file_and_leaves_no_temporary(self):
+        d = _dist()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.npy"
+            path.write_bytes(b"old content")
+            with mock.patch("fplib.distribution.os.replace", side_effect=OSError("boom")):
+                with self.assertRaises(OSError):
+                    d.save_npy(path)
+            self.assertEqual(path.read_bytes(), b"old content")
+            self.assertEqual(os.listdir(tmp), ["f.npy"])
 
 
 class TestFnsInfoC(unittest.TestCase):

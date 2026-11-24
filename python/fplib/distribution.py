@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import array
 import math
+import os
 import struct
 import sys
 from dataclasses import dataclass
@@ -86,7 +87,13 @@ class FpDistribution:
         return np.array(self.data, dtype=np.float64).reshape(self.shape)
 
     def save_npy(self, path: Union[str, Path]) -> None:
-        """Write a ``.npy`` file (format 1.0, little-endian float64, C order) with the standard library."""
+        """Write a ``.npy`` file (format 1.0, little-endian float64, C order) with the standard library.
+
+        The bytes go to a temporary file beside ``path`` (its name starts with a dot) and are moved
+        into place with ``os.replace``: an existing file or symlink of that name is replaced, not
+        written through, and a failed write leaves the old file in place.
+        """
+        path = Path(path)
         header = "{'descr': '<f8', 'fortran_order': False, 'shape': (%d, %d, %d), }" % self.shape
         # magic (6) + version (2) + header length (2) + header: spaces and a newline make
         # the whole a multiple of 64 bytes, as numpy writes it.
@@ -95,11 +102,18 @@ class FpDistribution:
         values = array.array("d", self.data)
         if sys.byteorder != "little":
             values.byteswap()
-        with open(path, "wb") as fh:
-            fh.write(b"\x93NUMPY\x01\x00")
-            fh.write(struct.pack("<H", len(header_bytes)))
-            fh.write(header_bytes)
-            fh.write(values.tobytes())
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        try:
+            with open(tmp, "wb") as fh:
+                fh.write(b"\x93NUMPY\x01\x00")
+                fh.write(struct.pack("<H", len(header_bytes)))
+                fh.write(header_bytes)
+                fh.write(values.tobytes())
+            os.replace(tmp, path)
+        except BaseException:
+            if tmp.exists() or tmp.is_symlink():
+                tmp.unlink()
+            raise
 
 
 __all__ = ["FpDistribution"]
