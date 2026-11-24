@@ -582,6 +582,7 @@ CONTAINS
     INTEGER :: nlocal
     INTEGER :: ios
     LOGICAL :: analytic
+    CHARACTER(LEN=48) :: s_lo, s_hi, s_rb, s_rr, s_ra   ! the R <= 0 check's values
     CHARACTER(LEN=EQ_DIAG_MSG_LEN - 1) :: msgbuf   ! the C field keeps 127 characters + NUL
 
     IF (.NOT. g_initialized) THEN
@@ -690,12 +691,34 @@ CONTAINS
     !      first point at R = 0): 6.052, 0.7997. A file load brings its own
     !      grid and is not checked.
     IF (analytic .AND. RR - RB <= 0.D0) THEN
-       WRITE(msgbuf, '(9A)', IOSTAT=ios) &
-            "RR -/+ RB = [", TRIM(f3(RR - RB)), ", ", TRIM(f3(RR + RB)), &
-            "] reaches R <= 0 (RB=", TRIM(f3(RB)), " >= RR=", TRIM(f3(RR)), &
-            "): set RB below RR (e.g. RB = 1.2*RA)"
+       ! Format the values first: f3 does internal I/O, which must not run
+       ! inside the output list of another internal WRITE.
+       s_lo = f3(RR - RB)
+       s_hi = f3(RR + RB)
+       s_rb = f3(RB)
+       s_rr = f3(RR)
+       s_ra = f3(RA)
+       ios = 1
+       IF (INDEX(s_lo // s_hi // s_rb // s_rr // s_ra, '*') == 0) THEN
+          IF (RA >= RR) THEN
+             WRITE(msgbuf, '(9A)', IOSTAT=ios) &
+                  "RR -/+ RB = [", TRIM(s_lo), ", ", TRIM(s_hi), &
+                  "] reaches R <= 0 (RB=", TRIM(s_rb), " >= RR=", TRIM(s_rr), &
+                  "), and no wall fits: RA=" // TRIM(s_ra) // " >= RR (raise RR or lower RA)"
+          ELSE IF (1.2D0 * RA < RR) THEN
+             WRITE(msgbuf, '(9A)', IOSTAT=ios) &
+                  "RR -/+ RB = [", TRIM(s_lo), ", ", TRIM(s_hi), &
+                  "] reaches R <= 0 (RB=", TRIM(s_rb), " >= RR=", TRIM(s_rr), &
+                  "): set RB below RR (e.g. RB = 1.2*RA)"
+          ELSE
+             WRITE(msgbuf, '(9A)', IOSTAT=ios) &
+                  "RR -/+ RB = [", TRIM(s_lo), ", ", TRIM(s_hi), &
+                  "] reaches R <= 0 (RB=", TRIM(s_rb), " >= RR=", TRIM(s_rr), &
+                  "): set RB below RR, at least RA=" // TRIM(s_ra)
+          END IF
+       END IF
        IF (ios /= 0) msgbuf = &
-            "RR -/+ RB reaches R <= 0 (RB >= RR): set RB below RR (e.g. RB = 1.2*RA; values unprintable)"
+            "RR -/+ RB reaches R <= 0 (RB >= RR): set RB below RR (values unprintable)"
        CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
     END IF
 

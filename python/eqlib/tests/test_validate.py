@@ -24,6 +24,9 @@ Tests cover:
 * the wall check (``RB < RA``) is made for the analytic solve only
   (every ``MODELG`` but the file formats 3, 5, 8, 9, 15 and 25), not for
   a file load, which brings its own wall;
+* the grid check (``RB >= RR``: the analytic grid ``RR -/+ RB`` reaches
+  ``R <= 0``), for the analytic solve only, with a hint that fits or the
+  statement that no wall does (``TestEqValidateGridReachesRZero``);
 * the box check against ``RGMIN..ZGMAX`` is made only when the solver
   reads that box (an analytic solve with ``MDLEQF >= 10``), and flags
   only what fails or cuts the plasma there: ``RR`` outside
@@ -658,6 +661,18 @@ class TestEqValidateGridReachesRZero(unittest.TestCase):
     def _rb(diags):
         return [(d.param, d.code, d.message) for d in diags if d.param == "RB"]
 
+    @staticmethod
+    def _run_without_validate(**params):
+        with Eq() as eq:
+            eq.set_params(**params)
+            with _in_tempdir():
+                eq.run(0)
+                return eq.get_state()
+
+    @staticmethod
+    def _grid_msgs(diags):
+        return [d.message for d in diags if d.param == "RB" and "reaches R <= 0" in d.message]
+
     def test_the_default_wall_of_a_small_device_is_flagged_and_the_run_still_completes(self) -> None:
         diags, err, state = TestEqValidateBoxGate._validate_then_run(**_PLATO)
         self.assertEqual(self._rb(diags), [(
@@ -665,7 +680,10 @@ class TestEqValidateGridReachesRZero(unittest.TestCase):
             "RR -/+ RB = [-0.500, 1.900] reaches R <= 0 (RB=1.200 >= RR=0.700): "
             "set RB below RR (e.g. RB = 1.2*RA)")])
         self.assertIsNone(err)                       # validate() changes no run
-        self.assertAlmostEqual(state.scalars["qsurf"], 5.646440769840485, places=9)
+        plain = self._run_without_validate(**_PLATO)      # validate() changes no run
+        self.assertEqual(set(state.scalars), set(plain.scalars))
+        for key in state.scalars:
+            self.assertEqual(state.scalars[key], plain.scalars[key], key)
 
     def test_a_wall_of_1_2_ra_is_clean(self) -> None:
         diags, err, _ = TestEqValidateBoxGate._validate_then_run(**_PLATO, RB=0.216)
@@ -703,6 +721,35 @@ class TestEqValidateGridReachesRZero(unittest.TestCase):
         self.assertEqual([(p, c) for p, c, _ in rb], [("RB", EqDiagCode.INCONSISTENT_PAIR)])
         self.assertIn("reaches R <= 0", rb[0][2])
         self.assertIn("values unprintable", rb[0][2])
+
+    def test_a_wall_that_1_2_ra_does_not_fit_gets_a_bound_not_a_value(self) -> None:
+        with Eq() as eq:
+            eq.set_params(**{**_PLATO, "RA": 0.6})
+            msgs = self._grid_msgs(eq.validate())
+        self.assertEqual(len(msgs), 1, msgs)
+        self.assertTrue(msgs[0].endswith("): set RB below RR, at least RA=0.600"), msgs[0])
+        self.assertNotIn("1.2*RA", msgs[0])
+
+    def test_no_wall_fits_when_ra_reaches_rr(self) -> None:
+        with Eq() as eq:
+            eq.set_params(**{**_PLATO, "RA": 0.8, "RB": 0.75})
+            msgs = self._grid_msgs(eq.validate())
+        self.assertEqual(len(msgs), 1, msgs)
+        self.assertIn("and no wall fits: RA=0.800 >= RR (raise RR or lower RA)", msgs[0])
+
+    def test_a_wall_too_large_to_print_falls_back(self) -> None:
+        with Eq() as eq:
+            eq.set_params(MODELG=2.0, RB=1.0e300)
+            msgs = self._grid_msgs(eq.validate())
+        self.assertEqual(msgs, [
+            "RR -/+ RB reaches R <= 0 (RB >= RR): set RB below RR (values unprintable)"])
+
+    def test_a_wall_of_1e43_does_not_print_stars(self) -> None:
+        with Eq() as eq:
+            eq.set_params(RR=0.7, RB=1.0e43, MODELG=2.0)
+            msgs = self._grid_msgs(eq.validate())
+        self.assertEqual(len(msgs), 1, msgs)
+        self.assertNotIn("*", msgs[0])
 
 
 class TestFFIBindings(unittest.TestCase):
