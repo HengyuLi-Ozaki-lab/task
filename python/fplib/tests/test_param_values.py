@@ -137,7 +137,7 @@ def test_an_integer_parameter_takes_what_the_integer_holds(value):
 def test_every_integer_parameter_refuses_a_value_beyond_the_integer():
     """The Fortran list of integer names (value_refused) against the server's registry."""
     ints, _ = _int_and_real_names()
-    assert len(ints) >= 25, ints
+    assert len(ints) >= 28, ints
     with Fplib() as lib:
         taken = []
         for name in ints:
@@ -188,7 +188,7 @@ def test_the_integer_list_is_the_integer_cases_of_the_setter():
     """
     converted, listed = _integer_names_in_the_source()
     # The count is of today's integer parameters: a new one changes it here too.
-    assert len(converted) == 25, sorted(converted)
+    assert len(converted) == 28, sorted(converted)
     assert listed == converted, (sorted(listed - converted), sorted(converted - listed))
 
 

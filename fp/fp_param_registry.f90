@@ -262,7 +262,8 @@ CONTAINS
           "NSMAX", "NSAMAX", "NSBMAX", "NS_NSA", "NS_NSB", "LMAXFP", &
           "MODELG", "MODELE", "MODELR", "MODELS", "MODELD", &
           "MODEL_NBI", "MODEL_WAVE", "MODEL_DISRUPT", "MODEL_BS", &
-          "MODEL_LOSS", "MODEL_SYNCH", "MODEL_FOW", "MODELC", "MODELW")
+          "MODEL_LOSS", "MODEL_SYNCH", "MODEL_FOW", "MODELC", "MODELW", &
+          "MODELA", "NBEAMMAX", "NSSPB")
        refused = ABS(value) > REAL(HUGE(0), rkind)
     END SELECT
   END FUNCTION value_refused

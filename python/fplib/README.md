@@ -342,7 +342,7 @@ no call reaches such a multiple.
 | `SPBR0[i]` | source radius [r/a] | 0 |
 | `SPBRW[i]` | source width [r/a] | 0.2 |
 
-A set checks only the index (1..20). `NBEAMMAX` has no default: `fp_init`
+When a value is set, the index is checked (1 to `NBEAMM` = 20) and, as for every name, a malformed subscript, a value that is not finite, or for an integer name a value beyond the default integer is refused; the value rules below are checked before the run. `NBEAMMAX` has no default: `fp_init`
 gives it no value and only the namelist sets it, so set it whenever a beam is
 used. Before `fp_prep`, `run()` checks the rules below; each violation writes
 one `XX fp_run:` line and `run()` raises `FplibInvalidParamError`.

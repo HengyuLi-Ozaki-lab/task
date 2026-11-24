@@ -158,8 +158,10 @@ struct grows at its end only, and `fp/fp_state.f90`, `fp/fp_api.h` and
   points (`fp_init`, `fp_prep`, `fp_loop`, ...) and maps Fortran ierr
   to the C `enum fp_error`.
 - `fp_param_registry.f90` implements a hand-written `SELECT CASE`
-  dispatch (~40 unique names / ~55 settable variables once array
-  subscripts are counted) mapping `"NAME"` or `"NAME[idx]"` strings
+  dispatch (62 names: 44 scalars and 18 arrays, i.e. 10 species arrays
+  of `NSM` = 100 (`NS_NSA`, `NS_NSB`, `PA`, `PZ`, `PN`, `PNS`, `PTPR`, `PTPP`, `PTS`, `PMAX`),
+  `MODELC` and `MODELW`, and 6 beam arrays of `NBEAMM` = 20; 1364 settable variables once
+  array subscripts are counted) mapping `"NAME"` or `"NAME[idx]"` strings
   to FPCOMM / PLCOMM module variables. Extending the registry is the
   **only** code change needed to expose new parameters.
   `fp_set_param` refuses, with code 1 and before it assigns anything:
