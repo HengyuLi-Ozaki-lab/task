@@ -73,7 +73,7 @@ inconsistent. Common causes:
 
 `validate()` catches grid dimensions, a missing load file (a blank `KNAMEQ` or one naming no file,
 `KNAMEQ2` for `MODELG=8`), the refused `MODELG=15` and, for the
-Grad-Shafranov solve, a wall inside the plasma, a negative current and a box
+Grad-Shafranov solve, a wall inside the plasma or a grid reaching R <= 0, a negative current and a box
 (`MDLEQF >= 10`) the solve cannot use up-front; physical consistency is
 only known after `run()`.
 

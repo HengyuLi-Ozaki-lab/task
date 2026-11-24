@@ -104,6 +104,9 @@ Grad-Shafranov solve (`run(mode=0)`, which every `MODELG` but the file formats
 needs) it also checks:
 
 - the wall encloses the plasma: `RB >= RA` (`INCONSISTENT_PAIR`);
+- the grid `RR -/+ RB` stays at R > 0: `RB < RR` (`INCONSISTENT_PAIR`; with `RB >= RR`
+  the run goes on, and its result depends on `RB`; the message gives a wall that fits,
+  or says that none does when `RA >= RR`);
 - the plasma current is not negative: `RIP >= 0` (`OUT_OF_RANGE`; `run(0)`
   refuses a negative one);
 - with `MDLEQF >= 10`, where the solver reads the box `RGMIN`..`ZGMAX`
@@ -115,7 +118,9 @@ needs) it also checks:
   before the run: the axis moves during the solve (outward with the
   Shafranov shift, inward with triangularity: at `RDLT = 0.4` it ends inward
   of `RR`, so `RGMIN = RR` fails), and a Z bound within rounding of 0
-  (`1e-14`) fails as if it were 0.
+  (`1e-14`) fails as if it were 0. When the axis leaves the box, the run's
+  error (`Eq.last_error()`) says which bound it crossed and by how much and,
+  from the second iteration of the solve on, in which iteration.
 
 `validate()` goes by `MODELG`: a file format (`MODELG` 3, 5, 8, 9, 15, 25)
 is taken to be loaded with `run(mode=1)`, which brings its own geometry, so
