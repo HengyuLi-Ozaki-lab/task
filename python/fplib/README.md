@@ -13,14 +13,14 @@ TASK/FP has two user-facing deliverables:
 | | Traditional CLI | Library (Phase L) |
 |---|---|---|
 | Binary | `fp/fp` | `fp/libfpapi.so` |
-| Entry | interactive menu | 5 C ABI functions |
+| Entry | interactive menu | 13 C ABI functions |
 | I/O | namelist + ASCII/graphics output | in-memory state struct |
 | Graphics | PGPlot / Fortran 90 graphics (`fpgout`, `fpgsub`, `fpcont`, `fpfout`) | excluded |
 | Python | — | `python/fplib` |
 
 The C ABI is defined in `fp/fp_api.h`; the Fortran backend
 (`fp/fp_api.f90`, `fp/fp_param_registry.f90`) is unchanged Fortran that
-is also linked into the `fp` binary. `python/fplib` only wraps the 5 C
+is also linked into the `fp` binary. `python/fplib` only wraps the 13 C
 entry points and marshals a `fp_state_t` struct into the pure-Python
 `FpState` dataclass.
 
@@ -55,19 +55,21 @@ compiling the fp objects, so this one command works from a clean
 tree (#230). Build serially: `make -jN` is not supported by the
 per-directory Makefiles (no intra-directory object dependencies).
 
-This produces `fp/libfpapi.so` with 5 exported symbols (`fp_init`,
-`fp_run`, `fp_set_param`, `fp_get_state`, `fp_finalize`) plus PIC
+This produces `fp/libfpapi.so` with 13 exported symbols (`fp_init`,
+`fp_run`, `fp_set_param`, `fp_get_state`, `fp_finalize`, `fp_set_param_str`,
+the layout queries `fp_state_abi_version`, `fp_state_size`,
+`fp_fns_info_abi_version`, `fp_fns_info_size`, and the distribution
+functions `fp_get_fns_info`, `fp_get_fns_grid`, `fp_get_fns`) plus PIC
 variants of the dependent libraries (`lib*_pic.a`). The pre-existing
 non-PIC `*.a` archives and the standalone `fp` binary are unchanged.
 
 Verify the exported symbol surface:
 
 ```bash
-nm -D fp/libfpapi.so | grep ' T fp_'
+nm -D fp/libfpapi.so | grep ' T fp_'     # macOS: nm -gU fp/libfpapi.so | grep ' _fp_'
 ```
 
-Should list exactly `fp_init`, `fp_run`, `fp_set_param`,
-`fp_get_state`, `fp_finalize`.
+Should list exactly the 13 names above.
 
 Put the wrapper on `PYTHONPATH`:
 
@@ -164,6 +166,17 @@ Snapshot current FPCOMM scalars and `[0:nsamax][0:nrmax]` profile
 arrays into an `FpState` dataclass. Trailing padding (up to
 `FP_MAX_NSAMAX=8` / `FP_MAX_NRMAX=100`) is ignored.
 
+### `Fplib.get_distribution(nsa=1) -> FpDistribution`
+
+The distribution function `FNS` of kinetic species `nsa` (1-origin), with
+its grid and normalisation; see "Distribution function and NBI source"
+below. It needs a run, and it refuses after a `set_param` until the next
+`run()`. `nsa` goes through `operator.index`; one outside the C `int`
+range, or a record that belongs to another species, raises
+`FplibInvalidParamError`; return code 3 is explained in the message. A
+`libfpapi.so` built before #232 raises `FplibAbiError` here only; the rest
+of the wrapper keeps working with it.
+
 ### `Fplib.close() -> None`
 
 Idempotent. The context manager calls this automatically.
@@ -186,6 +199,8 @@ is required — the wrapper forwards names verbatim.
 | Wave heating | `PABS_EC`, `PABS_LH`, `PABS_FW`, `PABS_WR`, `PABS_WM`, `RF_WM` | |
 | Model switches (scalar int) | `MODELG`, `MODELE`, `MODELR`, `MODELS`, `MODELD`, `MODEL_NBI`, `MODEL_WAVE`, `MODEL_DISRUPT`, `MODEL_BS`, `MODEL_LOSS`, `MODEL_SYNCH`, `MODEL_FOW` | |
 | Model switches (arrays) | `MODELC[i]`, `MODELW[i]` | per-species |
+| Bounce average | `MODELA` | 0 or 1 (default 0); see below |
+| NBI source (#232) | `NBEAMMAX`, `NSSPB[i]`, `SPBTOT[i]`, `SPBENG[i]`, `SPBANG[i]`, `SPBR0[i]`, `SPBRW[i]` | `i` = 1..20; units and defaults in the NBI section below; `NBEAMMAX` has no default |
 
 Unknown names return rc=1 (raised as `FplibInvalidParamError`).
 
@@ -237,6 +252,115 @@ Memory-layout note: C declares `RNT[NSAMAX][NRMAX]` (row-major); the
 Fortran backend declares `RNT(NRMAX, NSAMAX)` (column-major). Both lay
 out the same bytes, only the index order differs.
 
+## Distribution function and NBI source (task-web-client #232)
+
+`Fplib.get_distribution(nsa=1)` returns the distribution function `FNS` of a
+kinetic species with its grid and normalisation, so a script needs no
+namelist, no `fp` binary and no parsing of the `FP_SAVE2` file:
+
+```python
+with Fplib() as fp:
+    # species 2 (deuterium) is kinetic species 1; both species at 3 keV.
+    # PMAX[2] = 10: the default 7 holds no 80 keV beam at 3 keV (p = 7.3)
+    fp.set_params(NSMAX=2, NSAMAX=1, NSBMAX=2, NS_NSA=[2],
+                  PTPR=[3.0, 3.0], PTPP=[3.0, 3.0], PMAX={2: 10.0},
+                  MODELA=1, MODEL_NBI=1, NBEAMMAX=2, NSSPB=[2, 2],
+                  SPBTOT=[2.0e19, 1.6e19], SPBENG=[8.0e4, 8.0e4],
+                  SPBANG=[30.0, 150.0], SPBR0=[0.3, 0.3], SPBRW=[0.4, 0.4])
+    fp.run(ntmax=150)
+    d = fp.get_distribution(nsa=1)
+```
+
+FP places a beam at `p = sqrt(2E/T)`, in units of `PTFP0 = sqrt(m T)`. FP's
+default `PMAX` is 7, so an 80 keV beam into a 3 keV plasma (p = 7.3) lies
+outside the mesh and deposits nothing unless `PMAX[2] = 10` (the beam's
+species).
+
+### `FpDistribution`
+
+| Member | Meaning |
+|---|---|
+| `data` | `array('d')` of `nr*np*nth` values, C order |
+| `shape` | `(nr, np, nth)` |
+| `pm`, `thm`, `rm` | lists: normalised momentum of the cells, pitch angle [rad], r/a |
+| `info` | every field of `fp_fns_info_t` (`nsa`, `ns`, `nthmax`, `npmax`, `nrmax`, `modela`, `timefp`, `amfp`, `aefp`, `rnfp0`, `rtfp0`, `ptfp0`, `vtfp0`, `theta0`, `pmax`, `delp`, `delth`) |
+| `speed()` | `v` [m/s] at each `pm` |
+| `energy_keV()` | kinetic energy [keV] at each `pm` |
+| `pitch()` | `cos(thm)` |
+| `to_numpy()` | ndarray `f[ir, ip, ith]` (needs numpy) |
+| `save_npy(path)` | writes a `.npy` with the standard library only |
+
+`save_npy` writes a temporary file beside the target (its name starts with a
+dot) and replaces the target with `os.replace`: a failed write leaves the old
+file, and a symlink at `path` is replaced, not written through.
+
+**Layout.** `f[ir, ip, ith] = data[(ir*np + ip)*nth + ith]`. Fortran stores
+`FNS(NTH, NP, NR)` column-major, which is byte for byte the C-order array of
+shape `(NR, NP, NTH)`: nothing is transposed.
+
+**Normalisation.** The values are FP's `FNS`, unscaled. For `MODELA = 0` the
+density at each `ir` is `n = RNFP0 * sum(VOLP * f)`, summed over `ip` and
+`ith`, in 1e20 m^-3, with
+`VOLP = 2 pi sin(thm) pm^2 delp delth`. For `MODELA = 1` FP also weights by
+`RLAMDA*RFSADG`, which the library does not export, so that sum is not the
+density there.
+
+**Speed, energy, pitch.** With `theta0` as FP sets it (`T/(m c^2)`, 0 when
+`MODELR = 0`) and `gamma = sqrt(1 + theta0 p^2)`: `v = p VTFP0/gamma`;
+`E = RTFP0 p^2/(gamma+1)`: that is `m c^2 (gamma - 1)` with relativity
+(`MODELR = 1`), and `RTFP0 p^2/2` when `theta0 = 0`. `thm` is measured from the magnetic field, and
+`v_par = v cos(thm)`. With `MODELA = 1` it is the pitch angle at the field
+minimum of the flux surface (`info['modela']` says which). `pm`, `theta0`,
+`pmax` and `delp` are indexed by the namelist species `ns`; `amfp`, `aefp`,
+`rnfp0`, `rtfp0`, `ptfp0`, `vtfp0` and `FNS` by the kinetic `nsa`; the
+counts, `modela`, `timefp` and `delth` are not per species.
+
+**When there is a distribution.** After a `run()`. After the first `run(0)`, or
+a `run(0)` after a successful set, it is the start distribution. After any
+successful `set_param`, `set_params` or `set_param_str` the call
+raises `FplibCalcFailedError` until the next `run()`, because the mesh may be
+new and the next run re-initialises the distribution. Set everything first,
+then run.
+
+**Continuation.** `run()` continues from the current state and `timefp`
+accumulates, so `run`, `get_distribution`, `run`, ... gives a time series.
+But the step counter `NT` restarts at 1 in each `run()`, and FP recomputes
+its coefficients when `NT` is a multiple of `NTSTEP_COEF` or `NTSTEP_COLL`
+(1000 by default; neither is in the registry, so both stay at 1000). So `run(a)` then `run(b)` equals `run(a + b)` only while
+no call reaches such a multiple.
+
+### NBI parameters and the run rules
+
+| Name | Meaning | Default |
+|---|---|---|
+| `MODELA` | 0 = no bounce average, 1 = bounce average | 0 |
+| `NBEAMMAX` | number of beams, 0..`NBEAMM` = 20 | none |
+| `NSSPB[i]` | namelist species `NS` of beam `i` | 2 |
+| `SPBTOT[i]` | particle source [1/s] | 0 |
+| `SPBENG[i]` | particle energy [eV] | 1e6 |
+| `SPBANG[i]` | pitch angle of the source [degree] | 20 |
+| `SPBR0[i]` | source radius [r/a] | 0 |
+| `SPBRW[i]` | source width [r/a] | 0.2 |
+
+A set checks only the index (1..20). `NBEAMMAX` has no default: `fp_init`
+gives it no value and only the namelist sets it, so set it whenever a beam is
+used. Before `fp_prep`, `run()` checks the rules below; each violation writes
+one `XX fp_run:` line and `run()` raises `FplibInvalidParamError`.
+
+- `MODELA` is 0 or 1; `NBEAMMAX` is in 0..20. Both are checked whatever
+  `MODEL_NBI` is.
+- With `MODEL_NBI = 1` only: `SPBRW[i] > 0` for every `i` up to `NBEAMMAX`,
+  whether or not the beam has a source (a width of 0 makes the source 0/0);
+  a beam with `SPBTOT[i] /= 0` must be within `NBEAMMAX`, on a kinetic
+  species (`NSSPB` matched against `NS_NSA`, 0 read as the slot's number),
+  with `0 <= SPBANG < 180` and `SPBENG >= 0`.
+
+Not checked, because they need the mesh that `fp_prep` makes: a beam beyond
+`PMAX` deposits nothing, and a source so narrow that it reaches no radial
+point is 0/0.
+
+`SPBPANG` is not registered: no source under `fp/` reads it.
+
 ## Exceptions
 
 Every `fp_*` return code maps to a concrete subclass of `FplibError`:
@@ -246,13 +370,18 @@ Every `fp_*` return code maps to a concrete subclass of `FplibError`:
 | 0 | — | success |
 | 1 | `FplibInvalidParamError` | invalid parameter name / index / value |
 | 2 | `FplibNotInitError` | API call before `fp_init` or after `close` |
-| 3 | `FplibCalcFailedError` | `fp_run` or `fp_get_state` failed |
+| 3 | `FplibCalcFailedError` | `fp_run`, `fp_get_state` or `get_distribution` failed (for `get_distribution`: no run yet, or a set since the last run) |
 | 4 | `FplibNotImplementedError` | reserved (Phase L-2 stub return) |
 
 Spec-style aliases (`FpLibInvalidParam`, `FpLibNotInitialized`,
 `FpLibCalculationFailed`, `FpLibNotImplemented`) are also exported.
 `FplibOverflowError` is kept as a backwards-compatible alias for
 `FplibCalcFailedError`.
+
+`FplibAbiError` (an `FplibError`) is raised when the library's `fp_state_t`
+layout differs from the wrapper's (#246), and, from `get_distribution` only,
+when the library lacks the `fp_fns_info_t` layout query or has another layout
+(built before #232): rebuild it with `make -C fp libfpapi.so`.
 
 ## Migration: `fp` CLI → `fplib.Fplib`
 
@@ -262,6 +391,7 @@ Spec-style aliases (`FpLibInvalidParam`, `FpLibNotInitialized`,
 | menu option `R` (run) | `fp.run(ntmax=...)` |
 | inspect graphics output | `fp.get_state()` + plot from Python |
 | menu `Q` (quit) | exit context manager / `fp.close()` |
+| `FP_SAVE2` file read-back | `fp.get_distribution()` |
 | batch parameter sweep | Python `for` loop (see `examples/parameter_sweep.py`) |
 
 The wrapper does **not** wrap graphics, file I/O, or the interactive
@@ -286,8 +416,10 @@ menu — those live in `fp/fp` only.
   the namelist stay at their defaults.
 - **Unregistered namelist keys** — any name missing from
   `fp_param_registry.f90` returns `FplibInvalidParamError`. The
-  current registry covers ~55 settable variables across geometry,
-  mesh, species, time, heating, and model switches; less-used knobs
+  current registry covers 62 names (44 scalars and 18 arrays: 10 species
+  arrays of size `NSM` = 100, `MODELC[i]` and `MODELW[i]`, and the six
+  beam arrays of size `NBEAMM` = 20) across geometry, mesh, species,
+  time, heating, model switches and the NBI source; less-used knobs
   may require a one-line `CASE` addition.
 - **`FP_MAX_NRMAX=100`, `FP_MAX_NSAMAX=8`** are compile-time caps on
   the exported state struct. Runs needing larger meshes require
