@@ -238,5 +238,54 @@ class Fplib:
         raise_for_rc("fp_get_state", rc)
         return FpState.from_c(c)
 
+    def get_distribution(self, nsa: int = 1) -> "FpDistribution":  # noqa: F821
+        """The distribution function of kinetic species ``nsa`` (1-origin): FP's ``FNS``,
+        its grid and its normalisation, as an :class:`fplib.distribution.FpDistribution`.
+
+        There is one only after a run, and not after a set until the next run: the
+        library then refuses (:class:`FplibCalcFailedError`). A library built before
+        task-web-client #232 raises :class:`FplibAbiError` here and serves the rest.
+        """
+        import array
+        import operator
+
+        from .distribution import FpDistribution
+        from .errors import FplibCalcFailedError, FplibInvalidParamError
+
+        if self._closed:
+            raise FplibError("get_distribution on closed Fplib")
+        _ffi.attach_fns_prototypes(self._lib)
+        nsa = operator.index(nsa)
+        if not -(2**31) <= nsa <= 2**31 - 1:
+            raise FplibInvalidParamError(
+                f"get_distribution({nsa}): nsa must be a kinetic species number, 1 to NSAMAX"
+            )
+        info = _ffi.FpFnsInfoC()
+        rc = self._lib.fp_get_fns_info(nsa, ctypes.byref(info))
+        if rc == _ffi.FP_ERR_CALC_FAILED:
+            raise FplibCalcFailedError(
+                f"fp_get_fns_info({nsa}): rc={rc}: there is a distribution only after a run, "
+                "and not after a set until the next run (or the arrays FP allocated do not "
+                "hold the current counts)"
+            )
+        if rc == _ffi.FP_ERR_INVALID:
+            raise FplibInvalidParamError(f"fp_get_fns_info({nsa}): rc=1: nsa must be 1 to NSAMAX")
+        raise_for_rc(f"fp_get_fns_info({nsa})", rc)
+        if info.nsa != nsa:
+            raise FplibInvalidParamError(f"fp_get_fns_info({nsa}) answered for species {info.nsa}")
+        nth, np_, nr = info.nthmax, info.npmax, info.nrmax
+        pm = (ctypes.c_double * np_)()
+        thm = (ctypes.c_double * nth)()
+        rm = (ctypes.c_double * nr)()
+        rc = self._lib.fp_get_fns_grid(nsa, pm, np_, thm, nth, rm, nr)
+        raise_for_rc(f"fp_get_fns_grid({nsa})", rc)
+        data = array.array("d", bytes(8 * nth * np_ * nr))
+        rc = self._lib.fp_get_fns(nsa, (ctypes.c_double * len(data)).from_buffer(data), len(data))
+        raise_for_rc(f"fp_get_fns({nsa})", rc)
+        return FpDistribution(
+            data=data, shape=(nr, np_, nth), pm=list(pm), thm=list(thm), rm=list(rm),
+            info={name: getattr(info, name) for name, _ in info._fields_},
+        )
+
 
 __all__ = ["Fplib"]
