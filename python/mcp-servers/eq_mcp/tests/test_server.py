@@ -597,6 +597,17 @@ class TestIntegration(unittest.TestCase):
         self.assertIn("RR=6.200 outside RGMIN..RGMAX", messages)
         self.assertIn("MDLEQF >= 10", messages)
 
+    def test_validate_names_a_grid_that_reaches_r_0(self) -> None:
+        """A small device with the default wall RB=1.2 >= RR=0.7: the
+        analytic grid RR -/+ RB reaches R <= 0 (tw#217), reported on RB as
+        INCONSISTENT_PAIR (code 2)."""
+        srv.handle_init()
+        srv.handle_set_params({"MODELG": 2, "RR": 0.7, "RA": 0.18, "RKAP": 1.9,
+                               "RDLT": 0.4, "BB": 0.3, "RIP": 0.04})
+        diags = srv.handle_validate()
+        self.assertEqual([(d["param"], d["code"]) for d in diags], [("RB", 2)], diags)
+        self.assertIn("reaches R <= 0", diags[0]["message"])
+
     def test_validate_modelg3_iter_geometry_skips_grid_extent_check(self) -> None:
         """SCOPING REGRESSION: the box check (OUT_OF_RANGE_AFTER_DEP) is
         not made for a file format (MODELG 3, 5, 8, 9, 15, 25). The ITER01
