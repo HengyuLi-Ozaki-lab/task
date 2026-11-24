@@ -102,10 +102,10 @@ def test_an_analytic_solve_whose_axis_leaves_the_box_says_so():
 
 
 _IN_LOOP = re.compile(
-    r"^EQAXIS: in iteration (\d+) of the solve the magnetic axis search ended at "
-    r"\(R, Z\) = \((-?\d+\.\d{4}), (-?\d+\.\d{4})\), (\d\.\dE[-+]\d\d) below RGMIN = (\d+\.\d{4}): "
-    r"the axis moves from \(RR, 0\) as the solve goes on, and the box \(MDLEQF >= 10\) "
-    r"must hold its path \(ierr=103\)$")
+    r"^EQAXIS: the axis is (\d\.\dE[-+]\d\d) below RGMIN = (\d+\.\d{4}) at "
+    r"\(R, Z\) = \((-?\d+\.\d{4}), (-?\d+\.\d{4})\), in iteration (\d+) of the solve: "
+    r"it moves as the solve goes on, and the box \(MDLEQF >= 10\) must hold its path "
+    r"\(ierr=103\)$")
 
 
 def _analytic_failure(**params):
@@ -121,31 +121,32 @@ def test_an_axis_that_triangularity_moves_out_of_the_box_names_the_iteration():
     message, last = _analytic_failure(MDLEQF=10, RDLT=0.4, RGMIN=2.97)
     m = _IN_LOOP.match(last)
     assert m, last
-    assert int(m.group(1)) >= 2
-    assert m.group(5) == "2.9700"
-    assert float(m.group(4)) == pytest.approx(2.97 - float(m.group(2)), abs=1e-4)
+    assert int(m.group(5)) >= 2
+    assert m.group(2) == "2.9700"
+    assert float(m.group(1)) == pytest.approx(2.97 - float(m.group(3)), rel=0.02)
     assert len(last) <= 255 and "unprintable" not in last
     assert message.endswith(last)
+    # TR's tr_last_error keeps about 72 characters of EQ's message: the crossing is within them
+    assert last[:72].startswith("EQAXIS: the axis is ") and "below RGMIN" in last[:72]
 
 
 def test_an_axis_that_ends_inside_but_leaves_on_the_way_names_the_iteration():
-    # tw#188: at RDLT 0.2 the axis ends at 3.0219 with the default box, yet RGMIN 3.0 fails.
-    _, last = _analytic_failure(MDLEQF=10, RDLT=0.2, RGMIN=3.0)
+    # tw#188: at RDLT 0.2 the axis ends at 3.0219 with the default box, yet RGMIN 2.9995 fails.
+    # The axis path's minimum is R = 2.9991 (the R the message prints); the start, R = 3.0, is
+    # 5e-4 inside RGMIN, so iteration 1 passes and the failure is in the loop.
+    _, last = _analytic_failure(MDLEQF=10, RDLT=0.2, RGMIN=2.9995)
     m = _IN_LOOP.match(last)
-    assert m and int(m.group(1)) >= 2 and m.group(5) == "3.0000", last
+    assert m and int(m.group(5)) >= 2 and m.group(2) == "2.9995", last
 
 
-def test_an_axis_within_rounding_of_zgmax_0_says_by_how_much():
-    # tw#214: the axis ends about 1e-12 above ZGMAX = 0; F16.4 prints both as 0.0000.
-    _, last = _analytic_failure(MDLEQF=10, ZGMAX=0.0)
-    m = re.search(r"\(R, Z\) = \(\d+\.\d{4}, -?0\.0000\)(?:, (\d\.\dE[-+]\d\d) above ZGMAX)?", last)
-    assert m, last
-    if "in iteration" in last:
-        assert "above ZGMAX = 0.0000:" in last, last
-    else:
-        assert m.group(1) is not None, last
-        assert "ZGMIN..ZGMAX = [-2.0000, 0.0000] that MDLEQF >= 10 holds the axis to (ierr=103)" in last
-    assert 0.0 < float(re.search(r"(\d\.\dE[-+]\d\d) above ZGMAX", last).group(1)) < 1e-6
+def test_a_zgmax_just_below_the_axis_says_by_how_much():
+    # tw#214: the axis's Z (about 0) and the bound ZGMAX = -2e-5 print alike at four decimals
+    # (-0.0000); the clause gives the distance.
+    _, last = _analytic_failure(MDLEQF=10, ZGMAX=-2.0e-5)
+    assert "in iteration" not in last, last
+    assert ", 2.0E-05 above ZGMAX, outside the box" in last
+    assert "ZGMIN..ZGMAX = [-2.0000, -0.0000]" in last
+    assert "that MDLEQF >= 10 holds the axis to (ierr=103)" in last
 
 
 def test_a_load_after_a_solve_in_the_same_instance_uses_the_box_form():
@@ -163,6 +164,24 @@ def test_a_load_after_a_solve_in_the_same_instance_uses_the_box_form():
         last = e.last_error()
     assert "in iteration" not in last, last
     # the solve has reset RGMIN..ZGMAX to the box around its own plasma, so the numbers are not 1.5..4.5
+    assert "outside the box RGMIN..RGMAX = [" in last, last
+
+
+def test_a_load_after_a_failed_solve_in_the_same_instance_uses_the_box_form():
+    # EQLOOP's error return resets EQ_NLOOP too: a load that fails after a failed solve is not "in iteration".
+    import shutil
+    shutil.copy(_FIXTURES / "eqdata.TST-2", "eqdata.TST-2")
+    with eqlib.Eq() as e:
+        e.set_params(MODELG=2, MDLEQF=10, RDLT=0.4, RGMIN=2.97)
+        with pytest.raises(eqlib.EqlibCalculationFailedError):
+            e.run(0)
+        assert "in iteration" in e.last_error()
+        e.set_param("MODELG", 3)
+        e.set_param_str("KNAMEQ", "eqdata.TST-2")
+        with pytest.raises(eqlib.EqlibCalculationFailedError):
+            e.run(1)
+        last = e.last_error()
+    assert "in iteration" not in last, last
     assert "outside the box RGMIN..RGMAX = [" in last, last
 
 

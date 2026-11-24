@@ -36,6 +36,7 @@
       CHARACTER(LEN=16) :: KD, KBV, KN
       CHARACTER(LEN=24) :: KBE
       CHARACTER(LEN=48) :: KC
+      CHARACTER(LEN=128) :: KT
       INTEGER :: IB, IOSD
       REAL(rkind) :: DB, BV
 
@@ -94,7 +95,7 @@
 !        #214: at ZGMAX = 0 the axis ends about 1e-12 above it, which
 !        F16.4 prints as 0.0000), and inside EQLOOP the iteration
 !        (EQ_NLOOP, #188): from the second on the axis is the solve's,
-!        which moves from (RR, 0), so the window must hold its path.
+!        which moves as the solve goes on, so the window must hold its path.
          IF(MDLEQF.LT.10) THEN
             KBN(1)='RR-RB'
             KBN(2)='RR+RB'
@@ -140,23 +141,29 @@
          ENDIF
          WRITE(KV,'(F16.4)') RAXIS,ZAXIS,RMIN,RMAX,ZMIN,ZMAX
          WRITE(KN,'(I0)') EQ_NLOOP
-         IF(EQ_NLOOP.GE.2.AND.MDLEQF.GE.10) THEN
-            WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
-                 'EQAXIS: in iteration ',TRIM(KN), &
-                 ' of the solve the magnetic axis search ended at (R, Z) = (', &
-                 TRIM(ADJUSTL(KV(1))),', ',TRIM(ADJUSTL(KV(2))),')', &
-                 TRIM(KC),TRIM(KBE), &
-                 ': the axis moves from (RR, 0) as the solve goes on,'// &
-                 ' and the box (MDLEQF >= 10) must hold its path', &
-                 ' (ierr=103)'
-         ELSE IF(EQ_NLOOP.GE.2) THEN
-            WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
-                 'EQAXIS: in iteration ',TRIM(KN), &
-                 ' of the solve the magnetic axis search ended at (R, Z) = (', &
-                 TRIM(ADJUSTL(KV(1))),', ',TRIM(ADJUSTL(KV(2))),')', &
-                 TRIM(KC),TRIM(KBE), &
-                 ', outside RR -/+ RB, -/+ RKAP*RB (MDLEQF < 10)', &
-                 ' (ierr=103)'
+         IF(EQ_NLOOP.GE.2) THEN
+!           In the loop the crossing comes first: TR's tr_last_error keeps
+!           about 72 characters of this message.
+            IF(MDLEQF.GE.10) THEN
+               KT=': it moves as the solve goes on, and the box'// &
+                  ' (MDLEQF >= 10) must hold its path (ierr=103)'
+            ELSE
+               KT=', outside RR -/+ RB, -/+ RKAP*RB (MDLEQF < 10)'// &
+                  ' (ierr=103)'
+            ENDIF
+            IF(LEN_TRIM(KC).GT.2) THEN
+               WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
+                    'EQAXIS: the axis is ',TRIM(KC(3:)),TRIM(KBE), &
+                    ' at (R, Z) = (',TRIM(ADJUSTL(KV(1))),', ', &
+                    TRIM(ADJUSTL(KV(2))),'), in iteration ',TRIM(KN), &
+                    ' of the solve',TRIM(KT)
+            ELSE
+               WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
+                    'EQAXIS: the axis is at (R, Z) = (', &
+                    TRIM(ADJUSTL(KV(1))),', ',TRIM(ADJUSTL(KV(2))), &
+                    '), outside its window, in iteration ',TRIM(KN), &
+                    ' of the solve',TRIM(KT)
+            ENDIF
          ELSE IF(MDLEQF.LT.10) THEN
             WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
                  'EQAXIS: the search for the magnetic axis ended at'// &
