@@ -72,6 +72,10 @@ MODULE fp_api
 
   ! #246: layout query, callable before fp_init.
   PUBLIC :: fp_api_state_abi_version, fp_api_state_size
+  ! task-web-client #232: the distribution function, its grid and
+  ! normalisation, and the layout query of their record.
+  PUBLIC :: fp_api_fns_info_abi_version, fp_api_fns_info_size, &
+            fp_api_get_fns_info, fp_api_get_fns_grid, fp_api_get_fns
 
 CONTAINS
 
@@ -493,5 +497,152 @@ CONTAINS
     TYPE(fp_state_c) :: probe
     n = C_SIZEOF(probe)
   END FUNCTION fp_api_state_size
+
+  !-------------------------------------------------------------------
+  ! The distribution function FNS, its grid and its normalisation
+  ! (task-web-client #232).
+  !
+  ! fp_fns_info_abi_version / fp_fns_info_size: the layout query of
+  ! fp_fns_info_t, as for fp_state_t (#246): no lifecycle check and no
+  ! side effect, callable before fp_init.
+  !
+  ! fp_get_fns_info / fp_get_fns_grid / fp_get_fns answer only while
+  ! the run is prepared and no successful set has been made since (the
+  ! condition of fp_get_state's global scalars, #253): after a set the
+  ! mesh counts may already be new, and the next fp_prep re-initialises
+  ! FNS. FNS is the gathered array that fp_loop refreshes with
+  ! update_fns after its time loop (fp/fploop.f90), so it is current
+  ! after every fp_run, fp_run(0) included. Each copy checks the
+  ! allocated extents first (#245's rule: nothing is copied past an
+  ! allocation).
+  !-------------------------------------------------------------------
+  FUNCTION fp_api_fns_info_abi_version() RESULT(v) &
+       BIND(C, NAME="fp_fns_info_abi_version")
+    USE fp_state, ONLY: FP_FNS_INFO_ABI_VERSION
+    INTEGER(C_INT) :: v
+    v = FP_FNS_INFO_ABI_VERSION
+  END FUNCTION fp_api_fns_info_abi_version
+
+  FUNCTION fp_api_fns_info_size() RESULT(n) BIND(C, NAME="fp_fns_info_size")
+    USE fp_state, ONLY: fp_fns_info_c
+    INTEGER(C_SIZE_T) :: n
+    TYPE(fp_fns_info_c) :: probe
+    n = C_SIZEOF(probe)
+  END FUNCTION fp_api_fns_info_size
+
+  ! FP_OK when kinetic species NSA's distribution can be copied now,
+  ! else the code the getters return.
+  FUNCTION fns_status(nsa) RESULT(ierr)
+    USE fpcomm, ONLY: NS_NSA, FNS, PM, THM, RM, AMFP, THETA0, DELP
+    INTEGER(C_INT), INTENT(IN) :: nsa
+    INTEGER(C_INT) :: ierr
+    INTEGER :: ns
+
+    IF (.NOT. g_initialized) THEN
+       ierr = FP_ERR_NOT_INIT
+       RETURN
+    END IF
+    IF (.NOT. (g_prepared .AND. g_prep_generation == fp_param_generation())) THEN
+       ierr = FP_ERR_CALC_FAILED
+       RETURN
+    END IF
+    IF (nsa < 1 .OR. nsa > NSAMAX) THEN
+       ierr = FP_ERR_INVALID
+       RETURN
+    END IF
+    ierr = FP_ERR_CALC_FAILED
+    IF (.NOT. (ALLOCATED(FNS) .AND. ALLOCATED(PM) .AND. ALLOCATED(THM) .AND. &
+               ALLOCATED(RM))) RETURN
+    ns = NS_NSA(nsa)
+    IF (ns < 1 .OR. ns > SIZE(PM, 2)) RETURN
+    IF (SIZE(FNS, 1) < NTHMAX .OR. SIZE(FNS, 2) < NPMAX .OR. &
+        SIZE(FNS, 3) < NRMAX  .OR. SIZE(FNS, 4) < nsa) RETURN
+    IF (SIZE(PM, 1) < NPMAX .OR. SIZE(THM) < NTHMAX .OR. SIZE(RM) < NRMAX) RETURN
+    ! The per-species arrays fp_get_fns_info reads come from fp_allocate
+    ! with FNS and PM (fp/fpcomm.f90); checked too, by the same rule.
+    ! AMFP stands for AEFP, RNFP0, RTFP0, PTFP0 and VTFP0, allocated with it.
+    IF (.NOT. (ALLOCATED(AMFP) .AND. ALLOCATED(THETA0) .AND. ALLOCATED(DELP))) RETURN
+    IF (SIZE(AMFP) < nsa .OR. SIZE(THETA0) < ns .OR. SIZE(DELP) < ns) RETURN
+    ierr = FP_OK
+  END FUNCTION fns_status
+
+  FUNCTION fp_api_get_fns_info(nsa, info) RESULT(ierr) BIND(C, NAME="fp_get_fns_info")
+    USE fp_state, ONLY: fp_fns_info_c
+    USE fpcomm,   ONLY: NS_NSA, MODELA, AMFP, AEFP, RNFP0, RTFP0, PTFP0, VTFP0, &
+                        THETA0, PMAX, DELP, DELTH
+    INTEGER(C_INT), VALUE :: nsa
+    TYPE(C_PTR),    VALUE :: info
+    INTEGER(C_INT) :: ierr
+    TYPE(fp_fns_info_c), POINTER :: out
+    INTEGER :: ns
+
+    ierr = fns_status(nsa)
+    IF (ierr /= FP_OK) RETURN
+    IF (.NOT. C_ASSOCIATED(info)) THEN
+       ierr = FP_ERR_INVALID
+       RETURN
+    END IF
+    CALL C_F_POINTER(info, out)
+    ns = NS_NSA(nsa)
+    out%nsa    = nsa
+    out%ns     = ns
+    out%nthmax = NTHMAX
+    out%npmax  = NPMAX
+    out%nrmax  = NRMAX
+    out%modela = MODELA
+    out%timefp = TIMEFP
+    out%amfp   = AMFP(nsa)
+    out%aefp   = AEFP(nsa)
+    out%rnfp0  = RNFP0(nsa)
+    out%rtfp0  = RTFP0(nsa)
+    out%ptfp0  = PTFP0(nsa)
+    out%vtfp0  = VTFP0(nsa)
+    out%theta0 = THETA0(ns)
+    out%pmax   = PMAX(ns)
+    out%delp   = DELP(ns)
+    out%delth  = DELTH
+  END FUNCTION fp_api_get_fns_info
+
+  FUNCTION fp_api_get_fns_grid(nsa, pm_out, npm, thm_out, nthm, rm_out, nrm) &
+       RESULT(ierr) BIND(C, NAME="fp_get_fns_grid")
+    USE fpcomm, ONLY: NS_NSA, PM, THM, RM
+    INTEGER(C_INT), VALUE :: nsa, npm, nthm, nrm
+    TYPE(C_PTR),    VALUE :: pm_out, thm_out, rm_out
+    INTEGER(C_INT) :: ierr
+    REAL(C_DOUBLE), POINTER :: p(:), t(:), r(:)
+
+    ierr = fns_status(nsa)
+    IF (ierr /= FP_OK) RETURN
+    IF (.NOT. (C_ASSOCIATED(pm_out) .AND. C_ASSOCIATED(thm_out) .AND. &
+               C_ASSOCIATED(rm_out)) .OR. &
+        npm /= NPMAX .OR. nthm /= NTHMAX .OR. nrm /= NRMAX) THEN
+       ierr = FP_ERR_INVALID
+       RETURN
+    END IF
+    CALL C_F_POINTER(pm_out,  p, [npm])
+    CALL C_F_POINTER(thm_out, t, [nthm])
+    CALL C_F_POINTER(rm_out,  r, [nrm])
+    p = PM(1:NPMAX, NS_NSA(nsa))
+    t = THM(1:NTHMAX)
+    r = RM(1:NRMAX)
+  END FUNCTION fp_api_get_fns_grid
+
+  FUNCTION fp_api_get_fns(nsa, buf, nbuf) RESULT(ierr) BIND(C, NAME="fp_get_fns")
+    USE fpcomm, ONLY: FNS
+    INTEGER(C_INT), VALUE :: nsa, nbuf
+    TYPE(C_PTR),    VALUE :: buf
+    INTEGER(C_INT) :: ierr
+    REAL(C_DOUBLE), POINTER :: f(:, :, :)
+
+    ierr = fns_status(nsa)
+    IF (ierr /= FP_OK) RETURN
+    IF (.NOT. C_ASSOCIATED(buf) .OR. &
+        INT(nbuf, KIND=C_INT64_T) /= INT(NTHMAX, KIND=C_INT64_T) * NPMAX * NRMAX) THEN
+       ierr = FP_ERR_INVALID
+       RETURN
+    END IF
+    CALL C_F_POINTER(buf, f, [NTHMAX, NPMAX, NRMAX])
+    f = FNS(1:NTHMAX, 1:NPMAX, 1:NRMAX, nsa)
+  END FUNCTION fp_api_get_fns
 
 END MODULE fp_api

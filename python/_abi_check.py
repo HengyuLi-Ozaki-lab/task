@@ -19,6 +19,11 @@ built before #246). Each wrapper's ``_ffi.load_library`` calls it right
 after ``ctypes.CDLL``, before ``_apply_prototypes`` and before any struct
 is passed, and re-raises as its own error class so ``except <Mod>libError``
 keeps working.
+
+``layout=`` names another record's query, ``<prefix>_<layout>_abi_version`` /
+``<prefix>_<layout>_size`` (FP's distribution record, ``fns_info``,
+task-web-client #232), which a wrapper checks when it first needs that
+record rather than at load.
 """
 from __future__ import annotations
 
@@ -27,7 +32,7 @@ from typing import Any
 
 
 class AbiMismatchError(RuntimeError):
-    """The library's state-struct layout is not the one this wrapper has.
+    """The library's layout of a record (by default the state struct) is not the one this wrapper has.
 
     Attributes carry what was compared so a caller can report precisely:
     ``library_version`` / ``library_size`` are ``None`` when the library
@@ -47,7 +52,8 @@ class AbiMismatchError(RuntimeError):
 
 
 def check_state_layout(lib: Any, *, prefix: str, struct: type,
-                       expected_version: int, lib_name: str) -> None:
+                       expected_version: int, lib_name: str,
+                       layout: str = "state") -> None:
     """Raise :class:`AbiMismatchError` unless ``lib`` fills ``struct``'s layout.
 
     ``lib`` is a loaded ``ctypes.CDLL`` (or anything with the same
@@ -56,6 +62,10 @@ def check_state_layout(lib: Any, *, prefix: str, struct: type,
     subclass, ``expected_version`` the wrapper's copy of
     ``<MOD>_STATE_ABI_VERSION``, and ``lib_name`` the file name used in the
     message (``"libtrapi.so"``).
+
+    ``layout`` names the query, ``<prefix>_<layout>_abi_version`` /
+    ``<prefix>_<layout>_size``; the default is the state struct's (#246);
+    FP's distribution record uses ``"fns_info"`` (task-web-client #232).
 
     On success the two query symbols are left with their prototypes
     attached, so a caller may call them again (``lib.tr_state_size()``).
@@ -76,14 +86,16 @@ def check_state_layout(lib: Any, *, prefix: str, struct: type,
             target = f"`make -C {prefix} {lib_name}`"
         rebuild_now = f"Rebuild it: {target}."
         rebuild_or = f"rebuild the library ({target})"
+    q_version = f"{prefix}_{layout}_abi_version"
+    q_size = f"{prefix}_{layout}_size"
+    built_before = "the layout check (#246)" if layout == "state" else f"its {layout} layout query"
     try:
-        fn_version = getattr(lib, f"{prefix}_state_abi_version")
-        fn_size = getattr(lib, f"{prefix}_state_size")
+        fn_version = getattr(lib, q_version)
+        fn_size = getattr(lib, q_size)
     except AttributeError as exc:
         raise AbiMismatchError(
-            f"{lib_name} does not export {prefix}_state_abi_version / "
-            f"{prefix}_state_size: it was built before the layout check "
-            f"(#246) and may not match this wrapper's {struct.__name__} "
+            f"{lib_name} does not export {q_version} / {q_size}: it was built before "
+            f"{built_before} and may not match this wrapper's {struct.__name__} "
             f"(v{expected_version}, {wrapper_size} bytes). {rebuild_now}",
             prefix=prefix, lib_name=lib_name,
             wrapper_version=expected_version, wrapper_size=wrapper_size,
@@ -97,7 +109,7 @@ def check_state_layout(lib: Any, *, prefix: str, struct: type,
     library_size = int(fn_size())
     if library_version != expected_version or library_size != wrapper_size:
         raise AbiMismatchError(
-            f"{lib_name} state layout is v{library_version} / "
+            f"{lib_name} {layout} layout is v{library_version} / "
             f"{library_size} bytes; this wrapper's {struct.__name__} is "
             f"v{expected_version} / {wrapper_size} bytes. The library and "
             f"the wrapper come from different commits: {rebuild_or} or "

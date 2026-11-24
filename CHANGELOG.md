@@ -195,6 +195,21 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   zero until the first run, and again after any successful parameter set
   (`fp_set_param`, `fp_set_param_str`, or tot's `fp:` parameters, which the
   registry counts since #253) until the next run that is made.
+- **FP library: the distribution function and the NBI source** (task-web-client #232).
+  - `fp_get_fns_info`, `fp_get_fns_grid` and `fp_get_fns` return `FNS` of a kinetic species unscaled, its grid
+    (`PM`, `THM`, `RM`) and its normalisation (`fp_fns_info_t`, with a layout query of its own,
+    `fp_fns_info_abi_version` / `fp_fns_info_size`). They answer after a run, and not after a set until the next
+    run.
+  - `fplib.Fplib.get_distribution` returns an `FpDistribution`, with speed, energy and pitch from FP's own formulas;
+    `save_npy` writes a `.npy` with the standard library and replaces the target atomically (a symlink is replaced,
+    not written through).
+  - `fp_mcp`'s `get_distribution` tool writes it to a `.npy` file in the working directory and returns its file
+    name and absolute path.
+  - The registry takes `MODELA`, `NBEAMMAX`, `NSSPB[i]`, `SPBTOT[i]`, `SPBENG[i]`, `SPBANG[i]`, `SPBR0[i]` and
+    `SPBRW[i]`; `fp_run` refuses a `MODELA` other than 0 or 1 and an `NBEAMMAX` outside 0..20 whatever `MODEL_NBI` is,
+    and, with `MODEL_NBI = 1`, the beam inputs that would deposit nothing or give a NaN (`SPBRW > 0` for every beam
+    up to `NBEAMMAX`, whether or not it has a source).
+  - `check_state_layout` takes `layout=`.
 - **EQ library: `eq_save`, `Eq.save(path)` and the `save` tool of `eq_mcp`**
   write the equilibrium of the last `eq_run` to a TASK/EQ binary file through
   `EQSAVE`, the file that `MODELG=3` with `KNAMEQ` loads. A save whose file

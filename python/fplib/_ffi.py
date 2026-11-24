@@ -104,6 +104,36 @@ class FpStateC(ctypes.Structure):
     ]
 
 
+# fp_fns_info_t (task-web-client #232; fp/fp_api.h, fp/fp_state.f90). Its layout has a
+# version of its own, which Fplib.get_distribution checks when it first needs it, not
+# load_library: a library built before task-web-client #232 still serves everything else.
+FP_FNS_INFO_ABI_VERSION = 1
+
+
+class FpFnsInfoC(ctypes.Structure):
+    """ctypes mirror of ``fp_fns_info_t``: the grid sizes and normalisation of one species's FNS."""
+
+    _fields_ = [
+        ("nsa", ctypes.c_int),
+        ("ns", ctypes.c_int),
+        ("nthmax", ctypes.c_int),
+        ("npmax", ctypes.c_int),
+        ("nrmax", ctypes.c_int),
+        ("modela", ctypes.c_int),
+        ("timefp", ctypes.c_double),
+        ("amfp", ctypes.c_double),
+        ("aefp", ctypes.c_double),
+        ("rnfp0", ctypes.c_double),
+        ("rtfp0", ctypes.c_double),
+        ("ptfp0", ctypes.c_double),
+        ("vtfp0", ctypes.c_double),
+        ("theta0", ctypes.c_double),
+        ("pmax", ctypes.c_double),
+        ("delp", ctypes.c_double),
+        ("delth", ctypes.c_double),
+    ]
+
+
 # ---------------------------------------------------------------------
 # Library loader.
 # ---------------------------------------------------------------------
@@ -159,7 +189,7 @@ def _default_lib_path() -> Path:
 
 
 def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
-    """Attach argtypes / restype to the 5 exported C ABI symbols."""
+    """Attach argtypes / restype to the exported C ABI functions (the 6 entry points, the layout queries and the distribution functions; 13 symbols in all)."""
     lib.fp_init.restype = ctypes.c_int
     lib.fp_init.argtypes = []
 
@@ -181,9 +211,36 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     return lib
 
 
+def attach_fns_prototypes(lib) -> None:
+    """Check ``fp_fns_info_t``'s layout, then attach the three getters' prototypes.
+
+    Raises :class:`FplibAbiError` when the library lacks the query or the getters (it
+    was built before task-web-client #232) or has another layout.
+    """
+    lib_name = os.path.basename(getattr(lib, "_name", "") or "libfpapi.so")
+    try:
+        check_state_layout(lib, prefix="fp", layout="fns_info", struct=FpFnsInfoC,
+                           expected_version=FP_FNS_INFO_ABI_VERSION, lib_name=lib_name)
+        get_info, get_grid, get_fns = lib.fp_get_fns_info, lib.fp_get_fns_grid, lib.fp_get_fns
+    except AbiMismatchError as exc:
+        raise FplibAbiError(str(exc)) from exc
+    except AttributeError as exc:
+        raise FplibAbiError(
+            f"{lib_name} has the fp_fns_info_t layout query but not the getters ({exc}): "
+            "it was built from another commit than this wrapper; build it again from the same sources."
+        ) from exc
+    dptr = ctypes.POINTER(ctypes.c_double)
+    get_info.restype = ctypes.c_int
+    get_info.argtypes = [ctypes.c_int, ctypes.POINTER(FpFnsInfoC)]
+    get_grid.restype = ctypes.c_int
+    get_grid.argtypes = [ctypes.c_int, dptr, ctypes.c_int, dptr, ctypes.c_int, dptr, ctypes.c_int]
+    get_fns.restype = ctypes.c_int
+    get_fns.argtypes = [ctypes.c_int, dptr, ctypes.c_int]
+
+
 # RTLD_LAZY: resolve symbols on first use rather than at dlopen. Mirrors
 # the tr L-5 choice: libfpapi.so pulls in graphics stubs (fp_graphics_stubs.f90)
-# but the 5 exported entry points never reach any unresolved symbols.
+# but the exported C ABI functions never reach any unresolved symbols.
 # Lazy binding keeps us resilient if future versions leave stragglers.
 _RTLD_LAZY = 1
 
@@ -194,7 +251,7 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
 
     Uses ``RTLD_LAZY`` because libfpapi.so may retain unresolved symbols
     pointing into code paths the C ABI never reaches. Lazy binding defers
-    resolution to first call, so the 5 exported entry points load cleanly.
+    resolution to first call, so the exported C ABI functions load cleanly.
 
     Raises :class:`FileNotFoundError` with an actionable message when the
     library is not where we looked.
@@ -269,7 +326,10 @@ __all__ = [
     "FP_ERR_NOT_INIT",
     "FP_ERR_CALC_FAILED",
     "FP_ERR_NOT_IMPL",
+    "FP_FNS_INFO_ABI_VERSION",
+    "FpFnsInfoC",
     "FpStateC",
+    "attach_fns_prototypes",
     "HAS_NUMPY",
     "load_library",
 ]

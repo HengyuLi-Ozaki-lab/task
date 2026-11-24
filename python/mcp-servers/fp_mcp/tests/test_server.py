@@ -17,6 +17,8 @@ Run from the repo root::
 """
 from __future__ import annotations
 
+import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -444,7 +446,7 @@ class TestMainCliFlags(unittest.TestCase):
         rc = self._run_quiet(["--help"])
         self.assertEqual(rc, 0)
 
-    def test_print_tools_lists_ten(self) -> None:
+    def test_print_tools_lists_eleven(self) -> None:
         import io
         import contextlib
 
@@ -453,10 +455,11 @@ class TestMainCliFlags(unittest.TestCase):
             rc = srv.main(["--print-tools"])
         self.assertEqual(rc, 0)
         lines = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
-        self.assertEqual(len(lines), 10)
+        self.assertEqual(len(lines), 11)
         # A handful of expected entries
         for name in (
             "init", "run", "get_state", "run_and_get_state", "set_param_str",
+            "get_distribution",
         ):
             self.assertIn(name, lines)
 
@@ -473,6 +476,19 @@ class TestBuildServer(unittest.TestCase):
         self.assertIsNotNone(s)
         # FastMCP instances expose ``name`` attribute.
         self.assertEqual(getattr(s, "name", None), "task-fp")
+
+    def test_registered_tools_equal_print_tools(self) -> None:
+        import asyncio
+        import contextlib
+        import io
+        names = {t.name for t in asyncio.run(srv.build_server().list_tools())}
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(srv.main(["--print-tools"]), 0)
+        printed = {ln.strip() for ln in buf.getvalue().splitlines() if ln.strip()}
+        self.assertEqual(names, printed)
+        self.assertIn("get_distribution", names)
+        self.assertEqual(len(names), 11)
 
 
 # =====================================================================
@@ -539,6 +555,157 @@ class TestIntegration(unittest.TestCase):
                 "fp reinit cycle produced divergent state (possible "
                 f"heap-reuse leak): differing keys = {sorted(diffs)}"
             )
+
+
+class TestNbiNames(unittest.TestCase):
+    """The eight names of task-web-client #232, with their types."""
+
+    def test_the_eight_names_and_their_types(self) -> None:
+        want = {"MODELA": "int", "NBEAMMAX": "int", "NSSPB": "int[NBEAMM]",
+                "SPBTOT": "float[NBEAMM]", "SPBENG": "float[NBEAMM]", "SPBANG": "float[NBEAMM]",
+                "SPBR0": "float[NBEAMM]", "SPBRW": "float[NBEAMM]"}
+        for name, type_ in want.items():
+            self.assertEqual(srv.PARAMETER_REGISTRY[name]["type"], type_, name)
+
+    def test_spbpang_is_not_declared(self) -> None:
+        self.assertNotIn("SPBPANG", srv.PARAMETER_REGISTRY)
+
+
+REFUSED = "plain, printable file name ending in .npy"
+
+
+class TestNpyFileName(unittest.TestCase):
+    def test_the_default_name(self) -> None:
+        self.assertEqual(srv._npy_file_name(2, ""), "fp_fns_nsa2.npy")
+
+    def test_a_plain_name_is_taken(self) -> None:
+        self.assertEqual(srv._npy_file_name(1, "beam-30deg.npy"), "beam-30deg.npy")
+
+    def test_a_name_with_a_path_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, "sub/f.npy")
+
+    def test_a_name_with_a_backslash_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, "sub\\f.npy")
+
+    def test_a_drive_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, "C:f.npy")
+
+    def test_a_leading_dot_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, ".f.npy")
+
+    def test_another_suffix_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, "f.txt")
+
+    def test_the_suffix_alone_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, ".npy")
+
+    def test_an_absolute_path_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, "/tmp/f.npy")
+
+    def test_a_parent_path_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, "../f.npy")
+
+    def test_a_nul_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, "f\0.npy")
+
+    def test_a_newline_is_refused(self) -> None:
+        with self.assertRaisesRegex(srv.ToolError, REFUSED):
+            srv._npy_file_name(1, "f\n.npy")
+
+    def test_a_windows_device_name_is_refused(self) -> None:
+        for name in ("NUL.npy", "nul.npy", "Con.npy", "AUX.npy", "PRN.npy", "COM1.npy", "lpt9.npy", "NUL.x.npy"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(srv.ToolError, REFUSED):
+                    srv._npy_file_name(1, name)
+        self.assertEqual(srv._npy_file_name(1, "COM10.npy"), "COM10.npy")
+        self.assertEqual(srv._npy_file_name(1, "NULL.npy"), "NULL.npy")
+
+
+class TestGetDistributionRefusal(unittest.TestCase):
+    def tearDown(self) -> None:
+        srv.STATE.close()
+
+    def test_a_refused_name_writes_nothing_and_does_not_open_the_library(self) -> None:
+        import tempfile
+        srv.handle_finalize()
+        old = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                with self.assertRaisesRegex(srv.ToolError, REFUSED):
+                    srv.handle_get_distribution(1, "a/b.npy")
+                self.assertEqual(os.listdir(tmp), [])
+            finally:
+                os.chdir(old)
+        self.assertIsNone(srv.STATE.fp)
+
+
+@unittest.skipUnless(LIBFPAPI_SO.exists(), "libfpapi.so not built")
+class TestGetDistributionIntegration(unittest.TestCase):
+    def tearDown(self) -> None:
+        srv.STATE.close()
+
+    def test_the_file_is_fplib_s_data(self) -> None:
+        import tempfile
+        try:
+            import numpy as np
+        except ImportError:
+            self.skipTest("numpy not installed")
+        old = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                srv.handle_init()
+                srv.handle_set_params({"NPMAX": 10, "NTHMAX": 10, "DELT": 0.002})
+                srv.handle_run(2)
+                before = set(os.listdir(tmp))
+                out = srv.handle_get_distribution(1, "f.npy")
+                after = set(os.listdir(tmp))
+                path_exists = Path(out["path"]).is_file()
+                back = np.load(Path(tmp) / "f.npy")
+                want = srv.STATE.fp.get_distribution(1).to_numpy()
+            finally:
+                os.chdir(old)
+                srv.handle_finalize()
+        self.assertEqual(out["file"], "f.npy")
+        self.assertEqual(after - before, {out["file"]})
+        self.assertEqual(Path(out["path"]).resolve(), (Path(tmp).resolve() / "f.npy"))
+        self.assertTrue(path_exists)
+        self.assertEqual(out["shape"], list(want.shape))
+        self.assertTrue(np.array_equal(back, want))
+        self.assertEqual(len(out["energy_keV"]), want.shape[1])
+        self.assertEqual(out["info"]["nsa"], 1)
+        json.dumps(out)
+        self.assertEqual(len(out["rm"]), want.shape[0])
+        self.assertEqual(len(out["pm"]), want.shape[1])
+        self.assertEqual(len(out["thm"]), want.shape[2])
+
+    def test_refused_after_a_set(self) -> None:
+        import tempfile
+        old = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                srv.handle_init()
+                srv.handle_set_params({"NPMAX": 10, "NTHMAX": 10, "DELT": 0.002})
+                srv.handle_run(1)
+                srv.handle_set_param("DELT", 0.002)
+                with self.assertRaises(Exception) as ctx:
+                    srv.handle_get_distribution(1, "")
+                self.assertFalse((Path(tmp) / "fp_fns_nsa1.npy").exists())
+            finally:
+                os.chdir(old)
+                srv.handle_finalize()
+        self.assertIn("calculation failed", str(ctx.exception))
 
 
 if __name__ == "__main__":  # pragma: no cover

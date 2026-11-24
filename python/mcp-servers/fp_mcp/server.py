@@ -199,6 +199,15 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     # --- model switches (per-species int arrays) -------------------
     "MODELC": {"type": "int[NSM]", "group": "models", "description": "collision-model selector per species"},
     "MODELW": {"type": "int[NSM]", "group": "models", "description": "wave-model selector per species"},
+    # --- NBI source and bounce average (task-web-client #232) ------
+    "MODELA":   {"type": "int", "group": "models", "description": "bounce average: 0 none, 1 bounce-averaged (theta is then the pitch angle at the field minimum)"},
+    "NBEAMMAX": {"type": "int", "group": "nbi", "description": "number of beams, 0 to NBEAMM = 20 (fp_init gives it no value)"},
+    "NSSPB":    {"type": "int[NBEAMM]", "group": "nbi", "description": "namelist species NS of beam i; with MODEL_NBI = 1 a beam with a source must be on a kinetic species (NS_NSA)"},
+    "SPBTOT":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle source of beam i [1e20/s] (FP normalises it with RNFP0 [1e20 m^-3]; fp/fpinit.f90's comment says [1/s]); 0 = off; with MODEL_NBI = 1 a non-zero source beyond NBEAMMAX is refused"},
+    "SPBENG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle energy of beam i [eV]; with MODEL_NBI = 1, >= 0 for a beam with a source; a beam beyond the momentum mesh (PMAX) deposits nothing (not checked)"},
+    "SPBANG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "source pitch angle of beam i [degree]; with MODEL_NBI = 1, 0 <= x < 180 for a beam with a source"},
+    "SPBR0":    {"type": "float[NBEAMM]", "group": "nbi", "description": "source radius of beam i [r/a]"},
+    "SPBRW":    {"type": "float[NBEAMM]", "group": "nbi", "description": "source width of beam i [r/a]; with MODEL_NBI = 1, > 0 for every beam up to NBEAMMAX, sourced or not"},
     # --- string parameter (set via set_param_str under the hood) ----
     "KNAMEQ": {
         "type": "str",
@@ -593,6 +602,56 @@ def handle_run_and_get_state(
 
 
 # =====================================================================
+# The distribution function (task-web-client #232).
+# =====================================================================
+# Windows device names: a file with one of them as its stem opens the device.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"] + [f"COM{i}" for i in range(1, 10)] + [f"LPT{i}" for i in range(1, 10)]
+)
+
+
+def _npy_file_name(nsa: int, filename: str) -> str:
+    """The plain ``.npy`` file name the distribution is written to."""
+    name = filename or f"fp_fns_nsa{int(nsa)}.npy"
+    if (len(name) <= len(".npy") or not name.endswith(".npy") or name.startswith(".")
+            or not name.isprintable() or any(c in name for c in "/\\:\0")
+            or name[:-len(".npy")].split(".")[0].upper() in _WINDOWS_DEVICE_NAMES):
+        raise ToolError(  # type: ignore[call-arg]
+            f"filename {filename!r}: give a plain, printable file name ending in .npy "
+            "(no path separator, no drive, no leading dot)"
+        )
+    return name
+
+
+def handle_get_distribution(nsa: int = 1, filename: str = "") -> Dict[str, Any]:
+    """Write species ``nsa``'s FNS to ``filename`` in the working directory; return its description."""
+    name = _npy_file_name(nsa, filename)
+    try:
+        fp = STATE.ensure_open()
+        dist = fp.get_distribution(int(nsa))
+    except Exception as exc:
+        raise _wrap_fplib_error(exc) from exc
+    try:
+        dist.save_npy(Path.cwd() / name)
+    except OSError as exc:
+        raise ToolError(  # type: ignore[call-arg]
+            f"could not write {name} in the working directory {Path.cwd()}: {exc}"
+        ) from exc
+    return {
+        "file": name,
+        "path": str(Path.cwd() / name),
+        "shape": list(dist.shape),
+        "info": dict(dist.info),
+        "pm": dist.pm,
+        "thm": dist.thm,
+        "rm": dist.rm,
+        "energy_keV": dist.energy_keV(),
+        "speed_m_s": dist.speed(),
+        "pitch": dist.pitch(),
+    }
+
+
+# =====================================================================
 # FastMCP server wiring.
 #
 # Declared only when the SDK is importable; the handle_* functions
@@ -759,6 +818,23 @@ def build_server() -> Any:
         """
         return handle_run_and_get_state(params, ntmax)
 
+    @mcp.tool()
+    def get_distribution(nsa: int = 1, filename: str = "") -> Dict[str, Any]:
+        """Write kinetic species nsa's distribution function FNS to a .npy file.
+
+        The file is float64 f[ir, ip, ith], FP's values unscaled, in the
+        server's working directory (default name fp_fns_nsa<nsa>.npy;
+        filename must be a plain name ending in .npy). Returns the file
+        name, shape, the normalisation (info), the grids pm (normalised
+        momentum), thm (pitch angle, rad) and rm (r/a), and energy_keV,
+        speed_m_s and pitch (cos thm) at the grid. There is a distribution
+        after run, and not after a set until the next run. A file of the
+        same name is replaced (the default name is per species, so a later
+        call overwrites an earlier snapshot; pass filename to keep several).
+        path is the file's absolute path.
+        """
+        return handle_get_distribution(nsa, filename)
+
     return mcp
 
 
@@ -798,6 +874,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "describe_parameters",
                 "describe_state_schema",
                 "run_and_get_state",
+                "get_distribution",
             ]
         ):
             sys.stdout.write(tool + "\n")
