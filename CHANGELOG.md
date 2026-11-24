@@ -469,7 +469,7 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
 - **EQ: the axis search's message and a grid that reaches R <= 0** (task-web-client #188, #214, #217). When the magnetic
   axis leaves its window, `eq_last_error` says which bound it crossed and by how much (`7.0E-12 above ZGMAX`: at
   `ZGMAX = 0` both used to print as `0.0000`) and, from the solve's second iteration on, in which iteration, with the
-  reason (the axis moves from `(RR, 0)` as the solve goes on, so with `MDLEQF >= 10` the box must hold its path).
+  reason (it moves as the solve goes on, so with `MDLEQF >= 10` the box must hold its path).
   `validate()` reports, on `RB` as `INCONSISTENT_PAIR`, an analytic solve whose grid `RR -/+ RB` reaches R <= 0
   (`RB >= RR`: PLATO with the default wall), with a wall that fits or, when `RA >= RR`, that none does. No result
   changes (ten cases bit-identical before and after).

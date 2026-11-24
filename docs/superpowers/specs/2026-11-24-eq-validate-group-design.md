@@ -50,18 +50,25 @@ solve, the file loads), where no iteration applies.
   2.0000]" and the end "(ierr=103)"):
   `EQAXIS: the search for the magnetic axis ended at (R, Z) = (3.0332, 0.0000), 1.0E-12 above ZGMAX, outside the box
   RGMIN..RGMAX = [1.5000, 4.5000], ZGMIN..ZGMAX = [-2.0000, 0.0000] that MDLEQF >= 10 holds the axis to (ierr=103)`
-  (today's ": set the box around it" goes, to make room for the clause; no test or page quotes it).
-- **In iteration 2 on**, a shorter form with the iteration and the path, the bound's value in place of the whole box:
-  `EQAXIS: in iteration 3 of the solve the magnetic axis search ended at (R, Z) = (2.9666, 0.0000), 3.4E-03 below
-  RGMIN = 2.9700: the axis moves from (RR, 0) as the solve goes on, and the box (MDLEQF >= 10) must hold its path
-  (ierr=103)`; with `MDLEQF < 10`: `..., 3.4E-03 below RR-RB = 1.8000, outside RR -/+ RB, -/+ RKAP*RB (MDLEQF < 10)
-  (ierr=103)`, without the path sentence (that window is the grid itself).
+  (today's ": set the box around it" goes, to make room for the clause; no test of the library quotes it, task-web's
+  wiki does (`eq/MDLEQF.md`, `eq/MODELG.md`, `eq/RGMAX.md`), refreshed at the `deps.lock` bump with its line citations).
+- **In iteration 2 on**, a shorter form that leads with the crossing (what TR's `tr_last_error` keeps, below), the
+  bound's value in place of the whole box, the iteration and the path (measured):
+  `EQAXIS: the axis is 3.4E-03 below RGMIN = 2.9700 at (R, Z) = (2.9666, 0.0000), in iteration 2 of the solve: it moves
+  as the solve goes on, and the box (MDLEQF >= 10) must hold its path (ierr=103)`; with `MDLEQF < 10`: `EQAXIS: the
+  axis is <d> below RR-RB = <v> at (R, Z) = (r, z), in iteration N of the solve, outside RR -/+ RB, -/+ RKAP*RB
+  (MDLEQF < 10) (ierr=103)`, without the path sentence (that window is the grid itself); no input was found that
+  reaches this form (MDLEQF 0 with a wall inside the plasma fails in EQCALQP, Q0 < 0 with 102), so it is reviewed,
+  not tested. Without a clause (a NaN point): `EQAXIS: the axis is at (R, Z) = (r, z), outside its window, ...`. "It
+  moves", not "from (RR, 0)": a continued solve (the program's `C`) starts from the last equilibrium.
 - **Length.** `EQ_ERRMSG` is `CHARACTER(256)` and stays so (TR and the C callers read it; eqlib's buffer is 512).
-  With coordinates and bounds of 9 characters each (|x| < 1000 m) and a three-digit iteration the longest form is 244
-  characters (the in-loop one, 233 for the case above; the box form 242, 225 for `ZGMAX = 0`); a longer one falls
-  back to today's "values unprintable" message through `IOSTAT`, as now. TR's failure record keeps 222 characters of
-  EQ's message (`tr/trfailure.f90`): the `MDLEQF < 10` forms fit (at most 211), the `MDLEQF >= 10` ones can lose their
-  end there, as today's (229) does; TR is not changed here. The unit-6 line (`XX EQAXIS: AXIS OUT OF PLASMA:`
+  With coordinates and bounds of 9 characters each (|x| < 1000 m) and a three-digit iteration the longest form is 243
+  characters (the box form; the in-loop forms at most 206, the window form 212); a longer one falls back to today's
+  "values unprintable" message through `IOSTAT`, as now. TR's `tr_last_error` keeps about 72 characters of EQ's
+  message (a 128-character field, `TR_DIAG_MSG_LEN` in `tr/tr_state.f90`, after a 55-character prefix such as `nt=12
+  t= 1.2340000E+00 s: eq_calc in tr_loop (NTEQIT): `): the in-loop forms put the bound and the distance there; the
+  other forms keep today's head, which shows the point's R there as today's does. TR is not changed here (its field
+  is in a `BIND(C)` struct; a longer one is TR's change). The unit-6 line (`XX EQAXIS: AXIS OUT OF PLASMA:`
   and the message) stays.
 - `IERR = 103` and every path of the solve are unchanged.
 
@@ -81,9 +88,12 @@ solve, the file loads), where no iteration applies.
 
 ### 3. Tests (`python/eqlib/tests/`, one test per case, no `subTest`)
 
-- The `ZGMAX = 0` message: the clause names ZGMAX and a distance that is not zero; the box is printed as before.
-- `RDLT` 0.4 with `RGMIN` 2.97: the message names RGMIN, `in iteration N` with N >= 2, and the path sentence; it fits
-  in 256 characters and is not the fallback.
+- `ZGMAX = -2e-5` (it fails in iteration 1 on every build; `ZGMAX = 0` fails in iteration 2 on rounding of about 1e-12,
+  which a Linux `-O3` build may not repeat): `2.0E-05 above ZGMAX` with the box printed as before, `[-2.0000, -0.0000]`.
+- `RDLT` 0.4 with `RGMIN` 2.97, and `RDLT` 0.2 with `RGMIN` 2.9995 (the axis starts 5e-4 inside, ends at 3.0219 with
+  the default box and passes 2.9991 on the way): the in-loop form, `in iteration N` with N >= 2, the crossing within
+  the first 72 characters; it fits in 256 characters and is not the fallback.
+- `EQ_NLOOP` back to 0: a TST-2 load after a solve in the same instance, converged and failed, gets the box form.
 - A file load that fails in EQAXIS (the existing `test_load_errors.py` cases) keeps its phrases, with the clause.
 - `validate()`: PLATO with the default RB is flagged (`RB`, `INCONSISTENT_PAIR`); RB 0.216 is not; RB = RR exactly is
   flagged; RB just below RR is not; a file `MODELG` with the same numbers is not checked; the defaults return `[]`.
