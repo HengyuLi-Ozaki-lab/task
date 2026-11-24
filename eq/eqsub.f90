@@ -32,6 +32,12 @@
       INTEGER, INTENT(OUT) :: IERR
       INTEGER :: IOS
       CHARACTER(LEN=16) :: KV(6)
+      CHARACTER(LEN=8)  :: KBN(4)
+      CHARACTER(LEN=16) :: KD, KBV, KN
+      CHARACTER(LEN=24) :: KBE
+      CHARACTER(LEN=48) :: KC
+      INTEGER :: IB, IOSD
+      REAL(rkind) :: DB, BV
 
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE::  PSIRG,PSIZG,PSIRZG
       EXTERNAL PSIGD,PSIGZ0
@@ -84,25 +90,90 @@
 !        The point is the axis when NEWTN converged, and otherwise the
 !        best finite point it found (find_axis returns 102 for a point
 !        that is not finite, task-web-client #204).
-         WRITE(KV,'(F16.4)') RAXIS,ZAXIS,RMIN,RMAX,ZMIN,ZMAX
+!        The bound the point crossed and by how much (task-web-client
+!        #214: at ZGMAX = 0 the axis ends about 1e-12 above it, which
+!        F16.4 prints as 0.0000), and inside EQLOOP the iteration
+!        (EQ_NLOOP, #188): from the second on the axis is the solve's,
+!        which moves from (RR, 0), so the window must hold its path.
          IF(MDLEQF.LT.10) THEN
-            WRITE(EQ_ERRMSG,'(13A)',IOSTAT=IOS) &
+            KBN(1)='RR-RB'
+            KBN(2)='RR+RB'
+            KBN(3)='-RKAP*RB'
+            KBN(4)='RKAP*RB'
+         ELSE
+            KBN(1)='RGMIN'
+            KBN(2)='RGMAX'
+            KBN(3)='ZGMIN'
+            KBN(4)='ZGMAX'
+         ENDIF
+         IB=0
+         IF(RAXIS.LT.RMIN) THEN
+            IB=1
+            DB=RMIN-RAXIS
+            BV=RMIN
+         ELSE IF(RAXIS.GT.RMAX) THEN
+            IB=2
+            DB=RAXIS-RMAX
+            BV=RMAX
+         ELSE IF(ZAXIS.LT.ZMIN) THEN
+            IB=3
+            DB=ZMIN-ZAXIS
+            BV=ZMIN
+         ELSE IF(ZAXIS.GT.ZMAX) THEN
+            IB=4
+            DB=ZAXIS-ZMAX
+            BV=ZMAX
+         ENDIF
+         KC=' '
+         KBE=' '
+         IF(IB.GT.0) THEN
+            WRITE(KD,'(ES8.1)',IOSTAT=IOSD) DB
+            IF(IOSD.EQ.0) WRITE(KBV,'(F16.4)',IOSTAT=IOSD) BV
+            IF(IOSD.EQ.0) THEN
+               IF(MOD(IB,2).EQ.1) THEN
+                  KC=', '//TRIM(ADJUSTL(KD))//' below '//TRIM(KBN(IB))
+               ELSE
+                  KC=', '//TRIM(ADJUSTL(KD))//' above '//TRIM(KBN(IB))
+               ENDIF
+               KBE=' = '//TRIM(ADJUSTL(KBV))
+            ENDIF
+         ENDIF
+         WRITE(KV,'(F16.4)') RAXIS,ZAXIS,RMIN,RMAX,ZMIN,ZMAX
+         WRITE(KN,'(I0)') EQ_NLOOP
+         IF(EQ_NLOOP.GE.2.AND.MDLEQF.GE.10) THEN
+            WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
+                 'EQAXIS: in iteration ',TRIM(KN), &
+                 ' of the solve the magnetic axis search ended at (R, Z) = (', &
+                 TRIM(ADJUSTL(KV(1))),', ',TRIM(ADJUSTL(KV(2))),')', &
+                 TRIM(KC),TRIM(KBE), &
+                 ': the axis moves from (RR, 0) as the solve goes on,'// &
+                 ' and the box (MDLEQF >= 10) must hold its path', &
+                 ' (ierr=103)'
+         ELSE IF(EQ_NLOOP.GE.2) THEN
+            WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
+                 'EQAXIS: in iteration ',TRIM(KN), &
+                 ' of the solve the magnetic axis search ended at (R, Z) = (', &
+                 TRIM(ADJUSTL(KV(1))),', ',TRIM(ADJUSTL(KV(2))),')', &
+                 TRIM(KC),TRIM(KBE), &
+                 ', outside RR -/+ RB, -/+ RKAP*RB (MDLEQF < 10)', &
+                 ' (ierr=103)'
+         ELSE IF(MDLEQF.LT.10) THEN
+            WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
                  'EQAXIS: the search for the magnetic axis ended at'// &
                  ' (R, Z) = (',TRIM(ADJUSTL(KV(1))),', ', &
-                 TRIM(ADJUSTL(KV(2))),'), outside RR -/+ RB = [', &
+                 TRIM(ADJUSTL(KV(2))),')',TRIM(KC),', outside RR -/+ RB = [', &
                  TRIM(ADJUSTL(KV(3))),', ',TRIM(ADJUSTL(KV(4))), &
                  '], -/+ RKAP*RB = [',TRIM(ADJUSTL(KV(5))),', ', &
                  TRIM(ADJUSTL(KV(6))),'] (MDLEQF < 10) (ierr=103)'
          ELSE
-            WRITE(EQ_ERRMSG,'(13A)',IOSTAT=IOS) &
+            WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
                  'EQAXIS: the search for the magnetic axis ended at'// &
                  ' (R, Z) = (',TRIM(ADJUSTL(KV(1))),', ', &
-                 TRIM(ADJUSTL(KV(2))),'), outside the box'// &
+                 TRIM(ADJUSTL(KV(2))),')',TRIM(KC),', outside the box'// &
                  ' RGMIN..RGMAX = [',TRIM(ADJUSTL(KV(3))),', ', &
                  TRIM(ADJUSTL(KV(4))),'], ZGMIN..ZGMAX = [', &
                  TRIM(ADJUSTL(KV(5))),', ',TRIM(ADJUSTL(KV(6))), &
-                 '] that MDLEQF >= 10 holds the axis to: set the box'// &
-                 ' around it (ierr=103)'
+                 '] that MDLEQF >= 10 holds the axis to (ierr=103)'
          ENDIF
          IF(IOS.NE.0) EQ_ERRMSG= &
               'EQAXIS: the search for the magnetic axis ended outside'// &
