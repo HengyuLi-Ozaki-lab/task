@@ -718,13 +718,13 @@ CONTAINS
           END IF
        END IF
        IF (ios /= 0) msgbuf = &
-            "RR -/+ RB reaches R <= 0 (RB >= RR): set RB below RR (values unprintable)"
+            "RR -/+ RB reaches R <= 0 (RB >= RR; values unprintable)"
        CALL push_diag("RB", EQ_DIAG_INCONSISTENT_PAIR, msgbuf)
     END IF
 
     ! ---- OUT_OF_RANGE_AFTER_DEP: the box RGMIN/RGMAX/ZGMIN/ZGMAX,
     !      where the solver reads it: an analytic solve with MDLEQF >= 10.
-    !      It is read in one place, EQAXIS (eq/eqsub.f90:58-121, from
+    !      It is read in one place, EQAXIS (eq/eqsub.f90:65-199, from
     !      EQSETP and EQCALV; otherwise its window is RR +/- RB,
     !      +/- RKAP*RB), which asks two things of it: the magnetic axis
     !      must lie inside it (or the run fails, ierr=103), and RGMAX
@@ -757,7 +757,8 @@ CONTAINS
     !      the box as it moves (RDLT=0.4 with RGMIN=RR fails, ierr=103),
     !      and a Z bound inside the axis's rounding (ZGMIN=-1e-14 fails).
     !      EQAXIS's message says which bound the axis crossed, by how much,
-    !      and in which iteration of the solve (task-web-client #188, #214).
+    !      and, from the solve's second iteration on, in which iteration
+    !      (task-web-client #188, #214).
     !      After the solve EQCALQP overwrites the four with the traced
     !      plasma extent for any MDLEQF (eqcalq.f90:630-640; EQCALQV
     !      again for MDLEQF < 10, 1026-1037), so for MDLEQF < 10 they are

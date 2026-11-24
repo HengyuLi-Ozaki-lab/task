@@ -742,7 +742,7 @@ class TestEqValidateGridReachesRZero(unittest.TestCase):
             eq.set_params(MODELG=2.0, RB=1.0e300)
             msgs = self._grid_msgs(eq.validate())
         self.assertEqual(msgs, [
-            "RR -/+ RB reaches R <= 0 (RB >= RR): set RB below RR (values unprintable)"])
+            "RR -/+ RB reaches R <= 0 (RB >= RR; values unprintable)"])
 
     def test_a_wall_of_1e43_does_not_print_stars(self) -> None:
         with Eq() as eq:

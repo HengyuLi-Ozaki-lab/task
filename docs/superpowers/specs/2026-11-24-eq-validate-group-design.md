@@ -7,7 +7,7 @@ Status: design approved by the author on 2026-11-24. One product-only pull reque
 
 | Issue | Part done here | Left out |
 |---|---|---|
-| tw#188: with `MDLEQF >= 10` an axis that triangularity moves out of the box fails the run (`ierr=103`); `validate()` checks only where the axis starts | the failure's message says in which iteration of the solve the axis left the box, that it moves from `(RR, 0)` as the solve goes on, and that the box must hold its whole path | a `validate()` margin for the path (the author's decision of 2026-11-24: `validate()` sees only the start, has no warning level, and an empirical margin could refuse inputs that run) |
+| tw#188: with `MDLEQF >= 10` an axis that triangularity moves out of the box fails the run (`ierr=103`); `validate()` checks only where the axis starts | the failure's message says in which iteration of the solve the axis left the box, that it moves as the solve goes on, and that the box must hold its whole path | a `validate()` margin for the path (the author's decision of 2026-11-24: `validate()` sees only the start, has no warning level, and an empirical margin could refuse inputs that run) |
 | tw#214: EQAXIS's message for a NaN axis, and for an axis within rounding of an edge | part 2: the message names the bound the axis crossed and by how much, so `ZGMAX = 0` no longer reads `0.0000` against `0.0000` | part 1 (NaN) is done: `find_axis` returns 102 for a point that is not finite (tw#204, fork #28) |
 | tw#217: the default wall `RB = 1.2` m puts R <= 0 inside a small device's grid and nothing says so | part 1: `validate()` flags an analytic solve whose grid `RR -/+ RB` reaches R <= 0 | part 2, a default `RB` that follows `RA`: a change of a default, so a question for the lead first (R8); added to the list of questions |
 
@@ -41,15 +41,16 @@ solve, the file loads), where no iteration applies.
   to `NLOOP` at the top of each iteration and back to 0 on every way out (convergence, `IERR` from EQRHSV, `NLPMAX`
   exceeded). EQAXIS only reads it.
 - **The bound crossed.** EQAXIS names the first window test that fails, in the order R low, R high, Z low, Z high, and
-  the distance past it in `ES` form (two digits): `3.4E-03 below RGMIN`, `1.0E-12 above ZGMAX` (with `MDLEQF < 10`:
+  the distance past it in `ES` form (two digits): `3.4E-03 below RGMIN`, `2.0E-05 above ZGMAX` (with `MDLEQF < 10`:
   `RR-RB`, `RR+RB`, `-RKAP*RB`, `RKAP*RB`). If no test can be named (a value the comparisons do not order), the
   clause is left out.
 - **Outside the loop and in iteration 1** (`EQ_NLOOP <= 1`): today's message with the clause after the point, so the
   file loads' and today's tests' phrases stay (`python/eqlib/tests/test_load_errors.py:71-98` matches "the search for
   the magnetic axis ended at (R, Z) = (", "outside the box RGMIN..RGMAX = [1.5000, 4.5000], ZGMIN..ZGMAX = [-2.0000,
   2.0000]" and the end "(ierr=103)"):
-  `EQAXIS: the search for the magnetic axis ended at (R, Z) = (3.0332, 0.0000), 1.0E-12 above ZGMAX, outside the box
-  RGMIN..RGMAX = [1.5000, 4.5000], ZGMIN..ZGMAX = [-2.0000, 0.0000] that MDLEQF >= 10 holds the axis to (ierr=103)`
+  `EQAXIS: the search for the magnetic axis ended at (R, Z) = (3.0000, -0.0000), 2.0E-05 above ZGMAX, outside the box
+  RGMIN..RGMAX = [1.5000, 4.5000], ZGMIN..ZGMAX = [-2.0000, -0.0000] that MDLEQF >= 10 holds the axis to (ierr=103)`
+  (ZGMAX = -2e-5, measured; ZGMAX = 0 fails in iteration 2, about 1e-11 above it, and gets the in-loop form)
   (today's ": set the box around it" goes, to make room for the clause; no test of the library quotes it, task-web's
   wiki does (`eq/MDLEQF.md`, `eq/MODELG.md`, `eq/RGMAX.md`), refreshed at the `deps.lock` bump with its line citations).
 - **In iteration 2 on**, a shorter form that leads with the crossing (what TR's `tr_last_error` keeps, below), the
@@ -77,7 +78,11 @@ solve, the file loads), where no iteration applies.
 - For an analytic solve (`analytic`, as the other checks define it), `RR - RB <= 0`: one diagnostic,
   `INCONSISTENT_PAIR` on `RB`, after the `RB < RA` check:
   `RR -/+ RB = [-0.500, 1.900] reaches R <= 0 (RB=1.200 >= RR=0.700): set RB below RR (e.g. RB = 1.2*RA)`
-  (115 characters of the 127; values with their leading zero; an `IOSTAT` fallback without values, as the others).
+  (101 characters of the 127; values with their leading zero, formatted before the message is written). The hint
+  fits the case: with `1.2*RA >= RR` it is `set RB below RR, at least RA=<RA>`; with `RA >= RR` no wall fits, and the
+  ending is `, and no wall fits: RA=<RA> >= RR (raise RR or lower RA)` (at most 122 characters). A value that cannot
+  be printed, or a message over 127 characters, gives the static `RR -/+ RB reaches R <= 0 (RB >= RR; values
+  unprintable)`, which gives no advice (in the `RA >= RR` case "set RB below RR" would be wrong).
 - Why the analytic solve and every `MDLEQF`: EQTORZ puts the psi grid on `RR -/+ RB` for every analytic solve
   (`eq/eqcalc.f90:899-912`; the box RGMIN..ZGMAX is not that grid), and the file loads bring their own grid.
 - It changes no run: `eq_run` does not read `validate()`. It reaches the callers that ask before a run: eqlib's
