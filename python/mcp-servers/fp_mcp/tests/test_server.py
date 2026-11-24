@@ -621,6 +621,14 @@ class TestNpyFileName(unittest.TestCase):
         with self.assertRaisesRegex(srv.ToolError, REFUSED):
             srv._npy_file_name(1, "f\n.npy")
 
+    def test_a_windows_device_name_is_refused(self) -> None:
+        for name in ("NUL.npy", "nul.npy", "Con.npy", "AUX.npy", "PRN.npy", "COM1.npy", "lpt9.npy", "NUL.x.npy"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(srv.ToolError, REFUSED):
+                    srv._npy_file_name(1, name)
+        self.assertEqual(srv._npy_file_name(1, "COM10.npy"), "COM10.npy")
+        self.assertEqual(srv._npy_file_name(1, "NULL.npy"), "NULL.npy")
+
 
 class TestGetDistributionRefusal(unittest.TestCase):
     def tearDown(self) -> None:

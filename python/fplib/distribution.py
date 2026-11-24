@@ -20,6 +20,7 @@ import math
 import os
 import struct
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
@@ -89,7 +90,7 @@ class FpDistribution:
     def save_npy(self, path: Union[str, Path]) -> None:
         """Write a ``.npy`` file (format 1.0, little-endian float64, C order) with the standard library.
 
-        The bytes go to a temporary file beside ``path`` (its name starts with a dot) and are moved
+        The bytes go to a temporary file beside ``path`` (made with ``tempfile.mkstemp``; its name starts with a dot) and are moved
         into place with ``os.replace``: an existing file or symlink of that name is replaced, not
         written through, and a failed write leaves the old file in place.
         """
@@ -102,17 +103,25 @@ class FpDistribution:
         values = array.array("d", self.data)
         if sys.byteorder != "little":
             values.byteswap()
-        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        # mkstemp: O_EXCL, an unpredictable name, no symlink followed.
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        tmp = Path(tmp_name)
         try:
-            with open(tmp, "wb") as fh:
+            with os.fdopen(fd, "wb") as fh:
                 fh.write(b"\x93NUMPY\x01\x00")
                 fh.write(struct.pack("<H", len(header_bytes)))
                 fh.write(header_bytes)
                 fh.write(values.tobytes())
+            # mkstemp makes the file 0600; give it the mode a plain open() would (umask).
+            umask = os.umask(0)
+            os.umask(umask)
+            os.chmod(tmp, 0o666 & ~umask)
             os.replace(tmp, path)
         except BaseException:
-            if tmp.exists() or tmp.is_symlink():
+            try:
                 tmp.unlink()
+            except FileNotFoundError:
+                pass
             raise
 
 

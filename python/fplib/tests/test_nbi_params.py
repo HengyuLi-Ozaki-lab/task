@@ -47,6 +47,7 @@ D_RUN = {
     "PMAX[2]": 10.0, "NPMAX": 20, "NTHMAX": 10, "DELT": DELT,
 }
 BEAM = {
+    # SPBTOT is in 1e20 particles/s; 1e19 is a source of 1e39 /s, large for a clear signal (f is linear).
     "MODEL_NBI": 1, "NBEAMMAX": 1, "NSSPB[1]": 2, "SPBTOT[1]": 1.0e19,
     "SPBENG[1]": 8.0e4, "SPBANG[1]": 30.0, "SPBR0[1]": 0.0, "SPBRW[1]": 0.5,
 }
@@ -98,6 +99,11 @@ class TestTheNamesAreSet(unittest.TestCase):
                                 ("SPBTOT[1]", 1.0e19), ("SPBENG[1]", 8.0e4), ("SPBANG[1]", 30.0),
                                 ("SPBR0[1]", 0.3), ("SPBRW[1]", 0.4)]:
                 fp.set_param(name, float(value))
+            # NBEAMMAX survives finalize/init (fp_init gives it no value): leave
+            # the process as it found it, for the tests that follow in it. MODELA
+            # goes back to fp_init's 0 too.
+            fp.set_param("NBEAMMAX", 0.0)
+            fp.set_param("MODELA", 0.0)
 
     def test_an_index_beyond_nbeamm_is_refused(self):
         with Fplib() as fp:

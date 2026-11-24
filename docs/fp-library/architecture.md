@@ -66,7 +66,7 @@ diagram and per-phase status.
 |---|---|---|
 | 0. Regression baseline | `test_run/baselines/fp_{iter01,jt60,dt1}/` | Phase 0 ground truth (tol `1e-10`) |
 | 1. Fortran backend | `fp/fp_api.f90`, `fp_param_registry.f90`, `fpprep`, `fploop`, ... | Numerics, shared with `fp` binary |
-| 2. C ABI | `fp/fp_api.h` + BIND(C) exports in `fp_api.f90` | 5 functions + `fp_set_param_str` + 2 layout queries (#246) + 5 distribution functions (#232), stable contract |
+| 2. C ABI | `fp/fp_api.h` + BIND(C) exports in `fp_api.f90` | 5 functions + `fp_set_param_str` + 2 layout queries (#246) + 5 distribution functions (task-web-client #232), stable contract |
 | 3. Shared library | `fp/libfpapi.so` | `make -C fp libs_pic && make -C fp libfpapi.so` |
 | 4. Python FFI | `python/fplib/_ffi.py` | `ctypes` layout mirror of `fp_state_t` |
 | 5. High-level wrapper | `python/fplib/fplib.py`, `state.py`, `errors.py` | Context manager + dataclass |

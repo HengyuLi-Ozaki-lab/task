@@ -202,8 +202,8 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELA":   {"type": "int", "group": "models", "description": "bounce average: 0 none, 1 bounce-averaged (theta is then the pitch angle at the field minimum)"},
     "NBEAMMAX": {"type": "int", "group": "nbi", "description": "number of beams, 0 to NBEAMM = 20 (fp_init gives it no value)"},
     "NSSPB":    {"type": "int[NBEAMM]", "group": "nbi", "description": "namelist species NS of beam i; with MODEL_NBI = 1 a beam with a source must be on a kinetic species (NS_NSA)"},
-    "SPBTOT":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle source of beam i [1/s]; 0 = off; with MODEL_NBI = 1 a non-zero source beyond NBEAMMAX is refused"},
-    "SPBENG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle energy of beam i [eV], >= 0; a beam beyond the momentum mesh (PMAX) deposits nothing (not checked)"},
+    "SPBTOT":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle source of beam i [1e20/s] (FP normalises it with RNFP0 [1e20 m^-3]; fp/fpinit.f90's comment says [1/s]); 0 = off; with MODEL_NBI = 1 a non-zero source beyond NBEAMMAX is refused"},
+    "SPBENG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle energy of beam i [eV]; with MODEL_NBI = 1, >= 0 for a beam with a source; a beam beyond the momentum mesh (PMAX) deposits nothing (not checked)"},
     "SPBANG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "source pitch angle of beam i [degree]; with MODEL_NBI = 1, 0 <= x < 180 for a beam with a source"},
     "SPBR0":    {"type": "float[NBEAMM]", "group": "nbi", "description": "source radius of beam i [r/a]"},
     "SPBRW":    {"type": "float[NBEAMM]", "group": "nbi", "description": "source width of beam i [r/a]; with MODEL_NBI = 1, > 0 for every beam up to NBEAMMAX, sourced or not"},
@@ -588,11 +588,18 @@ def handle_run_and_get_state(
 # =====================================================================
 # The distribution function (task-web-client #232).
 # =====================================================================
+# Windows device names: a file with one of them as its stem opens the device.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"] + [f"COM{i}" for i in range(1, 10)] + [f"LPT{i}" for i in range(1, 10)]
+)
+
+
 def _npy_file_name(nsa: int, filename: str) -> str:
     """The plain ``.npy`` file name the distribution is written to."""
     name = filename or f"fp_fns_nsa{int(nsa)}.npy"
     if (len(name) <= len(".npy") or not name.endswith(".npy") or name.startswith(".")
-            or not name.isprintable() or any(c in name for c in "/\\:\0")):
+            or not name.isprintable() or any(c in name for c in "/\\:\0")
+            or name[:-len(".npy")].split(".")[0].upper() in _WINDOWS_DEVICE_NAMES):
         raise ToolError(  # type: ignore[call-arg]
             f"filename {filename!r}: give a plain, printable file name ending in .npy "
             "(no path separator, no drive, no leading dot)"

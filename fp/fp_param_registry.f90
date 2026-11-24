@@ -28,8 +28,8 @@
 !                              SPBENG[i], SPBANG[i], SPBR0[i], SPBRW[i];
 !                              task-web-client #232)
 !
-! Approximately 40 unique names covering ~55 settable variables once
-! array subscripts are counted. Additional namelist vars may be added
+! 62 names (the CASEs below) cover more settable variables once array
+! subscripts are counted. Additional namelist vars may be added
 ! in a later PR by extending the SELECT CASE list; the parser handles
 ! any "NAME" or "NAME[idx]" input unchanged.
 !
@@ -193,6 +193,8 @@ CONTAINS
     ! --- NBI source and bounce average (task-web-client #232) -----
     ! Units and defaults: fp/fpinit.f90 (NBEAMMAX has none). SPBPANG
     ! is not registered: no source under fp/ reads it.
+    ! SPBTOT is in 1e20 particles/s (the source is normalised with RNFP0
+    ! [1e20 m^-3]; fp/fpinit.f90's comment says [1/s]).
     CASE ("MODELA");   MODELA   = NINT(value)
     CASE ("NBEAMMAX"); NBEAMMAX = NINT(value)
     CASE ("NSSPB")
