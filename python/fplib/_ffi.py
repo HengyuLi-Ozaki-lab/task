@@ -106,7 +106,7 @@ class FpStateC(ctypes.Structure):
 
 # fp_fns_info_t (task-web-client #232; fp/fp_api.h, fp/fp_state.f90). Its layout has a
 # version of its own, which Fplib.get_distribution checks when it first needs it, not
-# load_library: a library built before #232 still serves everything else.
+# load_library: a library built before task-web-client #232 still serves everything else.
 FP_FNS_INFO_ABI_VERSION = 1
 
 
@@ -189,7 +189,7 @@ def _default_lib_path() -> Path:
 
 
 def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
-    """Attach argtypes / restype to the 5 exported C ABI symbols."""
+    """Attach argtypes / restype to the exported C ABI functions (the 6 entry points, the layout queries and the distribution functions; 13 symbols in all)."""
     lib.fp_init.restype = ctypes.c_int
     lib.fp_init.argtypes = []
 
@@ -240,7 +240,7 @@ def attach_fns_prototypes(lib) -> None:
 
 # RTLD_LAZY: resolve symbols on first use rather than at dlopen. Mirrors
 # the tr L-5 choice: libfpapi.so pulls in graphics stubs (fp_graphics_stubs.f90)
-# but the 5 exported entry points never reach any unresolved symbols.
+# but the exported C ABI functions never reach any unresolved symbols.
 # Lazy binding keeps us resilient if future versions leave stragglers.
 _RTLD_LAZY = 1
 
@@ -251,7 +251,7 @@ def load_library(path: Optional[str] = None) -> ctypes.CDLL:
 
     Uses ``RTLD_LAZY`` because libfpapi.so may retain unresolved symbols
     pointing into code paths the C ABI never reaches. Lazy binding defers
-    resolution to first call, so the 5 exported entry points load cleanly.
+    resolution to first call, so the exported C ABI functions load cleanly.
 
     Raises :class:`FileNotFoundError` with an actionable message when the
     library is not where we looked.

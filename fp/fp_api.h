@@ -133,8 +133,10 @@ size_t fp_state_size(void);
  * made since; otherwise, as before the first fp_run, FP_ERR_CALC_FAILED.
  * FP_ERR_NOT_INIT before fp_init. FP_ERR_INVALID for nsa outside
  * 1..NSAMAX, a NULL pointer, or a length other than the mesh's.
- * The checks are made in this order: FP_ERR_NOT_INIT, then FP_ERR_CALC_FAILED,
- * then FP_ERR_INVALID, so a NULL pointer before the first run returns
+ * The checks are made in this order: initialised (FP_ERR_NOT_INIT);
+ * prepared with no successful set since (FP_ERR_CALC_FAILED); nsa in range
+ * (FP_ERR_INVALID); allocated extents (FP_ERR_CALC_FAILED); pointers and
+ * lengths (FP_ERR_INVALID). So a NULL pointer before the first run returns
  * FP_ERR_CALC_FAILED.
  *
  * fp_get_fns copies FNS(1:nthmax, 1:npmax, 1:nrmax, nsa) in Fortran

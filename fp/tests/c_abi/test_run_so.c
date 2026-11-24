@@ -3,7 +3,7 @@
  *
  * dlopen libfpapi.so, dlsym the original five C ABI entry points
  * (fp_init, fp_run, fp_set_param, fp_get_state, fp_finalize) and the
- * #232 functions (fp_set_param_str, fp_fns_info_abi_version,
+ * task-web-client #232 functions (fp_set_param_str, fp_fns_info_abi_version,
  * fp_fns_info_size, fp_get_fns_info, fp_get_fns_grid, fp_get_fns), and exercise the
  * full init -> set_param -> run -> get_state -> finalize cycle. This
  * proves the shared object is loadable, has the expected external
@@ -22,8 +22,8 @@
  *   92 = fp_state_abi_version / fp_state_size missing (library predates #246)
  *   93 = layout version or size differs from fp_api.h (#246)
  *   20..49 = a check of the distribution function failed (task-web-client #232)
- *   50..65 = a further check of the distribution function (#232)
- *   94 = fp_set_param_str or one of the five #232 functions is missing
+ *   50..65 = a further check of the distribution function (task-web-client #232)
+ *   94 = fp_set_param_str or one of the five task-web-client #232 functions is missing
  *   95 = fp_fns_info_t's layout version or size differs from fp_api.h
  */
 #include <stdio.h>
@@ -102,7 +102,7 @@ int main(void) {
         return 93;
     }
 
-    /* #232: the distribution function's five functions, and its record's
+    /* task-web-client #232: the distribution function's five functions, and its record's
      * layout query, which must agree with this header. */
     fp_set_param_str_fn        f_set_str   = (fp_set_param_str_fn)        dlsym(h, "fp_set_param_str");
     fp_fns_info_abi_version_fn f_fns_abi   = (fp_fns_info_abi_version_fn) dlsym(h, "fp_fns_info_abi_version");
@@ -111,7 +111,7 @@ int main(void) {
     fp_get_fns_grid_fn         f_fns_grid  = (fp_get_fns_grid_fn)         dlsym(h, "fp_get_fns_grid");
     fp_get_fns_fn              f_fns       = (fp_get_fns_fn)              dlsym(h, "fp_get_fns");
     if (!f_set_str || !f_fns_abi || !f_fns_size || !f_fns_info || !f_fns_grid || !f_fns) {
-        fprintf(stderr, "dlsym missing fp_set_param_str or one of the #232 functions\n");
+        fprintf(stderr, "dlsym missing fp_set_param_str or one of the task-web-client #232 functions\n");
         dlclose(h);
         return 94;
     }
@@ -141,7 +141,7 @@ int main(void) {
     if (rc != FP_OK) { fprintf(stderr, "fp_init -> %d\n", rc); dlclose(h); return 1; }
 
     {
-        /* #232: no distribution before the first run. */
+        /* task-web-client #232: no distribution before the first run. */
         fp_fns_info_t info;
         double buf[4];
         if (f_fns_info(1, &info) != FP_ERR_CALC_FAILED) { dlclose(h); return 23; }
@@ -170,7 +170,7 @@ int main(void) {
         return 11;
     }
 
-    /* ---- the distribution function after a run (#232) ---- */
+    /* ---- the distribution function after a run (task-web-client #232) ---- */
     {
         fp_fns_info_t info;
         double *pm, *thm, *rm, *f;

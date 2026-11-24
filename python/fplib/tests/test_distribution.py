@@ -235,5 +235,16 @@ class TestPostInit(unittest.TestCase):
         self.assertIsInstance(self._make(shape=[2, 3, 4]).shape, tuple)
 
 
+class TestSaveNpyMode(unittest.TestCase):
+    def test_the_file_gets_the_mode_a_plain_open_would(self):
+        # save_npy writes through tempfile.mkstemp, which makes 0600; the file must not keep it.
+        umask = os.umask(0)
+        os.umask(umask)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.npy"
+            _dist().save_npy(path)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o666 & ~umask)
+
+
 if __name__ == "__main__":
     unittest.main()

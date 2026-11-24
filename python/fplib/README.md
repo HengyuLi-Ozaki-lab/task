@@ -174,7 +174,7 @@ below. It needs a run, and it refuses after a `set_param` until the next
 `run()`. `nsa` goes through `operator.index`; one outside the C `int`
 range, or a record that belongs to another species, raises
 `FplibInvalidParamError`; return code 3 is explained in the message. A
-`libfpapi.so` built before #232 raises `FplibAbiError` here only; the rest
+`libfpapi.so` built before task-web-client #232 raises `FplibAbiError` here only; the rest
 of the wrapper keeps working with it.
 
 ### `Fplib.close() -> None`
@@ -200,7 +200,7 @@ is required — the wrapper forwards names verbatim.
 | Model switches (scalar int) | `MODELG`, `MODELE`, `MODELR`, `MODELS`, `MODELD`, `MODEL_NBI`, `MODEL_WAVE`, `MODEL_DISRUPT`, `MODEL_BS`, `MODEL_LOSS`, `MODEL_SYNCH`, `MODEL_FOW` | |
 | Model switches (arrays) | `MODELC[i]`, `MODELW[i]` | per-species |
 | Bounce average | `MODELA` | 0 or 1 (default 0); see below |
-| NBI source (#232) | `NBEAMMAX`, `NSSPB[i]`, `SPBTOT[i]`, `SPBENG[i]`, `SPBANG[i]`, `SPBR0[i]`, `SPBRW[i]` | `i` = 1..20; units and defaults in the NBI section below; `NBEAMMAX` has no default |
+| NBI source (task-web-client #232) | `NBEAMMAX`, `NSSPB[i]`, `SPBTOT[i]`, `SPBENG[i]`, `SPBANG[i]`, `SPBR0[i]`, `SPBRW[i]` | `i` = 1..20; units and defaults in the NBI section below; `NBEAMMAX` has no default |
 
 Unknown names return rc=1 (raised as `FplibInvalidParamError`).
 
@@ -265,7 +265,7 @@ with Fplib() as fp:
     fp.set_params(NSMAX=2, NSAMAX=1, NSBMAX=2, NS_NSA=[2],
                   PTPR=[3.0, 3.0], PTPP=[3.0, 3.0], PMAX={2: 10.0},
                   MODELA=1, MODEL_NBI=1, NBEAMMAX=2, NSSPB=[2, 2],
-                  SPBTOT=[2.0e19, 1.6e19], SPBENG=[8.0e4, 8.0e4],
+                  SPBTOT=[0.2, 0.16], SPBENG=[8.0e4, 8.0e4],
                   SPBANG=[30.0, 150.0], SPBR0=[0.3, 0.3], SPBRW=[0.4, 0.4])
     fp.run(ntmax=150)
     d = fp.get_distribution(nsa=1)
@@ -336,7 +336,7 @@ no call reaches such a multiple.
 | `MODELA` | 0 = no bounce average, 1 = bounce average | 0 |
 | `NBEAMMAX` | number of beams, 0..`NBEAMM` = 20 | none |
 | `NSSPB[i]` | namelist species `NS` of beam `i` | 2 |
-| `SPBTOT[i]` | particle source [1/s] | 0 |
+| `SPBTOT[i]` | particle source [1e20 particles/s] (FP normalises it with `RNFP0` [1e20 m^-3]; `fp/fpinit.f90`'s comment says [1/s]) | 0 |
 | `SPBENG[i]` | particle energy [eV] | 1e6 |
 | `SPBANG[i]` | pitch angle of the source [degree] | 20 |
 | `SPBR0[i]` | source radius [r/a] | 0 |
@@ -344,7 +344,8 @@ no call reaches such a multiple.
 
 When a value is set, the index is checked (1 to `NBEAMM` = 20) and, as for every name, a malformed subscript, a value that is not finite, or for an integer name a value beyond the default integer is refused; the value rules below are checked before the run. `NBEAMMAX` has no default: `fp_init`
 gives it no value and only the namelist sets it, so set it whenever a beam is
-used. Before `fp_prep`, `run()` checks the rules below; each violation writes
+used. `NBEAMMAX` is not reset by `finalize`/`init`: a value set in one scenario
+stays in a long-lived process, so set it explicitly in each scenario. Before `fp_prep`, `run()` checks the rules below; each violation writes
 one `XX fp_run:` line and `run()` raises `FplibInvalidParamError`.
 
 - `MODELA` is 0 or 1; `NBEAMMAX` is in 0..20. Both are checked whatever
@@ -381,7 +382,7 @@ Spec-style aliases (`FpLibInvalidParam`, `FpLibNotInitialized`,
 `FplibAbiError` (an `FplibError`) is raised when the library's `fp_state_t`
 layout differs from the wrapper's (#246), and, from `get_distribution` only,
 when the library lacks the `fp_fns_info_t` layout query or has another layout
-(built before #232): rebuild it with `make -C fp libfpapi.so`.
+(built before task-web-client #232): rebuild it with `make -C fp libfpapi.so`.
 
 ## Migration: `fp` CLI → `fplib.Fplib`
 

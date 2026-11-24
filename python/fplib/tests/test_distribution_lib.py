@@ -37,6 +37,8 @@ D_RUN = {
     "PTPR[1]": 3.0, "PTPP[1]": 3.0, "PTPR[2]": 3.0, "PTPP[2]": 3.0,
     "PMAX[2]": 10.0, "NPMAX": 20, "NTHMAX": 10, "DELT": DELT,
 }
+# SPBTOT is in 1e20 particles/s; 1e20 (a source of 1e40 /s) is far beyond a real beam: the collision
+# operator is linear in f, so the size only makes the signal clear.
 BEAM = {
     "MODEL_NBI": 1, "NBEAMMAX": 1, "NSSPB[1]": 2, "SPBTOT[1]": 1.0e20,
     "SPBENG[1]": 8.0e4, "SPBANG[1]": 30.0, "SPBR0[1]": 0.0, "SPBRW[1]": 0.5,
@@ -322,3 +324,29 @@ class TestContinuation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@_NEEDS_THE_LIBRARY
+class TestBeamSourceUnit(unittest.TestCase):
+    """SPBTOT is in 1e20 particles/s (fp/fpinit.f90's comment says [1/s]).
+
+    On one radial surface, one step of DELT adds SPBTOT * DELT * 1e20 particles to the plasma, so
+    the density increment RNT [1e20 m^-3] times the plasma volume [m^3] is SPBTOT * DELT. The
+    source is linear in SPBTOT.
+    """
+    DELT = 1.0e-3
+
+    def _added(self, spbtot):
+        params = {**D_RUN, **BEAM, "NRMAX": 1, "MODELA": 0, "DELT": self.DELT, "SPBTOT[1]": spbtot}
+        with Fplib() as fp:
+            _set(fp, params)
+            fp.run(0)
+            s0 = fp.get_state()
+            fp.run(1)
+            s1 = fp.get_state()
+        return (s1.RNT[0][0] - s0.RNT[0][0]) * s1.scalars["PLASMA_VOLUME"]
+
+    def test_the_density_increment_times_the_volume_is_spbtot_delt(self):
+        for spbtot in (1.0, 0.5):
+            added = self._added(spbtot)
+            self.assertAlmostEqual(added / (spbtot * self.DELT), 1.0, delta=1.0e-9, msg=added)
