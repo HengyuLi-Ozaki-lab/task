@@ -147,7 +147,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "NPMAX":  {"type": "int", "group": "mesh", "description": "momentum-space mesh size"},
     "NTHMAX": {"type": "int", "group": "mesh", "description": "pitch-angle mesh size"},
     "NTMAX":  {"type": "int", "group": "mesh", "description": "time-step count (per fp_run call)"},
-    "NAVMAX": {"type": "int", "group": "mesh", "description": "orbit-averaging sub-iterations"},
+    "NAVMAX": {"type": "int", "group": "mesh", "description": "orbit-averaging sub-iterations; must be >= 1 with MODELA = 1 or MODEL_WAVE /= 0 (both divide by it)"},
     # --- species counts --------------------------------------------
     "NSMAX":  {"type": "int", "group": "species", "description": "total number of namelist species"},
     "NSAMAX": {"type": "int", "group": "species", "description": "kinetic species count (<= FP_MAX_NSAMAX=8)"},
@@ -199,11 +199,11 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELC": {"type": "int[NSM]", "group": "models", "description": "collision-model selector per species"},
     "MODELW": {"type": "int[NSM]", "group": "models", "description": "wave-model selector per species"},
     # --- NBI source and bounce average (task-web-client #232) ------
-    "MODELA":   {"type": "int", "group": "models", "description": "bounce average: 0 none, 1 bounce-averaged (theta is then the pitch angle at the field minimum)"},
+    "MODELA":   {"type": "int", "group": "models", "description": "bounce average: 0 none, 1 bounce-averaged (theta is then the pitch angle at the field minimum); 1 needs NAVMAX >= 1 (as does MODEL_WAVE /= 0)"},
     "NBEAMMAX": {"type": "int", "group": "nbi", "description": "number of beams, 0 to NBEAMM = 20 (fp_init gives it no value)"},
     "NSSPB":    {"type": "int[NBEAMM]", "group": "nbi", "description": "namelist species NS of beam i; with MODEL_NBI = 1 a beam with a source must be on a kinetic species (NS_NSA)"},
     "SPBTOT":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle source of beam i [1e20/s] (FP normalises it with RNFP0 [1e20 m^-3]; fp/fpinit.f90's comment says [1/s]); 0 = off; with MODEL_NBI = 1 a non-zero source beyond NBEAMMAX is refused"},
-    "SPBENG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle energy of beam i [eV]; with MODEL_NBI = 1, >= 0 for a beam with a source; a beam beyond the momentum mesh (PMAX) deposits nothing (not checked)"},
+    "SPBENG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle energy of beam i [eV]; with MODEL_NBI = 1, >= 0 for a beam with a source; with MODEL_NBI = 1 a beam with a source (SPBTOT /= 0) is refused when its momentum sqrt(2*SPBENG/(1000*T)) (T = (PTPR + 2 PTPP)/3 [keV] of its species) is at or beyond the species' mesh edge (PMAX, or EMAX's when set)"},
     "SPBANG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "source pitch angle of beam i [degree]; with MODEL_NBI = 1, 0 <= x < 180 for a beam with a source"},
     "SPBR0":    {"type": "float[NBEAMM]", "group": "nbi", "description": "source radius of beam i [r/a]"},
     "SPBRW":    {"type": "float[NBEAMM]", "group": "nbi", "description": "source width of beam i [r/a]; with MODEL_NBI = 1, > 0 for every beam up to NBEAMMAX, sourced or not"},

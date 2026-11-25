@@ -273,8 +273,8 @@ with Fplib() as fp:
 
 FP places a beam at `p = sqrt(2E/T)`, in units of `PTFP0 = sqrt(m T)`. FP's
 default `PMAX` is 7, so an 80 keV beam into a 3 keV plasma (p = 7.3) lies
-outside the mesh and deposits nothing unless `PMAX[2] = 10` (the beam's
-species).
+outside the mesh: the run is refused unless `PMAX[2]` is raised, for
+instance `PMAX[2] = 10` (7.4 would do; the beam's species).
 
 ### `FpDistribution`
 
@@ -356,9 +356,28 @@ one `XX fp_run:` line and `run()` raises `FplibInvalidParamError`.
   species (`NSSPB` matched against `NS_NSA`, 0 read as the slot's number),
   with `0 <= SPBANG < 180` and `SPBENG >= 0`.
 
-Not checked, because they need the mesh that `fp_prep` makes: a beam beyond
-`PMAX` deposits nothing, and a source so narrow that it reaches no radial
-point is 0/0.
+- `NAVMAX >= 1` with `MODELA = 1` or `MODEL_WAVE /= 0`, whatever `MODEL_NBI` is: the bounce average and the wave diffusion divide by it and loop to it (0 divides by zero, so the wave terms are NaN even without wave power; a negative value makes the averaging loop empty).
+- With `MODEL_NBI = 1`, a beam with a source is refused when its momentum
+  `p = sqrt(2*SPBENG/(1000*T))` (`SPBENG` in eV, `T = (PTPR + 2 PTPP)/3` in keV
+  of the beam's species) is at or beyond the species' mesh edge, `PMAX` (or
+  `sqrt(2 EMAX / T)` when the sum of `EMAX` is not 0 and `EMAX /= 0` for the
+  species; `EMAX` is not registered): FP then deposits nothing in the beam's
+  species. The check uses FP's own expressions and order of operations, so its
+  verdict is FP's to the bit. With kinetic electrons FP's electron compensating
+  source checks the electron grid on its own, so the source would be unbalanced.
+  A temperature not above 0 (or NaN) gives no momentum and is refused too.
+- With `MODEL_NBI = 1`, kinetic electrons and `NSSPB[1] /= 1`, FP's electron
+  compensating source (`NBI_SOURCE_A0`, `fp/fpcoef.f90`) adds `PZ(NSABEAM)`, with
+  `NSABEAM` the last kinetic slot whose species is the beam's. `PZ` is indexed by
+  species, so `PZ(NSSPB)` was meant. This is an FP bug, reported to the lead and
+  not changed; the run is refused where the two charges differ. FP deposits the
+  electrons (and reads `PZ`) only in the electron cell that holds the electron
+  momentum of the beam's energy; a beam whose electron momentum is at or beyond
+  the electron mesh edge (`PMAX[1]`) is refused first, with its own line (its
+  ions would be deposited with no electrons).
+
+Not checked, because it needs the mesh that `fp_prep` makes: a source so narrow
+that it reaches no radial point is 0/0.
 
 `SPBPANG` is not registered: no source under `fp/` reads it.
 
