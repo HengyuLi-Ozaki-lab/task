@@ -419,7 +419,8 @@ CONTAINS
     END IF
     IF ((MODELA == 1 .OR. MODEL_WAVE /= 0) .AND. NAVMAX < 1) THEN
        WRITE(6,'(A,I0,A)') 'XX fp_run: NAVMAX = ', NAVMAX, &
-            ' must be >= 1 with MODELA = 1 or MODEL_WAVE /= 0 (the bounce average and the wave diffusion divide by it and loop to it)'
+            ' must be >= 1 with MODELA = 1 or MODEL_WAVE /= 0 (the bounce average and ' // &
+            'the wave diffusion divide by it and loop to it)'
        ierr = 1
     END IF
     IF (NBEAMMAX < 0 .OR. NBEAMMAX > NBEAMM) THEN
