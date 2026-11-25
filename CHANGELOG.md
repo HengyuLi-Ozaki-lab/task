@@ -210,6 +210,15 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
     and, with `MODEL_NBI = 1`, the beam inputs that would deposit nothing or give a NaN (`SPBRW > 0` for every beam
     up to `NBEAMMAX`, whether or not it has a source).
   - `check_state_layout` takes `layout=`.
+  - Three more refusals before `fp_prep` (no equation, default or result changes): with `MODEL_NBI = 1` a beam with a
+    source whose `p = sqrt(2*SPBENG/(1000*T))` (eV, keV; FP's own expressions, so the verdict is FP's to the bit) lies at
+    or beyond its species' momentum mesh edge (`PMAX`, or `EMAX`'s), which deposits nothing in the beam's species, or
+    whose species' temperature is not above 0; with `MODEL_NBI = 1`, kinetic electrons and `NSSPB(1) /= 1`, a beam
+    whose electron compensating source falls beyond the electron mesh edge (its ions are deposited with no
+    electrons), or, inside it, whose species' `PZ` differs from the `PZ` that FP's electron source reads (`PZ` of the
+    kinetic slot, not of the species: an FP bug reported to the lead, not changed here); and, whatever `MODEL_NBI`,
+    `NAVMAX < 1` with `MODELA = 1` or `MODEL_WAVE /= 0` (the bounce average and the wave diffusion divide by it and
+    loop to it).
 - **EQ library: `eq_save`, `Eq.save(path)` and the `save` tool of `eq_mcp`**
   write the equilibrium of the last `eq_run` to a TASK/EQ binary file through
   `EQSAVE`, the file that `MODELG=3` with `KNAMEQ` loads. A save whose file
