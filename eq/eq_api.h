@@ -25,6 +25,7 @@ extern "C" {
  *   - eq_save   : writes the TASK/EQ binary file named by KNAMEQ (EQSAVE).
  *                 Fails (see eq_save below) when the file was not opened
  *                 or is shorter than what was written.
+ *   - eq_last_error : why the most recent eq_run failed (see below).
  *
  * Memory note: every array in eq_state_t is fixed-size (max-capacity).
  * Valid runtime slots are 1..nrmax / 1..npsmax / 1..nrgmax / etc.;
@@ -125,7 +126,11 @@ int eq_run(int mode);
 int eq_set_param(const char* name, double value);
 /* Set a string-valued parameter. Supported names:
  *   KNAMEQ, KNAMEQ2, KNAMWR, KNAMWM, KNAMFP, KNAMFO, KNAMPF
- * All are CHARACTER(LEN=80) on the Fortran side. */
+ * All are CHARACTER(LEN=80) on the Fortran side.
+ * eq_set_param and eq_set_param_str return EQ_ERR_INVALID for a name of
+ * more than 64 characters, and eq_set_param_str for a value of more than
+ * 80: neither is cut. Trailing blanks are not counted, as long as the
+ * string ends within 4096 characters of the buffer's end. */
 int eq_set_param_str(const char* name, const char* value);
 int eq_get_state(eq_state_t* state);
 int eq_finalize(void);
@@ -189,7 +194,7 @@ int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
 
 /* Write the equilibrium of the last eq_run to the TASK/EQ binary file
    named by KNAMEQ (set it with eq_set_param_str first; KNAMEQ holds 80
-   characters and eq_set_param_str cuts a longer value).
+   characters and eq_set_param_str refuses a longer value).
    EQ_ERR_NOT_INIT    before eq_init.
    EQ_ERR_INVALID     nothing is touched: no successful eq_run since
                       eq_init, since a later solve or load that failed, or
@@ -205,7 +210,9 @@ int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
                       limit; a device), or no non-empty file exists
                       afterwards. What is then at the path (usually a short
                       file) is left in place and must not be loaded: the
-                      loader does not guard its READs.
+                      load returns EQ_ERR_CALC_FAILED where a read of it
+                      fails, and what reads without an error is not that
+                      equilibrium either.
    EQ_OK              otherwise.
    "Successful eq_run" is what this API's own entry points saw. In the mono
    image (libtotapi_mono.so) the sibling modules change the equilibrium
@@ -213,6 +220,20 @@ int eq_validate(eq_diag_entry_t* diag, int diag_cap, int* ndiag_out);
    or EQINIT from the other modules' init, eq_load and eq_calc from the tr,
    fp and wrx run paths), and eq_save then writes what the fields hold. */
 int eq_save(void);
+
+/*
+ * Reason the most recent eq_run failed, e.g. the file that could not be
+ * loaded or why the psi-surface grid did not match the equilibrium.
+ * Copies at most buflen-1 characters into buf and NUL-terminates it.
+ * The text is empty after a successful eq_run (eq_run clears it on
+ * entry) and after eq_init / eq_finalize.
+ *
+ * Return values:
+ *   EQ_OK           — buf holds the (possibly empty) reason
+ *   EQ_ERR_INVALID  — buflen < 1; buf is not touched
+ *   EQ_ERR_NOT_INIT — eq_init has not been called yet
+ */
+int eq_last_error(char* buf, int buflen);
 
 #ifdef __cplusplus
 }

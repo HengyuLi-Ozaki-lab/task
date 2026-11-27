@@ -351,14 +351,29 @@
       INTEGER, INTENT(OUT) :: IERR
 
       IERR=0
-
+!     Re-solving replaces the equilibrium (EQCALC and the menu's C
+!     command both come through here), so QQPS is no longer a g-eqdsk
+!     file's q column: let EQCALQ recompute it.
+      QQPS_FROM_FILE=.FALSE.
+!
+!     ----- Adaptive under-relaxation of the GS Picard iteration -----
+!     A full Picard step (PSI <- solution) oscillates for stiff (high-q,
+!     low-current) equilibria. Damp the update when the residual grows and
+!     relax back towards a full step while it decreases.
+      OMEGA=1.D0
+      SULMP=1.D30
+!
       DO NLOOP=1,NLPMAX
+         EQ_NLOOP=NLOOP
          IF(NLOOP.EQ.1) THEN
             CALL EQBAND
             CALL EQFACT
          ENDIF
          CALL EQRHSV(IERR)
-         IF(IERR.NE.0) RETURN
+         IF(IERR.NE.0) THEN
+            EQ_NLOOP=0
+            RETURN
+         ENDIF
          CALL EQSOLV
 
          SUM0=0.D0
@@ -370,12 +385,28 @@
             ENDDO
          ENDDO
          SUML=SQRT(SUM1/SUM0)
-
+!
+!        --- adapt the relaxation factor and damp the just-applied step ---
+         IF(SUML.GT.SULMP) THEN
+            OMEGA=MAX(0.1D0,0.5D0*OMEGA)
+         ELSE
+            OMEGA=MIN(1.D0,1.2D0*OMEGA)
+         ENDIF
+         SULMP=SUML
+         IF(OMEGA.LT.1.D0) THEN
+            DO NSG=1,NSGMAX
+               DO NTG=1,NTGMAX
+                  PSI(NTG,NSG)=PSI(NTG,NSG)-(1.D0-OMEGA)*DELPSI(NTG,NSG)
+               ENDDO
+            ENDDO
+         ENDIF
+!
          IF(SUML.LT.EPSEQ) THEN
             IF(NPRINT.GE.1) THEN
                WRITE(6,'(A,1P4E14.6,I5)') &
                  'SUML,R/ZAXIS,PSI0=',SUML,RAXIS,ZAXIS,PSI0,NLOOP
             ENDIF
+            EQ_NLOOP=0
             RETURN
          ELSE
             IF((NPRINT.EQ.1.AND.NLOOP.EQ.1).OR. &
@@ -385,6 +416,7 @@
             ENDIF
          ENDIF
       ENDDO
+      EQ_NLOOP=0
 
       IF(NPRINT.GE.1) THEN
          WRITE(6,'(A,1P4E14.6,I5)') &
@@ -567,9 +599,16 @@
             CALL EQJPSI(PSIPNL,HJPSID,HJPSI)
             CALL EQTPSI(PSIPNL,TPSI,DTPSI)
             CALL EQOPSI(PSIPNL,OMGPSI,DOMGPSI)
+!           T = 2*pi*R*B_phi of the current HJT above (psi is the total
+!           poloidal flux). From j_zeta0 = -2*pi*RRC*dp/dpsi
+!           - T*dT/dpsi/(2*pi*mu0*RRC), with p = p(psi,RRC), integrated
+!           from the boundary:
+!             T**2 = (2*pi*BB*RR)**2 + 4*pi*mu0*RRC*TJ*int(HJPSI dpsi)
+!                    - 8*pi**2*mu0*RRC**2*p(psi,RRC)
+!           Same expression for TTV and TTPS below.
             TT(NTG,NSG)=SQRT((2.D0*PI*BB*RR)**2 &
                        +2.D0*RMU0*RRC &
-                       *(2.D0*PI*TJ*HJPSID-RRC*PPSI &
+                       *(2.D0*PI*TJ*HJPSID-4.D0*PI**2*RRC*PPSI &
                        *EXP(RRC**2*OMGPSI**2*AMP/(2.D0*TPSI))))
             RHO(NTG,NSG)=(PPSI*AMP/TPSI) &
                         *EXP(RMM(NTG,NSG)**2*OMGPSI**2*AMP/(2.D0*TPSI))
@@ -768,9 +807,10 @@
             CALL EQJPSI(PSIPNL,HJPSID,HJPSI)
             CALL EQTPSI(PSIPNL,TPSI,DTPSI)
             CALL EQOPSI(PSIPNL,OMGPSI,DOMGPSI)
+!           T**2 as for TT in the MDLEQF=0 branch above
             TTVL=SQRT((2.D0*PI*BB*RR)**2 &
                         +2.D0*RMU0*RRC &
-                        *(2.D0*PI*TJ*HJPSID-RRC*PPSI &
+                        *(2.D0*PI*TJ*HJPSID-4.D0*PI**2*RRC*PPSI &
                         *EXP(RRC**2*OMGPSI**2*AMP/(2.D0*TPSI))))
          ELSEIF (IMDLEQF.EQ.1) THEN
             CALL EQPPSI(PSIPNL,PPSI,DPPSI)
@@ -1155,9 +1195,10 @@
             CALL EQOPSI(PSIPNL,OMGPSI,DOMGPSI)
             PPPS(NPS)=PPSI
             OMPS(NPS)=OMGPSI
+!           T**2 as for TT in EQRHSV (MDLEQF=0)
             TTPS(NPS)=SQRT((2.D0*PI*BB*RR)**2 &
                         +2.D0*RMU0*RRC &
-                        *(2.D0*PI*TJ*HJPSID-RRC*PPSI &
+                        *(2.D0*PI*TJ*HJPSID-4.D0*PI**2*RRC*PPSI &
                         *EXP(RRC**2*OMGPSI**2*AMP/(2.D0*TPSI))))
             TEPS(NPS)=TPSI/(AEE*1.D3)
          ELSEIF (IMDLEQF.EQ.1) THEN

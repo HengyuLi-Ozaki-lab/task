@@ -43,6 +43,7 @@ on:
       - 'mtxp/**'
       - '.github/workflows/clean-tree-build.yml'
       - '.github/actions/**'
+      - '.github/scripts/**'
   push:
     branches: [develop, master, chore/pre-push-hook-worktree-compat]
     paths:
@@ -59,6 +60,7 @@ on:
       - 'mtxp/**'
       - '.github/workflows/clean-tree-build.yml'
       - '.github/actions/**'
+      - '.github/scripts/**'
   schedule:
     # Weekly, Monday 03:00 UTC (12:00 JST). A schedule fires from the
     # default branch (master), whose tree is far behind develop; the
@@ -77,14 +79,14 @@ permissions:
 jobs:
   clean-tree:
     name: clean-tree build (${{ matrix.module }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # python-tests.yml's image and gfortran (see its pytest job)
     # bpsd + one module's full PIC chain (lib, mtxp, pl, eq, ...) is
     # 4-8 minutes on the GitHub runner; 20 leaves slack.
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        module: [tr, fp, ti, wr, wrx, eq]
+        module: [tr, fp, ti, wr, wrx, eq, equ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -97,9 +99,7 @@ jobs:
         # Same toolchain as python-tests.yml: Ubuntu 24.04's default
         # gfortran. No Python packages are needed.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gfortran gcc make
+          bash .github/scripts/apt-install.sh gfortran gcc make
           gfortran --version | head -1
 
       - name: README steps 1-2, per-system files (make.header, mtxp/make.mtxp)

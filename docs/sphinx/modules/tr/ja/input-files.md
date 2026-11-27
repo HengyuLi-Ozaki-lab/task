@@ -24,7 +24,7 @@ pull が走ります (`tr/trbpsd.f90:213`). この 4 値はすべて
 - `MODELG = 5` → `EQDSKR` (community EQDSK 形式)
 - `MODELG = 8` → `EQJAEAR`
 
-dispatch テーブルは `eq/eqfile.f90:108-115` にあります.
+dispatch テーブルは `eq/eqfile.f90:186-221` にあります.
 つまり `MODELG = 9` は no-op alias ではなく, `MODELG = 3`
 と同じ `EQRTSK` reader を実際に呼びます.
 
@@ -52,15 +52,15 @@ EQDSK format 自体の canonical な仕様は `eq` chapter および
 TR は interpretive run の駆動入力として ufile を取り込めます.
 
 読み込みは `MDLUF` で制御 (default `0` = OFF; 非ゼロで
-有効化). default の確認は `tr/trinit.f90:641-648`.
+有効化). default の確認は `tr/trinit.f90:678-685`.
 `MDLUF` は `tr/tr_param_registry.f90` に登録されており,
 `tr.set_param("MDLUF", ...)` で実行時に設定できます.
 
 **ディレクトリパラメータ `KUFDIR` / `KUFDEV` / `KUFDCG`
 は namelist 専用です.** legacy `&trn` namelist 入力
-(`tr/trparm.f90:108-112`) には登場しますが,
+(`tr/trparm.f90:110-114`) には登場しますが,
 `tr/tr_param_registry.f90` には登録されておらず (registry
-側の "future additions" コメントは `:184-186`),
+側の "future additions" コメントは `:343-345`),
 `tr.set_param_str` 経由では設定できません. ufile dir を
 変えたいユーザは:
 

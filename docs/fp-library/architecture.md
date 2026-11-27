@@ -32,7 +32,7 @@ diagram and per-phase status.
             |   fp/libfpapi.so      |               |   fp/fp        |
             |   (shared lib, L-4)   |               |   (CLI binary) |
             |                       |               |                |
-            |   5 exported symbols  |               |   menu loop,   |
+            |  13 exported symbols  |               |   menu loop,   |
             |   fp_init / fp_run /  |               |   graphics,    |
             |   fp_set_param /      |               |   file I/O     |
             |   fp_get_state /      |               +-------+--------+
@@ -66,7 +66,7 @@ diagram and per-phase status.
 |---|---|---|
 | 0. Regression baseline | `test_run/baselines/fp_{iter01,jt60,dt1}/` | Phase 0 ground truth (tol `1e-10`) |
 | 1. Fortran backend | `fp/fp_api.f90`, `fp_param_registry.f90`, `fpprep`, `fploop`, ... | Numerics, shared with `fp` binary |
-| 2. C ABI | `fp/fp_api.h` + BIND(C) exports in `fp_api.f90` | 5 functions + 2 layout queries (#246), stable contract |
+| 2. C ABI | `fp/fp_api.h` + BIND(C) exports in `fp_api.f90` | 5 functions + `fp_set_param_str` + 2 layout queries (#246) + 5 distribution functions (task-web-client #232), stable contract |
 | 3. Shared library | `fp/libfpapi.so` | `make -C fp libs_pic && make -C fp libfpapi.so` |
 | 4. Python FFI | `python/fplib/_ffi.py` | `ctypes` layout mirror of `fp_state_t` |
 | 5. High-level wrapper | `python/fplib/fplib.py`, `state.py`, `errors.py` | Context manager + dataclass |
@@ -158,15 +158,28 @@ struct grows at its end only, and `fp/fp_state.f90`, `fp/fp_api.h` and
   points (`fp_init`, `fp_prep`, `fp_loop`, ...) and maps Fortran ierr
   to the C `enum fp_error`.
 - `fp_param_registry.f90` implements a hand-written `SELECT CASE`
-  dispatch (~40 unique names / ~55 settable variables once array
-  subscripts are counted) mapping `"NAME"` or `"NAME[idx]"` strings
+  dispatch (62 names: 44 scalars and 18 arrays, i.e. 10 species arrays
+  of `NSM` = 100 (`NS_NSA`, `NS_NSB`, `PA`, `PZ`, `PN`, `PNS`, `PTPR`, `PTPP`, `PTS`, `PMAX`),
+  `MODELC` and `MODELW`, and 6 beam arrays of `NBEAMM` = 20; 1364 settable variables once
+  array subscripts are counted) mapping `"NAME"` or `"NAME[idx]"` strings
   to FPCOMM / PLCOMM module variables. Extending the registry is the
   **only** code change needed to expose new parameters.
+  `fp_set_param` refuses, with code 1 and before it assigns anything:
+  a malformed subscript, for a scalar too (`NTHMAX[zz]`, `PN[1]x`,
+  `PN[1,2]`); a value that is not finite, for every name; and for an
+  integer parameter a value outside `-HUGE(0)` to `HUGE(0)`: beyond the
+  default integer `NINT()` is the compiler's choice (`value_refused`
+  lists the integer names: a new integer `CASE` goes there too). The C
+  entry points refuse a name longer than their 64 characters, and
+  `fp_set_param_str` a value longer than the 80 of `KNAMEQ` (trailing
+  blanks are not counted); both used to be cut. A subscript that is a
+  whole number is still taken for a scalar (`NRMAX[3]` sets `NRMAX`),
+  and a fraction is rounded (`NINT`; TR and EQ truncate).
 - Kernel code (`fp_prep`, `fp_loop`, `fpcalc`, `fpcoef`, ...) is
   unchanged and shared with the `fp` binary.
 - `fp_graphics_stubs.f90` provides weak shims for graphics entry
   points (`fpgout`, `fpgsub`, `fpcont`, `fpfout`) so the shared
-  library links without pulling PGPlot; the 5 exported C ABI
+  library links without pulling PGPlot; the 13 exported C ABI
   functions never reach these paths.
 
 ### Python wrapper
@@ -177,7 +190,7 @@ struct grows at its end only, and `fp/fp_state.f90`, `fp/fp_api.h` and
   `FPLIB_PATH` → `fp/libfpapi.so` → `lib/libfpapi.so` and uses
   `RTLD_LAZY` so dangling graphics references never block loading.
 - `fplib.Fplib` is a context manager: `__enter__` calls `fp_init`,
-  `__exit__` calls `fp_finalize`. All 5 entry points map 1:1 to
+  `__exit__` calls `fp_finalize`. The five original entry points map 1:1 to
   methods. `set_params` accepts scalar, `dict{idx: v}`, or
   `list/tuple` values so array elements can be set without resorting
   to the bracket syntax.
@@ -267,3 +280,57 @@ shorter one would have left the appended fields as plausible zeros.
 - tr counterpart: `docs/tr-library/architecture.md`
 - ti counterpart: `docs/ti-library/architecture.md`
 - Changelog: top-level `CHANGELOG.md`
+
+## The distribution function (task-web-client #232)
+
+The library exports `FNS`, its grid and its normalisation for one kinetic
+species, and takes the NBI source through the registry (`MODELA`,
+`NBEAMMAX`, `NSSPB[i]`, `SPBTOT[i]`, `SPBENG[i]`, `SPBANG[i]`, `SPBR0[i]`,
+`SPBRW[i]`; the run rules are in `python/fplib/README.md`).
+
+### Five C entry points
+
+| Function | Purpose |
+|---|---|
+| `fp_fns_info_abi_version()` | layout version of `fp_fns_info_t` (`FP_FNS_INFO_ABI_VERSION` = 1); callable before `fp_init` |
+| `fp_fns_info_size()` | `sizeof(fp_fns_info_t)`; callable before `fp_init` |
+| `fp_get_fns_info(nsa, info)` | the record: species, counts, `MODELA`, `TIMEFP`, `AMFP`, `AEFP`, `RNFP0`, `RTFP0`, `PTFP0`, `VTFP0`, `THETA0`, `PMAX`, `DELP`, `DELTH` |
+| `fp_get_fns_grid(nsa, pm, npm, thm, nthm, rm, nrm)` | `PM(1:NPMAX, ns)`, `THM(1:NTHMAX)`, `RM(1:NRMAX)`: cell centres of normalised momentum, pitch angle [rad] and r/a |
+| `fp_get_fns(nsa, buf, nbuf)` | `FNS(1:NTHMAX, 1:NPMAX, 1:NRMAX, nsa)` unscaled; `nbuf` must equal `nthmax*npmax*nrmax` |
+
+The record `fp_fns_info_t` has 6 `int` and 11 `double`. It is separate from
+`fp_state_t`, which is unchanged (layout version 2). A field is only ever
+added at its end, with `FP_FNS_INFO_ABI_VERSION` raised; the two layout
+queries let a wrapper refuse a library of another layout
+(`check_state_layout(..., layout="fns_info")` in `python/_abi_check.py`).
+`pm`, `theta0`, `pmax` and `delp` are indexed by the namelist species `ns`;
+`amfp`, `aefp`, `rnfp0`, `rtfp0`, `ptfp0`, `vtfp0` and `FNS` by the kinetic
+`nsa`; the counts, `modela`, `timefp` and `delth` are not per species.
+
+### When they answer
+
+The three getters answer under the condition that `fp_get_state`'s global
+scalars use: `g_prepared .AND. g_prep_generation == fp_param_generation()`.
+Every successful set advances the counter (`fp_set_param`,
+`fp_set_param_str` and tot's `fp:` dispatcher), so the getters refuse from a
+set until the next `fp_run` has prepared again: the mesh counts may already be
+new and the next `fp_prep` re-initialises the distribution. `fp_get_state`
+still returns the last run's profiles in that window. Each copy also checks
+the allocated extents (`SIZE(FNS, k)`, `SIZE(PM, k)`, ...) against the counts.
+Checks run in this order: initialised; prepared with no successful set since;
+`nsa` in range; allocated extents; pointers and lengths.
+
+| Situation | Return |
+|---|---|
+| no `fp_init` yet | `FP_ERR_NOT_INIT` |
+| no `fp_run` yet; a successful set since the last run; extents short of the counts | `FP_ERR_CALC_FAILED` |
+| `nsa` outside 1 ... `NSAMAX`; a null pointer; a length that does not match | `FP_ERR_INVALID` |
+
+### Order of `FNS` and when it is current
+
+`FNS` is the gathered global array in Fortran order, `FNS(NTH, NP, NR)`
+for each species: byte for byte a C-order array of shape `(NR, NP, NTH)`,
+so a wrapper reads it with no transposition. `fp_loop` refreshes it with
+`update_fns` after its time loop (`fp/fploop.f90`), so it is current after
+every `fp_run`. After the first `fp_run(0)`, or a `fp_run(0)` after a
+successful set, it is the start distribution.

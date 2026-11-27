@@ -99,6 +99,20 @@ Return codes (`enum tr_error`):
   dispatch (~38 cases) mapping `"NAME"` or `"NAME[idx]"` strings to
   TRCOMM module variables. Extending the registry is the **only**
   code change needed to expose new parameters.
+  `tr_set_param` refuses, with code 1 and before it assigns anything:
+  a malformed subscript, for a scalar too (`RR[zz]`, `PN[1]x`,
+  `PN[1,2]`); a name longer than the 32 characters the registry holds
+  (it was cut, so `RR` followed by blanks and anything else was `RR`);
+  a value that is not finite, for every name; and for an integer
+  parameter a value outside `-HUGE(0)` to `HUGE(0)`: beyond the default
+  integer `INT()` is the compiler's choice (`value_refused` lists the
+  integer names: a new integer `CASE` goes there too). The C entry
+  points refuse a name longer than their 64 characters, and
+  `tr_set_param_str` a value longer than the 80 of `KNAMEQ` (trailing
+  blanks are not counted); both used to be cut. A subscript that is a
+  whole number is still taken for a scalar (`PROFN1[1]` sets `PROFN1`:
+  `test_property_fanout.py`), and a fraction is truncated (`INT`; FP
+  rounds).
 - Kernel code (`trloop`, `trcalc`, `trbpsd`, ...) is unchanged and
   shared with the `tr2` binary.
 

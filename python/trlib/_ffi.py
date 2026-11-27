@@ -232,6 +232,50 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     except AttributeError:  # pragma: no cover - only on pre-#143 builds
         pass
 
+    # tr_last_error: the first failure of the last tr_run (kind, code, nt, time).
+    try:
+        lib.tr_last_error.restype = ctypes.c_int
+        lib.tr_last_error.argtypes = [ctypes.POINTER(TrDiagEntry)]
+    except AttributeError:  # pragma: no cover - only on builds before tr_last_error
+        pass
+
+    # Outputs by name (PR 2 of #96): the scalar table. Best-effort, as tr_last_error above: a library built
+    # before leaves the attribute missing and Trlib.get_scalar says so on first use.
+    try:
+        lib.tr_scalar_count.restype = ctypes.c_int
+        lib.tr_scalar_count.argtypes = []
+        lib.tr_scalar_name.restype = ctypes.c_int
+        lib.tr_scalar_name.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        lib.tr_get_scalar.restype = ctypes.c_int
+        lib.tr_get_scalar.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double)]
+    except AttributeError:  # pragma: no cover - only on builds before the scalar table
+        pass
+
+    # The run's history by name (PR 2 of #96, Task 5b); best-effort as above.
+    try:
+        lib.tr_history_length.restype = ctypes.c_int
+        lib.tr_history_length.argtypes = []
+        lib.tr_history_full.restype = ctypes.c_int
+        lib.tr_history_full.argtypes = []
+        lib.tr_history_count.restype = ctypes.c_int
+        lib.tr_history_count.argtypes = []
+        lib.tr_history_name.restype = ctypes.c_int
+        lib.tr_history_name.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        lib.tr_history_get.restype = ctypes.c_int
+        lib.tr_history_get.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double), ctypes.c_int,
+                                       ctypes.POINTER(ctypes.c_int)]
+    except AttributeError:  # pragma: no cover - only on builds before the history
+        pass
+
+    # Run control (PR 3 of #96): tr_continue and tr_param_class; best-effort as above.
+    try:
+        lib.tr_continue.restype = ctypes.c_int
+        lib.tr_continue.argtypes = [ctypes.c_int]
+        lib.tr_param_class.restype = ctypes.c_int
+        lib.tr_param_class.argtypes = [ctypes.c_char_p]
+    except AttributeError:  # pragma: no cover - only on builds before tr_continue
+        pass
+
     lib.tr_finalize.restype = ctypes.c_int
     lib.tr_finalize.argtypes = []
 

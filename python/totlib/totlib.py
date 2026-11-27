@@ -47,6 +47,7 @@ from .state import TotState
 
 # Type alias for the items accepted by ``set_params``.
 ParamItem = Union[Mapping[str, Any], Iterable[Tuple[str, Any]]]
+_C_INT_MAX = 2**31 - 1               # tot_run and tot_continue take a C int
 _MAX_C_STRING_BYTES = 63              # intentional: tot_api_set_param name
                                        # buffer is CHARACTER(LEN=128), but
                                        # we share the 63-byte name cap with
@@ -54,9 +55,9 @@ _MAX_C_STRING_BYTES = 63              # intentional: tot_api_set_param name
                                        # the same param-name conventions
                                        # apply across modules.
 _MAX_C_STRING_VALUE_BYTES = 256       # value buffer is CHARACTER(LEN=256);
-                                       # tot_api_set_param_str DO loop reads
-                                       # up to LEN(fvalue) chars so full 256
-                                       # OK (accommodates long KNAMEQ paths)
+                                       # the eq: and tr: registries refuse a
+                                       # KNAMEQ of more than 80 characters
+                                       # (rc 1): a long path is not cut
 
 
 def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
@@ -64,8 +65,8 @@ def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
 
     ``max_bytes`` is the Fortran buffer size minus 1 (for NUL). Names
     use the default; values passed to ``set_param_str`` use
-    ``_MAX_C_STRING_VALUE_BYTES`` (e.g. file-path values up to 255
-    bytes fit the 256-byte Fortran buffer).
+    ``_MAX_C_STRING_VALUE_BYTES`` (the Fortran buffer holds 256 bytes;
+    the modules' file-name parameters hold 80 characters and refuse more).
     """
     if not isinstance(s, str):
         raise TotlibInvalidParamError(
@@ -305,11 +306,71 @@ class Tot:
         intentionally NOT invoked; cross-module coupling lives in
         :class:`~totlib.pipeline.TotPipeline` (L-7a, Python-side)
         instead of inside ``libtotapi.so``.
+
+        ``ntmax=0`` prepares (when a parameter was set) and takes no step, but the loop's exit still sets RIPS = RIPE:
+        a pending current ramp is lost and RIP stays where it was (the ``tr_run(0)`` note in ``tr/tr_api.h``).
+        ``continue_run(0)`` only checks.
         """
         if self._closed:
             raise TotlibError("run on closed Tot")
-        rc = self._lib.tot_run(int(ntmax))
+        count = self._step_count("tot_run", ntmax)
+        rc = self._lib.tot_run(count)
         raise_for_rc(f"tot_run({ntmax})", rc)
+
+    def continue_run(self, nsteps: int) -> None:
+        """Advance the prepared case ``nsteps`` more steps without preparing again (``tot_continue``).
+
+        ``tot_continue`` calls TR's ``tr_continue`` (``Trlib.continue_run``), as :meth:`run` calls ``tr_run``: the
+        control parameters set since the last :meth:`run` or :meth:`continue_run` (``tr:RIPE``, ``tr:PNBTOT``,
+        ``tr:PICTOT``, ``tr:PECTOT``, ``tr:PLHTOT``, ``tr:NTEQIT``, ``tr:TPRST``) take effect at its first step;
+        ``nt``, ``T`` and the history go on. Every other ``tr:`` name is structural: set after a preparation it makes
+        :meth:`continue_run` refuse, and the next :meth:`run` prepares again. An ``eq:`` set is refused itself
+        (:meth:`set_param`, :meth:`set_param_str`) once TR has prepared the case: until the pinned bpsd has
+        k-yoshimi/bpsd#7 an EQ grid change after a preparation corrupts memory. There is no
+        ``param_class`` here: ``Trlib.param_class`` answers for the same names (``eq:`` names are 0).
+
+        Raises :class:`TotlibInvalidParamError` when TR refuses (no preparation yet, a failed run, a structural set
+        since the preparation -- the message carries TR's record, which names the last one -- a bad value) or for a
+        negative count, :class:`TotlibCalculationFailedError` when the loop fails.
+        """
+        if self._closed:
+            raise TotlibError("continue_run on closed Tot")
+        try:
+            fn = self._lib.tot_continue
+        except AttributeError as exc:
+            raise TotlibError(
+                "libtotapi.so does not export tot_continue; rebuild the shared library."
+            ) from exc
+        count = self._step_count("tot_continue", nsteps)
+        rc = fn(count)
+        if rc == 1:
+            raise TotlibInvalidParamError(f"tot_continue({nsteps}): rc=1{self._tr_record_text()}")
+        raise_for_rc(f"tot_continue({nsteps})", rc)
+
+    @staticmethod
+    def _step_count(func: str, n: Any) -> int:
+        """``n`` as a C int, or :class:`TotlibInvalidParamError` before the library is called: ctypes wraps modulo
+        2**32 (``2**32 + 5`` would run 5 steps, ``2**31`` read as negative)."""
+        count = int(n)
+        if not 0 <= count <= _C_INT_MAX:
+            raise TotlibInvalidParamError(
+                f"{func}({n}): the step count must be 0 to {_C_INT_MAX} ({func} takes a C int)"
+            )
+        return count
+
+    def _tr_record_text(self) -> str:
+        """TR's last failure record as ``": <text>"`` ('' when it cannot be read): tot has no record of its own, and
+        ``tr_last_error`` is the one of the TR this ``Tot`` drives (the same image in mono; ``libtotapi.so`` links
+        ``libtrapi.so``, the library ``trlib`` loads)."""
+        try:
+            from trlib import _ffi as tr_ffi
+            lib = getattr(self._lib, "tr_last_error", None) or tr_ffi.load_library().tr_last_error
+            e = tr_ffi.TrDiagEntry()
+            lib(ctypes.byref(e))
+            msg = e.msg.decode("ascii", errors="replace").rstrip("\x00")
+            return f": {msg}" if msg else ""
+        except Exception:
+            return ""
 
     def get_state(self) -> TotState:
         """Copy the current TOT state into a :class:`TotState`.
@@ -328,6 +389,89 @@ class Tot:
         rc = self._lib.tot_get_state(ctypes.byref(c))
         raise_for_rc("tot_get_state", rc)
         return TotState.from_c(c)
+
+    def get_scalar(self, name: str) -> float:
+        """One of TR's named global results, ``"tr:<NAME>"`` (``Trlib.scalar_names()`` lists them).
+
+        ``tot_get_scalar`` removes the prefix and asks TR (``tr_get_scalar``), so the value is the one
+        ``Trlib.get_scalar`` returns for the TR this ``Tot`` drives. A name without ``tr:`` or an unknown one
+        raises :class:`TotlibInvalidParamError`.
+        """
+        if self._closed:
+            raise TotlibError("get_scalar on closed Tot")
+        try:
+            fn = self._lib.tot_get_scalar
+        except AttributeError as exc:
+            raise TotlibError(
+                "libtotapi.so does not export tot_get_scalar; rebuild the shared library."
+            ) from exc
+        value = ctypes.c_double(0.0)
+        rc = fn(_encode_name(name), ctypes.byref(value))
+        raise_for_rc(f"tot_get_scalar('{name}')", rc)
+        return float(value.value)
+
+    # --- the run's history by name (Task 5b of #96) ----------------------
+    def _history_fn(self, symbol: str):
+        try:
+            return getattr(self._lib, symbol)
+        except AttributeError as exc:
+            raise TotlibError(
+                f"libtotapi.so does not export {symbol}; rebuild the shared library."
+            ) from exc
+
+    def history_names(self) -> list:
+        """The names of the recorded columns as ``"tr:<NAME>"``, ``tr:T`` (the time) first."""
+        if self._closed:
+            raise TotlibError("history_names on closed Tot")
+        count = int(self._history_fn("tot_history_count")())
+        fn = self._history_fn("tot_history_name")
+        names = []
+        for i in range(1, count + 1):
+            buf = ctypes.create_string_buffer(64)
+            raise_for_rc(f"tot_history_name({i})", fn(i, buf, 64))
+            names.append(buf.value.decode("ascii"))
+        return names
+
+    def history_length(self) -> int:
+        """Rows TR has recorded since its last preparation (see ``Trlib.history_length``)."""
+        if self._closed:
+            raise TotlibError("history_length on closed Tot")
+        return int(self._history_fn("tot_history_length")())
+
+    def history_full(self) -> bool:
+        """True when TR's history holds all its 10001 rows."""
+        if self._closed:
+            raise TotlibError("history_full on closed Tot")
+        return bool(self._history_fn("tot_history_full")())
+
+    def history(self, names: Optional[Iterable[str]] = None) -> dict:
+        """TR's time history by name, ``{"tr:<NAME>": numpy.ndarray}`` (``Trlib.history`` through tot).
+
+        ``names`` carry the ``tr:`` prefix; ``None`` returns every column. A name without it or an unknown
+        one raises :class:`TotlibInvalidParamError`.
+        """
+        if self._closed:
+            raise TotlibError("history on closed Tot")
+        if names is None:
+            wanted = self.history_names()
+        elif isinstance(names, str):
+            wanted = [names]
+        else:
+            wanted = list(names)
+        fn = self._history_fn("tot_history_get")
+        rows = self.history_length()
+        out = {}
+        for name in wanted:
+            buf = (ctypes.c_double * max(rows, 1))()
+            got = ctypes.c_int(0)
+            raise_for_rc(f"tot_history_get('{name}')", fn(_encode_name(name), buf, rows, ctypes.byref(got)))
+            values = buf[: int(got.value)]
+            if _ffi.HAS_NUMPY:
+                import numpy as np
+                out[name] = np.array(values, dtype=np.float64)
+            else:  # pragma: no cover - numpy is optional
+                out[name] = list(values)
+        return out
 
 
 __all__ = ["Tot"]

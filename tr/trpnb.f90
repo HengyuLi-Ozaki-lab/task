@@ -426,8 +426,9 @@
              AEE, AJNB, AME, AMM, ANC, ANFE, EPS0, EPSRHO, MDLUF, NRMAX, &
              PA, PBCL, PBIN, PI, PNBCD, PNBENG, &
              PZ, PZC, PZFE, RKEV, RN, RNF, RT, RTF, RW, TAUB, ZEFF, rkind
+        USE trlib, ONLY : COULOG, HY
       IMPLICIT NONE
-      REAL(rkind)    :: AMA, AMB, AMD, AMT, ANE, COULOG, EC, EPS, HY, HYB, &
+      REAL(rkind)    :: AMA, AMB, AMD, AMT, ANE, EC, EPS, HYB, &
            P2, P3, P4, PAB, PZB, TAUS, TAUS0, TE, VB, VC3,  &
            VCA3, VCD3, VCR, VCT3, VE, WB, XB, ZEFFM, ZN
       INTEGER :: NR
@@ -537,17 +538,3 @@
 
       RETURN
       END SUBROUTINE TRAJNB
-
-!     ***********************************************************
-
-      FUNCTION HY(V)
-
-      USE TRCOMM, ONLY : PI,rkind
-      IMPLICIT NONE
-      REAL(rkind), INTENT(IN) :: V
-      REAL(rkind) :: HY
-
-      HY = 2.D0*(LOG((V**3+1.D0)/(V+1.D0)**3)/6.D0 &
-     &      +(ATAN((2.D0*V-1.D0)/SQRT(3.D0))+PI/6.D0)/SQRT(3.D0))/V**2
-      RETURN
-      END FUNCTION HY

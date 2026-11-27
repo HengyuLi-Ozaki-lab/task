@@ -32,9 +32,9 @@ from .state import FpState
 
 
 _MAX_C_STRING_BYTES = 63              # name buffer is CHARACTER(LEN=64)
-_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128);
-                                       # fp_api_set_param_str DO loop reads
-                                       # up to LEN(fvalue) chars so full 128 OK
+_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128).
+                                       # KNAMEQ holds 80: the library refuses
+                                       # a longer value (rc 1), it is not cut
 
 
 def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
@@ -64,6 +64,12 @@ def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
             f"maximum is {max_bytes}"
         )
     return encoded
+
+
+#: The largest count a C ``int`` holds. ctypes converts a Python integer to a
+#: ``c_int`` argument with no range check (it keeps the low 32 bits), so
+#: ``run`` checks the range itself.
+_C_INT_MAX = 2**31 - 1
 
 
 class Fplib:
@@ -223,10 +229,20 @@ class Fplib:
         largest integer, a species count or map outside its bounds); the
         library writes which one on its standard output (``XX fp_run:
         ...``). See ``docs/fp-library/architecture.md``.
+
+        Raises it too, before the library is called, for a count outside
+        0 to 2**31 - 1: ``fp_run`` takes a C ``int``, and a larger count
+        would arrive modulo 2**32 (``2**32 + 3`` ran three steps).
         """
         if self._closed:
             raise FplibError("run on closed Fplib")
-        rc = self._lib.fp_run(int(ntmax))
+        count = int(ntmax)
+        if not 0 <= count <= _C_INT_MAX:
+            raise FplibInvalidParamError(
+                f"fp_run: the step count must be 0 to {_C_INT_MAX} "
+                "(fp_run takes a C int)"
+            )
+        rc = self._lib.fp_run(count)
         raise_for_rc(f"fp_run({ntmax})", rc)
 
     def get_state(self) -> FpState:
@@ -237,6 +253,55 @@ class Fplib:
         rc = self._lib.fp_get_state(ctypes.byref(c))
         raise_for_rc("fp_get_state", rc)
         return FpState.from_c(c)
+
+    def get_distribution(self, nsa: int = 1) -> "FpDistribution":  # noqa: F821
+        """The distribution function of kinetic species ``nsa`` (1-origin): FP's ``FNS``,
+        its grid and its normalisation, as an :class:`fplib.distribution.FpDistribution`.
+
+        There is one only after a run, and not after a set until the next run: the
+        library then refuses (:class:`FplibCalcFailedError`). A library built before
+        task-web-client #232 raises :class:`FplibAbiError` here and serves the rest.
+        """
+        import array
+        import operator
+
+        from .distribution import FpDistribution
+        from .errors import FplibCalcFailedError, FplibInvalidParamError
+
+        if self._closed:
+            raise FplibError("get_distribution on closed Fplib")
+        _ffi.attach_fns_prototypes(self._lib)
+        nsa = operator.index(nsa)
+        if not -(2**31) <= nsa <= 2**31 - 1:
+            raise FplibInvalidParamError(
+                f"get_distribution({nsa}): nsa must be a kinetic species number, 1 to NSAMAX"
+            )
+        info = _ffi.FpFnsInfoC()
+        rc = self._lib.fp_get_fns_info(nsa, ctypes.byref(info))
+        if rc == _ffi.FP_ERR_CALC_FAILED:
+            raise FplibCalcFailedError(
+                f"fp_get_fns_info({nsa}): rc={rc}: there is a distribution only after a run, "
+                "and not after a set until the next run (or the arrays FP allocated do not "
+                "hold the current counts)"
+            )
+        if rc == _ffi.FP_ERR_INVALID:
+            raise FplibInvalidParamError(f"fp_get_fns_info({nsa}): rc=1: nsa must be 1 to NSAMAX")
+        raise_for_rc(f"fp_get_fns_info({nsa})", rc)
+        if info.nsa != nsa:
+            raise FplibInvalidParamError(f"fp_get_fns_info({nsa}) answered for species {info.nsa}")
+        nth, np_, nr = info.nthmax, info.npmax, info.nrmax
+        pm = (ctypes.c_double * np_)()
+        thm = (ctypes.c_double * nth)()
+        rm = (ctypes.c_double * nr)()
+        rc = self._lib.fp_get_fns_grid(nsa, pm, np_, thm, nth, rm, nr)
+        raise_for_rc(f"fp_get_fns_grid({nsa})", rc)
+        data = array.array("d", bytes(8 * nth * np_ * nr))
+        rc = self._lib.fp_get_fns(nsa, (ctypes.c_double * len(data)).from_buffer(data), len(data))
+        raise_for_rc(f"fp_get_fns({nsa})", rc)
+        return FpDistribution(
+            data=data, shape=(nr, np_, nth), pm=list(pm), thm=list(thm), rm=list(rm),
+            info={name: getattr(info, name) for name, _ in info._fields_},
+        )
 
 
 __all__ = ["Fplib"]

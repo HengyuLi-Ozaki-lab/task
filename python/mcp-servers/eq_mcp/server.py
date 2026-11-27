@@ -22,6 +22,8 @@ wrx_mcp):
 
 * ``set_param_str`` — string parameters such as ``KNAMEQ`` (the equilibrium
   file path) routed through :py:meth:`eqlib.Eq.set_param_str`.
+* ``get_psi_rz`` — the 2-D PSI(R,Z) field with the RG/ZG grid, through
+  :py:meth:`eqlib.Eq.get_psi_rz` (needs numpy).
 * ``validate`` — pre-run cross-parameter validation (Issue #143)
   exposing :py:meth:`eqlib.Eq.validate`. Returns a list of
   ``{param, code, message}`` dicts; an empty list means the current
@@ -52,6 +54,7 @@ server's log.
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 from pathlib import Path
@@ -147,9 +150,9 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "PROFJ0": {"type": "float", "group": "profile", "description": "current profile shape PROFJ0"},
     "PROFJ1": {"type": "float", "group": "profile", "description": "current profile shape PROFJ1"},
     "PROFJ2": {"type": "float", "group": "profile", "description": "current profile shape PROFJ2"},
-    "FF0":    {"type": "float", "group": "profile", "description": "F=R*B_phi profile coefficient FF0"},
-    "FF1":    {"type": "float", "group": "profile", "description": "F=R*B_phi profile coefficient FF1"},
-    "FF2":    {"type": "float", "group": "profile", "description": "F=R*B_phi profile coefficient FF2"},
+    "FF0":    {"type": "float", "group": "profile", "description": "F=2*pi*R*B_phi profile coefficient FF0"},
+    "FF1":    {"type": "float", "group": "profile", "description": "F=2*pi*R*B_phi profile coefficient FF1"},
+    "FF2":    {"type": "float", "group": "profile", "description": "F=2*pi*R*B_phi profile coefficient FF2"},
     "PROFF0": {"type": "float", "group": "profile", "description": "F profile shape PROFF0"},
     "PROFF1": {"type": "float", "group": "profile", "description": "F profile shape PROFF1"},
     "PROFF2": {"type": "float", "group": "profile", "description": "F profile shape PROFF2"},
@@ -185,10 +188,10 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "ZLIMM":  {"type": "float", "group": "region", "description": "lower Z limiter [m]"},
     "FRBIN":  {"type": "float", "group": "region", "description": "RB inner-region scaling"},
     # --- E. integer mesh / model switches --------------------------
-    "MODELG": {"type": "int", "group": "models", "description": "equilibrium/geometry selector (1..9; 3 = TASK/EQ binary load)"},
+    "MODELG": {"type": "int", "group": "models", "description": "for run(mode=1), the format of the file it loads: 3 or 9 a TASK/EQ binary file, 5 or 25 a G-EQDSK file, 8 a QST/JAEA pair (KNAMEQ, KNAMEQ2); the default 2 names none. For run(mode=0) keep 2: the solve is toroidal for every value (0 or 1 is no slab or cylinder), and 5 makes EQCALQ's current averages use P' and FF' arrays that only a G-EQDSK load fills (0, or an earlier file's, after a solve)"},
     "MODELQ": {"type": "int", "group": "models", "description": "q-profile model selector"},
     "IDEBUG": {"type": "int", "group": "models", "description": "debug-output level"},
-    "MODEFR": {"type": "int", "group": "models", "description": "file-read mode of FROPEN: 0 reads the file named by KNAMEQ; 1 asks for a file name on unit 5 (not for a server)"},
+    "MODEFR": {"type": "int", "group": "models", "description": "file-read mode of FROPEN: only 0, which reads the file named by KNAMEQ, is taken (1 would ask for a file name on unit 5, the server's channel)"},
     "MODEFW": {"type": "int", "group": "models", "description": "file-write mode of FWOPEN: 0 overwrites an existing file, 3 refuses one; 1, 2 and 4 to 7 can read unit 5, and eq_save takes 0 and 3 only. The save tool sets it itself before it saves (3, or 0 with overwrite=true)"},
     "MDLEQF": {"type": "int", "group": "models", "description": "equilibrium-fixed-boundary model"},
     "MDLEQC": {"type": "int", "group": "models", "description": "equilibrium-constraint model"},
@@ -218,7 +221,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "ZPFC":  {"type": "float[NPFCM]", "group": "pfcoil",    "description": "PF-coil Z position per coil (1-origin)"},
     "WPFC":  {"type": "float[NPFCM]", "group": "pfcoil",    "description": "PF-coil width per coil (1-origin)"},
     # --- string parameters (set via set_param_str under the hood) --
-    "KNAMEQ":  {"type": "str", "group": "io", "description": "equilibrium data file name (EQDSK / TASK-EQ)"},
+    "KNAMEQ":  {"type": "str", "group": "io", "description": "equilibrium file name: the file run(mode=1) loads, in the format MODELG names (for MODELG 8 the first of its two files); the save tool sets it to its path once it accepts the path"},
     "KNAMEQ2": {"type": "str", "group": "io", "description": "secondary equilibrium data file name"},
     "KNAMWR":  {"type": "str", "group": "io", "description": "WR (ray-tracing) input file name"},
     "KNAMWM":  {"type": "str", "group": "io", "description": "WM (full-wave) input file name"},
@@ -275,7 +278,7 @@ STATE_SCHEMA: Dict[str, Any] = {
         "TTPS": {
             "type": "array",
             "items": {"type": "number"},
-            "description": "T = R*B_phi profile (psi-surface), length = NPSMAX",
+            "description": "T = 2*pi*R*B_phi profile (psi-surface), length = NPSMAX",
         },
         "QQPS": {
             "type": "array",
@@ -292,7 +295,7 @@ STATE_SCHEMA: Dict[str, Any] = {
                     "PSIP": {"type": "number",  "description": "poloidal flux"},
                     "PSIT": {"type": "number",  "description": "toroidal flux"},
                     "PPS":  {"type": "number",  "description": "pressure"},
-                    "TTS":  {"type": "number",  "description": "T = R*B_phi"},
+                    "TTS":  {"type": "number",  "description": "T = 2*pi*R*B_phi"},
                     "QPS":  {"type": "number",  "description": "safety factor"},
                     "VPS":  {"type": "number",  "description": "differential volume"},
                     "RST":  {"type": "number",  "description": "<R> at this surface"},
@@ -336,6 +339,39 @@ STATE = _ServerState()
 # =====================================================================
 # Helpers — parameter application.
 # =====================================================================
+def _short(text: str, limit: int) -> str:
+    """``text`` for an error message: its start, when it is longer than ``limit``."""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _number(key: str, value: Any) -> float:
+    """``value`` as the float the library is given for ``key``.
+
+    Raises :class:`EqlibError` for what ``float()`` does not take (a string
+    that is no number, ``None``), for an integer too large for a float
+    (``float()`` raises ``OverflowError``), and for a number that is not
+    finite: ``float()`` also takes ``"nan"``, ``"inf"`` and ``"1e309"``,
+    and no parameter has such a value.
+    """
+    key = _short(key, 80)
+    if isinstance(value, int) and abs(value) >= 10**30:
+        shown = "an integer of more than 30 digits"   # Python does not print one of 4300
+    else:
+        shown = _short(repr(value), 60)
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        reason = _short(str(exc), 80)                 # float() repeats the string it refuses
+        raise EqlibError(
+            f"invalid numeric value for '{key}': {shown} ({reason})"
+        ) from exc
+    if not math.isfinite(coerced):
+        raise EqlibError(
+            f"invalid numeric value for '{key}': {shown} (not finite)"
+        )
+    return coerced
+
+
 def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
     """Apply a bulk ``params`` dict, returning the list of applied keys.
 
@@ -369,12 +405,12 @@ def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
                 )
             for i, v in enumerate(value, start=1):
                 key = f"{name}[{i}]"
-                eq.set_param(key, float(v))
+                eq.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, dict):
             for idx, v in value.items():
                 key = f"{name}[{int(idx)}]"
-                eq.set_param(key, float(v))
+                eq.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, bool):
             # bool is a subclass of int; reject as ambiguous.
@@ -387,7 +423,7 @@ def _apply_bulk_params(eq: Eq, params: Dict[str, SupportedValue]) -> List[str]:
             eq.set_param_str(name, value)
             applied.append(name)
         elif isinstance(value, (int, float)):
-            eq.set_param(name, float(value))
+            eq.set_param(name, _number(name, value))
             applied.append(name)
         else:
             raise EqlibError(
@@ -443,7 +479,7 @@ def handle_init() -> str:
 def handle_set_param(name: str, value: float) -> str:
     try:
         eq = STATE.ensure_open()
-        eq.set_param(name, float(value))
+        eq.set_param(name, _number(name, value))
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_eqlib_error(exc) from exc
@@ -478,6 +514,28 @@ def handle_save(path: str, overwrite: bool = False) -> str:
             hint = "exists and is not a regular file"
         raise ToolError(f"save: {path} {hint}")  # type: ignore[call-arg]
     return f"saved equilibrium to {path}"
+
+
+def handle_get_psi_rz() -> Dict[str, Any]:
+    try:
+        eq = STATE.ensure_open()
+        psi = eq.get_psi_rz()  # numpy ndarray shape (nrg, nzg)
+        state = eq.get_state()
+        nrg = int(psi.shape[0])
+        nzg = int(psi.shape[1])
+        # state.rg / state.zg are already trimmed to nrgmax / nzgmax by
+        # EqState.from_c(); a plain list copy is sufficient.
+        rg = list(state.rg)
+        zg = list(state.zg)
+        return {
+            "nrg": nrg,
+            "nzg": nzg,
+            "rg": rg,
+            "zg": zg,
+            "psi_rz": psi.tolist(),
+        }
+    except Exception as exc:
+        raise _wrap_eqlib_error(exc) from exc
 
 
 def handle_set_params(params: Dict[str, SupportedValue]) -> str:
@@ -596,7 +654,7 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 12 eq tools."""
+    """Build and return a FastMCP server instance with the 13 eq tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -611,8 +669,8 @@ def build_server() -> Any:
             "/ `set_param_str` / `set_params`, optionally run "
             "`validate` to check the configuration, solve or load the "
             "equilibrium with `run` (mode 0: the Grad-Shafranov solve, "
-            "no file; mode 1, the default: load the file in the format "
-            "MODELG names, KNAMEQ for most formats; it fails with the "
+            "no file; mode 1, the default: load the file KNAMEQ names, in "
+            "the format MODELG names; it fails with the "
             "default MODELG=2), and read state with `get_state`. `save` writes "
             "that equilibrium to a TASK/EQ file for another module to "
             "load. Use `describe_parameters` "
@@ -693,6 +751,9 @@ def build_server() -> Any:
         * a dict ``{index: value}`` (sparse array; use this for the
           0-origin ``PSIB`` because lists implicitly start at 1)
         * a string (for KNAMEQ and similar string-valued parameters)
+
+        Every number must be finite: NaN and the infinities are refused,
+        also as a string in a list or a dict (``"nan"``, ``"1e309"``).
         """
         return handle_set_params(params)
 
@@ -729,6 +790,20 @@ def build_server() -> Any:
         VPS, RST). Schema also available via `describe_state_schema`.
         """
         return handle_get_state()
+
+    @mcp.tool()
+    def get_psi_rz() -> Dict[str, Any]:
+        """Return the 2-D PSI(R,Z) field plus the RG/ZG grid coordinates.
+
+        Output shape:
+            ``{"nrg": int, "nzg": int, "rg": list[float], "zg": list[float],
+               "psi_rz": list[list[float]]}``  (psi_rz indexed [i_r][i_z],
+            runtime active grid only — default 33×33)
+
+        Note: PSI is populated by ``run()``; calling get_psi_rz before run
+        returns whatever is in the buffer (typically zeros on a fresh init).
+        """
+        return handle_get_psi_rz()
 
     @mcp.tool()
     def validate() -> List[Dict[str, Any]]:
@@ -779,11 +854,11 @@ def build_server() -> Any:
             run(mode)
             return get_state()
 
-        ``mode`` is as for ``run``: the default 1 loads a file, so
-        ``params`` must set a file ``MODELG`` (and, for most formats,
-        ``KNAMEQ`` unless the file is ``eqdata``), since the call starts
-        from a fresh ``init`` at the defaults; ``mode=0`` solves the
-        Grad-Shafranov equation without one.
+        ``mode`` is as for ``run``: the default 1 loads a file, and the
+        call starts from a fresh ``init`` at the defaults, so ``params``
+        must set a file ``MODELG``, and ``KNAMEQ`` unless the file is
+        ``eqdata`` (for ``MODELG=8`` also ``KNAMEQ2`` unless the second
+        file is ``eqdata2``). ``mode=0`` solves the Grad-Shafranov equation without a file.
         """
         return handle_run_and_get_state(params, mode)
 
@@ -823,6 +898,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "set_params",
                 "run",
                 "get_state",
+                "get_psi_rz",
                 "validate",
                 "finalize",
                 "describe_parameters",

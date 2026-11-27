@@ -197,7 +197,7 @@ with Wrlib() as wr:
 | `MODELG`     | int | 2 | 幾何モデル (`tr`/`eq` と同じ) |
 | `MODELQ`     | int | 0 | q プロファイル制御 |
 | `MODEFW`     | int | 0 | 波動モデル (W 関連) |
-| `MODEFR`     | int | 0 | 半径方向モデル |
+| `MODEFR`     | int | 0 | `MODELG` 3, 5, 8 の EQ 読み込みでの `FROPEN` の読み込みモード. 受け付けるのは 0 だけ (1 は標準入力からファイル名を読む) |
 | `IDEBUG`     | int | 0 | デバッグ出力 |
 | `MODELP[i]`  | int[] | -- | 種 i の波動モデル |
 | `MODELV[i]`  | int[] | -- | 種 i の速度分布モデル |

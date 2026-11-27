@@ -10,9 +10,9 @@ focuses on `tr`-specific aspects.
 
 ## Entry layer (`tr_api.f90`)
 
-There are **7 functions** called from C: the standard 5 functions +
+There are **8 functions** called from C: the standard 5 functions +
 `tr_set_param_str` (for strings) + `tr_validate` (the pre-run
-validation added in PR #172).
+validation added in PR #172) + `tr_last_error` (the record of the last failure).
 
 | C symbol | Fortran-side | LOC (approx) | Role |
 |---|---|---|---|
@@ -23,6 +23,7 @@ validation added in PR #172).
 | `tr_get_state`     | `tr_api_get_state`     | ~40 | Copies the `TRCOMM` scalars and `RN/RT/AJ/QP` into the C struct |
 | `tr_finalize`      | `tr_api_finalize`      | ~10 | `DEALLOCATE_TRCOMM` + reset of `g_*` flags |
 | `tr_validate`      | `tr_api_validate`      | ~50 | Range checks for registered parameters + `KNAMEQ` file-existence check |
+| `tr_last_error`    | `tr_api_last_error`    | ~10 | The first failure of the last `tr_run` (kind, Fortran code, `nt=.. t=.. s: detail`), from `trfailure.f90` |
 
 All are bound with `BIND(C, NAME="tr_xxx")` to fix the C ABI symbol
 name. The Fortran-side names use the `tr_api_*` prefix to avoid a
@@ -77,7 +78,7 @@ END FUNCTION
   in `tr_prof_impurity`, which would induce a Fortran-side `STOP` and
   abort the host process. The registry rejects values outside
   `[2, 8]` early
-  (see comments at `tr_param_registry.f90:85-93`).
+  (see comments at `tr_param_registry.f90:151-160`).
 
 The full list of registered parameters is in {doc}`parameters`.
 
@@ -135,6 +136,57 @@ ZEFF0 = (4.D0*ZEFF(1) - ZEFF(2))/3.D0                        ! axis Zeff
 ```
 
 For physical meanings, see the table in {doc}`state`.
+
+## Library mode and failures (`trfailure.f90`)
+
+`tr_init` sets *library mode* and clears the failure record; `tr2` never sets it. In library mode `tr_loop` tests the
+periodic `MODELG = 9` equilibrium re-solve (`NTEQIT`) and a non-finite Q0, stored energy or central temperature after
+each step, and ends the run at the first failure with the record (`EQ_FAILED`, `NONFINITE`, `TR_CHECK`, `PREP_FAILED`,
+`OTHER`); `tr_set_metric`'s q-scaling and `TRCHCK` record theirs. `tr2`'s loop calls `eq_calc` untested as before, and its output is unchanged on a single healthy `R`; the two #228 commits (`tr_set_metric`'s q-scaling, #226's own) apply to `tr2` too: a failed q-scaling now fails its `R` where it used to run on, and a second `R` under `MODELG` 9 adopts the equilibrium again.
+**Changes of behaviour:** `MODELG` 0, 4, 25 and `RIPS = 0` returned RC 0 with non-finite scalars and now fail with
+`NONFINITE`.
+
+A name `eq:NAME` in `tr_set_param` / `tr_set_param_str` is sent to EQ's registry (`eq_param_set`); `libtrapi.so` links
+`eq_param_registry.o` for it, and an accepted set makes the next `tr_run` prepare again. `eq:RR`, `eq:RA`, `eq:RKAP`, `eq:RDLT`, `eq:BB`, `eq:RIP`, `eq:KNAMEQ` and `eq:KNAMEQ2` are refused (they do nothing through TR), and so is every `eq:` name after the process's first preparation attempt, until the pinned bpsd has k-yoshimi/bpsd#7. Under `MODELG` 3, 5 and 8 EQ's `NRMAX` is TR's `NRMAX` + 1, `NTHMAX` is 64 and `NSUMAX` is 0. The guard closes only the direct route to the bpsd#7 overrun: under `MODELG` 9 any input that moves EQ's plasma grid needs that bpsd (see `python/trlib/README.md`), and TOT's `eq:` setters refuse a set only after TR has prepared the case in this lifecycle,
+not after the process's first preparation (below, under "Continuing a run").
+
+## Continuing a run (`tr_continue`, `tr_api.f90`)
+
+`tr_continue(nsteps)` runs `tr_loop` for `nsteps` more steps on the prepared case, with the prologue `tr2`'s `C` has
+(`tr_eval`, `RIP = RIPS`, `DIPDT`, `tr_bpsd_get`); `DIPDT` is `(RIPE - RIPS) / ((NTMAX - NT) * DT)`, the ramp over this call
+(in `tr2` the line is reached with `NT` = 0, the same number). `tr_param_class` splits the names: **control** (1: `RIPE`,
+`PNBTOT`, `PICTOT`, `PECTOT`, `PLHTOT`, `NTEQIT`, `TPRST`, which the loop reads at each step) and **structural** (0: the rest, and
+every `eq:` name, which the preparation reads). `tr_param_registry` counts the structural sets; `tr_continue` refuses when the
+count moved since the preparation, and records `REFUSED` (code 0) naming the last. `NT` counts on across calls where `tr2`'s `C`
+restarts it, so the steps chosen by `NT` are counted from the preparation; with NCLASS `tr2`'s `C` differs in its first step
+(`trcoef_resistivity.f90:123`). A call that ends on an `NTEQIT` re-solve leaves its last history row with the q(0) from
+before the re-solve, and the next call's first `TRGLOB` re-anchors `WPPRE`/`TPRE`, which moves `WPDOT`, `TAUE2` and `H98Y2` of
+the row after the cut and nothing in the state. `tot_continue` calls it; TOT's `eq:` setters call
+`tr_param_note_external_set`, which counts as a structural set, and refuse a set once TR has prepared the case
+(`tr_api_eq_set_refused_in_case`, for bpsd before k-yoshimi/bpsd#7, as TR's own route refuses one).
+
+## Outputs by name (`tr_api.f90`)
+
+The scalars of `tr_state_t` are 14 of the 31 global results `TRGLOB` computes; `tr_scalar_count`, `tr_scalar_name` and
+`tr_get_scalar(name, &value)` give all 31 by name (`PNFT`, `QF`, `PINT`, `POHT`, `PNBT`, `PRFST`, `PEXST`, `PRLT`, `POUT`,
+`AJOHT`, `AJNBT`, `AJBST`, `RIP`, `VLOOP`, `WPDOT`, `H98Y2`, `TAUE98` in addition), in the units of `trrslt_globals.f90`.
+`tot_get_scalar("tr:NAME")` delegates to it.
+
+`tr_history_*` export the time history `GT(NGT)`, `GVT(NGT, 1:110)` that `TRATOT` writes every `NGTSTP` steps (`tr_eval`):
+47 columns by name, in **single precision** (`GUCLIP`), `NTM` = 10001 rows. TR stops recording silently when they are full
+(`tr_history_full` reports it): a long run sets `NGTSTP`. `tr_prep` sets `NGT` to 0, so a preparation starts the history
+again. In library mode `tr_eval` does not record the step a `tr_run` or `tr_continue` call starts on when the previous call ended on it,
+and `tr_exec` does not record the failed iterate of a `TRCHCK` failure (`tr2` records both); `tr_loop` takes back the
+row of a step it finds not finite (`tr_eval_take_back_row`), and a preparation that fails leaves no rows. Under `MODELG` 9 `tr_loop`
+records a step before it re-solves EQ on it and then recomputes `Q0` on the new metric (`tr_bpsd_get`, `TRCALC`), so that
+row's `Q0` is the one of before the re-solve. A `tr_run` of 0 steps evaluates no step: `TRGLOB` does not run, so after a
+preparation what it sets is new (`T` 0; `RIP`, which is `RIPS` or, under `MODELG` 3, 5 and 8, the equilibrium's boundary current; `Q0` under `MODELG` 2, 3, 5, 7, 8 and 9) and what only a step computes is the run
+before's. (Evaluating the prepared state there is not done: `TRCALC` injects the `PELTIM` pellet on every call within half a step
+of it, so a second call at t = 0 would inject it twice.) `GVT` columns 89 to 88 + 4 `NGPST` are also the sawtooth
+record's (`TRATOTN`, rows counted from the record's start) once `MDLST` /= 0 and `T` >= `TSST` (1e9 s); `tr_eval` does not
+call `TRATOTN` in library mode, so there they are always `TRATOT`'s. In `tr2` the record
+overwrites those columns of its rows (89 to 104 at the default `NGPST` 4: `PEXE` to `PICI`, `RR` to `AJTTOR`,
+`TAUE98`, `H98Y2`, `NLAV`).
 
 (reinit-constraints)=
 ## Re-initialisation constraints

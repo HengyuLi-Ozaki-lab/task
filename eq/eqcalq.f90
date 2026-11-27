@@ -21,12 +21,15 @@
 !
       SUBROUTINE EQCALQ(IERR)
 
+      USE libspl1d
       USE plcomm
       USE eqcom0_mod
       USE eqcom1_mod
       USE eqcom3_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
+      INTEGER :: NPS, IERRQ, IOS
+      REAL(rkind) :: PSIPLO, PSIPHI, PSIPQ, PSIPTOL
 
       IERR=0
 !
@@ -70,6 +73,66 @@
 
       CALL EQSETS_RHO(IERR)
       CALL EQSETS(IERR)
+!
+!     ----- QQPS: q on the psi-surface grid PSIPS -----
+!     EQDSKR (a g-eqdsk load) reads QQPS from the file's q column and
+!     sets QQPS_FROM_FILE.  EQ_READ clears the flag before every load
+!     and EQLOOP whenever the equilibrium is re-solved, so while it is
+!     set QQPS still belongs to this equilibrium: leave it alone.  No
+!     other path sets QQPS (EQRTSK's binary format does not store it,
+!     EQCALC does not compute it), so otherwise resample the per-NR q
+!     profile onto PSIPS with UQPS, the spline of QPS on PSIP built in
+!     EQSETS above.
+!     The plasma spans PSIP(1)..PSIPA.  A PSIPS point less than 5% of
+!     that span outside it (the file's axis psi differs a little from
+!     the one EQAXIS finds; measured cases are within 1%) is clamped
+!     to the nearest end, so the edge point gets q at the LCFS with or
+!     without the vacuum extension of PSIP.  A point further out means
+!     PSIPS does not describe this equilibrium, so the run fails
+!     (IERR=201) rather than invent values; SPL1DF's degenerate-grid
+!     error 9 fails it too (IERR=202).  On failure QQPS is zeroed and
+!     EQ_ERRMSG says why, for the C API's eq_last_error (the MCP
+!     servers isolate the unit-6 log).
+!
+      IF(.NOT.QQPS_FROM_FILE) THEN
+         PSIPLO=MIN(PSIP(1),PSIPA)
+         PSIPHI=MAX(PSIP(1),PSIPA)
+         PSIPTOL=0.05D0*(PSIPHI-PSIPLO)
+         IERRQ=0
+         DO NPS=1,NPSMAX
+            IF(PSIPS(NPS).LT.PSIPLO-PSIPTOL.OR. &
+               PSIPS(NPS).GT.PSIPHI+PSIPTOL) THEN
+               WRITE(EQ_ERRMSG,'(A,I0,A,1PE11.4,A,1PE11.4,A,1PE11.4,A)', &
+                    IOSTAT=IOS) 'EQCALQ: PSIPS(',NPS,')=',PSIPS(NPS), &
+                    ' is more than 5% outside the plasma psi range [', &
+                    PSIPLO,',',PSIPHI, &
+                    ']: the psi-surface grid does not match this equilibrium'
+               IERRQ=201
+               EXIT
+            ENDIF
+         ENDDO
+         IF(IERRQ.EQ.0) THEN
+!           Stay inside the PSIP grid too, in case it stops short of
+!           PSIPA, so SPL1DF never extrapolates.
+            PSIPLO=MAX(PSIPLO,MIN(PSIP(1),PSIP(NRMAX)))
+            PSIPHI=MIN(PSIPHI,MAX(PSIP(1),PSIP(NRMAX)))
+            DO NPS=1,NPSMAX
+               PSIPQ=MIN(MAX(PSIPS(NPS),PSIPLO),PSIPHI)
+               CALL SPL1DF(PSIPQ,QQPS(NPS),PSIP,UQPS,NRMAX,IERRQ)
+               IF(IERRQ.NE.0) THEN
+                  EQ_ERRMSG='EQCALQ: the flux-surface grid is degenerate' &
+                       //' (PSIP(1) = PSIP(NRMAX)); cannot resample q'
+                  IERRQ=202
+                  EXIT
+               ENDIF
+            ENDDO
+         ENDIF
+         IF(IERRQ.NE.0) THEN
+            WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+            QQPS(1:NPSMAX)=0.D0
+            IF(IERR.EQ.0) IERR=IERRQ
+         ENDIF
+      ENDIF
 !
 !     ----- Phase L-0 regression dump (env-guarded, no-op unless
 !           EQ_REGRESS_DUMP=1). Hook here so every successful R/RUN
@@ -200,7 +263,6 @@
          DR=(RB-RA+REDGE-RAXIS)/(NRMAX-1)
          NRPMAX=NINT((REDGE-RAXIS)/DR)+1
       ENDIF
-!      write(6,*) 'nrmax,nrpmax,nsumax=',nrmax,nrpmax,nsumax
       DR=(REDGE-RAXIS)/(NRPMAX-1)
       DTH=2.d0*PI/NTHMAX
 !
@@ -234,6 +296,15 @@
 !     &        PSIP(NR),PPS(NR),TTS(NR),RINIT,ZINIT
 
          CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
+         IF(IERR.NE.0) THEN
+            WRITE(EQ_ERRMSG,'(A,I0,A,I0,A)',IOSTAT=IOS) &
+                 'EQCALQP: EQMAGS could not trace the flux surface ',NR, &
+                 ' (its status ',IERR,'); one cause is a wall RB'// &
+                 ' smaller than the plasma radius RA'
+            WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+            IERR=111
+            RETURN
+         ENDIF
 
          SUMS=0.D0
          SUMV=0.D0
@@ -334,6 +405,15 @@
          AVEIR  (NR)=SUMAVIR /SUMV
          RITOR  (NR)=SUMAVGR2
 
+         IF(NZMINR.LE.1.OR.NZMINR.GE.NA.OR. &
+            NZMAXR.LE.1.OR.NZMAXR.GE.NA) THEN
+            WRITE(EQ_ERRMSG,'(A,I0,A,I0,A,I0,A)',IOSTAT=IOS) &
+                 'EQCALQP: the top or bottom of a flux surface is at the end of its contour (indices ', &
+                 NZMINR,' and ',NZMAXR,' of ',NA,'); the surface is not a closed curve around the axis'
+            WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+            IERR=110
+            RETURN
+         ENDIF
          call zminmax(YA,NZMINR,ZMIN,ZMINR)
          call zminmax(YA,NZMAXR,ZMAX,ZMAXR)
 
@@ -511,6 +591,15 @@
       ZINIT=ZAXIS
       TTSA=TTFUNC(0.D0)
       CALL EQMAGS(RINIT,ZINIT,NTVMAX,XA,YA,NA,IERR)
+      IF(IERR.NE.0) THEN
+         WRITE(EQ_ERRMSG,'(A,I0,A)',IOSTAT=IOS) &
+              'EQCALQP: EQMAGS could not trace the edge surface (its status ', &
+              IERR,'); one cause is a wall RB smaller than the plasma'// &
+              ' radius RA'
+         WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+         IERR=112
+         RETURN
+      ENDIF
 
       SUMS=0.D0
       SUMV=0.D0
@@ -644,6 +733,8 @@
             RMAX=RAXIS
             ZMIN=ZAXIS
             ZMAX=ZAXIS
+            NZMINR=1
+            NZMAXR=1
 
             DO NTH=1,NTHMAX+1
                ya(1,nth)=RPS(NTH,NR)
@@ -660,6 +751,15 @@
                ENDIF
             ENDDO
 
+            IF(NZMINR.LE.1.OR.NZMINR.GE.NTHMAX+1.OR. &
+               NZMAXR.LE.1.OR.NZMAXR.GE.NTHMAX+1) THEN
+               WRITE(EQ_ERRMSG,'(A,I0,A,I0,A,I0,A)',IOSTAT=IOS) &
+                    'EQCALQV: the top or bottom of a flux surface is at the end of its contour (indices ', &
+                    NZMINR,' and ',NZMAXR,' of ',NTHMAX+1,'); the surface is not a closed curve around the axis'
+               WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+               IERR=110
+               RETURN
+            ENDIF
             call zminmax(YA,NZMINR,ZMIN,ZMINR)
             call zminmax(YA,NZMAXR,ZMAX,ZMAXR)
 
@@ -716,6 +816,8 @@
             RMAX=RAXIS
             ZMIN=ZAXIS
             ZMAX=ZAXIS
+            NZMINR=1
+            NZMAXR=1
             BMIN=ABS(2.D0*BB)
             BMAX=0.D0
 
@@ -791,6 +893,15 @@
             AVEGP2 (NR)=SUMAVGV2/SUMV*4.D0*PI**2
             AVEIR  (NR)=SUMAVIR /SUMV
 
+            IF(NZMINR.LE.1.OR.NZMINR.GE.NA.OR. &
+               NZMAXR.LE.1.OR.NZMAXR.GE.NA) THEN
+               WRITE(EQ_ERRMSG,'(A,I0,A,I0,A,I0,A)',IOSTAT=IOS) &
+                    'EQCALQV: the top or bottom of a flux surface is at the end of its contour (indices ', &
+                    NZMINR,' and ',NZMAXR,' of ',NA,'); the surface is not a closed curve around the axis'
+               WRITE(6,*) 'XX ',TRIM(EQ_ERRMSG)
+               IERR=110
+               RETURN
+            ENDIF
             call zminmax(YA,NZMINR,ZMIN,ZMINR)
             call zminmax(YA,NZMAXR,ZMAX,ZMAXR)
 
@@ -1174,6 +1285,8 @@
       BETAP=PVAVE/(BPA**2/(2.D0*RMU0)) ! Poloidal beta
       QAXIS=FNQPS(0.D0)    ! Safety factor at the magnetic axis
       QSURF=FNQPS(1.D0)    ! Safety factor at the separatrix
+      IF(NPRINT.GE.1) WRITE(6,'(A,1P4E12.4)') &
+           'BETAT,BETAP,QAXIS,QSURF =',BETAT,BETAP,QAXIS,QSURF
 
       IF(NPRINT.GE.2) THEN
 !$$$         WRITE(6,'(A,1P4E12.4)')
@@ -1253,7 +1366,8 @@
 !     ----- SET NUMBER OF DIVISION for integration -----
 !
 
-      NMAX=200
+!      NMAX=200
+      NMAX=400
       IF(NMAX.GT.NTVM) NMAX=NTVM
 !
 !     ----- CALCULATE PSIP, PSIT, PPS, TTS, RPS and ZPS -----

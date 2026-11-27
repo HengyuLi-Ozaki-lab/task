@@ -60,7 +60,7 @@ MODULE tot_api
   USE, INTRINSIC :: ISO_C_BINDING
   USE tot_state, ONLY: TOT_STATE_ABI_VERSION
   USE tot_state, ONLY: tot_state_c, TOT_MAX_NRMAX, TOT_MAX_NSMAX
-  USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str
+  USE tot_param_registry, ONLY: tot_param_set, tot_param_set_str, tot_param_split
   ! Per-module APIs (libraryized in L-3). We rename each *_api_*
   ! function to a tot-local alias so the namespaces do not collide
   ! when the wrap module pulls them all in.
@@ -70,7 +70,10 @@ MODULE tot_api
   ! flag for direct-ctypes callers (#209).
   USE eq_api, ONLY: eq_api_init,     eq_api_finalize
   USE tr_api, ONLY: tr_api_init,     tr_api_run,     tr_api_get_state, &
-                    tr_api_finalize
+                    tr_api_finalize, tr_api_get_scalar, &
+                    tr_api_history_length, tr_api_history_full, tr_api_history_count, &
+                    tr_api_history_name, tr_api_history_get, &
+                    tr_api_continue, tr_api_eq_set_refused_in_case
   USE tr_state, ONLY: tr_state_c
   USE ti_api, ONLY: ti_api_init,     ti_api_run,     ti_api_finalize
   USE fp_api, ONLY: fp_api_init,     fp_api_run,     fp_api_finalize
@@ -366,6 +369,12 @@ CONTAINS
     INTEGER :: rc
 
     CALL c_string_to_fortran(name, fname)
+    ! An eq: set after TR has prepared this case is refused (tr_api_eq_set_refused_in_case), as TR's own route refuses
+    ! one: bpsd before k-yoshimi/bpsd#7.
+    IF (eq_set_refused('tot_set_param', fname)) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
     CALL tot_param_set(TRIM(fname), value, rc)
     IF (rc == 0) THEN
        ierr = TOT_ERR_OK
@@ -392,6 +401,10 @@ CONTAINS
 
     CALL c_string_to_fortran(name,  fname)
     CALL c_string_to_fortran(value, fvalue)
+    IF (eq_set_refused('tot_set_param_str', fname)) THEN    ! as tot_api_set_param
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
     CALL tot_param_set_str(TRIM(fname), TRIM(fvalue), rc)
     IF (rc == 0) THEN
        ierr = TOT_ERR_OK
@@ -399,6 +412,21 @@ CONTAINS
        ierr = TOT_ERR_INVALID
     END IF
   END FUNCTION tot_api_set_param_str
+
+  ! eq_set_refused : true for a name that tot_param_set and tot_param_set_str would hand to EQ (the namespace "eq", split
+  ! by their own tot_param_split) while TR refuses an eq: set (tr_api_eq_set_refused_in_case); false for every other
+  ! name, which they dispatch (and refuse) as before.
+  LOGICAL FUNCTION eq_set_refused(who, fname)
+    CHARACTER(LEN=*), INTENT(IN) :: who, fname
+    CHARACTER(LEN=16) :: prefix
+    CHARACTER(LEN=LEN(fname)) :: bare
+    LOGICAL :: ok
+    eq_set_refused = .FALSE.
+    CALL tot_param_split(fname, prefix, bare, ok)
+    IF (.NOT. ok) RETURN
+    IF (TRIM(prefix) /= 'eq') RETURN
+    eq_set_refused = tr_api_eq_set_refused_in_case(who, TRIM(bare))
+  END FUNCTION eq_set_refused
 
   !-------------------------------------------------------------------
   ! tot_finalize : tear down every sub-module in REVERSE init order.
@@ -488,6 +516,173 @@ CONTAINS
     TYPE(tot_state_c) :: probe
     n = C_SIZEOF(probe)
   END FUNCTION tot_api_state_size
+
+  !-------------------------------------------------------------------
+  ! tot_get_scalar : one of TR's named global results, "tr:<NAME>"
+  ! (PR 2 of #96). Delegates to tr_get_scalar with the prefix removed,
+  ! as tot_param_registry's dispatcher hands a "tr:" name to TR's
+  ! registry. Only the "tr:" namespace has outputs by name.
+  !
+  ! Returns 0 = success, 1 = invalid (no "tr:" prefix, unknown name),
+  ! 2 = not initialised (tot_init not called, or TR not present).
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_get_scalar(name, value) RESULT(ierr) BIND(C, NAME="tot_get_scalar")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(INOUT) :: value   ! left as it was for an error
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=128) :: fname
+    CHARACTER(KIND=C_CHAR) :: cname(33)
+    INTEGER :: i, n
+
+    IF (.NOT. g_initialized .OR. .NOT. g_tr_present) THEN
+       ierr = TOT_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_string_to_fortran(name, fname)
+    n = LEN_TRIM(fname)
+    IF (n <= 3 .OR. n > 3 + 32 .OR. fname(1:3) /= 'tr:' .OR. c_string_ends_blank(name)) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
+    DO i = 1, n - 3
+       cname(i) = fname(3 + i:3 + i)
+    END DO
+    cname(n - 2) = C_NULL_CHAR
+    ierr = tr_api_get_scalar(cname, value)
+  END FUNCTION tot_api_get_scalar
+
+  !-------------------------------------------------------------------
+  ! The run's history by name through tot (PR 2 of #96, Task 5b): the
+  ! tot_history_* entry points delegate to TR's tr_history_*, with the
+  ! "tr:" prefix on every name as tot_get_scalar and the registry have.
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_history_length() RESULT(n) BIND(C, NAME="tot_history_length")
+    INTEGER(C_INT) :: n
+    n = 0
+    IF (g_initialized .AND. g_tr_present) n = tr_api_history_length()
+  END FUNCTION tot_api_history_length
+
+  FUNCTION tot_api_history_full() RESULT(full) BIND(C, NAME="tot_history_full")
+    INTEGER(C_INT) :: full
+    full = 0
+    IF (g_initialized .AND. g_tr_present) full = tr_api_history_full()
+  END FUNCTION tot_api_history_full
+
+  FUNCTION tot_api_history_count() RESULT(n) BIND(C, NAME="tot_history_count")
+    INTEGER(C_INT) :: n
+    n = tr_api_history_count()
+  END FUNCTION tot_api_history_count
+
+  ! The I-th name as "tr:<NAME>" in BUF of BUFLEN characters; TOT_ERR_INVALID past either end or when it does not fit.
+  FUNCTION tot_api_history_name(i, buf, buflen) RESULT(ierr) BIND(C, NAME="tot_history_name")
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: i
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    CHARACTER(KIND=C_CHAR) :: tmp(32)
+    INTEGER :: k, n
+
+    ierr = tr_api_history_name(i, tmp, 32_C_INT)
+    IF (ierr /= 0) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
+    n = 0
+    DO k = 1, 32
+       IF (tmp(k) == C_NULL_CHAR) EXIT
+       n = k
+    END DO
+    IF (buflen < n + 4) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
+    buf(1) = 't'
+    buf(2) = 'r'
+    buf(3) = ':'
+    DO k = 1, n
+       buf(3 + k) = tmp(k)
+    END DO
+    buf(n + 4) = C_NULL_CHAR
+    ierr = TOT_ERR_OK
+  END FUNCTION tot_api_history_name
+
+  ! The first min(n, rows) rows of "tr:<NAME>" into BUF; *got is the number copied.
+  ! 0 = success, 1 = invalid (no "tr:" prefix, unknown name, n < 0), 2 = not initialised.
+  FUNCTION tot_api_history_get(name, buf, n, got) RESULT(ierr) BIND(C, NAME="tot_history_get")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(OUT) :: buf(*)
+    INTEGER(C_INT), VALUE,                INTENT(IN)  :: n
+    INTEGER(C_INT),                       INTENT(OUT) :: got
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=128) :: fname
+    CHARACTER(KIND=C_CHAR) :: cname(33)
+    INTEGER :: i, m
+
+    got = 0
+    IF (.NOT. g_initialized .OR. .NOT. g_tr_present) THEN
+       ierr = TOT_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_string_to_fortran(name, fname)
+    m = LEN_TRIM(fname)
+    IF (m <= 3 .OR. m > 3 + 32 .OR. fname(1:3) /= 'tr:' .OR. c_string_ends_blank(name)) THEN
+       ierr = TOT_ERR_INVALID
+       RETURN
+    END IF
+    DO i = 1, m - 3
+       cname(i) = fname(3 + i:3 + i)
+    END DO
+    cname(m - 2) = C_NULL_CHAR
+    ierr = tr_api_history_get(cname, buf, n, got)
+  END FUNCTION tot_api_history_get
+
+  ! .TRUE. when the C string S (NUL-terminated) ends in a blank, or has no NUL within 128 characters: tr_get_scalar
+  ! refuses a name with a blank, so tot's "tr:" names must too (c_string_to_fortran pads with blanks and hides
+  ! them), and a name that the 128-character copy of c_string_to_fortran cuts is not the name that was sent
+  ! ("tr:T", 124 blanks and "X" was read as "tr:T").
+  PURE FUNCTION c_string_ends_blank(s) RESULT(r)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: s
+    LOGICAL :: r
+    INTEGER :: k
+    r = .FALSE.
+    DO k = 1, 128
+       IF (s(k) == C_NULL_CHAR) THEN
+          IF (k > 1) r = (s(k - 1) == ' ')
+          RETURN
+       END IF
+    END DO
+    r = .TRUE.          ! no NUL in 128 characters: the copy cut the name
+  END FUNCTION c_string_ends_blank
+
+  !-------------------------------------------------------------------
+  ! tot_continue : advance the prepared case nsteps more steps without
+  ! preparing again (PR 3 of #96). Delegates to tr_api_continue, as
+  ! tot_run delegates to tr_api_run: tot runs only TR.
+  !
+  ! Returns 0 = success, 1 = TR_ERR_INVALID: tr_continue refused (the
+  ! record is TR's tr_last_error: no preparation, a failed run, a
+  ! structural set since the preparation -- an "eq:" name too, which
+  ! tot_param_registry's eq dispatcher tells TR about -- a bad value),
+  ! or nsteps < 0 (refused there); 2 = not initialised; 3 = the loop failed.
+  !-------------------------------------------------------------------
+  FUNCTION tot_api_continue(nsteps) RESULT(ierr) BIND(C, NAME="tot_continue")
+    INTEGER(C_INT), VALUE, INTENT(IN) :: nsteps
+    INTEGER(C_INT) :: ierr
+    INTEGER(C_INT) :: rc
+
+    IF (.NOT. g_initialized) THEN      ! as tot_run: tot_init has made TR present whenever it succeeded
+       ierr = TOT_ERR_NOT_INIT
+       RETURN
+    END IF
+    rc = tr_api_continue(nsteps)      ! a negative count is refused there, with a record
+    IF (rc == 0) THEN
+       ierr = TOT_ERR_OK
+    ELSE IF (rc == 1) THEN          ! TR_ERR_INVALID: a refusal, nothing ran
+       ierr = TOT_ERR_INVALID
+    ELSE
+       ierr = TOT_ERR_RUN_FAILED
+    END IF
+  END FUNCTION tot_api_continue
 
 END MODULE tot_api
 

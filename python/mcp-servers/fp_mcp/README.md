@@ -61,7 +61,7 @@ MCP (Model Context Protocol) は、Anthropic が策定した **「LLM と外部�
    make -C fp libfpapi.so
    ```
 
-   成功すると `fp/libfpapi.so` が生成されます (Phase L-4 で整備済みです)。エクスポートされる C ABI シンボルは 8 つ: エントリポイント 6 つ (`fp_init`, `fp_run`, `fp_set_param`, `fp_set_param_str`, `fp_get_state`, `fp_finalize`) と、`fplib` が読み込み時に `fp_state_t` のレイアウトを照合するための 2 つ (`fp_state_abi_version`, `fp_state_size`) です。
+   成功すると `fp/libfpapi.so` が生成されます (Phase L-4 で整備済みです)。エクスポートされる C ABI シンボルは 13 個: エントリポイント 6 つ (`fp_init`, `fp_run`, `fp_set_param`, `fp_set_param_str`, `fp_get_state`, `fp_finalize`)、`fplib` が読み込み時に `fp_state_t` のレイアウトを照合するための 2 つ (`fp_state_abi_version`, `fp_state_size`)、分布関数の 5 つ (`fp_get_fns_info`, `fp_get_fns_grid`, `fp_get_fns`, `fp_fns_info_abi_version`, `fp_fns_info_size`) です。
 
 3. **`mcp` パッケージ (Python MCP SDK)**
 
@@ -117,12 +117,13 @@ python -m fp_mcp.server --help
 python -m fp_mcp.server --print-tools
 ```
 
-以下の 10 ツールが並びます。
+以下の 11 ツールが並びます。
 
 ```
 describe_parameters
 describe_state_schema
 finalize
+get_distribution
 get_state
 init
 run
@@ -262,6 +263,9 @@ LLM は `describe_parameters` を呼び、`group == "wave"` を抽出して返�
 | `describe_parameters` | パラメータ一覧・型・説明 + mesh caps | なし |
 | `describe_state_schema` | `get_state` の JSON schema | なし |
 | `run_and_get_state` | init + set + run + get_state を一括 | `params`, `ntmax` |
+| `get_distribution` | kinetic 種族の分布関数 `FNS` を `.npy` ファイルに書き出す (task-web-client #232) | `nsa` (default=1), `filename` (default=`""`) |
+
+`get_distribution` は `FNS` を float64 の `f[ir, ip, ith]` (FP の値のまま、スケールなし) としてサーバの作業ディレクトリ (task-web ではジョブフォルダ) に書きます。既定のファイル名は `fp_fns_nsa<nsa>.npy` です。`filename` は印字可能な単純なファイル名で、`.npy` で終わり、パス区切り、`:` (ドライブ指定)、先頭のドットを含んではいけません (ライブラリを開く前に検査され、違反は拒否されます)。同名のファイルは置き換えられます (一時ファイルに書いてから置き換えるので、失敗しても元のファイルは残り、シンボリックリンクはたどりません。既定名は種族ごとなので、後の呼び出しが前のスナップショットを上書きします。複数残したいときは `filename` を指定してください)。分布そのものは JSON では返りません。返り値は `file` (ファイル名)、`path` (絶対パス)、`shape` (`[nr, np, nth]`)、`info` (`fp_fns_info_t` の全フィールド)、グリッド `pm` (規格化運動量)・`thm` (ピッチ角 [rad])・`rm` (r/a)、およびそのグリッド上の `energy_keV`, `speed_m_s`, `pitch` (`cos(thm)`) です。分布があるのは `run` の後で、`set_param` 系の後は次の `run` まで拒否されます (ファイルは書かれません)。
 
 ## 8. FP 固有の注意点
 
@@ -308,7 +312,7 @@ fp.set_param_str(name="KNAMEQ", value="eq.bin")
 fp.run(ntmax=2)
 ```
 
-パスはサーバプロセスの cwd 基準で解決されます。`KNAMEQ` は `CHARACTER(LEN=80)` なので、パスは 80 バイト以内にしてください (81〜128 バイトのパスはエラーなしで先頭 80 文字に切り詰められ、128 バイトを超えると `invalid parameter` で拒否されます)。`MODELG=3` を指定しつつ `KNAMEQ` が存在しないファイルを指していると、`eq_load` が失敗し、`fp_mesh` がそのエラーを返して (`fp/fpprep.f90`)、`fp_api_run` が `FP_ERR_CALC_FAILED` を返します (`fp/fp_api.f90`)。fplib の `FplibCalcFailedError` が MCP では `calculation failed` を含む `ToolError` に変換され、`run` のエラーとしてクライアントに届きます (開けないファイルやディレクトリを指した場合も同じです)。一方、開けるが TASK/EQ 形式でないファイルを指すと、`eq/eqfile.f90` は先頭のレコードを `IOSTAT` なしで読むため、Fortran ランタイムエラーでサーバプロセスごと終了することがあります (空ファイルやテキストファイルで確認)。`KNAMEQ` には TASK/EQ 形式のファイルだけを指定してください。`fp_param_registry.f90` のコメントにある `BESEKNX` の `NCALC=-2` は、`FP_ERR_CALC_FAILED` へのエラー伝播が入る前の挙動です。`MODELG` を設定しない場合は `pl_init` 既定の `MODELG=2` (解析的平衡) で動くので、`KNAMEQ` は不要です。
+パスはサーバプロセスの cwd 基準で解決されます。`KNAMEQ` は `CHARACTER(LEN=80)` なので、パスは 80 バイト以内にしてください (それより長いパスは切り詰められず、`invalid parameter` で拒否されます)。`MODELG=3` を指定しつつ `KNAMEQ` が存在しないファイルを指していると、`eq_load` が失敗し、`fp_mesh` がそのエラーを返して (`fp/fpprep.f90`)、`fp_api_run` が `FP_ERR_CALC_FAILED` を返します (`fp/fp_api.f90`)。fplib の `FplibCalcFailedError` が MCP では `calculation failed` を含む `ToolError` に変換され、`run` のエラーとしてクライアントに届きます (開けないファイルやディレクトリを指した場合も同じです)。開けるが TASK/EQ 形式でないファイル (空ファイルやテキストファイルなど) を指した場合も同じく `run` が `calculation failed` で失敗します: `eq/eqfile.f90` の `EQRTSK` が読み込みの失敗を検出して `eq_load` にエラーを返します (以前は先頭のレコードを検査なしで読み、Fortran ランタイムエラーでサーバプロセスごと終了していました)。`KNAMEQ` には TASK/EQ 形式のファイルを指定してください。`fp_param_registry.f90` のコメントにある `BESEKNX` の `NCALC=-2` は、`FP_ERR_CALC_FAILED` へのエラー伝播が入る前の挙動です。`MODELG` を設定しない場合は `pl_init` 既定の `MODELG=2` (解析的平衡) で動くので、`KNAMEQ` は不要です。
 
 なお `KNAMFP` など他の文字列パラメータはまだレジストリに CASE エントリがなく、`invalid parameter` になります。
 
@@ -318,7 +322,35 @@ fp.run(ntmax=2)
 - `NSAMAX`: kinetic に時間発展させる種族の数 (`FP_MAX_NSAMAX=8` が上限)。
 - `NSBMAX`: 背景種族の数。
 
-通常は `NSAMAX + NSBMAX <= NSMAX` を満たすよう設定します。
+`NSAMAX <= NSBMAX` とし、`NS_NSA(i)` は 1〜`MIN(NSMAX, NSBMAX)`、`NS_NSB(i)` は 1〜`NSMAX` に収めてください (`run` が検査します。背景種族は kinetic 種族も含みます)。
+
+### 8.6. NBI ソースのパラメータ (task-web-client #232)
+
+NBI ソースとバウンス平均を設定する次の 8 つの名前が、`describe_parameters` の一覧とレジストリに入っています。配列名は `NAME[i]` (`i` = 1〜20) で設定します。
+
+| 名前 | 型 | 意味 | 既定値 |
+|---|---|---|---|
+| `MODELA` | int | 0 = バウンス平均なし、1 = バウンス平均 | 0 |
+| `NBEAMMAX` | int | ビームの本数 (0〜20) | なし |
+| `NSSPB[i]` | int | ビーム `i` の namelist 種族 `NS` | 2 |
+| `SPBTOT[i]` | real | ソースの粒子数 [10^20 /s] (FP は `RNFP0` [10^20 m^-3] で規格化します。`fp/fpinit.f90` のコメントは [1/s] と書いていますが誤りです) | 0 |
+| `SPBENG[i]` | real | 粒子エネルギー [eV] | 1e6 |
+| `SPBANG[i]` | real | ソースのピッチ角 [度] | 20 |
+| `SPBR0[i]` | real | ソースの中心位置 [r/a] | 0 |
+| `SPBRW[i]` | real | ソースの幅 (ガウス幅) [r/a] | 0.2 |
+
+`NBEAMMAX` には既定値がありません。`fp_init` は値を設定せず、namelist だけが設定するので、ビームを使うときは必ず設定してください。`NBEAMMAX` は finalize/init でもリセットされないため、常駐プロセスでは前のシナリオの値が残ります。シナリオごとに明示的に設定してください (§8.2 参照)。値を設定する時点では、添字 (1〜20) が検査され、さらにすべての名前について、不正な添字、有限でない値、整数の名前では既定の整数を超える値が拒否されます。値の規則は `run` の中で `fp_prep` より前にまとめて検査され、違反ごとに `XX fp_run:` の行が 1 行出て、`run` は `invalid parameter` で拒否されます。
+
+- `MODELA` は 0 か 1、`NBEAMMAX` は 0〜20 (どちらも `MODEL_NBI` によらず検査されます)。
+- `MODEL_NBI=1` のとき: `NBEAMMAX` 以下のすべてのビームで `SPBRW > 0` (ソースの有無にかかわらず。幅 0 は 0/0 になります)。`SPBTOT /= 0` のビームは、`NBEAMMAX` 以内で、kinetic 種族上 (`NSSPB` を `NS_NSA` と照合。0 はそのスロットの番号と読む) にあり、`0 <= SPBANG < 180`、`SPBENG >= 0` であること。
+
+- `MODELA = 1` または `MODEL_WAVE /= 0` のとき `NAVMAX >= 1` (バウンス平均と波動拡散が `NAVMAX` で割り、`NAVMAX` まで回すため。0 だとゼロ除算で、波のパワーがなくても波動項が NaN になり、負だと平均のループが空になります。`MODEL_NBI` によらず検査されます)。
+- `MODEL_NBI=1` のとき、ソースのあるビームの運動量 `p = sqrt(2*SPBENG/(1000*T))` (`SPBENG` は eV、`T = (PTPR + 2 PTPP)/3` は keV、ビームの種族のもの) が、その種族のメッシュの端 `PMAX` (`EMAX` の和が 0 でなく、その種族の `EMAX /= 0` なら `sqrt(2 EMAX / T)`。`EMAX` は未登録) 以上なら拒否されます (ビームの種族に何も入りません)。検査は FP と同じ式と演算順序で行うので、判定は FP とビット単位で一致します。kinetic 電子があるとき、FP の電子の補償ソースは電子のグリッドを別に調べるため、ソースの収支が合わなくなります。温度が 0 以下 (または NaN) だと運動量が決まらず、これも拒否されます。
+- `MODEL_NBI=1`、kinetic 電子あり、`NSSPB[1] /= 1` のとき、FP の電子の補償ソース (`fp/fpcoef.f90` の `NBI_SOURCE_A0`) は、ビームの種族を持つ最後の kinetic スロット `NSABEAM` の `PZ(NSABEAM)` を使います。`PZ` は種族番号で引くので、本来は `PZ(NSSPB)` のはずです。これは FP のバグで、リードに報告済みであり、ここでは直していません。2 つの電荷が違う実行は拒否されます。FP が電子を入れる (`PZ` を読む) のは、ビームのエネルギーに対する電子の運動量を含む電子メッシュのセルだけです。電子の運動量が電子メッシュの端 (`PMAX[1]`) 以上のビームは、先に専用の行で拒否されます (イオンだけが入り、電子が入らないため)。
+
+`fp_prep` が作るメッシュが要るため検査されないもの: 径方向のどの点にも届かないほど狭いソースは 0/0 になります。
+
+FP の既定の `PMAX` は 7 です。3 keV のプラズマに 80 keV のビームを入れる場合 (p = sqrt(2E/(1000 T)) = 7.3) は `PMAX[2]` を上げる必要があります (例えば `PMAX[2] = 10`。7.4 でも足ります) (既定のままではメッシュの外で、実行は拒否されます)。`SPBPANG` は、`fp/` 以下に読むソースがないため登録されていません。
 
 ## 9. FAQ / トラブルシューティング
 

@@ -1,0 +1,123 @@
+"""eq: names through tr_set_param: they reach EQ's registry inside libtrapi.so."""
+import pytest
+from trlib import Trlib, TrlibParamError
+
+pytestmark = pytest.mark.forked
+
+
+def test_eq_rb_is_settable_through_tr():
+    with Trlib() as t:
+        t.set_param("eq:RB", 2.1)
+        t.set_param("eq:NSGMAX", 128)
+
+
+def test_unknown_eq_name_is_refused():
+    with Trlib() as t, pytest.raises(TrlibParamError):
+        t.set_param("eq:NOSUCHNAME", 1.0)
+
+
+def test_eq_str_name_is_refused_when_unknown():
+    with Trlib() as t, pytest.raises(TrlibParamError):
+        t.set_param_str("eq:NOSUCHNAME", "x")
+
+
+def test_an_eq_set_before_the_first_run_is_taken_and_the_run_follows():
+    # After the first preparation an eq: set is refused (test_eq_name_guards.py), so the one place an accepted set
+    # can matter is before it: the first run prepares with it.
+    with Trlib() as t:
+        t.set_param("eq:RB", 2.1)
+        t.run(1)
+        assert t.get_state().nt == 1
+
+
+def test_a_refused_unknown_eq_set_does_not_prepare_again():
+    # Before the first run an unknown eq: name is refused by the registry (not by the one-process guard). Checked
+    # here: the refusal raises, and the runs of 2 and 1 steps after it end at nt 3. That does not show the refused
+    # set left the registry's counter alone: run(2) prepares in any case, and run(1) is the one that would prepare
+    # again if the counter had moved. test_a_refused_eq_set_after_a_run_does_not_prepare_again is the same check
+    # with a run before the refusal.
+    with Trlib() as t:
+        with pytest.raises(TrlibParamError):
+            t.set_param("eq:NOSUCHNAME", 1.0)
+        t.run(2)
+        t.run(1)
+        assert t.get_state().nt == 3
+
+
+def test_a_refused_eq_set_after_a_run_does_not_prepare_again():
+    with Trlib() as t:
+        t.run(2)
+        with pytest.raises(TrlibParamError):
+            t.set_param("eq:NOSUCHNAME", 1.0)
+        t.run(1)
+        assert t.get_state().nt == 3
+
+
+def test_eq_knameq_is_refused_whatever_its_form():
+    # TR passes its own KNAMEQ to EQ (test_eq_name_guards.py has the message).
+    with Trlib() as t:
+        with pytest.raises(TrlibParamError):
+            t.set_param_str("eq:KNAMEQ", "eqdata")
+
+
+# ---- eq:NRMAX across lifecycles equals a fresh process (skipped while eq: names are refused after a preparation;
+# needs the bpsd
+# spline-resize fix and eq_bpsd_put's re-initialisation, test_regrid_equals_fresh.py)
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from trlib.tests.regrid_marks import EQ_MESH_GUARD
+
+PYTHON_ROOT = Path(__file__).resolve().parents[2]
+
+PRELUDE = f"""
+import json, sys
+sys.path.insert(0, {str(PYTHON_ROOT)!r})
+from trlib import Trlib, TrlibError
+
+def m9(eq_nrmax=None):
+    with Trlib() as t:
+        t.set_param("MODELG", 9)
+        if eq_nrmax is not None:
+            t.set_param("eq:NRMAX", eq_nrmax)
+        t.run(1)
+        return t.get_state().to_dict()
+
+def dump(d):
+    print("DUMP " + json.dumps(d, sort_keys=True), flush=True)
+"""
+
+
+def _dump(body):
+    r = subprocess.run(
+        [sys.executable, "-c", PRELUDE + body], capture_output=True,
+        text=True, timeout=240, env={**os.environ, "PYTHONPATH": str(PYTHON_ROOT)},
+    )
+    d = [l[5:] for l in r.stdout.splitlines() if l.startswith("DUMP ")]
+    assert r.returncode == 0 and len(d) == 1, (r.returncode, r.stdout[-300:], r.stderr[-300:])
+    return d[0]
+
+
+@EQ_MESH_GUARD
+def test_eq_nrmax_30_then_60_across_lifecycles_equals_a_fresh_60():
+    seq = _dump("m9(30)\ndump(m9(60))\n")
+    fresh = _dump("dump(m9(60))\n")
+    assert seq == fresh
+
+
+@EQ_MESH_GUARD
+def test_eq_rb_2_then_the_defaults_in_two_lifecycles_equals_a_fresh_defaults_run():
+    # eq:RB 2.0 changes EQ's NRPMAX (29 instead of 50) while EQ's NRMAX stays
+    # the same: the case only the bpsd spline-resize fix covers.
+    seq = _dump(
+        'with Trlib() as t:\n'
+        '    t.set_param("MODELG", 9)\n'
+        '    t.set_param("eq:RB", 2.0)\n'
+        '    t.run(1)\n'
+        'dump(m9())\n')
+    fresh = _dump("dump(m9())\n")
+    assert seq == fresh

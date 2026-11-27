@@ -99,6 +99,22 @@ def _run_case(apply_fn, ntmax: int, cwd: Path | None = None) -> dict:
     return state.to_dict()
 
 
+def _run_staged(fixture_module) -> dict:
+    """The staged case of ``fixtures/tr_iter01_m9_params.py`` through one Trlib handle: ``run``, then
+    ``continue_run`` for each further stage, with the stage's parameters set before it. Returns the metrics dict with
+    NT as ``tr2`` reports it (its C starts NT at 0 again; the library counts on)."""
+    from trlib import Trlib  # noqa: WPS433
+
+    with Trlib() as tr:
+        fixture_module.apply(tr)
+        fixture_module.run_stages(tr)
+        state = tr.get_state()
+    out = state.to_dict()
+    assert out["NT"] == sum(steps for steps, _ in fixture_module.STAGES), out["NT"]
+    out["NT"] = fixture_module.TR2_FINAL_NT
+    return out
+
+
 def _compare_with_baseline(actual: dict, case_name: str, tol: str = "1e-10") -> None:
     """Write ``actual`` to a temp JSON and diff it vs the baseline.
 
@@ -217,19 +233,31 @@ class TestEquivalence(unittest.TestCase):
         from trlib.tests.fixtures import tr_iter01_params as f
         self._check_case(f)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "#190: tr_tst2 baseline at test_run/baselines/tr_tst2/metrics.json "
-            "is missing AJRFT (pre-AJRFT 13-scalar shape). PR #187 added AJRFT "
-            "to TR's dump path; #193 regenerated tr_iter01 baseline but tr_tst2 "
-            "baseline regen is blocked by upstream eq_tst2 drift (~3e-9 > 1e-10). "
-            "Remove this xfail when #190 closes."
-        ),
-    )
+    # #190 xfail REMOVED here, deliberately and necessarily. Its reason was
+    # "tr_tst2 baseline ... is missing AJRFT ... baseline regen is blocked by
+    # upstream eq_tst2 drift". Both halves are now resolved: the regenerated
+    # baseline in this commit carries 14 scalars including scalars.AJRFT (it
+    # is the one key the regen ADDS), and the eq_tst2 drift was the stale
+    # eqdata.TST-2 blob, also replaced here.
+    #
+    # The removal is not optional: with strict=True and no xfail_strict
+    # override anywhere in this repo, a now-passing test_tst2 would report
+    # XPASS(strict) and fail CI red. Leaving the marker in place would trade
+    # one red for another.
     def test_tst2(self):
         from trlib.tests.fixtures import tr_tst2_params as f
         self._check_case(f)
+
+    def test_iter01_m9(self):
+        """tr_continue against tr2's three stages (r, c, c) of ITER under MODELG 9, NTEQIT 0.
+
+        The baseline is generated on Linux from ``tr2`` (``./run_tests.sh tr_iter01_m9``, regen-baselines.yml); the
+        test skips without it. ``tr2``'s C starts NT at 0 again, the library counts on: the library's NT (10000)
+        becomes the last stage's (6500) before the comparison (``fixtures/tr_iter01_m9_params.py``).
+        """
+        from trlib.tests.fixtures import tr_iter01_m9_params as f
+        actual = _run_staged(f)
+        _compare_with_baseline(actual, f.BASELINE_NAME, self.TOLERANCE)
 
     @pytest.mark.xfail(
         strict=True,

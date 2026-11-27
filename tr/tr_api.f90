@@ -15,6 +15,8 @@
 !   tr_get_state  -> populates the tr_state_c struct from the same set of
 !                    TRCOMM scalars/arrays that trregress.f90 dumps.
 !   tr_finalize   -> DEALLOCATE_TRCOMM + clears g_* flags.
+!   tr_continue   -> tr_loop on the prepared case, NT counting on (PR 3 of #96);
+!                    tr_param_class says which names it takes in.
 !
 ! The Fortran-side names are tr_api_* to avoid colliding with the existing
 ! SUBROUTINE tr_init in trinit.f90 (and friends); the C-side public names
@@ -41,18 +43,31 @@ MODULE tr_api
        AJRFT, &
        EXTERNAL_DRIVEN_I, EXTERNAL_DRIVEN_RW, &
        ALLOCATE_TRCOMM, DEALLOCATE_TRCOMM
-  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation
+  USE tr_param_registry, ONLY: tr_param_set, tr_param_set_str, tr_param_generation, &
+       tr_param_note_external_set, tr_param_structural_generation, tr_param_last_structural, tr_param_class
+  USE eq_param_registry, ONLY: eq_param_set, eq_param_set_str
+  ! EQ's mesh sizes and the compile-time maxima of its arrays (the ones eq_validate checks, eq/eq_api.f90). Renamed:
+  ! TRCOMM has an NRMAX of its own.
+  USE eqcom0_mod, ONLY: eq_NRGM => NRGM, eq_NZGM => NZGM, eq_NPSM => NPSM, eq_NSGM => NSGM, eq_NTGM => NTGM, &
+                        eq_NUGM => NUGM, eq_NRM => NRM, eq_NTHM => NTHM, eq_NSUM => NSUM, eq_NRVM => NRVM
+  USE eqcom1_mod, ONLY: eq_NSGMAX => NSGMAX, eq_NTGMAX => NTGMAX, eq_NUGMAX => NUGMAX, eq_NRGMAX => NRGMAX, &
+                        eq_NZGMAX => NZGMAX, eq_NPSMAX => NPSMAX, eq_NRMAX => NRMAX, eq_NTHMAX => NTHMAX, &
+                        eq_NSUMAX => NSUMAX, eq_NRVMAX => NRVMAX
+  USE libnf,             ONLY: nf_finalize
   USE plinit,            ONLY: pl_init
   USE equnit,            ONLY: eq_init
   USE trinit,            ONLY: trinit_fortran => tr_init
   USE trprep,            ONLY: tr_prep
   USE trloop,            ONLY: tr_loop
+  USE trbpsd,            ONLY: tr_eq_init
+  USE trfailure
   IMPLICIT NONE
   PRIVATE
-  PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, &
-            tr_api_set_param, tr_api_set_param_str, tr_api_finalize, &
-            tr_api_validate, &
-            tr_check_bpsd_pull
+  PUBLIC :: tr_api_init, tr_api_run, tr_api_get_state, tr_api_history_get, &
+            tr_api_set_param, tr_api_set_param_str, tr_api_finalize, tr_api_history_name, &
+            tr_api_validate, tr_api_history_length, tr_api_history_full, tr_api_history_count, &
+            tr_check_bpsd_pull, tr_api_last_error, tr_api_scalar_count, tr_api_scalar_name, tr_api_get_scalar, &
+            tr_api_continue, tr_api_param_class, tr_api_eq_set_refused_in_case
 
   ! Error codes (must match tr_api.h enum):
   !   0 = OK
@@ -68,13 +83,31 @@ MODULE tr_api
   ! Lifecycle flags (module-scope state, single instance only at L-3).
   ! #189: at most 3 findings per active species (density sign / zero
   ! density / temperature), species bounded by TR_MAX_NSMAX.
-  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX
+  ! + RIPS, RIPE (current_for_eq); + the equation switches, NPSCMAX and three per particle source
+  ! (source_and_equation_violations; NPSCM = 10, tr/trcomm_const.f90); + NRMAX (mesh_violation); + the ten EQ mesh sizes
+  ! (eq_mesh_violation)
+  INTEGER, PARAMETER :: SPC_MAX_VIOL = 3 * TR_MAX_NSMAX + 2 + 6 + 3 * 10 + 1 + 10
 
   LOGICAL, SAVE :: g_initialized = .FALSE.
   LOGICAL, SAVE :: g_prepared    = .FALSE.
   ! Registry mutation counter seen by the last successful prep (#253).
   ! -1 = never prepared. See tr_param_generation in the registry.
   INTEGER, SAVE :: g_prep_generation = -1
+  ! The structural count (tr_param_structural_generation) seen by the last successful prep, and whether a tr_prep or
+  ! tr_loop of tr_run or tr_continue failed since then: tr_continue refuses on either (PR 3 of #96).
+  INTEGER, SAVE :: g_prep_structural = -1
+  LOGICAL, SAVE :: g_failed = .FALSE.
+  ! Whether this lifecycle has completed a preparation (a tr_prep that returned 0). tr_init resets NT but not T, and a
+  ! tr_prep that fails early returns before it resets T (tr/trprep.f90:79, T at :145), so until one succeeds T is the
+  ! previous lifecycle's: a failure or refusal record made before then carries time 0 (record_time).
+  LOGICAL, SAVE :: g_time_started = .FALSE.
+  ! NRMAX of this process's first tr_prep attempt; 0 = none yet. Kept across
+  ! tr_finalize and tr_init, as bpsd's splines are (see mesh_violation).
+  INTEGER, SAVE :: g_first_nrmax = 0
+  ! The same fact seen from the eq: names: once this process has made a preparation attempt (g_first_nrmax /= 0), an
+  ! eq: set is refused (eq_name_refused), for the same bpsd reason. Both come off together with 61ff3cdf's guard.
+  ! The sizes of the scalar table and of the history table (the constructors below must match them).
+  INTEGER, PARAMETER :: N_SCALARS = 31, N_HISTORY = 47
 
   ! #246: layout query, callable before tr_init.
   PUBLIC :: tr_api_state_abi_version, tr_api_state_size
@@ -127,8 +160,17 @@ CONTAINS
        RETURN
     END IF
 
+    ! The MODELG=9 flag "adopt EQ's psi_p" is saved module state that a
+    ! run clears; a new lifecycle starts from its initial value (#228).
+    tr_eq_init    = .TRUE.
     g_initialized = .TRUE.
     g_prepared    = .FALSE.
+    g_failed      = .FALSE.
+    g_time_started = .FALSE.
+    ! Library mode: tr_loop, tr_set_metric and tr_exec record their failures and
+    ! tr_loop tests the periodic equilibrium solve. Only this entry sets it.
+    tr_library_mode = .TRUE.
+    CALL tr_failure_clear()      ! a new lifecycle starts with no failure on record
     ierr = TR_OK
   END FUNCTION tr_api_init
 
@@ -140,7 +182,7 @@ CONTAINS
     REAL(C_DOUBLE), VALUE,                INTENT(IN) :: value
     INTEGER(C_INT) :: ierr
     CHARACTER(LEN=64) :: fname
-    INTEGER :: i, n
+    INTEGER :: i, n, eq_rc
 
     IF (.NOT. g_initialized) THEN
        ierr = TR_ERR_NOT_INIT
@@ -155,10 +197,37 @@ CONTAINS
        fname(i:i) = name(i)
        n = i
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
 
-    ! Changing NRMAX / NSMAX after allocation would invalidate the
-    ! currently-allocated arrays. Rather than silently re-allocating we
-    ! require the caller to finalize and re-init in that case.
+    ! An "eq:" name belongs to EQ's registry (the same one tot's "eq:"
+    ! names reach). A set that EQ takes changes what the next preparation
+    ! reads, so TR prepares again before its next run.
+    IF (n > 3) THEN
+       IF (fname(1:3) == 'eq:') THEN
+          IF (eq_name_refused('tr_set_param', fname(4:n))) THEN
+             ierr = TR_ERR_INVALID
+             RETURN
+          END IF
+          CALL eq_param_set(fname(4:n), REAL(value, rkind), eq_rc)
+          IF (eq_rc /= 0) THEN
+             ierr = TR_ERR_INVALID
+          ELSE
+             CALL tr_param_note_external_set(fname(1:n))
+             ierr = TR_OK
+          END IF
+          RETURN
+       END IF
+    END IF
+
+    ! NRMAX is settable. Changing the mesh between preparations in one
+    ! process needs a bpsd with the spline-resize fix (see the README).
     IF (tr_param_set(TRIM(fname), value) /= 0) THEN
        ierr = TR_ERR_INVALID
     ELSE
@@ -173,10 +242,10 @@ CONTAINS
   !-------------------------------------------------------------------
   ! tr_set_param_str : string-valued parameter setter (KNAMEQ, ...).
   !
-  ! Accepts two NUL-terminated C strings; both must fit in the
-  ! fixed-length Fortran buffers (64 bytes for the name, 128 bytes for
-  ! the value, matching the longest entry in the trcomm_ctrl
-  ! CHARACTER(LEN=80) declarations with some slack).
+  ! Accepts two NUL-terminated C strings. Neither is cut: a name that
+  ! does not fit the 64-character buffer is refused, and so is a value
+  ! that does not fit the 128-character one or, in the registry, the
+  ! 80 characters of KNAMEQ (trailing blanks are not counted).
   !-------------------------------------------------------------------
   FUNCTION tr_api_set_param_str(name, value) RESULT(ierr) BIND(C, NAME="tr_set_param_str")
     CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
@@ -197,11 +266,43 @@ CONTAINS
        IF (name(i) == C_NULL_CHAR) EXIT
        fname(i:i) = name(i)
     END DO
+    ! A name longer than the buffer is refused, not cut: what the cut
+    ! leaves can be another parameter's name ("RR", blanks, anything).
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
     fvalue = ' '
     DO i = 1, LEN(fvalue)
        IF (value(i) == C_NULL_CHAR) EXIT
        fvalue(i:i) = value(i)
     END DO
+    ! As for the name: a value longer than the buffer is refused, not cut.
+    IF (i > LEN(fvalue)) THEN
+       IF (c_str_overflows(value, LEN(fvalue) + 1)) THEN
+          ierr = TR_ERR_INVALID
+          RETURN
+       END IF
+    END IF
+
+    ! "eq:" names go to EQ's string setter, as in tr_api_set_param.
+    IF (LEN_TRIM(fname) > 3) THEN
+       IF (fname(1:3) == 'eq:') THEN
+          IF (eq_name_refused('tr_set_param_str', fname(4:LEN_TRIM(fname)))) THEN
+             ierr = TR_ERR_INVALID
+             RETURN
+          END IF
+          IF (eq_param_set_str(fname(4:LEN_TRIM(fname)), TRIM(fvalue)) /= 0) THEN
+             ierr = TR_ERR_INVALID
+          ELSE
+             CALL tr_param_note_external_set(TRIM(fname))
+             ierr = TR_OK
+          END IF
+          RETURN
+       END IF
+    END IF
 
     IF (tr_param_set_str(TRIM(fname), TRIM(fvalue)) /= 0) THEN
        ierr = TR_ERR_INVALID
@@ -229,6 +330,7 @@ CONTAINS
     INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
     CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
 
+    CALL tr_failure_clear()      ! the record of the last failure belongs to one tr_run
     IF (.NOT. g_initialized) THEN
        ierr = TR_ERR_NOT_INIT
        RETURN
@@ -258,6 +360,9 @@ CONTAINS
        ! Same contract as fp_run (#242): one line per violation on unit 6,
        ! TR_ERR_INVALID returned, handle stays usable.
        CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+       CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
+       CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
+       CALL eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
        IF (nviol > 0) THEN
           DO i = 1, nviol
              WRITE(6, '(A)') 'XX tr_run: '//TRIM(vnames(i))//': '//TRIM(vmsgs(i))
@@ -265,23 +370,45 @@ CONTAINS
           ierr = TR_ERR_INVALID
           RETURN
        END IF
+       ! The first attempt fixes the mesh, failed or not: tr_prep can size
+       ! bpsd's splines (tr_set_metric) and then fail later (tr_prof_impurity).
+       IF (g_first_nrmax == 0) g_first_nrmax = NRMAX
+       ! Not prepared until tr_prep succeeds: a preparation that fails before it starts the history again
+       ! (NGT = 0) leaves the rows of the run before, which are not this run's (history_rows gives 0).
+       g_prepared = .FALSE.
        CALL tr_prep(prep_ierr)
        IF (prep_ierr /= 0) THEN
+          CALL tr_failure_record(TRF_PREP_FAILED, prep_ierr, NT, record_time(), 'tr_prep failed')
+          g_failed = .TRUE.
           ierr = TR_ERR_CALC_FAILED
           RETURN
        END IF
        g_prepared = .TRUE.
+       g_time_started = .TRUE.
+       g_failed   = .FALSE.
        g_prep_generation = tr_param_generation()
+       g_prep_structural = tr_param_structural_generation()
     END IF
 
     ! Override NTMAX for this call so tr_loop steps exactly ntmax_in
     ! times. tr_loop increments NT internally; restoring NTMAX afterwards
     ! leaves the namelist-configured value intact for subsequent calls.
+    ! NT + ntmax_in must fit a default integer: past it NTMAX turned negative, the loop left at once and the call
+    ! reported success without a step.
+    IF (ntmax_in > HUGE(NT) - NT) THEN
+       WRITE(6, '(A,I0,A,I0,A)') 'XX tr_run: ', INT(ntmax_in), ' steps after step ', NT, &
+            ' would take the step counter past its largest value'
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
     ntmax_save = NTMAX
     NTMAX      = NT + ntmax_in
     CALL tr_loop(calc_ierr)
     NTMAX      = ntmax_save
     IF (calc_ierr /= 0) THEN
+       ! A failure that tr_loop's callees did not record is kept as OTHER.
+       CALL tr_failure_record(TRF_OTHER, calc_ierr, NT, T, 'tr_loop returned a non-zero status')
+       g_failed = .TRUE.
        ierr = TR_ERR_CALC_FAILED
        RETURN
     END IF
@@ -387,12 +514,19 @@ CONTAINS
     END IF
 
     CALL DEALLOCATE_TRCOMM
+    ! libnf's id_nf_nnf is per-session state that DEALLOCATE_TRCOMM cannot
+    ! reach (module cycle -- see nf_finalize).  Without this it survives
+    ! into the next init, where tr_prep_pnf's ALLOCATED guard reads .TRUE.
+    ! for a table the new session never built.
+    CALL nf_finalize
     ! Pair with the OPEN(7) in tr_api_init so re-init after finalize
     ! does not try to OPEN an already-open unit (SCRATCH would auto-
     ! delete on program exit but a same-process re-init would fail).
     CLOSE(7, IOSTAT=ierr)
+    tr_eq_init    = .TRUE.
     g_initialized = .FALSE.
     g_prepared    = .FALSE.
+    g_failed      = .FALSE.
     ierr = TR_OK
   END FUNCTION tr_api_finalize
 
@@ -410,35 +544,45 @@ CONTAINS
   !                 overflow the TRCOM0::NSM compile-time maximum used
   !                 by several pl/ak imports, so trip this check
   !                 before tr_run lets the mesh hit the mismatch.
-  !   FILE_MISSING: MODELG in {3,5,8} requires non-blank KNAMEQ. This
-  !                 mirrors the eq_api::eq_api_validate guard — without
-  !                 it, tr_run -> pl_prof_init -> equnit::eq_load opens
-  !                 "" silently and fills the post-load grid with garbage.
+  !   FILE_MISSING: the files a preparation reads: KNAMEQ for MODELG 3,
+  !                 5, 7 and 8, blank or naming no file, as
+  !                 eq_api::eq_api_validate reports it, and for 8 a
+  !                 KNAMEQ2 that TR cannot set (blank); the run fails on
+  !                 each (task-web-client #201).
   !
   !   OUT_OF_RANGE / OUT_OF_RANGE_AFTER_DEP (#189): per-species namelist
-  !                 profile (PN/PNS/PT/PTS) that the solver cannot evolve;
-  !                 see species_profile_violations. tr_run refuses the
-  !                 same findings.
+  !                 profile (PN/PNS/PT/PTS) that the solver cannot evolve,
+  !                 and RIPS or RIPE < 0 with MODELG 9; tr_run refuses the
+  !                 same findings (see species_profile_violations).
   !
-  ! Future categories (follow-up PRs): INCONSISTENT_PAIR, MISSING_REQUIRED.
+  !   OUT_OF_RANGE / INCONSISTENT_PAIR: the equation switches and the
+  !                 particle sources (see source_and_equation_violations).
+  !   OUT_OF_RANGE_AFTER_DEP: an NRMAX other than the process's first
+  !                 (see mesh_violation).
+  !   INCONSISTENT_PAIR, reported only (tr_run does not refuse it):
+  !                 PN(1) or PNS(1) away from the ions' charge density
+  !                 (see quasi_neutrality, task-web-client #200).
   !
-  ! Note: NRMAX / NSZMAX / NSNMAX are NOT currently settable via
-  ! tr_set_param (the registry does not expose them), so runtime values
-  ! stay at their tr_init defaults and never exceed the compile-time
-  ! maxima. Follow-ups that extend the registry should add matching
-  ! checks here.
+  ! Future category (a follow-up PR): MISSING_REQUIRED.
+  !
+  ! Note: NSZMAX / NSNMAX are NOT settable via tr_set_param, so they stay
+  ! at their tr_init defaults. NRMAX is settable, and the registry refuses
+  ! a value outside 3 .. TR_MAX_NRMAX, so it never exceeds the state
+  ! struct.
   !-------------------------------------------------------------------
   FUNCTION tr_api_validate(diag, diag_cap, ndiag) &
            RESULT(ierr) BIND(C, NAME="tr_validate")
+    USE trcomm, ONLY : KNAMEQ2
     TYPE(tr_diag_entry_c), INTENT(OUT) :: diag(diag_cap)
     INTEGER(C_INT), VALUE, INTENT(IN)  :: diag_cap
     INTEGER(C_INT),        INTENT(OUT) :: ndiag
     INTEGER(C_INT) :: ierr
     INTEGER :: nlocal
-    INTEGER :: nviol, i
+    INTEGER :: nviol, nspc, i, ios
     CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
     INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
     CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN - 1) :: fmsg   ! the C field keeps 127 characters + NUL
 
     IF (.NOT. g_initialized) THEN
        ndiag = 0
@@ -451,17 +595,35 @@ CONTAINS
     ! ---- OUT_OF_RANGE: NSMAX overflow vs TRCOM0::NSM=4. -----------
     CALL push_oor("NSMAX", NSMAX, NSM)
 
-    ! ---- FILE_MISSING: MODELG in {3,5,7,8} requires non-blank KNAMEQ.
-    !      Without it, a subsequent tr_run path opens "" silently and
-    !      fills the post-load grid with garbage:
-    !        - MODELG 3/5/8: tr_run -> pl_prof_init -> equnit::eq_load
-    !        - MODELG 7:     tr_set_metric -> pl_vmec (VMEC reader,
-    !                        also takes KNAMEQ as the input filename)
-    !      --------------------------------------------------------
+    ! ---- FILE_MISSING: the files the preparation reads (tr_set_metric,
+    !      tr/trmetric.f90): KNAMEQ for MODELG 3, 5 and 8 (equnit's
+    !      eq_load) and 7 (pl_vmec, the VMEC reader), reported when blank
+    !      or naming no file, as eq_validate does (eq/eq_api.f90); a name
+    !      is looked up as the run opens it, relative to the working
+    !      directory of the process at the time of validate(). MODELG 8
+    !      reads KNAMEQ2 too (EQJAEAR, eq/eq-qst.f90), and TR passes its
+    !      own, which neither tr_set_param_str nor eq:KNAMEQ2 (refused,
+    !      eq_name_refused) sets: it stays the namelist's, blank by
+    !      default, and is reported when blank. The run fails on each too,
+    !      and its failure record says why (task-web-client #201).
     IF (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 7 .OR. MODELG == 8) THEN
        IF (LEN_TRIM(KNAMEQ) == 0) THEN
-          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, &
-               "MODELG=3/5/7/8 requires non-blank KNAMEQ (eq/VMEC file)")
+          WRITE(fmsg, '(A,I0,A)', IOSTAT=ios) "MODELG=", MODELG, &
+               " loads the file KNAMEQ names, and KNAMEQ is blank"
+          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, fmsg)
+       ELSE IF (.NOT. file_there(KNAMEQ)) THEN
+          WRITE(fmsg, '(3A,I0,A)', IOSTAT=ios) "KNAMEQ='", TRIM(KNAMEQ), &
+               "' not found: MODELG=", MODELG, " loads it"
+          IF (ios /= 0) WRITE(fmsg, '(A,I0,A)', IOSTAT=ios) &
+               "KNAMEQ not found: MODELG=", MODELG, " loads it (name unprintable)"
+          CALL push_diag("KNAMEQ", TR_DIAG_FILE_MISSING, fmsg)
+       END IF
+       IF (MODELG == 8) THEN
+          IF (LEN_TRIM(KNAMEQ2) == 0) THEN
+             fmsg = "MODELG=8 loads the file KNAMEQ2 names too, and KNAMEQ2 is blank" // &
+                    " (neither tr_set_param_str nor eq:KNAMEQ2 sets it)"
+             CALL push_diag("KNAMEQ2", TR_DIAG_FILE_MISSING, fmsg)
+          END IF
        END IF
     END IF
 
@@ -469,6 +631,12 @@ CONTAINS
     !      the UFILE modes 1/2/3). Same
     !      findings that make tr_run refuse; here they are diagnostics.
     CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+    nspc = nviol
+    ! ---- The equation switches and the particle source (see
+    !      source_and_equation_violations), also refused by tr_run.
+    CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
+    CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
+    CALL eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
     DO i = 1, nviol
        CALL push_diag(TRIM(vnames(i)), vcodes(i), TRIM(vmsgs(i)))
     END DO
@@ -480,6 +648,15 @@ CONTAINS
     IF (EXTERNAL_DRIVEN_I /= 0.D0 .AND. EXTERNAL_DRIVEN_RW <= 0.D0) THEN
        CALL push_diag("EXTERNAL_DRIVEN_RW", TR_DIAG_OUT_OF_RANGE, &
             "non-positive width with non-zero EXTERNAL_DRIVEN_I; profile cannot be normalized (silent no-op)")
+    END IF
+
+    ! ---- #200: INCONSISTENT_PAIR, a diagnostic only (tr_run runs it), and
+    !      not beside a finding of species_profile_violations (a species
+    !      profile, or RIPS/RIPE below 0 with MODELG 9), which tr_run
+    !      refuses already.
+    IF (nspc == 0) THEN
+       CALL quasi_neutrality("PN[1]", PN, "centre")
+       CALL quasi_neutrality("PNS[1]", PNS, "edge")
     END IF
 
     ndiag = nlocal
@@ -533,6 +710,53 @@ CONTAINS
       diag(nlocal)%code = code_in
     END SUBROUTINE push_diag
 
+    !---------------------------------------------------------------
+    ! #200: the electrons' density (dens(1)) against the ions' charge
+    ! density, sum PZ(s)*dens(s) for s = 2..NSMAX, at the centre (PN)
+    ! or the edge (PNS). TR takes them equal: trprof dilutes the main
+    ! ions by the impurity model's charge, which it takes in proportion
+    ! to the electrons, and nothing makes the namelist densities agree.
+    ! Measured on TR's defaults (PN(1) = 0.5): PN(2) from 0.005 to 0.05
+    ! fails at step 0 (NEGATIVE TEMPERATURE), at 0.1 and 0.4 completes,
+    ! and PN(1) = 0.4 with PN(2) = 0.5 completes. So a difference above
+    ! 1e-3 of the larger is reported and not refused: a run that does
+    ! not fail still runs. Not checked in the UFILE modes (MDLUF 1, 2,
+    ! 3), where the densities come from the UFILE. The caller skips it
+    ! after a finding of species_profile_violations, so every density
+    ! here is finite and not negative, and NSMAX >= 2 (the registry's
+    ! range). A charge sum that overflows (PN near 1e308) is reported.
+    !---------------------------------------------------------------
+    SUBROUTINE quasi_neutrality(name_str, dens, kplace)
+      USE trcomm, ONLY : PZ
+      USE tr_state, ONLY : TR_DIAG_INCONSISTENT_PAIR
+      CHARACTER(LEN=*), INTENT(IN) :: name_str, kplace
+      REAL(rkind),      INTENT(IN) :: dens(:)
+      CHARACTER(LEN=TR_DIAG_MSG_LEN) :: m
+      REAL(rkind) :: zni
+      INTEGER :: nsa, ios
+      IF (MDLUF == 1 .OR. MDLUF == 2 .OR. MDLUF == 3) RETURN
+      nsa = MIN(NSMAX, SIZE(dens), SIZE(PZ), TR_MAX_NSMAX)
+      zni = SUM(PZ(2:nsa) * dens(2:nsa))
+      IF (IEEE_IS_FINITE(zni) .AND. ABS(dens(1) - zni) <= 1.D-3 * MAX(ABS(dens(1)), ABS(zni))) RETURN
+      WRITE(m, '(3A,ES9.2,A,ES9.2,A)', IOSTAT=ios) "not quasi-neutral at the ", kplace, ": electrons ", &
+           dens(1), ", ions' charge sum PZ*n ", zni, " (1e20/m3); TR takes them equal"
+      IF (ios /= 0) m = "not quasi-neutral: the electrons' density differs from the ions' charge density"
+      CALL push_diag(name_str, TR_DIAG_INCONSISTENT_PAIR, m)
+    END SUBROUTINE quasi_neutrality
+
+    !---------------------------------------------------------------
+    ! .TRUE. when a file of this name exists (relative to the working
+    ! directory), as the preparation would open it (eq_validate's
+    ! file_there, eq/eq_api.f90).
+    !---------------------------------------------------------------
+    LOGICAL FUNCTION file_there(fname)
+      CHARACTER(LEN=*), INTENT(IN) :: fname
+      INTEGER :: ios_q
+      file_there = .FALSE.
+      INQUIRE(FILE=TRIM(fname), EXIST=file_there, IOSTAT=ios_q)
+      IF (ios_q /= 0) file_there = .FALSE.
+    END FUNCTION file_there
+
   END FUNCTION tr_api_validate
 
   ! ----- L-7b-ii: BPSD broker round-trip verification -------------
@@ -569,6 +793,32 @@ CONTAINS
     END IF
   END SUBROUTINE tr_check_bpsd_pull
 
+  !-------------------------------------------------------------------
+  ! c_str_overflows : .TRUE. when the C string S holds, from position
+  ! FIRST on (the first one the caller's buffer has no room for), a
+  ! character other than a blank. Trailing blanks are no part of a
+  ! name or a value, so a blank-padded string that is longer than the
+  ! buffer only by blanks loses nothing when it is copied. Call it
+  ! only when no NUL was met before FIRST. A string with no NUL within
+  ! C_STR_SCAN characters from FIRST is refused as well.
+  !-------------------------------------------------------------------
+  PURE FUNCTION c_str_overflows(s, first) RESULT(over)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: s
+    INTEGER,                              INTENT(IN) :: first
+    LOGICAL :: over
+    INTEGER, PARAMETER :: C_STR_SCAN = 4096
+    INTEGER :: j
+
+    over = .TRUE.
+    DO j = first, first + C_STR_SCAN - 1
+       IF (s(j) == C_NULL_CHAR) THEN
+          over = .FALSE.
+          RETURN
+       END IF
+       IF (s(j) /= ' ') RETURN
+    END DO
+  END FUNCTION c_str_overflows
+
   ! ----- #189: namelist profile sanity per active species -----------
   ! With MDLUF=0 (no UFILE data; every fixture and sample input in the
   ! repo) tr_prof builds RN/RT for ns = 1..NSMAX from the namelist pairs
@@ -579,8 +829,17 @@ CONTAINS
   ! the first step (reproduced with the tst2 fixture: NSMAX=3 leaves
   ! species 3 at the tr_init defaults PN(3)=PNS(3)=0 -> WPT/BETA*/TAUE*
   ! = NaN; the same with PT(3)=0, PTS(3)=0 or PN(3)<0). PN(ns)=0 with
-  ! PNS(ns)>0 runs finite and stays allowed. Non-finite values (the C
-  ! setter accepts any double) are reported too.
+  ! PNS(ns)>0 is refused as well (task-web-client #190): the profile
+  ! then falls to zero at the axis (RN = 1e-7 at the first grid point
+  ! of the tst2 case with PN(2)=0, PNS(2)=1e-3), and the run fails
+  ! (tr_prep's impurity dilution goes negative; a negative temperature
+  ! at step 0, or at step 9 for species 3 of tst2, which a 2-step run
+  ! missed) or ends with WPT, Q0, the betas and TAUE NaN (TR's defaults
+  ! with PN(2)=0). A zero edge density of
+  ! species 1 or 2 is refused: the edge transport divides by it (PNSS(1),
+  ! PNSS(2), trcalc.f90). Non-finite values (the C setter accepts any
+  ! double) are reported too. With MODELG 9, RIPS or RIPE < 0 is
+  ! reported as well (current_for_eq, below).
   !
   ! Scope: tr_prof's `case default` branch, i.e. every MDLUF outside
   ! {1,2,3}, builds all species from the namelist and is checked in
@@ -603,6 +862,11 @@ CONTAINS
 
     nviol = 0
     IF (MDLUF == 1 .OR. MDLUF == 2 .OR. MDLUF == 3) RETURN
+    ! With MODELG 9 TR has EQ solve the equilibrium with TR's own current (equnit's eq_calc, from
+    ! tr_set_metric and every NTEQIT steps), and EQ's analytic solve does not treat the sign of the
+    ! current (eq_run refuses a negative one: eq_api.f90): refuse it here, before the run. After the
+    ! UFILE modes' return above: there the current comes from the UFILE, not from RIPS and RIPE.
+    CALL current_for_eq
     nsa = MIN(NSMAX, SIZE(PN), SIZE(PNS), SIZE(PT), SIZE(PTS), TR_MAX_NSMAX)
     DO ns = 1, nsa
        IF (.NOT. (IEEE_IS_FINITE(PN(ns)) .AND. IEEE_IS_FINITE(PNS(ns)) &
@@ -617,6 +881,18 @@ CONTAINS
        ELSE IF (PN(ns) == 0.D0 .AND. PNS(ns) == 0.D0) THEN
           CALL add("PN", ns, TR_DIAG_OUT_OF_RANGE_AFTER_DEP, &
                "PN and PNS both 0 for a species <= NSMAX: zero density everywhere, NaN after one step; set PN/PNS or lower NSMAX")
+       ELSE IF (PN(ns) == 0.D0) THEN
+          ! PNS > 0 here: the profile falls to zero at the axis, where the transport divides by it
+          ! (task-web-client #190; see the header).
+          CALL add("PN", ns, TR_DIAG_OUT_OF_RANGE, &
+               "zero centre density (PN = 0, PNS > 0) for active species: the density vanishes at the axis; " // &
+               "the run fails or produces NaN")
+       ELSE IF (ns <= 2 .AND. PNS(ns) == 0.D0) THEN
+          ! The edge terms of the transport divide by the edge density of the electrons and of the
+          ! bulk ions (PNSS(1), PNSS(2) in trcalc.f90): the run ends with WPT, the betas and TAUE NaN.
+          CALL add("PNS", ns, TR_DIAG_OUT_OF_RANGE, &
+               "zero edge density of species 1 or 2 (the electrons, the bulk ions), which the edge " // &
+               "transport divides by: the run produces NaN")
        END IF
        IF (PT(ns) <= 0.D0) THEN
           CALL add("PT", ns, TR_DIAG_OUT_OF_RANGE, &
@@ -630,6 +906,23 @@ CONTAINS
 
   CONTAINS
 
+    SUBROUTINE current_for_eq
+      USE TRCOMM, ONLY : RIPE, RIPS          ! MODELG comes with the module's own USE
+      IF (MODELG /= 9) RETURN
+      IF (RIPS < 0.D0) CALL scalar("RIPS")
+      IF (RIPE < 0.D0) CALL scalar("RIPE")
+    END SUBROUTINE current_for_eq
+
+    SUBROUTINE scalar(name)
+      CHARACTER(LEN=*), INTENT(IN) :: name
+      IF (nviol >= SPC_MAX_VIOL) RETURN
+      nviol = nviol + 1
+      vnames(nviol) = name
+      vcodes(nviol) = TR_DIAG_OUT_OF_RANGE
+      vmsgs(nviol)  = "negative plasma current with MODELG 9: EQ's analytic solve, which MODELG 9 runs, " // &
+           "does not treat its sign"
+    END SUBROUTINE scalar
+
     SUBROUTINE add(base, idx, code_in, msg_in)
       CHARACTER(LEN=*), INTENT(IN) :: base, msg_in
       INTEGER,          INTENT(IN) :: idx
@@ -642,6 +935,144 @@ CONTAINS
     END SUBROUTINE add
 
   END SUBROUTINE species_profile_violations
+
+  ! ----- The equation switches and the particle source ---------------
+  ! Appends to the findings already in vnames(1:nviol) (those of
+  ! species_profile_violations) the values of these names that the
+  ! solver cannot take; tr_run refuses them, tr_validate reports them.
+  ! The registry made them settable for the PLATO case (NCLASS, the
+  ! density equations, the gas puff); the namelist took them before.
+  !
+  !   - MDLEQB, MDLEQN, MDLPSC outside {0, 1}, MDLEQE outside {0, 1, 2}:
+  !     TR_EQS_SELECT (trprep.f90) and TRPSC (trpsc.f90) test for these
+  !     values only, and run any other as one of them without a word
+  !     (measured: MDLEQN 2 runs with the densities fixed, MDLPSC 2
+  !     with no source); MDLEQB 2 stopped inside tr_prep (equations
+  !     without a species).
+  !   - MDLEQE 1 or 2 with MDLEQN 0: TR_EQS_SELECT refuses it inside
+  !     tr_prep (#142); here it is refused before the run, as #143 asks.
+  !   - MDLEQE 2 (the bulk-ion density from quasi-neutrality) unless
+  !     NSMAX is 2, species 2 is hydrogen or deuterium of charge 1, there
+  !     is no impurity density (MDLIMP 0, or MDLIMP 1..4 with PNC and PNFE
+  !     0: trprof.f90 scales ANC and ANFE by them) and no UFILE (MDLUF 0, where
+  !     TR_EQS_SELECT may add a carbon species in tr_prep): trexec.f90
+  !     sets the density of species 2 to the sum of |PZ| n over every
+  !     other species and the impurities, which is quasi-neutrality only
+  !     for the electrons alone; it adds the other ions instead of
+  !     subtracting them, and a species 2 of another class (TR_TABLE's
+  !     NSS 3 or 4) is never filled.
+  !   - With MDLPSC 1, TRPSCA deposits NPSCMAX Gaussians in RA*rho,
+  !     S = S0 exp(-((RA*rho - PSCR0)/PSCRW)**2) with S0 = PSCTOT over
+  !     the volume integral of the exponential, into ion species NSPSC
+  !     and the electrons:
+  !       NPSCMAX outside 0..NPSCM: PSCTOT, PSCR0, PSCRW and NSPSC are
+  !         read beyond their NPSCM elements;
+  !       NSPSC[i] outside 2..NSMAX: SPSC(:, NSPSC) and PZ(NSPSC) are
+  !         indexed out of bounds (0, above NSM), or the source adds no
+  !         particle (1: the electrons, PZ(1) + 1 = 0; a species above
+  !         NSMAX is not evolved). With a UFILE (MDLUF /= 0) TR_EQS_SELECT
+  !         may change NSMAX in tr_prep, and only species 2 is sure to
+  !         be evolved: the bound is 2 there, a deliberate restriction
+  !         (the species TR_EQS_SELECT resolves are known only in tr_prep);
+  !       PSCRW[i] <= 0: the exponent divides by it (NaN at 0); a negative
+  !         width gives the same Gaussian as its absolute value and is
+  !         refused so that the sign means nothing;
+  !       PSCRW[i] below 1e-10 m or |PSCR0[i]| above 1e10 m: no device's
+  !         source, and ((RA*rho - PSCR0)/PSCRW)**2 could overflow.
+  !     A source many widths from every mesh point needs no check:
+  !     TRPSCA normalises the exponential by its largest value first.
+  ! Stops adding when the arrays are full: tr_run still refuses.
+  SUBROUTINE source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
+    USE tr_state, ONLY : TR_DIAG_INCONSISTENT_PAIR
+    USE trcomm, ONLY : MDLEQB, MDLEQN, MDLEQE, MDLPSC, NPSCMAX, &
+                       NPSCM, PSCR0, PSCRW, NSPSC, PA, PZ, MDLIMP, PNC, PNFE
+    INTEGER,                          INTENT(INOUT) :: nviol
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN), INTENT(INOUT) :: vnames(:)
+    INTEGER(C_INT),                   INTENT(INOUT) :: vcodes(:)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN),   INTENT(INOUT) :: vmsgs(:)
+    INTEGER :: i, nsup
+    LOGICAL :: hydrogenic, impurity
+
+    IF (MDLEQB /= 0 .AND. MDLEQB /= 1) CALL add("MDLEQB", 0, TR_DIAG_OUT_OF_RANGE, &
+         "MDLEQB takes 0 or 1 (B_theta fixed or evolved)")
+    IF (MDLEQN /= 0 .AND. MDLEQN /= 1) CALL add("MDLEQN", 0, TR_DIAG_OUT_OF_RANGE, &
+         "MDLEQN takes 0 or 1 (densities fixed or evolved); another value runs as 0")
+    IF (MDLEQE < 0 .OR. MDLEQE > 2) THEN
+       CALL add("MDLEQE", 0, TR_DIAG_OUT_OF_RANGE, &
+            "MDLEQE takes 0, 1 or 2 (electrons from quasi-neutrality, both solved, bulk ions from quasi-neutrality)")
+    ELSE IF (MDLEQE /= 0 .AND. MDLEQN == 0) THEN
+       CALL add("MDLEQE", 0, TR_DIAG_INCONSISTENT_PAIR, &
+            "MDLEQE 1 or 2 needs MDLEQN 1 (the densities evolved)")
+    ELSE IF (MDLEQE == 2) THEN
+       hydrogenic = PA(2) == 1.D0 .OR. ABS(PA(2) - 2.D0) < 0.5D0
+       ! MDLIMP 1..4 scale ANC and ANFE by PNC and PNFE; any other non-zero mode
+       ! assigns them nothing in tr_prof_impurity, so they keep an earlier run's.
+       impurity = MDLIMP /= 0 .AND. (MDLIMP < 1 .OR. MDLIMP > 4 .OR. PNC /= 0.D0 .OR. PNFE /= 0.D0)
+       IF (MDLUF /= 0 .OR. NSMAX /= 2 .OR. .NOT. hydrogenic .OR. PZ(2) /= 1.D0 .OR. impurity) &
+            CALL add("MDLEQE", 0, TR_DIAG_INCONSISTENT_PAIR, &
+            "MDLEQE 2 only with NSMAX 2, species 2 H or D of PZ 1, no impurity, no UFILE: its quasi-neutrality adds the others")
+    END IF
+    IF (MDLPSC /= 0 .AND. MDLPSC /= 1) CALL add("MDLPSC", 0, TR_DIAG_OUT_OF_RANGE, &
+         "MDLPSC takes 0 or 1 (no particle source, Gaussian sources); another value runs as 0")
+    IF (MDLPSC /= 1) RETURN
+    IF (NPSCMAX < 0 .OR. NPSCMAX > NPSCM) CALL add("NPSCMAX", 0, TR_DIAG_OUT_OF_RANGE, &
+         "NPSCMAX outside 0..10 (NPSCM, the size of the source arrays PSCTOT, PSCR0, PSCRW, NSPSC)")
+    nsup = NSMAX
+    IF (MDLUF /= 0) nsup = 2
+    DO i = 1, MIN(NPSCMAX, NPSCM)
+       IF (NSPSC(i) < 2 .OR. NSPSC(i) > nsup) CALL add("NSPSC", i, TR_DIAG_OUT_OF_RANGE, &
+            "NSPSC outside 2..NSMAX (only 2 with a UFILE): no evolved ion species takes the source (0 or above NSM: " // &
+            "out of the arrays)")
+       IF (PSCRW(i) < 1.D-10) CALL add("PSCRW", i, TR_DIAG_OUT_OF_RANGE, &
+            "PSCRW below 1e-10 m: 0 ends in NaN, a negative width means nothing, a narrower one can overflow the exponent")
+       IF (ABS(PSCR0(i)) > 1.D10) CALL add("PSCR0", i, TR_DIAG_OUT_OF_RANGE, &
+            "|PSCR0| above 1e10 m: no source sits there (PSCR0 is in metres), and the exponent can overflow")
+    END DO
+
+  CONTAINS
+
+    SUBROUTINE add(base, idx, code_in, msg_in)
+      CHARACTER(LEN=*), INTENT(IN) :: base, msg_in
+      INTEGER,          INTENT(IN) :: idx
+      INTEGER(C_INT),   INTENT(IN) :: code_in
+      IF (nviol >= MIN(SIZE(vnames), SIZE(vcodes), SIZE(vmsgs))) RETURN
+      nviol = nviol + 1
+      IF (idx > 0) THEN
+         WRITE(vnames(nviol), '(A,"[",I0,"]")') base, idx
+      ELSE
+         vnames(nviol) = base
+      END IF
+      vcodes(nviol) = code_in
+      vmsgs(nviol)  = msg_in
+    END SUBROUTINE add
+
+  END SUBROUTINE source_and_equation_violations
+
+  ! ----- One TR mesh per process -------------------------------------
+  ! bpsd sizes its equilibrium and metric splines at the first get and keeps
+  ! that size (bpsd_get_equ1D, bpsd_get_metric1D): a later preparation on a
+  ! larger mesh in the same process writes past them (measured under MODELG
+  ! 3: NaN everywhere, or SIGSEGV), across tr_finalize and tr_init too.
+  ! Until the pinned bpsd resizes them (k-yoshimi/bpsd#7), an NRMAX that
+  ! differs from the one of this process's first tr_prep attempt (failed or
+  ! not: tr_prep sizes the splines before steps that can fail) is refused,
+  ! for every MODELG (MODELG 3 was measured to break; the others are held to
+  ! the same rule rather than measured one by one); a task-web job, or a test
+  ! under --forked, is a process of its own.
+  SUBROUTINE mesh_violation(nviol, vnames, vcodes, vmsgs)
+    INTEGER,                          INTENT(INOUT) :: nviol
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN), INTENT(INOUT) :: vnames(:)
+    INTEGER(C_INT),                   INTENT(INOUT) :: vcodes(:)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN),   INTENT(INOUT) :: vmsgs(:)
+
+    IF (g_first_nrmax == 0 .OR. NRMAX == g_first_nrmax) RETURN
+    IF (nviol >= MIN(SIZE(vnames), SIZE(vcodes), SIZE(vmsgs))) RETURN
+    nviol = nviol + 1
+    vnames(nviol) = "NRMAX"
+    vcodes(nviol) = TR_DIAG_OUT_OF_RANGE_AFTER_DEP
+    WRITE(vmsgs(nviol), '(A,I0,A,I0,A)') "NRMAX ", NRMAX, " differs from ", g_first_nrmax, &
+         ", this process's first: bpsd keeps its first mesh (k-yoshimi/bpsd#7); one NRMAX per process"
+  END SUBROUTINE mesh_violation
 
   !-------------------------------------------------------------------
   ! tr_state_abi_version / tr_state_size : layout query (#246).
@@ -661,5 +1092,646 @@ CONTAINS
     TYPE(tr_state_c) :: probe
     n = C_SIZEOF(probe)
   END FUNCTION tr_api_state_size
+
+  !-------------------------------------------------------------------
+  ! tr_last_error : the first failure of the last tr_run or tr_continue.
+  !
+  ! param = the kind (NONE, EQ_FAILED, NONFINITE, TR_CHECK, PREP_FAILED,
+  ! OTHER, or REFUSED: tr_continue refused to run, with code 0), code =
+  ! the Fortran status, msg = "nt=<step> t=<time> s: <what failed>" (for
+  ! EQ_FAILED the text ends with EQ's EQ_ERRMSG). Cleared at the start of every tr_run and tr_continue. Always TR_OK.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_last_error(e) RESULT(ierr) BIND(C, NAME="tr_last_error")
+    TYPE(tr_diag_entry_c), INTENT(OUT) :: e
+    INTEGER(C_INT) :: ierr
+    INTEGER :: kind, code, nt_rec, i, n
+    REAL(rkind) :: time
+    CHARACTER(LEN=TR_FAILURE_DETAIL_LEN) :: detail
+    INTEGER :: ios
+    CHARACTER(LEN=TR_FAILURE_DETAIL_LEN + 40) :: full
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: pname
+    CHARACTER(LEN=TR_DIAG_MSG_LEN) :: msg
+    CALL tr_failure_get(kind, code, nt_rec, time, detail)
+    SELECT CASE (kind)
+    CASE (TRF_NONE);        pname = 'NONE'
+    CASE (TRF_EQ_FAILED);   pname = 'EQ_FAILED'
+    CASE (TRF_NONFINITE);   pname = 'NONFINITE'
+    CASE (TRF_TR_CHECK);    pname = 'TR_CHECK'
+    CASE (TRF_PREP_FAILED); pname = 'PREP_FAILED'
+    CASE (TRF_REFUSED);     pname = 'REFUSED'
+    CASE DEFAULT;           pname = 'OTHER'
+    END SELECT
+    msg = ''
+    ! The message is cut at the C buffer (TR_DIAG_MSG_LEN - 1 characters), and the write cannot abort on a long detail.
+    IF (kind /= TRF_NONE) THEN
+       WRITE(full, '(A,I0,A,ES14.7,A,A)', IOSTAT=ios) 'nt=', nt_rec, ' t=', time, ' s: ', TRIM(detail)
+       IF (ios /= 0) full = 'a failure whose record does not fit'
+       msg = full                    ! cut to the C buffer by the assignment
+    END IF
+    ! Zero-fill, then copy and NUL-terminate, as tr_validate's push_diag does.
+    DO i = 1, TR_DIAG_PARAM_LEN
+       e%param(i) = C_NULL_CHAR
+    END DO
+    n = MIN(LEN_TRIM(pname), TR_DIAG_PARAM_LEN - 1)
+    DO i = 1, n
+       e%param(i) = pname(i:i)
+    END DO
+    DO i = 1, TR_DIAG_MSG_LEN
+       e%msg(i) = C_NULL_CHAR
+    END DO
+    n = MIN(LEN_TRIM(msg), TR_DIAG_MSG_LEN - 1)
+    DO i = 1, n
+       e%msg(i) = msg(i:i)
+    END DO
+    e%code = INT(code, C_INT)
+    ierr = TR_OK
+  END FUNCTION tr_api_last_error
+
+  !-------------------------------------------------------------------
+  ! eq_name_refused : true (and one line on unit 6) when an "eq:" name must not be set through TR.
+  !
+  ! nm is the name without its "eq:" prefix, who the calling routine.
+  !  - EQ's RR, RA, RKAP, RDLT, BB, RIP and KNAMEQ do nothing here: under MODELG 9 eq_bpsd_get overwrites the first
+  !    six from TR's device, and TR passes its own KNAMEQ to eq_load (tr/trmetric.f90); under MODELG 3/5/8
+  !    tr_set_metric sets EQ's NRMAX, NTHMAX and NSUMAX. The message names TR's own parameter.
+  !  - Once the process has made its first preparation attempt (g_first_nrmax /= 0) every eq: name is refused: a
+  !    change of EQ's grid writes past bpsd's splines until the pinned bpsd has k-yoshimi/bpsd#7 (see mesh_violation).
+  !-------------------------------------------------------------------
+  FUNCTION eq_name_refused(who, nm) RESULT(refused)
+    CHARACTER(LEN=*), INTENT(IN) :: who, nm
+    LOGICAL :: refused
+    CHARACTER(LEN=LEN(nm)) :: up
+    INTEGER :: i, k
+    up = nm
+    DO i = 1, LEN(up)
+       k = IACHAR(up(i:i))
+       IF (k >= IACHAR('a') .AND. k <= IACHAR('z')) up(i:i) = ACHAR(k - 32)
+    END DO
+    refused = .TRUE.
+    SELECT CASE (TRIM(up))
+    CASE ('RIP')
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//" is not settable through TR: set RIPS and RIPE (TR's), "// &
+            'which TR passes to EQ as RIP'
+       RETURN
+    CASE ('RR', 'RA', 'RKAP', 'RDLT', 'BB', 'KNAMEQ')
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' is not settable through TR: set '//TRIM(up)// &
+            " (TR's), which TR passes to EQ"
+       RETURN
+    CASE ('KNAMEQ2')
+       ! MODELG 8: tr_set_metric hands EQ TR's own KNAMEQ2 (the namelist's), which overwrote this one
+       ! (task-web-client #201).
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//" is not settable through TR: TR passes its own KNAMEQ2 "// &
+            "(the namelist's) to EQ"
+       RETURN
+    END SELECT
+    IF (g_first_nrmax /= 0) THEN
+       WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' refused: until the pinned bpsd has k-yoshimi/bpsd#7 an EQ '// &
+            "grid change in one process corrupts memory, so eq: names are set before the process's first run"
+       RETURN
+    END IF
+    refused = .FALSE.
+  END FUNCTION eq_name_refused
+
+  !-------------------------------------------------------------------
+  ! tr_api_eq_set_refused_in_case : the guard of TOT's eq: setters (tot/tot_api.f90). True, and one line on unit 6,
+  ! once this lifecycle has made a preparation attempt (a tr_prep that succeeded, or a tr_prep or tr_loop that failed):
+  ! such a set would make the next tr_run prepare again (tr_param_note_external_set), which TR's own route refuses
+  ! (eq_name_refused) because an EQ grid change writes past bpsd's splines until the pinned bpsd has k-yoshimi/bpsd#7.
+  ! It reads TR's own flags, so it holds where TR's library carries its own EQ (the split build) as on the mono image.
+  ! Not applied, unlike eq_name_refused: the names TR overwrites (TOT's EQ reads them) and the rule across lifecycles
+  ! (a case after tot_finalize and tot_init takes eq: names, as before). Comes off with eq_name_refused's bpsd part.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_eq_set_refused_in_case(who, nm) RESULT(refused)
+    CHARACTER(LEN=*), INTENT(IN) :: who, nm
+    LOGICAL :: refused
+    refused = g_prepared .OR. g_failed
+    IF (refused) WRITE(6, '(A)') 'XX '//who//': eq:'//TRIM(nm)//' refused: TR has prepared this case, and until '// &
+         'the pinned bpsd has k-yoshimi/bpsd#7 an EQ grid change after a preparation corrupts memory, so eq: names '// &
+         "are set before the case's first tot_run (a new case in this process with another EQ grid is not safe either)"
+  END FUNCTION tr_api_eq_set_refused_in_case
+
+  !-------------------------------------------------------------------
+  ! eq_mesh_violation : EQ's mesh sizes (set through "eq:" names) against the compile-time maxima of EQ's arrays.
+  !
+  ! The same ten bounds as eq_validate (eq/eq_api.f90, push_oor), which the TR route to EQ did not apply: with
+  ! MODELG 9, eq:NSGMAX=129 reached EQMESH, which wrote SIGM(129) past SIGM(NSGM=128) (eq/eqcalc.f90:63). The
+  ! limits are EQ's own parameters (eqcom0_mod), not copies. Which of them matter depends on MODELG:
+  !  - MODELG 9 solves the equilibrium itself (tr_set_metric: eq_prof, eq_calc): all ten.
+  !  - MODELG 3, 5, 8 load a file (eq_load); tr_set_metric sets EQ's NRMAX, NTHMAX and NSUMAX there, so the other
+  !    seven are held to their maxima.
+  !  - Any other MODELG does not use EQ's grid: nothing is checked.
+  ! Same contract as mesh_violation: appends (name, code, message) to the lists; the name carries the "eq:" prefix.
+  !-------------------------------------------------------------------
+  SUBROUTINE eq_mesh_violation(nviol, vnames, vcodes, vmsgs)
+    INTEGER,                          INTENT(INOUT) :: nviol
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN), INTENT(INOUT) :: vnames(:)
+    INTEGER(C_INT),                   INTENT(INOUT) :: vcodes(:)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN),   INTENT(INOUT) :: vmsgs(:)
+    LOGICAL :: file_load, solve
+
+    solve     = (MODELG == 9)
+    file_load = (MODELG == 3 .OR. MODELG == 5 .OR. MODELG == 8)
+    IF (.NOT. (solve .OR. file_load)) RETURN
+
+    CALL check('eq:NSGMAX', eq_NSGMAX, eq_NSGM)
+    CALL check('eq:NTGMAX', eq_NTGMAX, eq_NTGM)
+    CALL check('eq:NUGMAX', eq_NUGMAX, eq_NUGM)
+    CALL check('eq:NRGMAX', eq_NRGMAX, eq_NRGM)
+    CALL check('eq:NZGMAX', eq_NZGMAX, eq_NZGM)
+    CALL check('eq:NPSMAX', eq_NPSMAX, eq_NPSM)
+    CALL check('eq:NRVMAX', eq_NRVMAX, eq_NRVM)
+    IF (solve) THEN
+       CALL check('eq:NRMAX',  eq_NRMAX,  eq_NRM)
+       CALL check('eq:NTHMAX', eq_NTHMAX, eq_NTHM)
+       CALL check('eq:NSUMAX', eq_NSUMAX, eq_NSUM)
+    END IF
+
+  CONTAINS
+
+    SUBROUTINE check(name_str, requested, max_value)
+      CHARACTER(LEN=*), INTENT(IN) :: name_str
+      INTEGER, INTENT(IN)          :: requested, max_value
+      IF (requested <= max_value) RETURN
+      IF (nviol >= MIN(SIZE(vnames), SIZE(vcodes), SIZE(vmsgs))) RETURN
+      nviol = nviol + 1
+      vnames(nviol) = name_str
+      vcodes(nviol) = TR_DIAG_OUT_OF_RANGE
+      WRITE(vmsgs(nviol), '(A,I0,A,I0)') 'value ', requested, ' exceeds the compile-time maximum of EQ: ', max_value
+    END SUBROUTINE check
+
+  END SUBROUTINE eq_mesh_violation
+
+  !-------------------------------------------------------------------
+  ! Outputs by name (PR 2 of #96): the scalar table.
+  !
+  ! The names are TRCOMM's; each one is the value TRGLOB last computed
+  ! (tr/trrslt_globals.f90; TRGLOB runs on output steps and on a run's
+  ! last step, tr/trexec.f90 tr_eval), in the unit TRGLOB gives it:
+  !   T s; WPT, WPDOT MJ and MW; AJT, AJRFT, AJOHT, AJNBT, AJBST, RIP MA;
+  !   POHT, PNBT, PNFT, PRFST, PEXST, PRLT, POUT MW (PNFT is the charged fusion
+  !   products' power: alpha for D-T, MDLNF 1-4; alpha and proton for D-He3,
+  !   MDLNF 5, 6, trpnf.f90; QF = 5 PNFT / input is TRGLOB's D-T gain);
+  !   PINT MW and includes PNFT (POHT+PNBT+PRFST+PNFT+PEXST);
+  !   VLOOP V; TAUE1, TAUE2, TAUE98 s; RQ1 m; the rest have no unit.
+  ! The order here is the order tr_scalar_name enumerates. RIP is the
+  ! equilibrium's boundary current under MODELG 3, 5 and 8 (tr_bpsd_get,
+  ! trbpsd.f90), the experimental data's under MDLUF 1 and 3 (tr_exec), the
+  ! current set (RIPS to RIPE) otherwise. A tr_run of 0 steps evaluates no step
+  ! (tr_loop returns before tr_eval): what the preparation sets is new (T 0,
+  ! RIP; Q0 under MODELG 2, 3, 5, 7, 8 and 9), what only a step computes is not.
+  !-------------------------------------------------------------------
+  PURE FUNCTION scalar_table() RESULT(names)
+    CHARACTER(LEN=8) :: names(N_SCALARS)
+    names = [ CHARACTER(LEN=8) :: &
+         'T', 'WPT', 'AJT', 'Q0', 'BETA0', 'BETAP0', 'BETAA', 'BETAN', &
+         'TAUE1', 'TAUE2', 'ZEFF0', 'ALI', 'RQ1', 'AJRFT', &
+         'PNFT', 'QF', 'PINT', 'POHT', 'PNBT', 'PRFST', 'PEXST', 'PRLT', 'POUT', &
+         'AJOHT', 'AJNBT', 'AJBST', 'RIP', 'VLOOP', 'WPDOT', 'H98Y2', 'TAUE98' ]
+  END FUNCTION scalar_table
+
+  ! The value of the scalar NAME (exact, upper case); FOUND is .FALSE. for a name not in the table.
+  SUBROUTINE scalar_value(name, v, found)
+    USE trcomm, ONLY: AJOHT, AJNBT, AJBST, PNFT, QF, PINT, POHT, PNBT, PRFST, PEXST, &
+         PRLT, POUT, RIP, VLOOP, WPDOT, H98Y2, TAUE98
+    CHARACTER(LEN=*), INTENT(IN)  :: name
+    REAL(rkind),      INTENT(OUT) :: v
+    LOGICAL,          INTENT(OUT) :: found
+
+    found = .TRUE.
+    SELECT CASE (name)
+    CASE ('T');      v = T
+    CASE ('WPT');    v = WPT
+    CASE ('AJT');    v = AJT
+    CASE ('Q0');     v = Q0
+    CASE ('BETA0');  v = BETA0
+    CASE ('BETAP0'); v = BETAP0
+    CASE ('BETAA');  v = BETAA
+    CASE ('BETAN');  v = BETAN
+    CASE ('TAUE1');  v = TAUE1
+    CASE ('TAUE2');  v = TAUE2
+    CASE ('ZEFF0');  v = ZEFF0
+    CASE ('ALI');    v = ALI
+    CASE ('RQ1');    v = RQ1
+    CASE ('AJRFT');  v = AJRFT
+    CASE ('PNFT');   v = PNFT
+    CASE ('QF');     v = QF
+    CASE ('PINT');   v = PINT
+    CASE ('POHT');   v = POHT
+    CASE ('PNBT');   v = PNBT
+    CASE ('PRFST');  v = PRFST
+    CASE ('PEXST');  v = PEXST
+    CASE ('PRLT');   v = PRLT
+    CASE ('POUT');   v = POUT
+    CASE ('AJOHT');  v = AJOHT
+    CASE ('AJNBT');  v = AJNBT
+    CASE ('AJBST');  v = AJBST
+    CASE ('RIP');    v = RIP
+    CASE ('VLOOP');  v = VLOOP
+    CASE ('WPDOT');  v = WPDOT
+    CASE ('H98Y2');  v = H98Y2
+    CASE ('TAUE98'); v = TAUE98
+    CASE DEFAULT
+       v = 0.0_rkind
+       found = .FALSE.
+    END SELECT
+  END SUBROUTINE scalar_value
+
+  ! Copy the NUL-terminated C string S into FNAME (blank padded). OK is .FALSE. when it has no NUL within
+  ! LEN(FNAME) characters, or is empty, or holds a blank: no name of this API is that long, empty or has one.
+  SUBROUTINE c_name_to_fortran(s, fname, ok)
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: s
+    CHARACTER(LEN=*),                     INTENT(OUT) :: fname
+    LOGICAL,                              INTENT(OUT) :: ok
+    INTEGER :: i
+
+    fname = ' '
+    ok = .FALSE.
+    DO i = 1, LEN(fname)
+       IF (s(i) == C_NULL_CHAR) THEN
+          ok = (i > 1)
+          RETURN
+       END IF
+       IF (s(i) == ' ' .OR. s(i) < ' ') RETURN
+       fname(i:i) = s(i)
+    END DO
+  END SUBROUTINE c_name_to_fortran
+
+  ! Copy NAME into the C buffer BUF of BUFLEN characters with its NUL: 0, or TR_ERR_INVALID when it does not fit.
+  FUNCTION name_to_c_buffer(name, buf, buflen) RESULT(ierr)
+    CHARACTER(LEN=*),                     INTENT(IN)    :: name
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT),                       INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    INTEGER :: i, n
+
+    n = LEN_TRIM(name)
+    IF (buflen < n + 1) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    DO i = 1, n
+       buf(i) = name(i:i)
+    END DO
+    buf(n + 1) = C_NULL_CHAR
+    ierr = TR_OK
+  END FUNCTION name_to_c_buffer
+
+  ! tr_scalar_count : the number of named scalars.
+  FUNCTION tr_api_scalar_count() RESULT(n) BIND(C, NAME="tr_scalar_count")
+    INTEGER(C_INT) :: n
+    n = INT(SIZE(scalar_table()), C_INT)
+  END FUNCTION tr_api_scalar_count
+
+  ! tr_scalar_name : the I-th name (1-based) as a NUL-terminated string in BUF of BUFLEN characters.
+  ! TR_ERR_INVALID past either end or when the name and its NUL do not fit.
+  FUNCTION tr_api_scalar_name(i, buf, buflen) RESULT(ierr) BIND(C, NAME="tr_scalar_name")
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: i
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=8) :: tab(N_SCALARS)
+
+    tab = scalar_table()
+    IF (i < 1 .OR. i > SIZE(tab)) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    ierr = name_to_c_buffer(tab(i), buf, buflen)
+  END FUNCTION tr_api_scalar_name
+
+  ! tr_get_scalar : the value of one named scalar, as of the last step TRGLOB ran on.
+  ! TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for a name not in the table (value is left alone).
+  FUNCTION tr_api_get_scalar(name, value) RESULT(ierr) BIND(C, NAME="tr_get_scalar")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(INOUT) :: value   ! left as it was for an error
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=16) :: fname
+    REAL(rkind) :: v
+    LOGICAL :: ok, found
+
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_name_to_fortran(name, fname, ok)
+    IF (.NOT. ok) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL scalar_value(TRIM(fname), v, found)
+    IF (.NOT. found) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    value = v
+    ierr = TR_OK
+  END FUNCTION tr_api_get_scalar
+
+  !-------------------------------------------------------------------
+  ! Time history by name (PR 2 of #96, Task 5b).
+  !
+  ! TR records a row every NGTSTP steps (tr_eval, trexec.f90): GT(NGT) is
+  ! the time and GVT(NGT, 1:NCTM) the globals, both single precision
+  ! (GUCLIP), written by TRATOT in trrslt_globals.f90 (the column numbers
+  ! below are TRATOT's). NTM rows (trcom0.f90); TRATOT stops recording
+  ! when they are full. tr_prep sets NGT to 0 (trprep.f90), so a run starts a
+  ! history and a re-preparation starts it again. In library mode tr_eval does not
+  ! record the step a call of tr_run or tr_continue starts on when the call before it ended on
+  ! it (the same T twice), nor the failed iterate of a TRCHCK failure (tr_exec),
+  ! and tr_loop takes back the row of a step it finds not finite (NONFINITE).
+  ! A failed preparation leaves no rows (g_prepared is false until tr_prep succeeds).
+  ! Under MODELG 9 tr_loop records a step before it re-solves EQ on it (a
+  ! multiple of NTEQIT) and then recomputes Q0 on the new metric: that row
+  ! holds the Q0 of before the re-solve, tr_get_scalar the one after it.
+  ! Columns 89 to 88 + 4 NGPST are also the sawtooth record's (TRATOTN, its
+  ! own row count NGST) once MDLST /= 0 and T >= TSST (1e9 s); tr_eval does not
+  ! call TRATOTN in library mode, so there they are always TRATOT's.
+  !
+  ! COL = 0: GT (the time); COL > 0: GVT column; BETAN and PRFST have no
+  ! column of their own and are computed from columns of the same row:
+  ! BETAN = 100 BETAA / (RIP / (RA BB)) (cols 85, 88, 98, 99, as TRGLOB),
+  ! PRFST = PRFT(1) + ... + PRFT(4) (cols 42 to 45; NSM = 4 = the
+  ! species TRGLOB sums). PEXST has no such columns (GVT holds PEXT(1:2) only).
+  !-------------------------------------------------------------------
+  SUBROUTINE history_table(names, cols)
+    CHARACTER(LEN=8), INTENT(OUT) :: names(N_HISTORY)
+    INTEGER,          INTENT(OUT) :: cols(N_HISTORY)
+    names = [ CHARACTER(LEN=8) :: &
+         'T', 'NE0', 'NEAV', 'TE0', 'TI0', 'TEAV', 'TIAV', 'WPT', &
+         'AJT', 'AJOHT', 'AJNBT', 'AJRFT', 'AJBST', 'PINT', 'POHT', 'PNBT', &
+         'PRFE', 'PRFD', 'PNFT', 'POUT', 'VLOOP', 'ALI', 'RQ1', 'Q0', &
+         'WPDOT', 'TAUE1', 'TAUE2', 'BETAP0', 'BETA0', 'BETAA', 'ZEFF0', 'QF', &
+         'RIP', 'PEXE', 'PEXI', 'PECE', 'PECI', 'PLHE', 'PLHI', 'PICE', &
+         'PICI', 'TAUE98', 'H98Y2', 'NLAV', 'PRLT', &
+         'BETAN', 'PRFST' ]
+    cols = [ INTEGER :: &
+         0, 1, 5, 9, 10, 13, 14, 33, 34, 35, 36, 37, 38, 39, 40, 41, &
+         42, 43, 46, 57, 74, 75, 76, 77, 78, 79, 80, 82, 84, 85, 86, 87, &
+         88, 89, 90, 91, 92, 93, 94, 95, 96, 102, 103, 104, 110, &
+         -1, -2 ]
+  END SUBROUTINE history_table
+
+  ! Rows recorded since the last tr_prep: 0 when TR is not prepared.
+  FUNCTION history_rows() RESULT(n)
+    USE trcomm, ONLY: NGT, NTM
+    INTEGER :: n
+    IF (.NOT. g_prepared) THEN
+       n = 0
+    ELSE
+       n = MAX(0, MIN(NGT, NTM))
+    END IF
+  END FUNCTION history_rows
+
+  ! Row I of column COL (see history_table), in double precision.
+  FUNCTION history_cell(col, i) RESULT(v)
+    USE trcomm, ONLY: GT, GVT
+    INTEGER, INTENT(IN) :: col, i
+    REAL(rkind) :: v
+    IF (col == 0) THEN
+       v = REAL(GT(i), rkind)
+    ELSE IF (col == -1) THEN
+       v = 1.0E2_rkind * REAL(GVT(i, 85), rkind) / (REAL(GVT(i, 88), rkind) &
+            / (REAL(GVT(i, 98), rkind) * REAL(GVT(i, 99), rkind)))
+    ELSE IF (col == -2) THEN
+       v = REAL(GVT(i, 42), rkind) + REAL(GVT(i, 43), rkind) + REAL(GVT(i, 44), rkind) + REAL(GVT(i, 45), rkind)
+    ELSE
+       v = REAL(GVT(i, col), rkind)
+    END IF
+  END FUNCTION history_cell
+
+  ! tr_history_length : rows recorded since the last preparation (0 before one).
+  FUNCTION tr_api_history_length() RESULT(n) BIND(C, NAME="tr_history_length")
+    INTEGER(C_INT) :: n
+    n = INT(history_rows(), C_INT)
+  END FUNCTION tr_api_history_length
+
+  ! tr_history_full : 1 when the history holds NTM rows and recording has stopped, else 0.
+  FUNCTION tr_api_history_full() RESULT(full) BIND(C, NAME="tr_history_full")
+    USE trcomm, ONLY: NTM
+    INTEGER(C_INT) :: full
+    full = 0
+    IF (history_rows() >= NTM) full = 1
+  END FUNCTION tr_api_history_full
+
+  ! tr_history_count : the number of named columns.
+  FUNCTION tr_api_history_count() RESULT(n) BIND(C, NAME="tr_history_count")
+    INTEGER(C_INT) :: n
+    n = N_HISTORY
+  END FUNCTION tr_api_history_count
+
+  ! tr_history_name : the I-th column name (1-based), as tr_scalar_name does.
+  FUNCTION tr_api_history_name(i, buf, buflen) RESULT(ierr) BIND(C, NAME="tr_history_name")
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: i
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(INOUT) :: buf
+    INTEGER(C_INT), VALUE,                INTENT(IN)    :: buflen
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=8) :: names(N_HISTORY)
+    INTEGER :: cols(N_HISTORY)
+
+    IF (i < 1 .OR. i > N_HISTORY) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL history_table(names, cols)
+    ierr = name_to_c_buffer(names(i), buf, buflen)
+  END FUNCTION tr_api_history_name
+
+  ! tr_history_get : copy the first min(n, rows) rows of the column NAME ("T" is the time) into BUF;
+  ! *got is the number copied. TR_ERR_NOT_INIT before tr_init; TR_ERR_INVALID for an unknown name or n < 0.
+  FUNCTION tr_api_history_get(name, buf, n, got) RESULT(ierr) BIND(C, NAME="tr_history_get")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN)  :: name
+    REAL(C_DOUBLE),                       INTENT(OUT) :: buf(*)
+    INTEGER(C_INT), VALUE,                INTENT(IN)  :: n
+    INTEGER(C_INT),                       INTENT(OUT) :: got
+    INTEGER(C_INT) :: ierr
+    CHARACTER(LEN=16) :: fname
+    CHARACTER(LEN=8) :: names(N_HISTORY)
+    INTEGER :: cols(N_HISTORY)
+    INTEGER :: j, k, m
+    LOGICAL :: ok
+
+    got = 0
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+    CALL c_name_to_fortran(name, fname, ok)
+    IF (.NOT. ok .OR. n < 0) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    CALL history_table(names, cols)
+    k = 0
+    DO j = 1, N_HISTORY
+       IF (TRIM(fname) == TRIM(names(j))) k = j
+    END DO
+    IF (k == 0) THEN
+       ierr = TR_ERR_INVALID
+       RETURN
+    END IF
+    m = MIN(INT(n), history_rows())
+    DO j = 1, m
+       buf(j) = history_cell(cols(k), j)
+    END DO
+    got = INT(m, C_INT)
+    ierr = TR_OK
+  END FUNCTION tr_api_history_get
+
+  !-------------------------------------------------------------------
+  ! Run control (PR 3 of #96).
+  !
+  ! tr_continue : advance the prepared case by nsteps more steps without
+  ! preparing again. The control parameters set since the last tr_run or
+  ! tr_continue (tr_param_class 1) take effect at its first step; it runs
+  ! the same tr_loop as tr_run, with the same prologue (tr_eval, RIP = RIPS,
+  ! DIPDT, tr_bpsd_get), as tr2's C does, so it equals tr2's C at the same
+  ! cut (python/trlib/tests/test_continue_vs_tr2.py, 1e-10).
+  !
+  ! NT counts on across calls; tr2's C starts it at 0. The steps tr_loop
+  ! and tr_eval pick by NT (MOD with NTEQIT, NTSTEP, NGTSTP, NGRSTP) are
+  ! counted from the preparation here, so a call equals tr2's C on the same
+  ! cut when the steps before it are a multiple of those. With NCLASS
+  ! (MDNCLS /= 0) it does not: TRCFET takes NCLASS's resistivity only when
+  ! NT /= 0 (tr/trcoef_resistivity.f90:123), so tr2's C takes the classical
+  ! one on its first step and tr_continue does not (measured on tr_iter01:
+  ! 1.2e-4 from tr2's C, 5e-14 from one call). RIP ramps from RIPS (the
+  ! last call's RIPE) to RIPE over this call's steps (tr/trloop.f90, DIPDT).
+  !
+  ! A run in several calls is not bit for bit one call: each call begins
+  ! with that prologue (the plan's findings F2; test_continue.py measures
+  ! it on ITER under MODELG 9).
+  !
+  ! Refused (TR_ERR_INVALID, a REFUSED record with code 0, a line on
+  ! unit 6 for each finding, nothing run): before a preparation; after a failed tr_prep or
+  ! tr_loop of tr_run or tr_continue, until a tr_run prepares again (it
+  ! prepares after any set; a tr_run with nothing set goes on from the
+  ! failed state, as before); after a structural set since the preparation
+  ! (the record names the last one); nsteps < 0; a value tr_run's own checks
+  ! refuse (species_profile_violations: with MODELG 9 a negative RIPE).
+  ! TR_ERR_NOT_INIT before tr_init. TR_ERR_CALC_FAILED when the loop fails,
+  ! with its record, as tr_run. tr_continue(0) makes these checks and does
+  ! nothing else: no loop (whose exit would set RIPS = RIPE), and the control
+  ! sets stay pending for the next call.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_continue(nsteps) RESULT(ierr) BIND(C, NAME="tr_continue")
+    INTEGER(C_INT), VALUE, INTENT(IN) :: nsteps
+    INTEGER(C_INT) :: ierr
+    INTEGER :: ntmax_save, calc_ierr, nviol, i
+    CHARACTER(LEN=160) :: step_text
+    CHARACTER(LEN=TR_DIAG_PARAM_LEN) :: vnames(SPC_MAX_VIOL)
+    INTEGER(C_INT)                   :: vcodes(SPC_MAX_VIOL)
+    CHARACTER(LEN=TR_DIAG_MSG_LEN)   :: vmsgs(SPC_MAX_VIOL)
+
+    CALL tr_failure_clear()      ! the record belongs to one tr_run or tr_continue
+    IF (.NOT. g_initialized) THEN
+       ierr = TR_ERR_NOT_INIT
+       RETURN
+    END IF
+    IF (nsteps < 0) THEN
+       CALL refuse('the step count is negative')
+       RETURN
+    END IF
+    ! NT + nsteps must fit a default integer. Checked first, before anything is taken in: past it NTMAX turned
+    ! negative, the loop left at once and the call reported success without a step.
+    IF (nsteps > HUGE(NT) - NT) THEN
+       WRITE(step_text, '(A,I0,A,I0,A)') 'the step count ', INT(nsteps), ' after step ', NT, &
+            ' would take the step counter past its largest value'
+       CALL refuse(TRIM(step_text))
+       RETURN
+    END IF
+    ! A failure first: a failed tr_prep also clears g_prepared (its rows are not the run's), and the reason is the failure.
+    IF (g_failed) THEN
+       CALL refuse('the last run failed: a tr_run after a parameter set prepares the case again')
+       RETURN
+    END IF
+    IF (.NOT. g_prepared) THEN
+       CALL refuse('no prepared case: tr_run prepares one')
+       RETURN
+    END IF
+    IF (g_prep_structural /= tr_param_structural_generation()) THEN
+       CALL refuse('structural parameter '//TRIM(tr_param_last_structural())// &
+            ' set since the preparation: tr_run prepares the case again')
+       RETURN
+    END IF
+    ! The checks tr_run makes before it prepares: of the control names they read RIPE (current_for_eq).
+    CALL species_profile_violations(nviol, vnames, vcodes, vmsgs)
+    CALL source_and_equation_violations(nviol, vnames, vcodes, vmsgs)
+    CALL mesh_violation(nviol, vnames, vcodes, vmsgs)
+    IF (nviol > 0) THEN
+       DO i = 2, nviol
+          WRITE(6, '(A)') 'XX tr_continue: '//TRIM(vnames(i))//': '//TRIM(vmsgs(i))
+       END DO
+       CALL refuse(TRIM(vnames(1))//': '//TRIM(vmsgs(1)))
+       RETURN
+    END IF
+    ! No step: tr_loop would leave at once and set RIPS = RIPE at its exit (tr/trloop.f90), so a RIPE set before
+    ! this call would be lost (the next call starts from RIP = device%ip with DIPDT 0). The control sets stay pending.
+    IF (nsteps == 0) THEN
+       ierr = TR_OK
+       RETURN
+    END IF
+
+    g_prep_generation = tr_param_generation()     ! the control sets are taken in: tr_run does not prepare for them
+    ntmax_save = NTMAX
+    NTMAX      = NT + nsteps
+    CALL tr_loop(calc_ierr)
+    NTMAX      = ntmax_save
+    IF (calc_ierr /= 0) THEN
+       CALL tr_failure_record(TRF_OTHER, calc_ierr, NT, T, 'tr_loop returned a non-zero status')
+       g_failed = .TRUE.
+       ierr = TR_ERR_CALC_FAILED
+       RETURN
+    END IF
+    ierr = TR_OK
+
+  CONTAINS
+
+    SUBROUTINE refuse(why)
+      CHARACTER(LEN=*), INTENT(IN) :: why
+      CALL tr_failure_record(TRF_REFUSED, 0, NT, record_time(), why)
+      WRITE(6, '(A)') 'XX tr_continue: '//why
+      ierr = TR_ERR_INVALID
+    END SUBROUTINE refuse
+
+  END FUNCTION tr_api_continue
+
+  !-------------------------------------------------------------------
+  ! tr_param_class : 1 for a control parameter (tr_continue takes it in),
+  ! 0 for a structural one (a name tr_set_param or tr_set_param_str takes,
+  ! or any eq: name; tr_run prepares again after it), -1 for a name the
+  ! setter does not know (tr_param_registry's tr_param_class). The name is
+  ! read as tr_set_param reads it; one that does not fit its 64 characters
+  ! is -1. No lifecycle check: callable before tr_init.
+  !-------------------------------------------------------------------
+  FUNCTION tr_api_param_class(name) RESULT(cls) BIND(C, NAME="tr_param_class")
+    CHARACTER(KIND=C_CHAR), DIMENSION(*), INTENT(IN) :: name
+    INTEGER(C_INT) :: cls
+    CHARACTER(LEN=64) :: fname
+    INTEGER :: i
+
+    fname = ' '
+    DO i = 1, LEN(fname)
+       IF (name(i) == C_NULL_CHAR) EXIT
+       fname(i:i) = name(i)
+    END DO
+    IF (i > LEN(fname)) THEN
+       IF (c_str_overflows(name, LEN(fname) + 1)) THEN
+          cls = -1
+          RETURN
+       END IF
+    END IF
+    cls = INT(tr_param_class(TRIM(fname)), C_INT)
+  END FUNCTION tr_api_param_class
+
+  ! record_time : the time a failure or refusal record carries: T, or 0 until this lifecycle has completed a
+  ! preparation (T is then the previous lifecycle's; see g_time_started).
+  FUNCTION record_time() RESULT(tm)
+    REAL(rkind) :: tm
+    IF (g_time_started) THEN
+       tm = T
+    ELSE
+       tm = 0.0_rkind
+    END IF
+  END FUNCTION record_time
 
 END MODULE tr_api

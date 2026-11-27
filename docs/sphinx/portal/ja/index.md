@@ -25,8 +25,16 @@ TASK 系プラズマ物理モジュール群 (`lib{eq,tr,ti,fp,wr,wrx,tot}api.so
 :::{grid-item-card} **eq** — MHD 平衡
 :link: ../../eq/ja/index.html
 
-MHD 平衡ソルバ. EQDSK や解析プロファイルから ψ-面幾何と派生量を計算.
+MHD 平衡ソルバ. 平衡ファイルを読み込むか, プロファイル係数から Grad-Shafranov 方程式を解いて ψ-面幾何と派生量を計算.
 **状態:** 完成
+:::
+
+:::{grid-item-card} **equ** — 自由境界平衡
+:link: ../../equ/ja/index.html
+
+自由境界 MHD 平衡 (安積の EQU). プラズマ境界はコイル電流と分布から決まる. 平衡, ψ(R, Z),
+G-EQDSK ファイルを返す.
+**状態:** ライブラリインタフェース
 :::
 
 :::{grid-item-card} **ti** — 統合輸送

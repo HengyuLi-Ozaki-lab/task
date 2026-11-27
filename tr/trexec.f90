@@ -2,8 +2,9 @@
 
 MODULE trexec
 
+  USE trfailure, ONLY: tr_failure_record, TRF_TR_CHECK, tr_library_mode, tr_eval_nt_row, tr_eval_row_added
   PRIVATE
-  PUBLIC tr_exec,tr_eval,tr_coef_decide
+  PUBLIC tr_exec,tr_eval,tr_coef_decide,tr_eval_take_back_row
 
 CONTAINS
 
@@ -20,7 +21,7 @@ CONTAINS
      &   DR, DVRHO, DVRHOG, EPSLTR, LDAB, LMAXTR, MDLEQB, MDLEQE, &
      &   MDLEQN, MDLPCK, MDLUF, MDTC, MLM, NEQMAX, NFM, &
      &   NRAMAX, NRMAX, NROMAX, NSM, NSMAX, NSS, NST, NSV, &
-     &   NTUM, &
+     &   NTUM, NT, &
      &   PA, PZ, PZC, PZFE, RDP, RHOA, RIP, RIPU, &
      &   RMU0, RN, RT, RU, RW, T, TTRHO, TTRHOG, &
      &   VLOOP, VSEC, X, XV, Y, YV, Z, ZV ,NEQMAXM, DIPDT, &
@@ -284,10 +285,15 @@ CONTAINS
       CALL TRCHCK(ICHCK)
       IF(ICHCK.EQ.1) THEN
          CALL TRGLOB
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: the failed iterate is not a row of the time history (GT, GVT), which holds the recorded
+!        steps only; tr_last_error records the failure. tr2 records it for its graphics, as before.
+         IF(.NOT.tr_library_mode) THEN
+            CALL TRATOT
+            CALL TRATOTN
+         ENDIF
          CALL TRATOG
          IERR=1
+         CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
          RETURN
       END IF
 
@@ -355,10 +361,14 @@ CONTAINS
 
       IF(ICHCK.EQ.1) THEN
          CALL TRGLOB
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: not a row of the time history, as above.
+         IF(.NOT.tr_library_mode) THEN
+            CALL TRATOT
+            CALL TRATOTN
+         ENDIF
          CALL TRATOG
          IERR=1
+         CALL tr_failure_record(TRF_TR_CHECK, IERR, NT, T, 'negative temperature (TRCHCK)')
          RETURN
       ENDIF
 
@@ -396,12 +406,14 @@ CONTAINS
 
       SUBROUTINE tr_eval(NT,IERR)
 
-      USE TRCOMM, ONLY : NGRSTP, NGTSTP, NTSTEP
+      USE TRCOMM, ONLY : NGRSTP, NGT, NGTSTP, NTMAX, NTSTEP, TPRE, WPPRE, rkind
       USE trrslt_files, ONLY : TRSNAP
       IMPLICIT NONE
       INTEGER,INTENT(IN) :: NT
       INTEGER,INTENT(OUT) :: IERR
       integer:: IDGLOB
+      REAL(rkind):: TPRE_KEEP, WPPRE_KEEP
+      INTEGER:: NGT_BEFORE
 
       CALL TRCALC(IERR)
       IF(IERR.ne.0) RETURN
@@ -415,17 +427,54 @@ CONTAINS
       IF(MOD(NT,NGTSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB
          IDGLOB=1
-         CALL TRATOT
-         CALL TRATOTN
+!        Library mode: a call of tr_run or tr_continue starts with an evaluation of the step the call before it ended on
+!        (tr_loop's prologue). Its globals are recomputed (WPDOT is 0 at the same T) and the row would
+!        repeat that step's time, so it is not recorded. tr2 keeps its rows as before. Only this time
+!        history (GT, GVT) is guarded: the profile history TRATOG writes (GTR, GVR) and the print of
+!        TRSNAP still repeat that step at a cut; neither is exported by the library.
+         IF(NGT.EQ.0) tr_eval_nt_row=-1
+         IF(.NOT.(tr_library_mode .AND. NT.EQ.tr_eval_nt_row)) THEN
+            NGT_BEFORE=NGT
+            CALL TRATOT
+            IF(.NOT.tr_library_mode) CALL TRATOTN
+            tr_eval_nt_row=NT
+            tr_eval_row_added=(NGT.GT.NGT_BEFORE)
+         ENDIF
       ENDIF
       IF(MOD(NT,NGRSTP).EQ.0) THEN
          IF(IDGLOB.EQ.0) CALL TRGLOB
          IDGLOB=1
          CALL TRATOG
       ENDIF
+!     The last step of a run that no output step above computed the global results (TRGLOB: WPT,
+!     AJT, the betas, TAUE1, TAUE2, ZEFF0, ALI, RQ1) on: compute them here, so that the state the run
+!     leaves holds this step's, not an earlier step's (step 0's when NTSTEP, NGTSTP and NGRSTP all
+!     exceed NTMAX). TRGLOB takes WPDOT (TAUE2) from the previous call's WPT and T and keeps this
+!     call's for the next; this call is no output step, so the previous reference is put back and a
+!     run made in several calls (NTMAX is NT plus each call's count) goes on as one run would.
+      IF(IDGLOB.EQ.0 .AND. NT.GE.NTMAX) THEN
+         WPPRE_KEEP=WPPRE
+         TPRE_KEEP=TPRE
+         CALL TRGLOB
+         WPPRE=WPPRE_KEEP
+         TPRE=TPRE_KEEP
+      ENDIF
       IERR=0
       RETURN
     END SUBROUTINE tr_eval
+
+!     Library mode: take back the history row tr_eval recorded at step NT, when tr_loop then finds that step not
+!     finite (the run ends there with NONFINITE). The rows before it stay; nothing else is undone. tr_eval_nt_row
+!     stays NT, so a later call that starts on this step (a retry with no changed parameter) does not record it.
+    SUBROUTINE tr_eval_take_back_row(NT)
+      USE TRCOMM, ONLY : NGT
+      IMPLICIT NONE
+      INTEGER,INTENT(IN) :: NT
+      IF(NT.EQ.tr_eval_nt_row .AND. tr_eval_row_added .AND. NGT.GT.0) THEN
+         NGT=NGT-1
+         tr_eval_row_added=.FALSE.
+      ENDIF
+    END SUBROUTINE tr_eval_take_back_row
 
 !     ***********************************************************
 
@@ -443,12 +492,13 @@ CONTAINS
      &                   VV, X, XV, Y, YV, Z, ZV, RDPS, &
      &                   ABVRHOG, rkind
       USE TRCOM1, ONLY : A, B, C, D, PPA, PPB, PPC, RD
+      USE trlib, ONLY : COULOG
       IMPLICIT NONE
       INTEGER, INTENT(INOUT):: NEQRMAX
       INTEGER, INTENT(OUT)  :: IERR  ! #142 B4: propagated from TR_COEF_DECIDE / TR_BAND_GEN
       INTEGER:: KL, MV, MVV, MW, MWMAX, NEQ, NEQ1, NR, NS, NS1, NSTN, NSW, &
      &             NV, NW
-      REAL(rkind)   :: ADV, C1, COEF, COULOG, DV53, FADV, PRV, RDPA, RLP
+      REAL(rkind)   :: ADV, C1, COEF, DV53, FADV, PRV, RDPA, RLP
 
       IERR=0
 

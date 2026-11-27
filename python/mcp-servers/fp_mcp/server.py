@@ -59,6 +59,7 @@ server's log.
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 from pathlib import Path
@@ -147,7 +148,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "NPMAX":  {"type": "int", "group": "mesh", "description": "momentum-space mesh size"},
     "NTHMAX": {"type": "int", "group": "mesh", "description": "pitch-angle mesh size"},
     "NTMAX":  {"type": "int", "group": "mesh", "description": "time-step count (per fp_run call)"},
-    "NAVMAX": {"type": "int", "group": "mesh", "description": "orbit-averaging sub-iterations"},
+    "NAVMAX": {"type": "int", "group": "mesh", "description": "orbit-averaging sub-iterations; must be >= 1 with MODELA = 1 or MODEL_WAVE /= 0 (both divide by it)"},
     # --- species counts --------------------------------------------
     "NSMAX":  {"type": "int", "group": "species", "description": "total number of namelist species"},
     "NSAMAX": {"type": "int", "group": "species", "description": "kinetic species count (<= FP_MAX_NSAMAX=8)"},
@@ -198,6 +199,15 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     # --- model switches (per-species int arrays) -------------------
     "MODELC": {"type": "int[NSM]", "group": "models", "description": "collision-model selector per species"},
     "MODELW": {"type": "int[NSM]", "group": "models", "description": "wave-model selector per species"},
+    # --- NBI source and bounce average (task-web-client #232) ------
+    "MODELA":   {"type": "int", "group": "models", "description": "bounce average: 0 none, 1 bounce-averaged (theta is then the pitch angle at the field minimum); 1 needs NAVMAX >= 1 (as does MODEL_WAVE /= 0)"},
+    "NBEAMMAX": {"type": "int", "group": "nbi", "description": "number of beams, 0 to NBEAMM = 20 (fp_init gives it no value)"},
+    "NSSPB":    {"type": "int[NBEAMM]", "group": "nbi", "description": "namelist species NS of beam i; with MODEL_NBI = 1 a beam with a source must be on a kinetic species (NS_NSA)"},
+    "SPBTOT":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle source of beam i [1e20/s] (FP normalises it with RNFP0 [1e20 m^-3]; fp/fpinit.f90's comment says [1/s]); 0 = off; with MODEL_NBI = 1 a non-zero source beyond NBEAMMAX is refused"},
+    "SPBENG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "particle energy of beam i [eV]; with MODEL_NBI = 1, >= 0 for a beam with a source; with MODEL_NBI = 1 a beam with a source (SPBTOT /= 0) is refused when its momentum sqrt(2*SPBENG/(1000*T)) (T = (PTPR + 2 PTPP)/3 [keV] of its species) is at or beyond the species' mesh edge (PMAX, or EMAX's when set)"},
+    "SPBANG":   {"type": "float[NBEAMM]", "group": "nbi", "description": "source pitch angle of beam i [degree]; with MODEL_NBI = 1, 0 <= x < 180 for a beam with a source"},
+    "SPBR0":    {"type": "float[NBEAMM]", "group": "nbi", "description": "source radius of beam i [r/a]"},
+    "SPBRW":    {"type": "float[NBEAMM]", "group": "nbi", "description": "source width of beam i [r/a]; with MODEL_NBI = 1, > 0 for every beam up to NBEAMMAX, sourced or not"},
     # --- string parameter (set via set_param_str under the hood) ----
     "KNAMEQ": {
         "type": "str",
@@ -307,6 +317,39 @@ STATE = _ServerState()
 # =====================================================================
 # Helpers — parameter application.
 # =====================================================================
+def _short(text: str, limit: int) -> str:
+    """``text`` for an error message: its start, when it is longer than ``limit``."""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _number(key: str, value: Any) -> float:
+    """``value`` as the float the library is given for ``key``.
+
+    Raises :class:`FplibError` for what ``float()`` does not take (a string
+    that is no number, ``None``), for an integer too large for a float
+    (``float()`` raises ``OverflowError``), and for a number that is not
+    finite: ``float()`` also takes ``"nan"``, ``"inf"`` and ``"1e309"``,
+    and no parameter has such a value.
+    """
+    key = _short(key, 80)
+    if isinstance(value, int) and abs(value) >= 10**30:
+        shown = "an integer of more than 30 digits"   # Python does not print one of 4300
+    else:
+        shown = _short(repr(value), 60)
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        reason = _short(str(exc), 80)                 # float() repeats the string it refuses
+        raise FplibError(
+            f"invalid numeric value for '{key}': {shown} ({reason})"
+        ) from exc
+    if not math.isfinite(coerced):
+        raise FplibError(
+            f"invalid numeric value for '{key}': {shown} (not finite)"
+        )
+    return coerced
+
+
 def _apply_bulk_params(fp: Fplib, params: Dict[str, SupportedValue]) -> List[str]:
     """Apply a bulk ``params`` dict, returning the list of applied keys.
 
@@ -348,13 +391,7 @@ def _apply_bulk_params(fp: Fplib, params: Dict[str, SupportedValue]) -> List[str
                         f"unsupported value type for '{key}': "
                         f"bool (use 0/1)"
                     )
-                try:
-                    coerced = float(v)
-                except (TypeError, ValueError) as exc:
-                    raise FplibError(
-                        f"invalid numeric value for '{key}': {v!r} ({exc})"
-                    ) from exc
-                fp.set_param(key, coerced)
+                fp.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, dict):
             for idx, v in value.items():
@@ -376,13 +413,7 @@ def _apply_bulk_params(fp: Fplib, params: Dict[str, SupportedValue]) -> List[str
                         f"invalid index for '{name}': {idx!r} ({exc})"
                     ) from exc
                 key = f"{name}[{int_idx}]"
-                try:
-                    coerced = float(v)
-                except (TypeError, ValueError) as exc:
-                    raise FplibError(
-                        f"invalid numeric value for '{key}': {v!r} ({exc})"
-                    ) from exc
-                fp.set_param(key, coerced)
+                fp.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, str):
             # String-valued (e.g. KNAMEQ). Requires a libfpapi.so that
@@ -391,13 +422,7 @@ def _apply_bulk_params(fp: Fplib, params: Dict[str, SupportedValue]) -> List[str
             fp.set_param_str(name, value)
             applied.append(name)
         elif isinstance(value, (int, float)):
-            try:
-                coerced = float(value)
-            except (TypeError, ValueError) as exc:
-                raise FplibError(
-                    f"invalid numeric value for '{name}': {value!r} ({exc})"
-                ) from exc
-            fp.set_param(name, coerced)
+            fp.set_param(name, _number(name, value))
             applied.append(name)
         else:
             raise FplibError(
@@ -453,7 +478,7 @@ def handle_init() -> str:
 def handle_set_param(name: str, value: float) -> str:
     try:
         fp = STATE.ensure_open()
-        fp.set_param(name, float(value))
+        fp.set_param(name, _number(name, value))
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_fplib_error(exc) from exc
@@ -479,10 +504,10 @@ def handle_set_param_str(name: str, value: str) -> str:
     ``BESEKNX`` / ``NCALC=-2`` failure that the comment block in
     ``fp/fp_param_registry.f90`` describes predates that propagation.
 
-    A file that opens but is not a TASK/EQ file is another matter:
-    ``eq/eqfile.f90`` reads its leading records without ``IOSTAT``, and
-    a Fortran runtime error there ends the server process (measured
-    with an empty file and with a text file).
+    A file that opens but is not a TASK/EQ file fails the same way:
+    ``EQRTSK`` (``eq/eqfile.f90``) returns an error where a read of it
+    fails, where it used to end the server process (measured with an
+    empty file and with a text file).
     """
     try:
         fp = STATE.ensure_open()
@@ -577,6 +602,56 @@ def handle_run_and_get_state(
 
 
 # =====================================================================
+# The distribution function (task-web-client #232).
+# =====================================================================
+# Windows device names: a file with one of them as its stem opens the device.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"] + [f"COM{i}" for i in range(1, 10)] + [f"LPT{i}" for i in range(1, 10)]
+)
+
+
+def _npy_file_name(nsa: int, filename: str) -> str:
+    """The plain ``.npy`` file name the distribution is written to."""
+    name = filename or f"fp_fns_nsa{int(nsa)}.npy"
+    if (len(name) <= len(".npy") or not name.endswith(".npy") or name.startswith(".")
+            or not name.isprintable() or any(c in name for c in "/\\:\0")
+            or name[:-len(".npy")].split(".")[0].upper() in _WINDOWS_DEVICE_NAMES):
+        raise ToolError(  # type: ignore[call-arg]
+            f"filename {filename!r}: give a plain, printable file name ending in .npy "
+            "(no path separator, no drive, no leading dot)"
+        )
+    return name
+
+
+def handle_get_distribution(nsa: int = 1, filename: str = "") -> Dict[str, Any]:
+    """Write species ``nsa``'s FNS to ``filename`` in the working directory; return its description."""
+    name = _npy_file_name(nsa, filename)
+    try:
+        fp = STATE.ensure_open()
+        dist = fp.get_distribution(int(nsa))
+    except Exception as exc:
+        raise _wrap_fplib_error(exc) from exc
+    try:
+        dist.save_npy(Path.cwd() / name)
+    except OSError as exc:
+        raise ToolError(  # type: ignore[call-arg]
+            f"could not write {name} in the working directory {Path.cwd()}: {exc}"
+        ) from exc
+    return {
+        "file": name,
+        "path": str(Path.cwd() / name),
+        "shape": list(dist.shape),
+        "info": dict(dist.info),
+        "pm": dist.pm,
+        "thm": dist.thm,
+        "rm": dist.rm,
+        "energy_keV": dist.energy_keV(),
+        "speed_m_s": dist.speed(),
+        "pitch": dist.pitch(),
+    }
+
+
+# =====================================================================
 # FastMCP server wiring.
 #
 # Declared only when the SDK is importable; the handle_* functions
@@ -647,13 +722,11 @@ def build_server() -> Any:
             run(...)
 
         Paths are resolved relative to the server process's cwd, and
-        ``KNAMEQ`` holds 80 characters: keep the path within 80 bytes
-        (one of 81 to 128 bytes is cut to its first 80 without an
-        error; a longer one is refused). A file that does not exist
+        ``KNAMEQ`` holds 80 characters: a longer path is refused
+        ("invalid parameter"), not cut. A file that does not exist
         or cannot be opened makes the next ``run`` fail with
-        "calculation failed". A file that opens but is not a TASK/EQ
-        file can end the server process with a Fortran runtime error
-        (an empty file and a text file do): name TASK/EQ files only.
+        "calculation failed". So does a file that opens but is not a
+        TASK/EQ file (an empty file, a text file).
         """
         return handle_set_param_str(name, value)
 
@@ -666,6 +739,9 @@ def build_server() -> Any:
         * a list/tuple (1-origin array, all elements applied)
         * a dict ``{index: value}`` (1-origin sparse array)
         * a string (for KNAMEQ and similar string-valued parameters)
+
+        Every number must be finite: NaN and the infinities are refused,
+        also as a string in a list or a dict (``"nan"``, ``"1e309"``).
 
         **Non-transactional**: keys are applied in iteration order and
         a failure on key ``N`` leaves keys ``0..N-1`` already written
@@ -742,6 +818,23 @@ def build_server() -> Any:
         """
         return handle_run_and_get_state(params, ntmax)
 
+    @mcp.tool()
+    def get_distribution(nsa: int = 1, filename: str = "") -> Dict[str, Any]:
+        """Write kinetic species nsa's distribution function FNS to a .npy file.
+
+        The file is float64 f[ir, ip, ith], FP's values unscaled, in the
+        server's working directory (default name fp_fns_nsa<nsa>.npy;
+        filename must be a plain name ending in .npy). Returns the file
+        name, shape, the normalisation (info), the grids pm (normalised
+        momentum), thm (pitch angle, rad) and rm (r/a), and energy_keV,
+        speed_m_s and pitch (cos thm) at the grid. There is a distribution
+        after run, and not after a set until the next run. A file of the
+        same name is replaced (the default name is per species, so a later
+        call overwrites an earlier snapshot; pass filename to keep several).
+        path is the file's absolute path.
+        """
+        return handle_get_distribution(nsa, filename)
+
     return mcp
 
 
@@ -781,6 +874,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "describe_parameters",
                 "describe_state_schema",
                 "run_and_get_state",
+                "get_distribution",
             ]
         ):
             sys.stdout.write(tool + "\n")

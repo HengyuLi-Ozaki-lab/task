@@ -25,6 +25,7 @@ import unittest
 from pathlib import Path
 from typing import Any, Dict, List
 from unittest import mock
+import numpy as np
 
 HERE = Path(__file__).resolve()
 EQ_MCP_ROOT = HERE.parents[1]
@@ -214,6 +215,9 @@ class _MockEq:
 
     def get_state(self) -> Any:
         class _S:
+            rg = [0.0] * 33
+            zg = [0.0] * 33
+
             def to_dict(self_inner) -> Dict[str, Any]:
                 return {
                     "NRGMAX": 0, "NZGMAX": 0, "NPSMAX": 0,
@@ -225,6 +229,9 @@ class _MockEq:
                 }
 
         return _S()
+
+    def get_psi_rz(self) -> Any:
+        return np.zeros((33, 33), dtype=np.float64)
 
     def validate(self) -> List[Any]:
         self.validate_calls += 1
@@ -382,6 +389,19 @@ class TestHandlersWithMockedState(unittest.TestCase):
                 "before opening a fresh handle (Codex review P2).",
             )
 
+    def test_handle_get_psi_rz(self) -> None:
+        """handle_get_psi_rz returns the expected dict shape."""
+        result = srv.handle_get_psi_rz()
+        self.assertIn("nrg", result)
+        self.assertIn("nzg", result)
+        self.assertIn("rg", result)
+        self.assertIn("zg", result)
+        self.assertIn("psi_rz", result)
+        self.assertEqual(result["nrg"], 33)
+        self.assertEqual(result["nzg"], 33)
+        self.assertEqual(len(result["psi_rz"]), 33)
+        self.assertEqual(len(result["psi_rz"][0]), 33)
+
     def test_handle_validate_returns_list_of_dicts(self) -> None:
         # No diagnostics -> empty list.
         out = srv.handle_validate()
@@ -430,7 +450,7 @@ class TestMainCliFlags(unittest.TestCase):
         rc = self._run_quiet(["--print-tools"])
         self.assertEqual(rc, 0)
 
-    def test_print_tools_output_contains_all_twelve(self) -> None:
+    def test_print_tools_output_contains_all_thirteen(self) -> None:
         import io
         import contextlib
 
@@ -439,7 +459,7 @@ class TestMainCliFlags(unittest.TestCase):
             rc = srv.main(["--print-tools"])
         self.assertEqual(rc, 0)
         lines = [ln for ln in buf.getvalue().splitlines() if ln]
-        self.assertEqual(len(lines), 12)
+        self.assertEqual(len(lines), 13)
         for t in (
             "init",
             "set_param",
@@ -448,6 +468,7 @@ class TestMainCliFlags(unittest.TestCase):
             "set_params",
             "run",
             "get_state",
+            "get_psi_rz",
             "validate",
             "finalize",
             "describe_parameters",
@@ -544,6 +565,74 @@ class TestIntegration(unittest.TestCase):
             f"expected FILE_MISSING (code 4) in diagnostics: {diags}",
         )
 
+    def test_validate_wall_inside_plasma_flags_only_the_wall_at_default_mdleqf(
+        self,
+    ) -> None:
+        """A large device (RR=6.2, RA=2.0) with the default RB=1.2 < RA,
+        MODELG=2 and MDLEQF at its default: validate() is non-empty and
+        names the wall violation (INCONSISTENT_PAIR, code 2). It does not
+        name the extent check (OUT_OF_RANGE_AFTER_DEP, code 3): a
+        default-MDLEQF solve does not read RGMIN..ZGMAX."""
+        srv.handle_init()
+        srv.handle_set_params({"MODELG": 2, "RR": 6.2, "RA": 2.0})
+        diags = srv.handle_validate()
+        self.assertTrue(diags, "expected non-empty diagnostics (RB < RA)")
+        codes = {d["code"] for d in diags}
+        self.assertEqual(codes, {2}, f"expected only INCONSISTENT_PAIR (code 2): {diags}")
+        self.assertIn("solver can abort", " ".join(d["message"] for d in diags))
+
+    def test_validate_wall_inside_plasma_with_mdleqf_10_adds_the_extent_check(
+        self,
+    ) -> None:
+        """The same input with MDLEQF=10 (the solver reads the box) also
+        names the box: RR=6.2 lies outside RGMIN..RGMAX (OUT_OF_RANGE_AFTER_DEP,
+        code 3)."""
+        srv.handle_init()
+        srv.handle_set_params({"MODELG": 2, "MDLEQF": 10, "RR": 6.2, "RA": 2.0})
+        diags = srv.handle_validate()
+        codes = {d["code"] for d in diags}
+        self.assertIn(2, codes, f"expected INCONSISTENT_PAIR (code 2) in {diags}")
+        self.assertIn(3, codes, f"expected OUT_OF_RANGE_AFTER_DEP (code 3) in {diags}")
+        messages = " ".join(d["message"] for d in diags)
+        self.assertIn("RR=6.200 outside RGMIN..RGMAX", messages)
+        self.assertIn("MDLEQF >= 10", messages)
+
+    def test_validate_names_a_grid_that_reaches_r_0(self) -> None:
+        """A small device with the default wall RB=1.2 >= RR=0.7: the
+        analytic grid RR -/+ RB reaches R <= 0 (tw#217), reported on RB as
+        INCONSISTENT_PAIR (code 2)."""
+        srv.handle_init()
+        srv.handle_set_params({"MODELG": 2, "RR": 0.7, "RA": 0.18, "RKAP": 1.9,
+                               "RDLT": 0.4, "BB": 0.3, "RIP": 0.04})
+        diags = srv.handle_validate()
+        self.assertEqual([(d["param"], d["code"]) for d in diags], [("RB", 2)], diags)
+        self.assertIn("reaches R <= 0", diags[0]["message"])
+
+    def test_validate_modelg3_iter_geometry_skips_grid_extent_check(self) -> None:
+        """SCOPING REGRESSION: the box check (OUT_OF_RANGE_AFTER_DEP) is
+        not made for a file format (MODELG 3, 5, 8, 9, 15, 25). The ITER01
+        fixture geometry used by test_init_set_run_get_state_cycle_iter01
+        below (RR=6.2, RA=2.0, RB=2.1, MODELG=3) sits far outside the
+        default box (RR=6.2 > RGMAX=4.5) yet is a clean,
+        currently-tested TASK-native-load configuration at the default
+        MDLEQF (MODELG=3 -> EQRTSK per eq/eqfile.f90's EQ_READ dispatch;
+        the EQDSK reader serves MODELG=5/25). A file load sets the
+        geometry itself, so the pre-run RR/RA say nothing about the
+        loaded plasma: a check that ignored MODELG would regress that
+        fixture. MDLEQF=10 is set here so that the MODELG gate, not the
+        MDLEQF gate, keeps this case clean."""
+        srv.handle_init()
+        srv.handle_set_params({
+            "MODELG": 3, "MDLEQF": 10, "RR": 6.2, "RA": 2.0, "RKAP": 1.7,
+            "RDLT": 0.33, "RB": 2.1, "BB": 5.3, "RIP": 15.0,
+        })
+        srv.handle_set_param_str("KNAMEQ", "eqdata.ITER01")
+        diags = srv.handle_validate()
+        extent_diags = [d for d in diags if d["code"] == 3]
+        self.assertEqual(
+            extent_diags, [],
+            f"box check (code 3) must not fire for MODELG=3: {diags}")
+
     @unittest.skipUnless(
         (EQDATA_FIXTURE_DIR / "eqdata.ITER01").exists(),
         f"eqdata.ITER01 fixture missing at {EQDATA_FIXTURE_DIR}",
@@ -590,6 +679,24 @@ class TestIntegration(unittest.TestCase):
         self.assertLess(raxis, 12.0)
 
         srv.handle_finalize()
+
+    def test_run_failure_carries_the_reason(self) -> None:
+        """A failed run's error names the cause (eq_last_error), not just rc=3.
+
+        A g-eqdsk load of a missing file used to return EQ_OK and keep
+        the previous equilibrium.
+        """
+        os.chdir(EQDATA_FIXTURE_DIR)
+        srv.handle_init()
+        srv.handle_set_param("MODELG", 5.0)
+        srv.handle_set_param_str("KNAMEQ", "no_such_geqdsk")
+        # ToolError, or RuntimeError when the mcp SDK is absent.
+        with self.assertRaises(Exception) as ctx:
+            srv.handle_run(1)
+        message = str(ctx.exception)
+        self.assertIn("calculation failed", message)
+        self.assertIn("no_such_geqdsk", message)
+        self.assertIn("not found", message)
 
 
 if __name__ == "__main__":  # pragma: no cover

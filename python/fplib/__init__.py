@@ -16,6 +16,7 @@ Example::
 """
 from .fplib import Fplib
 from .state import FpState
+from .distribution import FpDistribution
 from .errors import (
     FplibError,
     FplibInitError,
@@ -38,6 +39,7 @@ from .errors import (
 __all__ = [
     "Fplib",
     "FpState",
+    "FpDistribution",
     "FplibError",
     "FplibInitError",
     "FplibInvalidParamError",

@@ -18,6 +18,15 @@ to stderr:
 fd 0 is left as it is: the client's requests arrive on it. The saved
 descriptor is never 0, 1 or 2, also when one of them is closed.
 
+On Windows fd 0 is moved as well. Windows serialises the operations on a
+synchronous pipe: while the MCP reader thread waits in ``ReadFile`` on
+stdin, the gfortran runtime's start-up ``fstat()``/``isatty()`` of fd 0,
+run when the library's DLL loads inside the first tool call, blocks
+forever. So the stdin pipe is saved on a descriptor of its own,
+``sys.stdin`` is rebuilt on it (the MCP SDK reads ``sys.stdin.buffer``) and
+fd 0 is opened on ``os.devnull``. Elsewhere fd 0 stays: the Fortran library
+reads unit 5 in places, and the stdio servers have run with it as it is.
+
 Call it from a server's ``main()`` just before the stdio server is built,
 never at import time (#227 item 1): an import by pytest, by an embedding
 application or by tot_mcp (which imports its siblings for their parameter
@@ -56,6 +65,8 @@ including it leaves fd 1, ``sys.stdout`` and the flag as they were and
 closes the descriptors opened on the way, and nothing after it can fail.
 (A closed fd 2 that was repaired, together with its ``sys.stderr``, stays
 repaired when a later step fails; a repair that fails itself is undone.)
+On Windows the ``dup2`` that moves fd 0 comes just before it; when the one
+for fd 1 then fails, fd 0 is given back its pipe before the error is raised.
 """
 from __future__ import annotations
 
@@ -63,9 +74,11 @@ import os
 import sys
 
 _INSTALLED = False
-# The stream that was sys.stdout. Kept for the life of the process: a
-# wrapper that owns fd 1 would close the descriptor when collected.
+# The streams that were sys.stdout and sys.stdin. Kept for the life of the
+# process: a wrapper that owns fd 1 (fd 0) would close the descriptor when
+# collected.
 _PREVIOUS_STDOUT = None
+_PREVIOUS_STDIN = None
 
 _SAME_FILE_WARNING = (
     "warning: stdout and stderr of this MCP server are the same file; "
@@ -135,13 +148,31 @@ def _repair_fd2() -> None:
         raise
 
 
+def _moves_stdin() -> bool:
+    """True where fd 0 leaves the stdin pipe as well (Windows, see above).
+
+    A function, so that a test can ask for the move on another system.
+    """
+    return sys.platform == "win32"
+
+
+def _is_open(fd: int) -> bool:
+    try:
+        os.fstat(fd)
+    except OSError:
+        return False
+    return True
+
+
 def install() -> None:
-    """Give fd 1 to stderr and rebuild ``sys.stdout`` on the saved pipe.
+    """Give fd 1 to stderr and rebuild ``sys.stdout`` on the saved pipe;
+    on Windows also give fd 0 to the null device and rebuild ``sys.stdin``
+    on the saved stdin pipe.
 
     Idempotent, and process-wide: the first call does the work for every
     server that shares this module.
     """
-    global _INSTALLED, _PREVIOUS_STDOUT
+    global _INSTALLED, _PREVIOUS_STDOUT, _PREVIOUS_STDIN
     if _INSTALLED:
         return
     previous = sys.stdout
@@ -153,24 +184,40 @@ def install() -> None:
     _repair_fd2()
     pipe_fd = _dup_above_stderr(1)
     null = None
+    in_fd = null_in = None
+    stdin_moved = False
     try:
         # closefd=False: this function owns pipe_fd until the redirect is done,
         # whatever the stream's construction does when it fails half-way.
         new_stdout = os.fdopen(pipe_fd, "w", buffering=1, encoding="utf-8", closefd=False)
+        if _moves_stdin() and _is_open(0):
+            in_fd = _dup_above_stderr(0)
+            new_stdin = os.fdopen(in_fd, "r", encoding="utf-8", closefd=False)
+            null_in = os.open(os.devnull, os.O_RDONLY)
         discard = _same_file(1, 2)
         if discard:
             null = os.open(os.devnull, os.O_WRONLY)
+        if null_in is not None:
+            os.dup2(null_in, 0)
+            stdin_moved = True
         os.dup2(null if discard else 2, 1)
     except BaseException:
-        if null is not None:
-            _close_quietly(null)
+        if stdin_moved:
+            os.dup2(in_fd, 0)       # fd 0 back on the stdin pipe
+        for fd in (null, null_in, in_fd):
+            if fd is not None:
+                _close_quietly(fd)
         _close_quietly(pipe_fd)
         raise
     # fd 1 is redirected: nothing after this point may fail.
-    if null is not None:
-        _close_quietly(null)
+    for fd in (null, null_in):
+        if fd is not None:
+            _close_quietly(fd)
     _PREVIOUS_STDOUT = previous
     sys.stdout = new_stdout
+    if in_fd is not None:
+        _PREVIOUS_STDIN = sys.stdin
+        sys.stdin = new_stdin
     _INSTALLED = True
     if discard:
         try:

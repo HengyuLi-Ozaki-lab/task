@@ -191,24 +191,27 @@ class TestTrlibBoundaryValues(unittest.TestCase):
                             tr, {"NSMAX": 9}, BOUNDARY_NTMAX,
                         )
 
-    def test_NRMAX_not_registered(self):
-        """NRMAX is intentionally NOT in tr_param_registry yet (deferred).
-
-        The Phase 0 namelist /TR/ exposes NRMAX but the L-3 registry
-        does not route it, so set_param('NRMAX', ...) raises
-        TrlibParamError. This subtest documents that gap and will FAIL
-        (signalling a registry extension) once NRMAX is wired up; at
-        that point this method should be replaced with an actual
-        sweep checking state.nrmax round-trip.
-        """
+    def _nrmax_round_trip(self, nrmax):
         from trlib import Trlib
-        from trlib.errors import TrlibParamError
-        for nrmax in (10, 50, 100):
-            with self.subTest(NRMAX=nrmax):
-                with _pushd(self.WORKDIR):
-                    with Trlib() as tr:
-                        with self.assertRaises(TrlibParamError):
-                            tr.set_param("NRMAX", float(nrmax))
+        with _pushd(self.WORKDIR):
+            with Trlib() as tr:
+                state = self._apply_and_run(
+                    tr, {"NRMAX": float(nrmax)}, BOUNDARY_NTMAX,
+                )
+        self.assertEqual(state.nrmax, nrmax)
+        self._assert_finite_state(state)
+
+    # NRMAX is in the registry (3 .. TR_MAX_NRMAX). One test per value, each
+    # in its own process under --forked: they need no mesh change within a
+    # process (that needs bpsd's spline-resize fix).
+    def test_NRMAX_10_round_trips(self):
+        self._nrmax_round_trip(10)
+
+    def test_NRMAX_50_round_trips(self):
+        self._nrmax_round_trip(50)
+
+    def test_NRMAX_100_round_trips(self):
+        self._nrmax_round_trip(100)
 
     def test_DT_sweep(self):
         """Vary DT over 4 decades; tiny DT may not advance but must not NaN."""

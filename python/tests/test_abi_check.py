@@ -126,5 +126,43 @@ class TestCheckStateLayout(unittest.TestCase):
         self.assertTrue(issubclass(AbiMismatchError, RuntimeError))
 
 
+class _FnsLib:
+    def __init__(self, version=None, size=None):
+        if version is not None:
+            self.xx_fns_info_abi_version = _Fn(version)
+        if size is not None:
+            self.xx_fns_info_size = _Fn(size)
+
+
+def _check_fns(lib, version=3):
+    check_state_layout(lib, prefix="xx", layout="fns_info", struct=_State,
+                       expected_version=version, lib_name="libxxapi.so")
+
+
+class TestOtherLayouts(unittest.TestCase):
+    """layout= names the query: <prefix>_<layout>_abi_version / _size (task-web-client #232)."""
+
+    def test_the_query_of_that_layout_is_read(self):
+        lib = _FnsLib(version=3, size=ctypes.sizeof(_State))
+        _check_fns(lib)
+        self.assertIs(lib.xx_fns_info_size.restype, ctypes.c_size_t)
+
+    def test_the_state_query_does_not_stand_in_for_it(self):
+        with self.assertRaises(AbiMismatchError) as ctx:
+            _check_fns(_Lib(version=3, size=ctypes.sizeof(_State)))
+        self.assertIn("xx_fns_info_abi_version", str(ctx.exception))
+        self.assertNotIn("(#246)", str(ctx.exception))
+
+    def test_a_mismatch_names_the_layout(self):
+        with self.assertRaises(AbiMismatchError) as ctx:
+            _check_fns(_FnsLib(version=4, size=ctypes.sizeof(_State)))
+        self.assertIn("fns_info layout is v4", str(ctx.exception))
+
+    def test_the_default_is_the_state_layout(self):
+        with self.assertRaises(AbiMismatchError) as ctx:
+            _check(_Lib(version=4, size=ctypes.sizeof(_State)))
+        self.assertIn("state layout is v4", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

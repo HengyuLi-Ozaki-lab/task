@@ -38,10 +38,11 @@ server's log.
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # ---------------------------------------------------------------------
 # Make ``trlib`` importable without a wheel install.
@@ -119,6 +120,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MODELG": {"type": "int",   "group": "geometry",     "description": "equilibrium/geometry selector"},
     # --- plasma arrays (1..NSMM) ------------------------------------
     "NSMAX":  {"type": "int",   "group": "plasma",       "description": "number of species"},
+    "NRMAX":  {"type": "int",   "group": "plasma",       "description": "TR radial mesh points"},
     "PA":     {"type": "float[NSMM]", "group": "plasma", "description": "atomic mass per species (1-origin)"},
     "PZ":     {"type": "float[NSMM]", "group": "plasma", "description": "charge number per species"},
     "PN":     {"type": "float[NSMM]", "group": "plasma", "description": "initial density per species [10^20 m^-3]"},
@@ -137,6 +139,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "NTSTEP": {"type": "int",   "group": "time",         "description": "output cadence"},
     "EPSLTR": {"type": "float", "group": "time",         "description": "convergence tolerance"},
     "LMAXTR": {"type": "int",   "group": "time",         "description": "max inner-iteration count"},
+    "NTEQIT": {"type": "int",   "group": "time",         "description": "EQ re-solve interval in steps under MODELG=9 (0 = never)"},
     "NGTSTP": {"type": "int",   "group": "time",         "description": "graphics-output cadence (steps)"},
     "NGRSTP": {"type": "int",   "group": "time",         "description": "graphics-output cadence (radial)"},
     # --- transport coefficients ------------------------------------
@@ -148,6 +151,8 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "CHP":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
     "CK0":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
     "CK1":    {"type": "float", "group": "transport",    "description": "tuning coefficient"},
+    "CDH":    {"type": "float", "group": "transport",    "description": "turbulent heat-diffusivity sum weight"},
+    "CNH":    {"type": "float", "group": "transport",    "description": "neoclassical heat-diffusivity sum weight"},
     # --- module switches -------------------------------------------
     "MDLNB":  {"type": "int", "group": "modules", "description": "NBI heating module"},
     "MDLEC":  {"type": "int", "group": "modules", "description": "ECRF heating module"},
@@ -156,6 +161,7 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "MDLPEL": {"type": "int", "group": "modules", "description": "pellet injection module"},
     "MDLJBS": {"type": "int", "group": "modules", "description": "bootstrap-current model"},
     "MDLST":  {"type": "int", "group": "modules", "description": "sawtooth model"},
+    "TPRST":  {"type": "float", "group": "modules", "description": "sawtooth period [s]"},
     "MDLNF":  {"type": "int", "group": "modules", "description": "neutron/fusion module"},
     "MDLUF":  {"type": "int", "group": "modules", "description": "UFILE I/O mode"},
     # --- heating / current-drive scalars ---------------------------
@@ -168,31 +174,153 @@ PARAMETER_REGISTRY: Dict[str, Dict[str, Any]] = {
     "PICR0":  {"type": "float", "group": "icrf", "description": "ICRF deposition center"},
     "PICRW":  {"type": "float", "group": "icrf", "description": "ICRF deposition width"},
     "PICNPR": {"type": "float", "group": "icrf", "description": "ICRF parallel index"},
+    "PICTOT": {"type": "float", "group": "icrf", "description": "ICRF total input power [MW]"},
     "PECCD":  {"type": "float", "group": "ecrf", "description": "ECRF CD efficiency"},
     "PECR0":  {"type": "float", "group": "ecrf", "description": "ECRF deposition center"},
     "PECRW":  {"type": "float", "group": "ecrf", "description": "ECRF deposition width"},
     "PECNPR": {"type": "float", "group": "ecrf", "description": "ECRF parallel index"},
+    "PECTOT": {"type": "float", "group": "ecrf", "description": "ECRF total input power [MW]"},
     "PLHCD":  {"type": "float", "group": "lh",   "description": "LH CD efficiency"},
     "PLHR0":  {"type": "float", "group": "lh",   "description": "LH deposition center"},
     "PLHRW":  {"type": "float", "group": "lh",   "description": "LH deposition width"},
     "PLHNPR": {"type": "float", "group": "lh",   "description": "LH parallel index"},
     "PLHTOT": {"type": "float", "group": "lh",   "description": "LH total power [MW]"},
+    # --- NCLASS, equations solved, current profile, particle transport
+    "MDNCLS": {"type": "int",   "group": "transport", "description": "neoclassical transport, resistivity and bootstrap current: 0 = the MDLAD/MDLETA/MDLJBS models, else NCLASS"},
+    "MDLEQB": {"type": "int",   "group": "modules",   "description": "B_theta (current) equation: 1 = evolved, 0 = held at the start profile (MODELG 3 reloads psi from EQ every step)"},
+    "MDLEQN": {"type": "int",   "group": "modules",   "description": "density equations: 0 = densities held, 1 = evolved"},
+    "MDLEQE": {"type": "int",   "group": "modules",   "description": "with MDLEQN 1: 0 = electrons from quasi-neutrality, 1 = both solved, 2 = bulk ions from quasi-neutrality (2 only with NSMAX 2, species 2 H or D, no impurity, no UFILE)"},
+    "PROFJ1": {"type": "float", "group": "current",   "description": "start current profile, MODELG 2 only: <= 0 j from the resistivity (j ~ 1/eta), > 0 j ~ (1 - rho^|PROFJ1|)^|PROFJ2|"},
+    "PROFJ2": {"type": "float", "group": "current",   "description": "start current profile exponent, with PROFJ1 > 0"},
+    "AD0":    {"type": "float", "group": "transport", "description": "particle diffusivity: a factor of chi_turb (MDLAD 2-4, NCLASS) or a constant D (MDLAD 1)"},
+    "AV0":    {"type": "float", "group": "transport", "description": "turbulent inward pinch factor (MDLAD 1, 2, 4)"},
+    "CDP":    {"type": "float", "group": "transport", "description": "turbulent particle-diffusivity sum weight"},
+    "CNP":    {"type": "float", "group": "transport", "description": "neoclassical particle-diffusivity sum weight"},
+    # --- particle source (gas puff), arrays 1..NPSCM = 10 -------------
+    "MDLPSC":  {"type": "int",          "group": "fueling", "description": "particle source: 0 = none, 1 = Gaussian sources"},
+    "NPSCMAX": {"type": "int",          "group": "fueling", "description": "number of particle sources (0..10)"},
+    "PSCTOT":  {"type": "float[NPSCM]", "group": "fueling", "description": "total rate of each source [10^20 /s]"},
+    "PSCR0":   {"type": "float[NPSCM]", "group": "fueling", "description": "centre of each source [m] (minor radius RA*rho, not rho)"},
+    "PSCRW":   {"type": "float[NPSCM]", "group": "fueling", "description": "width of each source [m], at least 1e-10"},
+    "NSPSC":   {"type": "int[NPSCM]",   "group": "fueling", "description": "ion species each source feeds (2..NSMAX; the electrons follow)"},
     # --- string parameter (set via set_param_str under the hood) ----
     "KNAMEQ": {"type": "str", "group": "io", "description": "equilibrium data file name"},
 }
 
 
+# The global results the library names (``Trlib.scalar_names()``), with the unit each has in
+# tr/trrslt_globals.f90. tests/test_scalar_schema.py fails for a name the library lists and this table lacks.
+SCALAR_SCHEMA: Dict[str, Dict[str, str]] = {
+    "T":      {"unit": "s",   "description": "time"},
+    "WPT":    {"unit": "MJ",  "description": "stored energy of the bulk species and the fast ions"},
+    "AJT":    {"unit": "MA",  "description": "total plasma current"},
+    "Q0":     {"unit": "",    "description": "safety factor on axis"},
+    "BETA0":  {"unit": "",    "description": "central toroidal beta (fraction)"},
+    "BETAP0": {"unit": "",    "description": "central poloidal beta"},
+    "BETAA":  {"unit": "",    "description": "volume-averaged toroidal beta (fraction)"},
+    "BETAN":  {"unit": "% m T / MA", "description": "normalised toroidal beta (Troyon), 100 BETAA / (RIP / (RA BB))"},
+    "TAUE1":  {"unit": "s",   "description": "energy confinement time, steady state: WPT / PINT"},
+    "TAUE2":  {"unit": "s",   "description": "energy confinement time, transient: WPT / (PINT - WPDOT)"},
+    "ZEFF0":  {"unit": "",    "description": "effective charge number on axis"},
+    "ALI":    {"unit": "",    "description": "internal inductance"},
+    "RQ1":    {"unit": "m",   "description": "distance of the q = 1 surface from the axis (0 when q0 >= 1). When q already exceeds 1 in the first cell, TRGLOB's first-cell branch (tr/trrslt_globals.f90:374) multiplies by DR, which is a normalised radius, not by RA: the value is then a fraction of the minor radius, not metres (for the TASK developers)"},
+    "AJRFT":  {"unit": "MA",  "description": "RF and external driven current"},
+    "PNFT":   {"unit": "MW",  "description": "power of the charged fusion products (TR's PNF): the alpha power for D-T (MDLNF 1 to 4; P_fus = 5 PNFT), alpha and proton together for D-He3 (MDLNF 5, 6; tr/trpnf.f90:214)"},
+    "QF":     {"unit": "",    "description": "5 PNFT / (POHT + PNBT + PRFST + PEXST), TRGLOB's D-T fusion gain whatever the reaction (tr/trrslt_globals.f90:366): for D-He3 (MDLNF 5, 6) the fusion gain is QF / 5"},
+    "PINT":   {"unit": "MW",  "description": "total input power: POHT + PNBT + PRFST + PNFT + PEXST (the charged fusion products PNFT included)"},
+    "POHT":   {"unit": "MW",  "description": "ohmic power"},
+    "PNBT":   {"unit": "MW",  "description": "neutral-beam power"},
+    "PRFST":  {"unit": "MW",  "description": "RF power, all species"},
+    "PEXST":  {"unit": "MW",  "description": "external power from experimental data, all species"},
+    "PRLT":   {"unit": "MW",  "description": "radiation loss (line)"},
+    "POUT":   {"unit": "MW",  "description": "total output power: conduction, charge exchange, ionisation, radiation"},
+    "AJOHT":  {"unit": "MA",  "description": "ohmic current"},
+    "AJNBT":  {"unit": "MA",  "description": "neutral-beam driven current"},
+    "AJBST":  {"unit": "MA",  "description": "bootstrap current"},
+    "RIP":    {"unit": "MA",  "description": "plasma current at this time: under MODELG 3, 5 and 8 the equilibrium's boundary current, which tr_bpsd_get also writes into RIPS and RIPE (tr/trbpsd.f90:413-416), so not the current that was set; under MDLUF 1 and 3 interpolated from the experimental data (RIPU, tr/trexec.f90:314-319); otherwise RIPS ramping to RIPE over a call of tr_run or continue_run (tr/trloop.f90:44-45, tr/trexec.f90:310)"},
+    "VLOOP":  {"unit": "V",   "description": "one-turn voltage at the edge"},
+    "WPDOT":  {"unit": "MW",  "description": "rate of change of WPT between the last two global evaluations"},
+    "H98Y2":  {"unit": "",    "description": "H factor: TAUE2 / TAUE98"},
+    "TAUE98": {"unit": "s",   "description": "IPB98(y,2) confinement time scaling"},
+}
+
+
+# The columns of the time history (``Trlib.history_names()``), with units from tr/trrslt_globals.f90 TRATOT.
+# Values are single precision. tests/test_history_schema.py fails for a column the library lists and this lacks.
+HISTORY_SCHEMA: Dict[str, Dict[str, str]] = {
+    "T": {"unit": "s", "description": "time of the row"},
+    "NE0": {"unit": "1e20 m^-3", "description": "electron density on axis"},
+    "NEAV": {"unit": "1e20 m^-3", "description": "electron density, volume average"},
+    "TE0": {"unit": "keV", "description": "electron temperature on axis"},
+    "TI0": {"unit": "keV", "description": "temperature of the first bulk ion species (species 2) on axis"},
+    "TEAV": {"unit": "keV", "description": "electron temperature, density-weighted volume average"},
+    "TIAV": {"unit": "keV", "description": "temperature of the first bulk ion species, density-weighted volume average"},
+    "WPT": {"unit": "MJ", "description": "stored energy"},
+    "AJT": {"unit": "MA", "description": "total plasma current"},
+    "AJOHT": {"unit": "MA", "description": "ohmic current"},
+    "AJNBT": {"unit": "MA", "description": "neutral-beam driven current"},
+    "AJRFT": {"unit": "MA", "description": "RF and external driven current"},
+    "AJBST": {"unit": "MA", "description": "bootstrap current"},
+    "PINT": {"unit": "MW", "description": "total input power, the charged fusion products PNFT included"},
+    "POHT": {"unit": "MW", "description": "ohmic power"},
+    "PNBT": {"unit": "MW", "description": "neutral-beam power"},
+    "PRFE": {"unit": "MW", "description": "RF power into species 1 (electrons)"},
+    "PRFD": {"unit": "MW", "description": "RF power into species 2 (first bulk ion)"},
+    "PNFT": {"unit": "MW", "description": "power of the charged fusion products: alpha for D-T (MDLNF 1 to 4), alpha and proton for D-He3 (MDLNF 5, 6)"},
+    "POUT": {"unit": "MW", "description": "total output power"},
+    "VLOOP": {"unit": "V", "description": "one-turn voltage at the edge"},
+    "ALI": {"unit": "", "description": "internal inductance"},
+    "RQ1": {"unit": "m", "description": "distance of the q = 1 surface from the axis; in TRGLOB's first-cell branch (tr/trrslt_globals.f90:374) a normalised radius, not metres (for the TASK developers)"},
+    "Q0": {"unit": "", "description": "safety factor on axis; under MODELG 9 the row of a step that ends with an EQ re-solve (a multiple of NTEQIT) holds the Q0 of before the re-solve, while get_state's is recomputed after it"},
+    "WPDOT": {"unit": "MW", "description": "rate of change of the stored energy"},
+    "TAUE1": {"unit": "s", "description": "energy confinement time, steady state"},
+    "TAUE2": {"unit": "s", "description": "energy confinement time, transient"},
+    "BETAP0": {"unit": "", "description": "central poloidal beta"},
+    "BETA0": {"unit": "", "description": "central toroidal beta (fraction)"},
+    "BETAA": {"unit": "", "description": "volume-averaged toroidal beta (fraction)"},
+    "ZEFF0": {"unit": "", "description": "effective charge number on axis"},
+    "QF": {"unit": "", "description": "5 PNFT / (POHT + PNBT + PRFST + PEXST), the D-T fusion gain whatever the reaction (QF / 5 for D-He3, MDLNF 5, 6)"},
+    "RIP": {"unit": "MA", "description": "plasma current at the row's time: the equilibrium's boundary current under MODELG 3, 5 and 8, the experimental data's under MDLUF 1 and 3, otherwise the one set (RIPS ramping to RIPE)"},
+    "PEXE": {"unit": "MW", "description": "external power into species 1 (electrons)"},
+    "PEXI": {"unit": "MW", "description": "external power into species 2 (first bulk ion)"},
+    "PECE": {"unit": "MW", "description": "EC heating of electrons"},
+    "PECI": {"unit": "MW", "description": "EC heating of ions"},
+    "PLHE": {"unit": "MW", "description": "LH heating of electrons"},
+    "PLHI": {"unit": "MW", "description": "LH heating of ions"},
+    "PICE": {"unit": "MW", "description": "IC heating of electrons"},
+    "PICI": {"unit": "MW", "description": "IC heating of ions"},
+    "TAUE98": {"unit": "s", "description": "IPB98(y,2) confinement time scaling"},
+    "H98Y2": {"unit": "", "description": "H factor TAUE2 / TAUE98"},
+    "NLAV": {"unit": "1e20 m^-3", "description": "line-averaged electron density"},
+    "PRLT": {"unit": "MW", "description": "radiation loss (line)"},
+    "BETAN": {"unit": "% m T / MA", "description": "normalised toroidal beta, 100 BETAA / (RIP / (RA BB)); computed from the row's columns"},
+    "PRFST": {"unit": "MW", "description": "RF power into the four species, sum of the four PRFT columns; computed from the row's columns"},
+}
+
+
 STATE_SCHEMA: Dict[str, Any] = {
     "type": "object",
-    "title": "TrState (wire format of trlib.state.TrState.to_dict())",
+    "title": "TrState (trlib.state.TrState.to_dict() with all the named scalars)",
     "properties": {
         "NT":    {"type": "integer", "description": "current time-step index"},
         "NRMAX": {"type": "integer", "description": "radial points in use"},
         "NSMAX": {"type": "integer", "description": "species in use"},
         "scalars": {
             "type": "object",
-            "description": "14 plasma scalars (T, WPT, AJT, Q0, BETA0, BETAP0, BETAA, BETAN, TAUE1, TAUE2, ZEFF0, ALI, RQ1, AJRFT)",
-            "additionalProperties": {"type": "number"},
+            "description": (
+                "the library's named global results (31), each as of the last step TR computed them on; "
+                "units are in each entry. A run of 0 steps evaluates no step: what the preparation sets (T 0, "
+                "RIP = RIPS or, under MODELG 3, 5 and 8, the equilibrium's boundary current; Q0 under MODELG 2, 3, 5, 7, 8 and 9) is new, what only a step computes (the powers, WPT) is "
+                "still the run before's: until a run or continue_run of one step or more since the handle was opened or a parameter "
+                "was written, get_state and run_and_get_state return T only, and nothing before the handle's first "
+                "successful preparation. After a negative-temperature failure (TR_CHECK) they are the failed "
+                "iterate's (Q0, which the loop computes after a step, the last completed step's), while the "
+                "history ends on the last recorded step. A library built before the "
+                "scalar table gives the 14 of tr_state_t only"
+            ),
+            "properties": {
+                name: {"type": "number", **entry} for name, entry in SCALAR_SCHEMA.items()
+            },
         },
         "profile": {
             "type": "array",
@@ -221,17 +349,45 @@ class _ServerState:
 
     def __init__(self) -> None:
         self.tr: Optional[Trlib] = None
+        # evaluated: a run or continue_run of one step or more has evaluated TR's global results since the handle was opened or a
+        # parameter was written. Until then they are not this handle's: a run of 0 steps evaluates no step, and
+        # finalize then init does not clear them (CLAUDE.md, module state). prepared: a preparation has succeeded on
+        # this handle, so T is its own (tr_init does not reset T; tr_prep does). The state tools return every scalar
+        # when evaluated, T alone when only prepared, none before that.
+        self.evaluated = False
+        self.prepared = False
 
     def ensure_open(self) -> Trlib:
         """Return the live handle, opening one if needed."""
         if self.tr is None or self.tr.closed:
             self.tr = Trlib()
+            self.evaluated = False
+            self.prepared = False
         return self.tr
 
     def close(self) -> None:
         if self.tr is not None and not self.tr.closed:
             self.tr.close()
         self.tr = None
+        self.evaluated = False
+        self.prepared = False
+
+
+class _WriteTracker:
+    """Passes ``set_param`` and ``set_param_str`` on to the handle and notes whether one of them succeeded, so that
+    a write the library refuses (an unknown name, a bad value) or an empty bulk set does not hide valid results."""
+
+    def __init__(self, tr: Trlib) -> None:
+        self._tr = tr
+        self.wrote = False
+
+    def set_param(self, name: str, value: float) -> None:
+        self._tr.set_param(name, value)
+        self.wrote = True
+
+    def set_param_str(self, name: str, value: str) -> None:
+        self._tr.set_param_str(name, value)
+        self.wrote = True
 
 
 STATE = _ServerState()
@@ -240,6 +396,39 @@ STATE = _ServerState()
 # =====================================================================
 # Helpers — parameter application.
 # =====================================================================
+def _short(text: str, limit: int) -> str:
+    """``text`` for an error message: its start, when it is longer than ``limit``."""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _number(key: str, value: Any) -> float:
+    """``value`` as the float the library is given for ``key``.
+
+    Raises :class:`TrlibError` for what ``float()`` does not take (a string
+    that is no number, ``None``), for an integer too large for a float
+    (``float()`` raises ``OverflowError``), and for a number that is not
+    finite: ``float()`` also takes ``"nan"``, ``"inf"`` and ``"1e309"``,
+    and no parameter has such a value.
+    """
+    key = _short(key, 80)
+    if isinstance(value, int) and abs(value) >= 10**30:
+        shown = "an integer of more than 30 digits"   # Python does not print one of 4300
+    else:
+        shown = _short(repr(value), 60)
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        reason = _short(str(exc), 80)                 # float() repeats the string it refuses
+        raise TrlibError(
+            f"invalid numeric value for '{key}': {shown} ({reason})"
+        ) from exc
+    if not math.isfinite(coerced):
+        raise TrlibError(
+            f"invalid numeric value for '{key}': {shown} (not finite)"
+        )
+    return coerced
+
+
 def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str]:
     """Apply a bulk ``params`` dict, returning the list of applied keys.
 
@@ -281,13 +470,7 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
                         f"unsupported value type for '{key}': "
                         f"bool (use 0/1)"
                     )
-                try:
-                    coerced = float(v)
-                except (TypeError, ValueError) as exc:
-                    raise TrlibError(
-                        f"invalid numeric value for '{key}': {v!r} ({exc})"
-                    ) from exc
-                tr.set_param(key, coerced)
+                tr.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, dict):
             for idx, v in value.items():
@@ -309,13 +492,7 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
                         f"invalid index for '{name}': {idx!r} ({exc})"
                     ) from exc
                 key = f"{name}[{int_idx}]"
-                try:
-                    coerced = float(v)
-                except (TypeError, ValueError) as exc:
-                    raise TrlibError(
-                        f"invalid numeric value for '{key}': {v!r} ({exc})"
-                    ) from exc
-                tr.set_param(key, coerced)
+                tr.set_param(key, _number(key, v))
                 applied.append(key)
         elif isinstance(value, str):
             # String-valued (e.g. KNAMEQ). Requires libtrapi.so with L-6
@@ -324,19 +501,25 @@ def _apply_bulk_params(tr: Trlib, params: Dict[str, SupportedValue]) -> List[str
             tr.set_param_str(name, value)
             applied.append(name)
         elif isinstance(value, (int, float)):
-            try:
-                coerced = float(value)
-            except (TypeError, ValueError) as exc:
-                raise TrlibError(
-                    f"invalid numeric value for '{name}': {value!r} ({exc})"
-                ) from exc
-            tr.set_param(name, coerced)
+            tr.set_param(name, _number(name, value))
             applied.append(name)
         else:
             raise TrlibError(
                 f"unsupported value type for '{name}': {type(value).__name__}"
             )
     return applied
+
+
+def _failure_suffix(failure: Any, text: str = "") -> str:
+    """The library's record of what failed or was refused (tr_last_error), as one bracketed string. ``text`` is the
+    exception's own message: a detail it already carries (trlib puts a refusal's reason in it) is not repeated."""
+    if failure is None or failure.kind == "NONE":
+        return ""
+    detail = "" if failure.detail and failure.detail in text else f"; {failure.detail}"
+    return (
+        f" [failure: kind={failure.kind} code={failure.code} "
+        f"nt={failure.nt} time={failure.time:g} s{detail}]"
+    )
 
 
 def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
@@ -347,10 +530,12 @@ def _wrap_trlib_error(exc: Exception) -> "ToolError":  # noqa: F821
     """
     if isinstance(exc, TrlibParamError):
         msg = f"invalid parameter: {exc}"
+        msg += _failure_suffix(getattr(exc, "failure", None), str(exc))     # a refusal of tr_continue carries its record
     elif isinstance(exc, TrlibStateError):
         msg = f"library not initialized (call init first): {exc}"
     elif isinstance(exc, TrlibRunError):
         msg = f"calculation failed: {exc}"
+        msg += _failure_suffix(getattr(exc, "failure", None), str(exc))
     elif isinstance(exc, TrlibNotImplementedError):
         msg = f"not implemented in this libtrapi.so build: {exc}"
     elif isinstance(exc, TrlibInitError):
@@ -386,7 +571,8 @@ def handle_init() -> str:
 def handle_set_param(name: str, value: float) -> str:
     try:
         tr = STATE.ensure_open()
-        tr.set_param(name, float(value))
+        tr.set_param(name, _number(name, value))
+        STATE.evaluated = False
         return f"set {name} = {value}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -404,6 +590,7 @@ def handle_set_param_str(name: str, value: str) -> str:
     try:
         tr = STATE.ensure_open()
         tr.set_param_str(name, str(value))
+        STATE.evaluated = False
         return f"set {name} = {value!r}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
@@ -416,30 +603,134 @@ def handle_set_params(params: Dict[str, SupportedValue]) -> str:
         )
     try:
         tr = STATE.ensure_open()
-        applied = _apply_bulk_params(tr, params)
+        writes = _WriteTracker(tr)
+        try:
+            applied = _apply_bulk_params(writes, params)  # type: ignore[arg-type]
+        finally:
+            if writes.wrote:                                # a partial write changed the configuration too
+                STATE.evaluated = False
         return f"set {len(applied)} parameter(s): {applied}"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _has_rows(tr: Trlib) -> bool:
+    """Whether the handle's history has a row: TR records one only after a successful preparation and the
+    evaluation of the step it starts on (TRGLOB, TRATOT); a failed preparation leaves none (tr_history_length is 0)."""
+    try:
+        return int(tr.history_length()) > 0
+    except Exception:      # a library without the history, or a handle that cannot say: treat as not evaluated
+        return False
+
+
+def _run(tr: Trlib, nsteps: int) -> None:
+    """``tr.run(nsteps)``, keeping ``STATE.prepared`` and ``STATE.evaluated``. A failed run counts as evaluated only
+    when it left a history row: a preparation can fail under any failure kind (``MODELG`` 9's q-scaling records
+    ``EQ_FAILED``, and the first record of a run is the one kept), so the kind does not tell."""
+    try:
+        tr.run(nsteps)
+    except TrlibRunError:
+        if _has_rows(tr):
+            STATE.prepared = True
+            if nsteps > 0:
+                STATE.evaluated = True
+        else:
+            STATE.prepared = False
+            STATE.evaluated = False
+        raise
+    STATE.prepared = True
+    if nsteps > 0:
+        STATE.evaluated = True
+
+
 def handle_run(ntmax: int = 1) -> str:
     try:
         tr = STATE.ensure_open()
-        tr.run(int(ntmax))
+        _run(tr, int(ntmax))
         return f"advanced {ntmax} time step(s)"
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
 
-def handle_get_state() -> Dict[str, Any]:
+def _history_rows(tr: Trlib) -> Optional[int]:
+    """The handle's history length, or ``None`` when the library cannot say (no history API)."""
+    try:
+        return int(tr.history_length())
+    except Exception:
+        return None
+
+
+def _continue(tr: Trlib, nsteps: int) -> None:
+    """``tr.continue_run(nsteps)``, keeping ``STATE.evaluated``. A successful call of one step or more ends on a step
+    that computes the global results (TRGLOB). A failed one counts when it added a history row, or when it failed in
+    ``TR_CHECK``, whose two exits compute the globals of the failed iterate (``tr/trexec.f90``, before
+    ``tr_failure_record``) without a row: it keeps the rows from before it (no preparation), and its steps compute
+    the globals on output steps only, so another failure before one is not counted. A refusal runs nothing and
+    changes no flag."""
+    before = _history_rows(tr)
+    try:
+        tr.continue_run(nsteps)
+    except TrlibRunError as exc:
+        after = _history_rows(tr)
+        grew = before is not None and after is not None and after > before
+        checked = getattr(exc.failure, "kind", None) == "TR_CHECK"
+        if nsteps > 0 and (grew or checked):
+            STATE.evaluated = True
+        raise
+    if nsteps > 0:
+        STATE.evaluated = True
+
+
+def handle_continue_run(nsteps: int = 1) -> str:
     try:
         tr = STATE.ensure_open()
-        return tr.get_state().to_dict()
+        _continue(tr, int(nsteps))
+        return f"continued {nsteps} time step(s)"
+    except Exception as exc:
+        raise _wrap_trlib_error(exc) from exc
+
+
+def _state_dict(tr: Trlib) -> Dict[str, Any]:
+    """The state as the tools return it: ``to_dict()`` (the 14 scalars of the C struct, which the baselines
+    compare) with ``scalars`` replaced by all the library's named global results, by ``T`` alone until a run or
+    continue_run of one step or more since the handle was opened or a parameter was written (``STATE.evaluated``), and by nothing
+    before the handle's first successful preparation (``STATE.prepared``)."""
+    state = tr.get_state()
+    out = state.to_dict()
+    out["scalars"] = dict(state.scalars)
+    if not STATE.evaluated:
+        keep = {"T"} if STATE.prepared else set()
+        out["scalars"] = {k: v for k, v in out["scalars"].items() if k in keep}
+    return out
+
+
+def handle_get_state() -> Dict[str, Any]:
+    try:
+        return _state_dict(STATE.ensure_open())
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
 
 def handle_finalize() -> str:
+    """Finalize the TR backend, mirroring ``eq_mcp.server.handle_finalize``.
+
+    #227 item 2: this used to mark the :class:`Trlib` handle closed *without*
+    calling ``tr_finalize``, as a workaround for a SIGABRT (~40% of calls) in
+    the Fortran cleanup path.  That left ``g_initialized`` set in
+    ``tr/tr_api.f90``, and since ``tr_init`` is idempotent (``tr_api_init`` in tr_api.f90 --
+    "already initialized, just return OK") a subsequent ``init`` became a
+    no-op that did **not** restore defaults.  It also disagreed with
+    ``handle_run_and_get_state``, which needs a real finalize for its
+    fresh-init contract and therefore kept calling the very path this one
+    avoided.
+
+    The underlying crash was a double ``DEALLOCATE`` and is fixed on this tree:
+    ``DEALLOCATE_TRCOMM`` now returns early when nothing is allocated
+    (tr/trcomm.f90).  Measured on the merged tree, gfortran-15/macOS:
+    init+close 40/40 clean, init+run+close 40/40 clean, and an explicit double
+    ``tr_finalize`` 30/30 clean (the second call returns TR_OK via the
+    not-initialized guard).  So both lifecycle paths now use the honest one.
+    """
     try:
         STATE.close()
         return "tr library finalized"
@@ -447,17 +738,91 @@ def handle_finalize() -> str:
         raise _wrap_trlib_error(exc) from exc
 
 
+def _with_classes() -> Tuple[Dict[str, Dict[str, Any]], Optional[str]]:
+    """The registry with each name's class from the library (``tr_param_class``: 1 control, 0 structural, -1 the
+    setter does not know it), and why there is none when the library cannot be loaded. ``tr_param_class`` needs no
+    ``tr_init``, so this loads the library without opening a lifecycle (``describe_parameters`` has no side effect on
+    the run state)."""
+    try:
+        from trlib import _ffi
+        from trlib.trlib import _encode_name
+        fn = _ffi.load_library().tr_param_class
+        return {n: {**e, "class": int(fn(_encode_name(n)))} for n, e in PARAMETER_REGISTRY.items()}, None
+    except Exception as exc:
+        return PARAMETER_REGISTRY, f"{type(exc).__name__}: {exc}"
+
+
 def handle_describe_parameters() -> Dict[str, Any]:
-    return {
+    parameters, classes_error = _with_classes()
+    out: Dict[str, Any] = {
         "module": "tr",
         "count": len(PARAMETER_REGISTRY),
         "array_syntax": "Use NAME[i] (1-origin) for array elements, e.g. PN[1].",
-        "parameters": PARAMETER_REGISTRY,
+        "eq_names": (
+            "A name 'eq:NAME' (e.g. eq:RB, eq:NSGMAX) is passed to the "
+            "library as is and set in EQ's registry; it is not listed "
+            "here, and the library refuses an unknown one. TR prepares "
+            "again before its next run. eq:RR, RA, RKAP, RDLT, BB, RIP, "
+            "KNAMEQ and KNAMEQ2 are refused (set TR's own; KNAMEQ2 is not "
+            "settable), and so is every eq: name "
+            "after the process's first preparation attempt (until the "
+            "pinned bpsd has k-yoshimi/bpsd#7; for eq:RIP set RIPS and "
+            "RIPE). That guard closes only the direct route: under MODELG "
+            "9 any input that moves EQ's plasma grid (TR's RA, RR and "
+            "other device inputs, MODELG, the eq: names, the drift "
+            "between NTEQIT re-solves) needs a bpsd with "
+            "k-yoshimi/bpsd#7. Under MODELG 3/5/8 EQ's NRMAX is TR's "
+            "NRMAX + 1, NTHMAX is 64 and NSUMAX is 0."
+        ),
+        "classes": (
+            "Each parameter's 'class' says what continue_run does with it: 1 control (RIPE, PNBTOT, PICTOT, PECTOT, "
+            "PLHTOT, NTEQIT, TPRST: continue_run takes a set in at its first step), 0 structural (the next run "
+            "prepares again and continue_run refuses after the set, naming it), -1 unknown to the setter. Every "
+            "'eq:' name is 0."
+        ),
+        "parameters": parameters,
     }
+    if classes_error is not None:
+        out["classes_unavailable"] = (
+            "the classes could not be read because the library did not load: " + classes_error
+        )
+    return out
 
 
 def handle_describe_state_schema() -> Dict[str, Any]:
     return STATE_SCHEMA
+
+
+def handle_describe_history_schema() -> Dict[str, Any]:
+    return {
+        "description": (
+            "The columns get_history can return, each with its unit and meaning. One row is recorded every "
+            "NGTSTP steps (default 2), the state at t = 0 first; a row is recorded at every step that is a multiple of NGTSTP, so a "
+            "call adds nsteps / NGTSTP rows only when it starts on one; a changed parameter starts the history again, a control set followed by continue_run does not; at most 10001 rows are kept "
+            "('full' says when they are). Values are single precision (about 7 digits). A run that fails on a negative "
+            "temperature (TR_CHECK) or with a state that is not finite (NONFINITE) ends its history on the last recorded "
+            "step: the failed step is not a row; a failed preparation leaves no rows. Under "
+            "MODELG 9 the row of a step that ends with an EQ re-solve holds the Q0 of before the re-solve."
+        ),
+        "columns": HISTORY_SCHEMA,
+    }
+
+
+def handle_get_history(names: Optional[List[str]] = None) -> Dict[str, Any]:
+    """The run's time history: ``{"rows": n, "full": bool, "columns": {name: [values]}}``.
+
+    ``names`` selects columns (``None`` = all); an unknown name is an error that names it.
+    """
+    try:
+        tr = STATE.ensure_open()
+        data = tr.history(names)
+        return {
+            "rows": tr.history_length(),
+            "full": tr.history_full(),
+            "columns": {k: [float(x) for x in v] for k, v in data.items()},
+        }
+    except Exception as exc:
+        raise _wrap_trlib_error(exc) from exc
 
 
 def handle_run_and_get_state(
@@ -483,8 +848,8 @@ def handle_run_and_get_state(
         tr = STATE.ensure_open()
         if params:
             _apply_bulk_params(tr, params)
-        tr.run(int(ntmax))
-        return tr.get_state().to_dict()
+        _run(tr, int(ntmax))
+        return _state_dict(tr)
     except Exception as exc:
         raise _wrap_trlib_error(exc) from exc
 
@@ -496,7 +861,7 @@ def handle_run_and_get_state(
 # above are the unit-testable surface either way.
 # =====================================================================
 def build_server() -> Any:
-    """Build and return a FastMCP server instance with the 10 tr tools."""
+    """Build and return a FastMCP server instance with the 13 tr tools."""
     if not MCP_AVAILABLE:
         raise RuntimeError(
             "Python MCP SDK (`mcp`) is not installed. "
@@ -557,6 +922,9 @@ def build_server() -> Any:
         * a dict ``{index: value}`` (1-origin sparse array)
         * a string (for KNAMEQ and similar string-valued parameters)
 
+        Every number must be finite: NaN and the infinities are refused,
+        also as a string in a list or a dict (``"nan"``, ``"1e309"``).
+
         **Non-transactional**: keys are applied in iteration order and
         a failure on key ``N`` leaves keys ``0..N-1`` already written
         to the underlying Fortran library. There is no automatic
@@ -568,18 +936,43 @@ def build_server() -> Any:
 
     @mcp.tool()
     def run(ntmax: int = 1) -> str:
-        """Advance the simulation by ``ntmax`` time steps.
+        """Advance the simulation by ``ntmax`` time steps. Prepares again after any
+        set; ``NT``, ``T`` and the history start again.
 
-        ``ntmax=0`` is a valid no-op (useful as a smoke test).
+        ``ntmax=0`` prepares (when a parameter was set) and takes no step, but the
+        loop's exit still sets RIPS = RIPE: ``run(0)`` after a ramp set (RIPE)
+        loses the ramp, and RIP stays where it was (the ``tr_run(0)`` note in
+        ``tr/tr_api.h``). It is a no-op only when nothing is pending: do not use
+        it as a smoke test between a set and a run. ``continue_run(0)`` only
+        checks and keeps the sets pending.
         """
         return handle_run(ntmax)
+
+    @mcp.tool()
+    def continue_run(nsteps: int = 1) -> str:
+        """Advance the prepared case ``nsteps`` more steps without preparing again.
+
+        The control parameters set since the last ``run`` or ``continue_run`` take
+        effect at its first step (class 1 in ``describe_parameters``: RIPE, PNBTOT,
+        PICTOT, PECTOT, PLHTOT, NTEQIT, TPRST); RIP ramps from the last call's RIPE
+        to RIPE over these steps. ``NT``, ``T`` and the history go on. Refused (an
+        error carrying the record, kind REFUSED): before a ``run``; after a failed
+        run until a ``run``; after a structural parameter (class 0, any ``eq:`` name
+        too) was set since the preparation, naming the last one (``run`` prepares
+        again); for a value ``run`` refuses (a negative count is refused by trlib before the
+        call, without a record). A run in several
+        calls is not bit for bit one call (each call begins with the loop's
+        prologue). ``continue_run(0)`` only checks.
+        """
+        return handle_continue_run(nsteps)
 
     @mcp.tool()
     def get_state() -> Dict[str, Any]:
         """Return the current simulation state.
 
         Returns a dict with ``NT``, ``NRMAX``, ``NSMAX``, ``scalars``
-        (14 plasma scalars), and ``profile`` (radial profile array).
+        (the 31 named global results, units in `describe_state_schema`),
+        and ``profile`` (radial profile array).
         Schema also available via `describe_state_schema`.
         """
         return handle_get_state()
@@ -608,6 +1001,23 @@ def build_server() -> Any:
         return handle_describe_state_schema()
 
     @mcp.tool()
+    def get_history(names: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Return the run's time history without cutting the run.
+
+        ``names`` selects columns (``T`` is the time; `describe_history_schema`
+        lists every column with its unit); omit it for all. One row is
+        recorded every NGTSTP steps, the state at t = 0 first, up to 10001
+        rows (``full`` says when they are used up; raise NGTSTP for a longer
+        run). Returns ``rows``, ``full`` and ``columns``.
+        """
+        return handle_get_history(names)
+
+    @mcp.tool()
+    def describe_history_schema() -> Dict[str, Any]:
+        """Return the columns `get_history` can return, with units."""
+        return handle_describe_history_schema()
+
+    @mcp.tool()
     def run_and_get_state(
         params: Optional[Dict[str, Any]] = None,
         ntmax: int = 1,
@@ -620,6 +1030,9 @@ def build_server() -> Any:
             set_params(params)
             run(ntmax)
             return get_state()
+
+        With ``ntmax`` 0 no step is evaluated: the profiles are the prepared
+        initial state and ``scalars`` holds ``T`` only.
         """
         return handle_run_and_get_state(params, ntmax)
 
@@ -661,6 +1074,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "finalize",
                 "describe_parameters",
                 "describe_state_schema",
+                "get_history",
+                "describe_history_schema",
+                "continue_run",
                 "run_and_get_state",
             ]
         ):

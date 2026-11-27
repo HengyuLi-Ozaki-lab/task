@@ -16,7 +16,7 @@ field. Each is a recipe, not a derivation.
 ## Walkthrough A — Add a new scalar parameter
 
 The TR parameter registry uses a hand-written `SELECT CASE`
-dispatch in `tr/tr_param_registry.f90:76+`. Adding a
+dispatch in `tr/tr_param_registry.f90:141+`. Adding a
 parameter `FOO` is one new `CASE` line in that dispatch
 plus a default in `tr/trinit.f90`.
 
@@ -29,19 +29,22 @@ plus a default in `tr/trinit.f90`.
 2. **Add the registry case.** Add a line like
    `CASE ("FOO"); FOO = value` in the
    `SELECT CASE (TRIM(b))` block that starts at
-   `tr/tr_param_registry.f90:76`. Place it near similar
+   `tr/tr_param_registry.f90:141`. Place it near similar
    parameters to preserve the per-section grouping
-   convention.
+   convention. An integer parameter (`FOO = INT(value)`)
+   also goes into the name list of `value_refused` in the
+   same file, which refuses a value beyond the default
+   integer before it is converted.
 3. **Set a default.** Add `FOO = ...` to `tr/trinit.f90`
    alongside other initialisation.
 4. **Rebuild.** `make -C tr libtrapi.so`.
 5. **Use from Python.** `tr.set_param("FOO", x)` works
    immediately. No C ABI change is needed because
    `tr_set_param` is string-keyed (verified at
-   `tr/tr_api.f90:124-128,136-148`).
+   `tr/tr_api.f90:178-182,190-233`).
 
 For array-valued parameters, the bounds-checked idiom at
-`tr/tr_param_registry.f90:101-106` is the template. The
+`tr/tr_param_registry.f90:166-171` is the template. The
 existing `PA[i]` / `PN[i]` / `PNS[i]` / `PT[i]` cases
 show the pattern: each `CASE` checks `idx` against
 `SIZE(...)` and either assigns or sets `ierr = 1`.
@@ -52,13 +55,13 @@ show the pattern: each `CASE` checks `idx` against
 
 Turbulent heat-transport coefficients are dispatched via
 `SELECT CASE(MDLKAI)` at
-`tr/trcoef_turbulence.f90:400`. (The earlier `select case`
-at line 64 handles graph-label assignment, NOT the actual
+`tr/trcoef_turbulence.f90:401`. (The earlier `select case`
+at line 65 handles graph-label assignment, NOT the actual
 coefficient computation.) Each `MDLKAI` value invokes a
 different model.
 
 The numbering convention (per the source-side comments at
-`tr/trcoef_turbulence.f90:392-398`):
+`tr/trcoef_turbulence.f90:393-399`):
 
 - `MDLKAI < 10` — constant-coefficient toy models.
 - `10 ≤ MDLKAI < 20` — drift-wave (+ITG / +ETG) models.
@@ -74,7 +77,7 @@ The numbering convention (per the source-side comments at
    choosing the next free integer if you are adding
    alongside existing models.
 2. **Add a `CASE (N)` block** in
-   `tr/trcoef_turbulence.f90` after line 400. The block
+   `tr/trcoef_turbulence.f90` after line 401. The block
    should fill the appropriate transport-coefficient
    arrays — `AKDW` (heat anomalous), `ADDW` (particle
    anomalous), `AVK` (heat pinch / convective).
@@ -118,13 +121,13 @@ consumers may need to be rebuilt or version-checked.
    `double` (or correct C type), again at the struct end.
 4. **Populate the field inside `tr_api_get_state`.** Three
    blocks exist in `tr/tr_api.f90`:
-   - **Zero-init** at `:263-283` (the new field should be
+   - **Zero-init** at `:405-425` (the new field should be
      added there too if it has no sensible compute-time-
      zero baseline).
-   - **Scalar copy** at `:299-315` — the AJRFT precedent
+   - **Scalar copy** at `:441-457` — the AJRFT precedent
      lives here. For a new scalar, follow that pattern.
    - **Per-radius / per-species profile loops** at
-     `:321-330` — for a new array field, follow the
+     `:463-473` — for a new array field, follow the
      `RN` / `RT` / `AJ` / `QP` loop pattern.
 5. **Bump `TR_STATE_ABI_VERSION` in both places**: the
    `#define` in `tr/tr_api.h` and the `PARAMETER` in
@@ -146,12 +149,12 @@ consumers may need to be rebuilt or version-checked.
    `python/trlib/state.py`. Two cases:
    - *Scalar field*: add the field name to the
      `SCALAR_FIELDS` list (`python/trlib/state.py:22-28`).
-     Inside `from_c` (which starts at `:74`), the scalar
-     dict-comprehension at `:87` walks `SCALAR_FIELDS` and
+     Inside `from_c` (which starts at `:76`), the scalar
+     dict-comprehension at `:89` walks `SCALAR_FIELDS` and
      populates `state.scalars["YOUR_FIELD"]` automatically;
-     the dimension dict-comprehension at `:81-84` is a
+     the dimension dict-comprehension at `:83-86` is a
      separate stage that handles `nrmax` / `nsmax`. The
-     dataclass construction at `:92-100` returns the
+     dataclass construction at `:94-103` returns the
      assembled `TrState`. The new field becomes
      accessible as `state.scalars["YOUR_FIELD"]` without
      further code changes.

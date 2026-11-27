@@ -1,0 +1,59 @@
+"""Every number of a G-EQDSK file, for comparing two files number by number.
+
+EQU writes G-EQDSK with ``equ_eqdsk_write`` (``equ/equ_eqdsk.f90``): a header
+line ``(6a8,3i4)`` and then blocks of ``(5e16.9)`` numbers, with integer
+counts before the boundary and limiter points. Fields run together when a
+number is negative (``0.1E+01-0.2E+00``), so the numbers are found with a
+pattern, not by splitting on blanks. A Fortran exponent of three digits drops
+its ``E`` (``0.100000000-100`` is 1e-101): the pattern takes a sign and three
+digits right after the mantissa as its exponent.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+_NUM = re.compile(r"[-+]?\d*\.\d+(?:[EeDd][-+]?\d+|[-+]\d{3})?|[-+]?\d+")
+
+
+def _number(text: str) -> float:
+    t = text.replace("D", "E").replace("d", "e")
+    if "." in t and "E" not in t.upper() and len(t) > 4 and t[-4] in "+-":
+        t = t[:-4] + "E" + t[-4:]          # 0.100000000-100 -> 0.100000000E-100
+    return float(t)
+
+
+def read_numbers(path: str | Path) -> tuple[list[int], list[float]]:
+    """Return the header's integers (idum, nw, nh) and every later number.
+
+    Refuses a file with a field the pattern cannot read (NaN, Infinity, a
+    field of asterisks) and checks the count of numbers against the header
+    and the boundary/limiter counts, so two broken files cannot match.
+    """
+    import math
+    with open(path) as f:
+        head = f.readline()
+        body = f.read()
+    assert not any(bad in body.lower() for bad in ("nan", "inf", "*")), f"{path}: unreadable field"
+    ints = [int(x) for x in head[48:].split()]
+    nums = [_number(x) for x in _NUM.findall(body)]
+    assert all(math.isfinite(x) for x in nums), path
+    nw, nh = ints[1], ints[2]
+    pre = 20 + 4 * nw + nw * nh + nw          # header block, 4 profiles, psirz, qpsi
+    nbbbs, limitr = int(nums[pre]), int(nums[pre + 1])
+    expected = pre + 2 + 2 * nbbbs + 2 * limitr + 3
+    assert len(nums) == expected, f"{path}: {len(nums)} numbers, the counts say {expected}"
+    return ints, nums
+
+
+def assert_same(path_a: str | Path, path_b: str | Path, rtol: float = 1e-10,
+                atol: float = 1e-300) -> int:
+    """Assert both files hold the same numbers within ``rtol``; return the count."""
+    ia, na = read_numbers(path_a)
+    ib, nb = read_numbers(path_b)
+    assert ia == ib, f"headers differ: {ia} != {ib}"
+    assert len(na) == len(nb), f"number counts differ: {len(na)} != {len(nb)}"
+    for k, (x, y) in enumerate(zip(na, nb)):
+        assert abs(x - y) <= max(atol, rtol * max(abs(x), abs(y))), \
+            f"number {k} differs: {x!r} != {y!r}"
+    return len(na)

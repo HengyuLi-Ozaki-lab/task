@@ -67,14 +67,21 @@ with Trlib() as tr:
 | `MISSING_REQUIRED`       | 必須パラメータが未設定 |
 
 現在行われる検査: `NSMAX` がコンパイル時上限を超える (`OUT_OF_RANGE`),
-`MODELG` 3/5/7/8 で `KNAMEQ` が空 (`FILE_MISSING`),
+`MODELG` 3/5/7/8 で `KNAMEQ` が空かファイルが無い (呼び出し時の作業ディレクトリから探す),
+`MODELG` 8 で TR が設定できない `KNAMEQ2` が空 (`FILE_MISSING`),
 `EXTERNAL_DRIVEN_I != 0` かつ `EXTERNAL_DRIVEN_RW <= 0` (`OUT_OF_RANGE`),
 および UFILE モード以外 (`MDLUF` が 1/2/3 でない) のとき active な粒子種
 `1..NSMAX` の namelist プロファイル: `PN`/`PNS` が負, 両方 0, 非有限,
-または `PT`/`PTS` が 0 以下の場合に `PN[ns]` / `PT[ns]` / `PTS[ns]` として
+`PN` が 0 で `PNS` が正 (磁気軸で密度が 0 になり, 実行は失敗するか NaN で
+終わる, task-web-client #190), または `PT`/`PTS` が 0 以下の場合に `PN[ns]` / `PT[ns]` / `PTS[ns]` として
 報告 (両方 0 は `OUT_OF_RANGE_AFTER_DEP`, それ以外は `OUT_OF_RANGE`).
 輸送ステップがこれらで割るため, 実行すると NaN になるからです (#189).
 `run()` も `tr_prep` 前に同じ条件で拒否 (`TrlibParamError`) し, コンパイル時
 上限を超える `NSMAX` も拒否するので, fixture の粒子種数を超えて `NSMAX`
 を上げる場合は追加種の `PN[ns]`, `PNS[ns]`, `PT[ns]`, `PTS[ns]` を設定して
-ください.
+ください. 報告だけで拒否はしないもの: イオンの電荷密度 (`s = 2..NSMAX` の
+`Σ PZ[s]·PN[s]`, `PNS` も同様) から大きい方の 1e-3 を超えて離れた `PN[1]`
+または `PNS[1]` (`INCONSISTENT_PAIR`, task-web-client #200; UFILE モードと, 種ごとの
+分布のチェック (`MODELG = 9` での負の `RIPS`, `RIPE` を含む) の指摘があるときは報告しない).
+このため追加種があるときは, `validate()` に指摘させないには `PN[1]` をその電荷密度
+`PZ[ns]·PN[ns]` だけ, `PNS[1]` を `PZ[ns]·PNS[ns]` だけ上げてください.

@@ -16,11 +16,101 @@ CONTAINS
     USE trbpsd
     USE trmetric
     USE tr_dump_state_mod, ONLY : tr_dump_state_if_requested
+    USE libnf, ONLY : set_usigmav_nf, nf_reset_log
+    USE trpnf_multi, ONLY : tr_prep_pnf
     IMPLICIT NONE
     INTEGER,INTENT(OUT):: ierr
+    INTEGER:: nf_ierr
+
+!     *** initialize fusion reaction (P1 Task 6) ***
+!
+!     Ordering is forced: set_usigmav_nf derives nnfmax from model_pnf and
+!     allocates libnf's id_nf_nnf, and ALLOCATE_TRCOMM then sizes every
+!     trcomm_nf array by that nnfmax -- so this must precede the allocate,
+!     while tr_prep_pnf (which fills those arrays) must follow it.
+!
+!     set_usigmav_nf now reports through ierr instead of the bare STOPs it
+!     carried upstream -- every one of those was reachable through
+!     libtrapi.so and would abort the host process, pytest or the MCP
+!     server, rather than returning (CLAUDE.md, Fortran library discipline;
+!     issue #142).  Its codes: 1 spline setup, 2 undefined model_pnf,
+!     3 a reaction's ion species is absent from the composition.
+!
+!     Re-arm the one-line-per-site logging for this run.  tr_init is not the
+!     right place on its own: the tr2 binary calls it once at process start,
+!     and trmenu's R handler goes straight to tr_prep + tr_loop -- so a
+!     second interactive run would report nothing at all (verified in the
+!     source: the R handler calls tr_prep every time and never tr_init).
+!
+!     Two paths still share one prepare's worth of messages, deliberately,
+!     being continuations rather than new runs: trmenu's C/CONT handler,
+!     which advances more steps on the already-prepared case, and
+!     successive tr_run calls on one library handle.
+      CALL nf_reset_log
+
+!     Disarmed before anything can refuse.  tr_prep_pnf sets the flag again
+!     as its last action; the two refusals below and set_usigmav_nf's
+!     return before it is reached, and without this a prepare that failed
+!     left the flag of the prepare before it (seen: ready with nnfmax = 6
+!     after model_pnf = 9 was refused).
+      nf_multi_ready = .FALSE.
+      nf_model_prepared = 0
+
+!     One refusal: MDLNF together with model_pnf.  Both write SNF/PNF/TAUF
+!     and tr_pnf runs after the MDLNF block, so the legacy result would be
+!     silently discarded rather than combined -- and combining them would
+!     double-count the same D-T alphas, once from SIGMAM and once from libnf.
+!
+!     model_pnf >= 2 is NOT refused.  It evaluates every trcomm_nf array but
+!     publishes none of them, because tr has one fusion fast-ion slot
+!     (NFM=2, slot 2); it is diagnostic-only rather than invalid.
+      IF(model_pnf.NE.0 .AND. MDLNF.NE.0) THEN
+         WRITE(6,*) 'XX tr_prep: model_pnf and MDLNF are both nonzero', &
+              ' (model_pnf=',model_pnf,' MDLNF=',MDLNF,')'
+         ierr = 10
+         RETURN
+      END IF
+
+      CALL set_usigmav_nf(nf_ierr)
+      IF(nf_ierr.NE.0) THEN
+         WRITE(6,*) 'XX tr_prep: set_usigmav_nf failed, ierr=',nf_ierr, &
+                    ' model_pnf=',model_pnf
+         ierr = nf_ierr
+         RETURN
+      END IF
 
       CALL ALLOCATE_TRCOMM(IERR)
       IF(IERR.NE.0) RETURN
+
+!     ALLOCATE_TRCOMM returns early when nrmax/nsmax/nszmax/nsnmax are all
+!     unchanged, and nnfmax is not one of those -- changing only model_pnf
+!     between runs would otherwise leave these arrays at the previous
+!     nnfmax.  The call is idempotent, so the common path costs a size
+!     comparison.
+      CALL allocate_trcomm_nf(IERR)
+      IF(IERR.NE.0) THEN
+!        Unlike ALLOCATE_TRCOMM, which unwinds via GOTO 900 ->
+!        DEALLOCATE_ERR_TRCOMM, this call site owns its own cleanup.
+!        Leaving a partial allocation behind would hand the next attempt a
+!        state allocate_trcomm_nf's size check cannot describe.
+         CALL deallocate_err_trcomm_nf
+         RETURN
+      END IF
+
+!     Resolves the per-reaction caches and sets nf_multi_ready, which is
+!     what trcalc gates the tr_pnf dispatch on.  At model_pnf=0 nnfmax stays
+!     0 and tr_prep_pnf declines with ierr=1/2, leaving the flag .FALSE. --
+!     that is the default path, not a failure, so it must not propagate.
+!     At model_pnf>0 a refusal means the reaction tables and the trcomm_nf
+!     arrays disagree, which would silently disable the path the caller
+!     asked for; that one does propagate.
+      CALL tr_prep_pnf(nf_ierr)
+      IF(model_pnf.NE.0 .AND. nf_ierr.NE.0) THEN
+         WRITE(6,*) 'XX tr_prep: tr_prep_pnf failed, ierr=',nf_ierr, &
+                    ' model_pnf=',model_pnf
+         ierr = nf_ierr
+         RETURN
+      END IF
 
       IF(MDLUF.NE.0.AND.MDLXP.NE.0) CALL IPDB_OPEN(KUFDEV, KUFDCG)
       IF(MDLUF.NE.0) CALL UFILE_INTERFACE(KDIRX,KUFDIR,KUFDEV,KUFDCG,0)
@@ -139,12 +229,14 @@ CONTAINS
     USE TRCOM1, ONLY : INS
     IMPLICIT NONE
     INTEGER,INTENT(IN) :: INIT
-    INTEGER,INTENT(OUT),OPTIONAL :: IERR  ! #142: optional so existing
-                                ! callers without IERR (legacy main path)
-                                ! still compile. Library-reachable callers
-                                ! pass IERR and check it.
+    INTEGER,INTENT(OUT) :: IERR  ! #142. Not OPTIONAL: TR_EQS_SELECT is an
+                                ! external procedure, so an OPTIONAL dummy
+                                ! would need an explicit interface at its
+                                ! caller, which tr_prep (its only caller in
+                                ! tr/) does not have; tr_prep passes IERR.
     INTEGER:: IND, INDH, INDHD, MDANOM, MDSLCT, NEQ, NEQ1, NEQI
     INTEGER:: NEQRMAX, NEQS, NEQT, NNSC, NNSMAX, NNSN, NS, NSSN, NSVN
+    INTEGER:: NBAD
     INTEGER, SAVE :: NSSMAX
 
 
@@ -198,15 +290,11 @@ CONTAINS
          NEQMAX=MDLEQB+NSMAX+(MDLEQT+MDLEQU)*NSMAX+MDLEQ0*NSNMAX+MDLEQZ*NSZMAX
       ENDIF
 
-      IF(PRESENT(IERR)) IERR = 0
+      IERR = 0
       IF(MDLEQN.EQ.0.AND.(MDLEQE.EQ.1.OR.MDLEQE.EQ.2)) THEN
          WRITE(6,*)  'XX TR_EQS_SELECT : MDLEQE can be 1 or 2 when MDLEQN is 1.'
-         IF(PRESENT(IERR)) THEN
-            IERR = 1
-            RETURN
-         END IF
-         STOP   ! legacy fallback: callers without IERR keep abort
-                ! semantics; the trprep:27 caller now passes IERR.
+         IERR = 1
+         RETURN
       ENDIF
 
       NSS(1:NEQMAXM)=-1  ! 0: EM, particle species
@@ -319,6 +407,15 @@ CONTAINS
  600  FORMAT(' ',5(' ',A))
  610  FORMAT(' ',5I4)
 
+!     A species that matched no class, two that took one place, one placed above NSMAX, or a species 1
+!     that is not the electron would leave an equation without a species (NEA below is then written
+!     with index -1) or a species without its equations (the solve stops on it), or the electrons
+!     out of place: refuse the run, naming the species.
+      CALL tr_species_equations_check(NBAD)
+      IF(NBAD.NE.0) THEN
+         IERR = 1
+         RETURN
+      END IF
 !     *** EQUATION SELECTOR ***
 
 !     Format : NEA(species,equation) for all equations
@@ -375,7 +472,7 @@ CONTAINS
 
       SUBROUTINE TR_TABLE(NS,NEQ,NSW,IND,INDH,INDHD)
 
-      USE TRCOMM, ONLY : AME, AMM, MDLEQE, NEQMAX, NNS, NSMAX, NSS, NSV, PA, rkind
+      USE TRCOMM, ONLY : AME, AMM, MDLEQE, MDLEQU, NEQMAX, NNS, NSMAX, NSS, NSV, PA, rkind
       IMPLICIT NONE
       INTEGER,INTENT(IN)   :: NS, NSW
       INTEGER,INTENT(INOUT):: NEQ, IND, INDH, INDHD
@@ -411,7 +508,11 @@ CONTAINS
                      NNS(1)=1
                   ENDIF
                ELSEIF(MDLEQE.EQ.2) THEN
-                  NNS(1)=3
+!     The bulk-ion density: NEQ is the electron temperature here, and the
+!     electron rotation (MDLEQU 1) comes before species 2. A fixed 3 was
+!     the ion density only without the B_theta equation; with it (MDLEQB
+!     1) it dropped the electron temperature.
+                  NNS(1)=NEQ+1+MDLEQU
                ENDIF
             ENDIF
          ELSEIF(PA(NS).EQ.1.D0.OR.ABS(PA(NS)-2.D0).LT.0.5D0) THEN
@@ -514,3 +615,63 @@ CONTAINS
 
       RETURN
       END SUBROUTINE TR_TABLE
+
+!     ***********************************************************
+
+!     TR_TABLE places a species by its mass alone: the electron is PA = AME/AMM to 1e-10 (place 1),
+!     hydrogen PA = 1 or deuterium 1.5 < PA < 2.5 (2; deuterium after a hydrogen 3), tritium
+!     2.5 < PA < 3.5 (3; after hydrogen and deuterium 4), helium 3.5 < PA < 4.5 (4), carbon
+!     9 < PA < 15 with NSMAX = 3 (3). Species 1..NSMAX must take these places once each, and the
+!     electron must be species 1 (the solve takes species 1 for the electrons, trcalc.f90's PNSS(1) for
+!     one). The places are given in the order of the species, so deuterium takes 3 only after a
+!     hydrogen and tritium 4 only after both (e/D/H gives two species place 2; e/T/H is fine). NBAD
+!     counts, each said on unit 6: a species 1 that is not the electron; a species
+!     1..NSMAX that gets no equation for a variable the run evolves (density with MDLEQN or MDLEQT,
+!     temperature with MDLEQT, toroidal flow with MDLEQU) -- a variable has at most NSMAX equations of
+!     species 1..NSMAX, one per species that matched a class, so a place taken twice or above NSMAX
+!     comes to this; and an equation left without a species (NSS = -1), which an impurity or neutral
+!     count above what the table fills (NSZMAX > 2, or NSNMAX > 2 with MDLEQ0) also leaves.
+
+      SUBROUTINE tr_species_equations_check(NBAD)
+
+      USE TRCOMM, ONLY : AME, AMM, MDLEQN, MDLEQT, MDLEQU, NEQMAX, NSMAX, NSS, NSV, PA
+      IMPLICIT NONE
+      INTEGER, INTENT(OUT) :: NBAD
+      CHARACTER(LEN=13), PARAMETER :: VARIABLE(3) = [CHARACTER(LEN=13) :: 'density', 'temperature', 'toroidal flow']
+      LOGICAL :: EVOLVED(3)
+      INTEGER :: NEQ, NS, NV, NFOUND
+
+      NBAD = 0
+      IF(NSMAX.GE.1 .AND. ABS(PA(1)-AME/AMM).GT.1.D-10) THEN
+         NBAD = NBAD + 1
+         WRITE(6,'(A,1PE13.6,A,1PE13.6,A)') 'XX TR_EQS_SELECT: species 1 (PA =', PA(1), &
+              ') is not the electron (AME/AMM =', AME/AMM, '), which the solve takes it for'
+      END IF
+      EVOLVED = [MDLEQN.EQ.1 .OR. MDLEQT.EQ.1, MDLEQT.EQ.1, MDLEQU.EQ.1]
+      DO NS = 1, NSMAX
+         DO NV = 1, 3
+            IF(.NOT.EVOLVED(NV)) CYCLE
+            NFOUND = 0
+            DO NEQ = 1, NEQMAX
+               IF(NSS(NEQ).EQ.NS .AND. NSV(NEQ).EQ.NV) NFOUND = NFOUND + 1
+            END DO
+            IF(NFOUND.EQ.0) THEN
+               NBAD = NBAD + 1
+               WRITE(6,'(A,I0,A,1PE13.6,3A)') 'XX TR_EQS_SELECT: species ', NS, ' (PA =', PA(NS), &
+                    ') gets no ', TRIM(VARIABLE(NV)), ' equation'
+            END IF
+         END DO
+      END DO
+      DO NEQ = 1, NEQMAX
+         IF(NSS(NEQ).LT.0 .OR. NSV(NEQ).LT.0) THEN
+            NBAD = NBAD + 1
+            WRITE(6,'(A,I0,A)') 'XX TR_EQS_SELECT: equation ', NEQ, ' has no species'
+         END IF
+      END DO
+      IF(NBAD.NE.0) WRITE(6,'(A)') &
+           'XX TR_EQS_SELECT: TR places a species by its mass PA: electron AME/AMM to 1e-10 (1), ' // &
+           'hydrogen 1 or deuterium 1.5-2.5 (2; 3 after a hydrogen), tritium 2.5-3.5 (3; 4 after H and D), ' // &
+           'helium 3.5-4.5 (4), carbon 9-15 with NSMAX = 3 (3); species 1..NSMAX take these places once each, ' // &
+           'the electron first'
+      RETURN
+      END SUBROUTINE tr_species_equations_check

@@ -17,37 +17,37 @@ language, see {doc}`mcp`.
 
 `eq.run()` has two paths (see {doc}`hello-world`):
 
-- `mode=0`: analytic Grad-Shafranov solve (`MODELG=2`, no EQDSK needed)
-- `mode=1`: load an EQDSK file (`MODELG ∈ {3, 5, 8}` + `KNAMEQ`)
+- `mode=0`: the Grad-Shafranov solve (`MODELG=2`, no file needed)
+- `mode=1`: load an equilibrium file (`MODELG ∈ {3, 5, 8, 9, 25}` + `KNAMEQ`; `MODELG = 15`, the fixed `eqdb.dat`, is refused)
 
 A wrapper that switches automatically depending on whether the user
-passed an EQDSK file path.
+passed an equilibrium file path (here a TASK/EQ file, `MODELG=3`).
 
 ```python
 from pathlib import Path
 from eqlib import Eq
 
 
-def smart_run(eq: Eq, *, eqdsk_file: str | None = None) -> None:
-    """Switch between mode=0 and mode=1 based on whether an EQDSK file is given.
+def smart_run(eq: Eq, *, eq_file: str | None = None) -> None:
+    """Switch between mode=0 and mode=1 based on whether an equilibrium file is given.
 
-    If eqdsk_file is provided, load the file (mode=1);
-    otherwise, run the analytic solve (mode=0).
+    If eq_file (a TASK/EQ file) is provided, load it (mode=1);
+    otherwise, run the Grad-Shafranov solve (mode=0).
     """
-    if eqdsk_file is None:
-        # Analytic G-S solve: just confirm MODELG=2 (the default)
+    if eq_file is None:
+        # Grad-Shafranov solve: just confirm MODELG=2 (the default)
         eq.set_param("MODELG", 2)
         eq.run(mode=0)
     else:
-        # EQDSK load: check file exists + MODELG=3 + KNAMEQ
-        if not Path(eqdsk_file).exists():
-            raise FileNotFoundError(f"EQDSK file not found: {eqdsk_file}")
+        # File load: check file exists + MODELG=3 (TASK/EQ) + KNAMEQ
+        if not Path(eq_file).exists():
+            raise FileNotFoundError(f"equilibrium file not found: {eq_file}")
         eq.set_param("MODELG", 3)
-        eq.set_param_str("KNAMEQ", eqdsk_file)
+        eq.set_param_str("KNAMEQ", eq_file)
         eq.run(mode=1)
 
 
-# Usage example (analytic solve)
+# Usage example (Grad-Shafranov solve)
 with Eq() as eq:
     eq.set_params(RR=3.0, RA=1.0, BB=3.0, RIP=1.5)
     smart_run(eq)
@@ -61,29 +61,29 @@ Expected output:
 raxis=3.0709  qaxis=0.9918
 ```
 
-If you want to pass an EQDSK file:
+If you want to pass a TASK/EQ file:
 
 ```python
 with Eq() as eq:
     eq.set_params(RR=6.2, RA=2.0, BB=5.3, RIP=15.0)
-    smart_run(eq, eqdsk_file="eqdata.ITER01")
+    smart_run(eq, eq_file="eqdata.ITER01")
     ...
 ```
 
 ### Possible extensions
 
 - Add reverse-direction logic that infers `MODELG` from `KNAMEQ`
-  (e.g. `.eqdsk` extension -> 3, `.vmec` -> 7).
-- When `eqdsk_file=None`, add a lightweight preflight that checks
+  (e.g. a G-EQDSK `.eqdsk` file -> 5, a TASK/EQ file -> 3).
+- When `eq_file=None`, add a lightweight preflight that checks
   whether the given device parameters can be solved stably by the
-  analytic path (e.g. that kappa and delta are not extreme).
+  Grad-Shafranov solve (e.g. that kappa and delta are not extreme).
 
 ---
 
 ## 2. Parameter-sweep wrapper
 
 Performs a grid scan such as `RR x BB` and aggregates results into a
-list of dicts. Because each point uses the analytic G-S solve
+list of dicts. Because each point uses the Grad-Shafranov solve
 (`mode=0`), it runs quickly (~50 ms per point).
 
 ```python
@@ -207,10 +207,10 @@ def auto_setup(
         params.update(extra_params or {})
         eq.set_params(**params)
 
-        # 2. If routed via EQDSK, set KNAMEQ as required.
+        # 2. If MODELG names a format read from KNAMEQ, set KNAMEQ as required.
         #    If eq_file is None, set KNAMEQ explicitly to the empty string
         #    so that validate's FILE_MISSING check picks it up.
-        if params.get("MODELG") in (3, 5, 8):
+        if params.get("MODELG") in (3, 5, 8, 9, 25):
             eq.set_param_str("KNAMEQ", eq_file or "")
 
         # 3. Check via validate
@@ -250,7 +250,7 @@ When `MODELG=3` is specified but `eq_file=None`:
 
 ```text
 Detected issues (1 item(s)):
-  [FILE_MISSING] KNAMEQ: MODELG=3/5/8 requires non-blank KNAMEQ (eqdata file)
+  [FILE_MISSING] KNAMEQ: MODELG=3 loads the file KNAMEQ names, and KNAMEQ is blank
 RuntimeError: 1 blocking issue(s) remain to be fixed
 ```
 
@@ -282,7 +282,7 @@ The three patterns can be used individually or in combination:
 |---|---|
 | **mode auto-select + auto_setup** | `auto_setup` applies the device preset; `smart_run` then auto-switches mode |
 | **sweep + auto_setup** | Sweep `RR x BB` or `RKAP x RDLT` on top of a preset baseline |
-| **All three** | Analytic shape scan starting from a device preset. The standard pattern for design studies |
+| **All three** | Shape scan (Grad-Shafranov solves) starting from a device preset. The standard pattern for design studies |
 
 The same patterns apply to the other modules (`tr`, `ti`, `fp`, `wr`,
 `wrx`, `tot`); just substitute the relevant physical quantities and

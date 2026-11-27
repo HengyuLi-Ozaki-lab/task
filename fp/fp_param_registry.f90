@@ -24,9 +24,12 @@
 !                              MODEL_BS, MODEL_LOSS, MODEL_SYNCH,
 !                              MODEL_FOW)
 !   - model switches arrays   (MODELC[i], MODELW[i])
+!   - NBI source, bounce average (MODELA, NBEAMMAX, NSSPB[i], SPBTOT[i],
+!                              SPBENG[i], SPBANG[i], SPBR0[i], SPBRW[i];
+!                              task-web-client #232)
 !
-! Approximately 40 unique names covering ~55 settable variables once
-! array subscripts are counted. Additional namelist vars may be added
+! 62 names (the CASEs below) cover more settable variables once array
+! subscripts are counted. Additional namelist vars may be added
 ! in a later PR by extending the SELECT CASE list; the parser handles
 ! any "NAME" or "NAME[idx]" input unchanged.
 !
@@ -87,6 +90,14 @@ CONTAINS
 
     ierr = 0
     CALL parse_array_subscript(name, b, idx)
+
+    ! A value no parameter takes is refused before the name is looked
+    ! at: one that is not finite, and for an integer parameter one
+    ! beyond the default integer (value_refused, below).
+    IF (value_refused(b, value)) THEN
+       ierr = 1
+       RETURN
+    END IF
 
     SELECT CASE (TRIM(b))
     ! --- geometry / device scalars (from plcomm_parm via fpcomm_parm) ---
@@ -187,10 +198,77 @@ CONTAINS
     CASE ("MODELW")
        IF (idx < 1 .OR. idx > SIZE(MODELW)) THEN; ierr = 2; RETURN; END IF
        MODELW(idx) = NINT(value)
+    ! --- NBI source and bounce average (task-web-client #232) -----
+    ! Units and defaults: fp/fpinit.f90 (NBEAMMAX has none). SPBPANG
+    ! is not registered: no source under fp/ reads it.
+    ! SPBTOT is in 1e20 particles/s (the source is normalised with RNFP0
+    ! [1e20 m^-3]; fp/fpinit.f90's comment says [1/s]).
+    CASE ("MODELA");   MODELA   = NINT(value)
+    CASE ("NBEAMMAX"); NBEAMMAX = NINT(value)
+    CASE ("NSSPB")
+       IF (idx < 1 .OR. idx > SIZE(NSSPB))  THEN; ierr = 2; RETURN; END IF
+       NSSPB(idx)  = NINT(value)
+    CASE ("SPBTOT")
+       IF (idx < 1 .OR. idx > SIZE(SPBTOT)) THEN; ierr = 2; RETURN; END IF
+       SPBTOT(idx) = value
+    CASE ("SPBENG")
+       IF (idx < 1 .OR. idx > SIZE(SPBENG)) THEN; ierr = 2; RETURN; END IF
+       SPBENG(idx) = value
+    CASE ("SPBANG")
+       IF (idx < 1 .OR. idx > SIZE(SPBANG)) THEN; ierr = 2; RETURN; END IF
+       SPBANG(idx) = value
+    CASE ("SPBR0")
+       IF (idx < 1 .OR. idx > SIZE(SPBR0))  THEN; ierr = 2; RETURN; END IF
+       SPBR0(idx)  = value
+    CASE ("SPBRW")
+       IF (idx < 1 .OR. idx > SIZE(SPBRW))  THEN; ierr = 2; RETURN; END IF
+       SPBRW(idx)  = value
     CASE DEFAULT
        ierr = 1   ! unknown name
     END SELECT
   END FUNCTION fp_param_set_impl
+
+  !-------------------------------------------------------------------
+  ! value_refused : .TRUE. for a value that the setter does not take.
+  !
+  !   - Not finite (NaN, +Infinity, -Infinity): for every name.
+  !   - For an integer parameter, a value outside -HUGE(0) .. HUGE(0).
+  !     NINT() of a value beyond the default integer is
+  !     processor-dependent (measured with gfortran on arm64: the
+  !     nearest end of the integer range, and 0 for NaN), and what it
+  !     leaves is then a mesh count or a model switch. The bound is the
+  !     range every compiler converts alike: -HUGE(0) - 1 and the
+  !     fractions just above HUGE(0) are refused with the rest.
+  !
+  ! This is asked when the value is set, not with the checks that are
+  ! made together before a run (issue #143): once converted, the value
+  ! that was given is gone, and no later check can tell a count that
+  ! was asked for from what the conversion left.
+  !
+  ! The names are the integer parameters of fp_param_set_impl above: a new
+  ! integer CASE there goes into this list too
+  ! (python/fplib/tests/test_param_values.py holds the list to the
+  ! integer CASEs of the setter, read from this file, and to the names
+  ! the MCP server declares as integers).
+  !-------------------------------------------------------------------
+  FUNCTION value_refused(b, value) RESULT(refused)
+    USE, INTRINSIC :: ieee_arithmetic, ONLY: ieee_is_finite
+    CHARACTER(LEN=*), INTENT(IN) :: b
+    REAL(rkind),      INTENT(IN) :: value
+    LOGICAL :: refused
+
+    refused = .NOT. ieee_is_finite(value)
+    IF (refused) RETURN
+    SELECT CASE (TRIM(b))
+    CASE ("NRMAX", "NPMAX", "NTHMAX", "NTMAX", "NAVMAX", &
+          "NSMAX", "NSAMAX", "NSBMAX", "NS_NSA", "NS_NSB", "LMAXFP", &
+          "MODELG", "MODELE", "MODELR", "MODELS", "MODELD", &
+          "MODEL_NBI", "MODEL_WAVE", "MODEL_DISRUPT", "MODEL_BS", &
+          "MODEL_LOSS", "MODEL_SYNCH", "MODEL_FOW", "MODELC", "MODELW", &
+          "MODELA", "NBEAMMAX", "NSSPB")
+       refused = ABS(value) > REAL(HUGE(0), rkind)
+    END SELECT
+  END FUNCTION value_refused
 
   !-------------------------------------------------------------------
   ! fp_param_check : the counts a run cannot be made with, checked
@@ -220,6 +298,8 @@ CONTAINS
   !                  copied into the background array at its species
   !                  number (fp/fpmpi.f90).
   !   NS_NSB(1..NSBMAX)  1 .. NSMAX.
+  !   MODELA, NBEAMMAX and the beams (task-web-client #232): the block
+  !                  at the end of the function says which and why.
   !
   ! A 0 in either map stands for the slot's own number, which
   ! fp_set_nsa_nsb substitutes when the run is prepared (fp/fpprep.f90).
@@ -227,7 +307,10 @@ CONTAINS
   FUNCTION fp_param_check(max_nrmax) RESULT(ierr)
     INTEGER, INTENT(IN) :: max_nrmax
     INTEGER :: ierr
-    INTEGER :: i, ns
+    INTEGER :: i, ns, nsa, nsabeam, nsx, nsx_ns
+    LOGICAL :: kinetic, electrons
+    REAL(rkind) :: t, psp, pmax_eff, amfp, ptfp0
+    REAL(rkind) :: amfp_e, ptfp0_e, amfp_b, pe, edge_e
 
     ierr = 0
     IF (NRMAX < 1 .OR. NRMAX > max_nrmax) THEN
@@ -271,8 +354,210 @@ CONTAINS
           ierr = 1
        END IF
     END DO
+    ! --- NBI source and bounce average (task-web-client #232) -----
+    ! MODELA: FP has only 0 and 1 (fp/fpparm.f90). NBEAMMAX: the beam
+    ! loops run to it (fp/fpcoef.f90), and fp_init gives it no value
+    ! (only the namelist does), so any start value outside 0 .. NBEAMM
+    ! is refused here. With MODEL_NBI = 1, NBI_SOURCE_A0 takes every
+    ! beam up to NBEAMMAX, whatever its source: SPBRW must be above 0
+    ! for each (0 makes the source 0/0, NaN, even with SPBTOT = 0; a
+    ! width below 0 means nothing). A beam with a source (SPBTOT /= 0)
+    ! would deposit nothing, without a word, beyond NBEAMMAX, on no
+    ! kinetic species (NSSPB is a namelist species, matched against
+    ! NS_NSA, a 0 there read as the slot's number), with SPBANG outside
+    ! 0 <= x < 180 (no pitch cell holds it) or with SPBENG < 0 (no
+    ! momentum). Three more rules, added as a follow-up of #232:
+    !  - NAVMAX is a divisor: in the bounce average of MODELA = 1
+    !    (fp/fpbounce.f90: DELH = 2*ETAM/NAVMAX, DO NG = 1, NAVMAX) and
+    !    in the wave terms whatever MODELA (MODEL_WAVE /= 0 calls FP_CALW,
+    !    fp/fpcoef.f90, then FPSUMW, fp/fpcalw.f90: DELH = 2*ETA/NAVMAX,
+    !    also fpcalwm.f90, fpcalwr.f90). NAVMAX = 0 divides by zero and
+    !    the empty loop leaves SUM*DELH = 0*Inf = NaN, even with no wave
+    !    power; a negative NAVMAX makes the averaging loop empty. So
+    !    (MODELA = 1 .OR. MODEL_WAVE /= 0) .AND. NAVMAX < 1 is refused,
+    !    whatever MODEL_NBI.
+    !  - A beam beyond the ion momentum mesh. FP deposits ions only in
+    !    the cell PG(NP) <= PSP < PG(NP+1), PSP = SQRT(2*SPBENG/(1000*T))
+    !    (SPBENG in eV, T = (PTPR + 2*PTPP)/3 in keV of the beam's
+    !    species; the mass cancels), and the mesh ends at PMAX(ns), or,
+    !    when the sum of EMAX is not 0 and EMAX(ns) /= 0, at
+    !    SQRT(2*EMAX/T) (fp/fpprep.f90; EMAX is not registered, so it
+    !    keeps its default 0 unless a namelist file sets it). PSP at or
+    !    beyond that edge deposits nothing in the beam's species; with
+    !    kinetic electrons the electron branch still deposits electrons,
+    !    so the source is unbalanced. The code computes the momentum and
+    !    the edge with FP's own expressions, constants and order of
+    !    operations (fpcoef.f90 ~535, fpprep.f90 ~40-55 and ~887-894:
+    !    SQRT(2*amfp*SPBENG*AEE)/SQRT(T*1e3*AEE*amfp)), because the
+    !    simplified form differs from FP's by 1 ulp for some inputs, which
+    !    decides a beam at p = PMAX. A temperature not above 0 (or NaN)
+    !    gives no momentum and nothing is deposited: refused.
+    !  - The electron compensating source (fpcoef.f90 ~577-603) deposits
+    !    the electrons, with the charge PZ(NSABEAM), only in the cell of
+    !    the electron mesh that holds p_e = SQRT(2*amfp_e**2*SPBENG*AEE
+    !    /amfp_b)/ptfp0_e. A beam whose p_e is not below the electron
+    !    mesh edge is refused with its own line (its ions would be
+    !    deposited with no electrons); only a beam inside the electron
+    !    mesh reaches the PZ rule below.
+    !  - The electron compensating source takes the wrong charge. With
+    !    kinetic electrons and NSSPB(1) /= 1, NBI_SOURCE_A0 sets NSABEAM
+    !    to the LAST kinetic slot whose species is NSSPB(beam), and adds
+    !    PZ(NSABEAM)*SPBTOT: PZ is indexed by the namelist species, so
+    !    the intended charge is PZ(NSSPB(beam)); the two agree only when
+    !    slot and species numbers coincide or the charges are equal (the
+    !    indices are compared first, so a NaN charge at the same index is
+    !    not refused for PZ).
+    !    That is an FP bug, reported to the lead (follow-up of
+    !    task-web-client #232) and NOT changed here: the rule refuses the
+    !    run where the two charges differ, so no result changes, and
+    !    stands in until FP is fixed.
+    ! Not checked: a source so narrow that EXP(-(RM-SPBR0)**2/SPBRW**2)
+    ! is 0 at every radial point is 0/0.
+    IF (MODELA < 0 .OR. MODELA > 1) THEN
+       WRITE(6,'(A,I0,A)') 'XX fp_run: MODELA = ', MODELA, ' is neither 0 nor 1'
+       ierr = 1
+    END IF
+    IF ((MODELA == 1 .OR. MODEL_WAVE /= 0) .AND. NAVMAX < 1) THEN
+       WRITE(6,'(A,I0,A)') 'XX fp_run: NAVMAX = ', NAVMAX, &
+            ' must be >= 1 with MODELA = 1 or MODEL_WAVE /= 0 (the bounce average and ' // &
+            'the wave diffusion divide by it and loop to it)'
+       ierr = 1
+    END IF
+    IF (NBEAMMAX < 0 .OR. NBEAMMAX > NBEAMM) THEN
+       WRITE(6,'(A,I0,A,I0)') 'XX fp_run: NBEAMMAX = ', NBEAMMAX, &
+            ' is outside 0 to ', NBEAMM
+       ierr = 1
+    END IF
+    IF (MODEL_NBI == 1) THEN
+       ! Are electrons (species 1) a kinetic slot? NBI_SOURCE_A0's
+       ! electron branch runs for that slot when NSSPB(1) /= 1.
+       electrons = .FALSE.
+       DO nsa = 1, MIN(NSAMAX, SIZE(NS_NSA))
+          ns = NS_NSA(nsa)
+          IF (ns == 0) ns = nsa
+          IF (ns == 1) electrons = .TRUE.
+       END DO
+       electrons = electrons .AND. NSSPB(1) /= 1
+       DO i = 1, NBEAMM
+          IF (i <= NBEAMMAX .AND. .NOT. (SPBRW(i) > 0.0_rkind)) THEN
+             WRITE(6,'(A,I0,A,ES12.4,A)') 'XX fp_run: SPBRW(', i, ') = ', SPBRW(i), &
+                  ' is not above 0'
+             ierr = 1
+          END IF
+          IF (SPBTOT(i) == 0.0_rkind) CYCLE
+          IF (i > NBEAMMAX) THEN
+             WRITE(6,'(A,I0,A,I0,A)') 'XX fp_run: SPBTOT(', i, &
+                  ') is set, but NBEAMMAX = ', NBEAMMAX, ' leaves the beam out'
+             ierr = 1
+             CYCLE
+          END IF
+          kinetic = .FALSE.
+          DO nsa = 1, MIN(NSAMAX, SIZE(NS_NSA))
+             ns = NS_NSA(nsa)
+             IF (ns == 0) ns = nsa
+             IF (ns == NSSPB(i)) kinetic = .TRUE.
+          END DO
+          IF (.NOT. kinetic) THEN
+             WRITE(6,'(A,I0,A,I0,A)') 'XX fp_run: NSSPB(', i, ') = ', NSSPB(i), &
+                  ' is no kinetic species (NS_NSA)'
+             ierr = 1
+          END IF
+          IF (.NOT. (SPBANG(i) >= 0.0_rkind .AND. SPBANG(i) < 180.0_rkind)) THEN
+             WRITE(6,'(A,I0,A,ES12.4,A)') 'XX fp_run: SPBANG(', i, ') = ', SPBANG(i), &
+                  ' is outside 0 to below 180'
+             ierr = 1
+          END IF
+          IF (.NOT. (SPBENG(i) >= 0.0_rkind)) THEN
+             WRITE(6,'(A,I0,A,ES12.4,A)') 'XX fp_run: SPBENG(', i, ') = ', SPBENG(i), &
+                  ' is below 0'
+             ierr = 1
+          END IF
+          ns = NSSPB(i)
+          IF (ns < 1 .OR. ns > MIN(SIZE(PZ), SIZE(PA), SIZE(PTPR), SIZE(PTPP), SIZE(PMAX), SIZE(EMAX))) CYCLE
+          IF (kinetic) THEN
+             ! FP's own expressions, constants and order (fpprep.f90 ~887-894,
+             ! fpcoef.f90 ~535), so that the verdict is FP's to the bit.
+             t = (PTPR(ns) + 2.0_rkind*PTPP(ns))/3.0_rkind
+             IF (.NOT. (t > 0.0_rkind)) THEN
+                WRITE(6,'(A,I0,A,I0,A,ES12.4,A)') 'XX fp_run: beam ', i, &
+                     ': the temperature of species ', ns, ' is not above 0 (T = ', t, &
+                     '): no momentum, nothing is deposited'
+                ierr = 1
+             ELSE IF (SPBENG(i) >= 0.0_rkind) THEN
+                amfp = PA(ns)*AMP
+                ptfp0 = SQRT(t*1.0E3_rkind*AEE*amfp)
+                psp = SQRT(2.0_rkind*amfp*SPBENG(i)*AEE)/ptfp0
+                pmax_eff = fp_mesh_edge(ns)
+                IF (.NOT. (psp < pmax_eff)) THEN
+                   WRITE(6,'(A,I0,A,ES12.4,A,ES12.4,A,ES12.4,A,I0,A,ES12.4,A,I0,A)') &
+                        'XX fp_run: SPBENG(', i, ') = ', SPBENG(i), ' eV needs p = ', psp, &
+                        ' at T = ', t, ' keV of species ', ns, ', beyond its mesh edge (', &
+                        pmax_eff, '): species ', ns, ' receives no deposit'
+                   ierr = 1
+                END IF
+                ! The electron compensating source (fpcoef.f90 ~577-603): NSABEAM is the
+                ! last kinetic slot of the beam's species; the electrons are deposited,
+                ! with PZ(NSABEAM), only in the electron cell that holds the momentum pe.
+                IF (electrons) THEN
+                   nsabeam = 0
+                   DO nsx = 1, MIN(NSAMAX, SIZE(NS_NSA))
+                      nsx_ns = NS_NSA(nsx)
+                      IF (nsx_ns == 0) nsx_ns = nsx
+                      IF (nsx_ns == ns) nsabeam = nsx
+                   END DO
+                   IF (nsabeam >= 1 .AND. nsabeam <= SIZE(PZ)) THEN
+                      amfp_e = PA(1)*AMP
+                      amfp_b = PA(ns)*AMP
+                      ptfp0_e = SQRT(((PTPR(1) + 2.0_rkind*PTPP(1))/3.0_rkind)*1.0E3_rkind*AEE*amfp_e)
+                      pe = SQRT(2.0_rkind*amfp_e**2*SPBENG(i)*AEE/amfp_b)/ptfp0_e
+                      edge_e = fp_mesh_edge(1)
+                      IF (.NOT. (pe < edge_e)) THEN
+                         WRITE(6,'(A,I0,A,ES12.4,A)') &
+                              'XX fp_run: the electron compensating source of beam ', i, &
+                              ' falls beyond the electron mesh edge (', edge_e, &
+                              '): its ions are deposited with no electrons'
+                         ierr = 1
+                      ELSE IF (nsabeam /= ns .AND. .NOT. (PZ(nsabeam) == PZ(ns))) THEN
+                         WRITE(6,'(A,I0,A,I0,A,I0,A,ES12.4,A,I0,A,ES12.4,A)') &
+                              'XX fp_run: beam ', i, ' on species ', ns, &
+                              ': FP''s electron source takes PZ(', nsabeam, ') = ', PZ(nsabeam), &
+                              ', not PZ(', ns, ') = ', PZ(ns), ' (fp/fpcoef.f90, NBI_SOURCE_A0)'
+                         ierr = 1
+                      END IF
+                   END IF
+                END IF
+             END IF
+          END IF
+       END DO
+    END IF
     IF (ierr /= 0) FLUSH(6)
   END FUNCTION fp_param_check
+
+  !-------------------------------------------------------------------
+  ! The momentum mesh's upper edge of species ns, as fp_prep makes it
+  ! (fp/fpprep.f90): PMAX(ns), or, only when the sum of EMAX over
+  ! 1..NSMAX is not 0 and EMAX(ns) /= 0, from EMAX(ns), with fp_prep's
+  ! constants, names and order of operations (so the verdict matches FP's
+  ! to the bit). PG(NPMAX+1) is set to exactly this value.
+  !-------------------------------------------------------------------
+  FUNCTION fp_mesh_edge(ns) RESULT(edge)
+    INTEGER, INTENT(IN) :: ns
+    REAL(rkind) :: edge
+    REAL(rkind) :: sumemax, rmass, rrtfp, rptfp
+    INTEGER :: k
+
+    sumemax = 0.0_rkind
+    DO k = 1, MIN(NSMAX, SIZE(EMAX))
+       sumemax = sumemax + EMAX(k)
+    END DO
+    edge = PMAX(ns)
+    IF (sumemax /= 0.0_rkind .AND. EMAX(ns) /= 0.0_rkind) THEN
+       rmass = PA(ns)*AMP
+       rrtfp = (PTPR(ns) + 2.0_rkind*PTPP(ns))/3.0_rkind
+       rptfp = SQRT(rrtfp*1.0E3_rkind*AEE*rmass)
+       edge = SQRT(2.0_rkind*AEE*rmass*1.0E3_rkind*EMAX(ns))/rptfp
+    END IF
+  END FUNCTION fp_mesh_edge
 
   !-------------------------------------------------------------------
   ! fp_param_set_str : string-valued parameter setter.
@@ -291,6 +576,13 @@ CONTAINS
     INTEGER :: ierr
 
     ierr = 0
+    ! A value longer than the variable is refused, not cut
+    ! (KNAMEQ is CHARACTER(LEN=80)): the first 80 characters of a
+    ! longer path are another file's name.
+    IF (LEN_TRIM(value) > LEN(KNAMEQ)) THEN
+       ierr = 1
+       RETURN
+    END IF
     SELECT CASE (TRIM(ADJUSTL(name)))
     CASE ("KNAMEQ"); KNAMEQ = TRIM(value)
     CASE DEFAULT
@@ -304,29 +596,48 @@ CONTAINS
   !   "RR"      -> base="RR",  idx=0       (scalar form)
   !   "PN[1]"   -> base="PN",  idx=1       (1-origin subscript)
   !   "MODELC[2]" -> base="MODELC", idx=2
-  !   malformed -> base=<full>, idx=-1     (caller returns ierr=1)
+  !   malformed -> base=" ", idx=-1        (no CASE matches a blank
+  !                                         name: the caller returns
+  !                                         ierr=1, for a scalar too)
+  !
+  ! Malformed: one bracket without the other, an empty subscript, text
+  ! after the closing bracket, a subscript that is not an unsigned
+  ! whole number of at most nine digits, with or without blanks around
+  ! it ("[zz]", "[ ]", "[1,2]",
+  ! "[2 3]", "[/]": the list-directed READ that was here took several
+  ! of these, and a failed READ left base = NAME, which set a scalar,
+  ! whose CASE never looks at idx), and a name that does not fit into
+  ! BASE (cut short, "RR" followed by blanks and anything else was the
+  ! name "RR").
   !-------------------------------------------------------------------
   SUBROUTINE parse_array_subscript(full_name, base, idx)
     CHARACTER(LEN=*), INTENT(IN)  :: full_name
     CHARACTER(LEN=*), INTENT(OUT) :: base
     INTEGER,          INTENT(OUT) :: idx
-    INTEGER :: lb, rb, ios
+    INTEGER :: lb, rb, n, i, k
+    CHARACTER(LEN=LEN(full_name)) :: sub
     base = ' '
-    idx  = 0
+    idx  = -1                         ! malformed, until shown otherwise
     lb = INDEX(full_name, '[')
     rb = INDEX(full_name, ']', BACK=.TRUE.)
     IF (lb == 0 .AND. rb == 0) THEN
+       IF (LEN_TRIM(ADJUSTL(full_name)) > LEN(base)) RETURN
        base = TRIM(ADJUSTL(full_name))
+       idx  = 0
        RETURN
     END IF
-    IF (lb == 0 .OR. rb == 0 .OR. rb <= lb + 1) THEN
-       base = TRIM(ADJUSTL(full_name))   ! malformed; caller returns ierr=1
-       idx  = -1
-       RETURN
-    END IF
+    IF (lb == 0 .OR. rb == 0 .OR. rb <= lb + 1) RETURN
+    IF (rb /= LEN_TRIM(full_name) .OR. lb - 1 > LEN(base)) RETURN
+    sub = ADJUSTL(full_name(lb+1:rb-1))
+    n = LEN_TRIM(sub)
+    IF (n == 0 .OR. n > 9) RETURN     ! nine digits fit a default integer
+    IF (VERIFY(sub(1:n), '0123456789') /= 0) RETURN
+    k = 0
+    DO i = 1, n
+       k = 10 * k + (IACHAR(sub(i:i)) - IACHAR('0'))
+    END DO
+    idx  = k
     base = full_name(1:lb-1)
-    READ(full_name(lb+1:rb-1), *, IOSTAT=ios) idx
-    IF (ios /= 0) idx = -1
   END SUBROUTINE parse_array_subscript
 
   ! Public alias for unit testing only.

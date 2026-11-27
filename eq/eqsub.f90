@@ -30,6 +30,15 @@
       USE eqcom2_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
       INTEGER, INTENT(OUT) :: IERR
+      INTEGER :: IOS
+      CHARACTER(LEN=16) :: KV(6)
+      CHARACTER(LEN=8)  :: KBN(4)
+      CHARACTER(LEN=16) :: KD, KBV, KN
+      CHARACTER(LEN=24) :: KBE
+      CHARACTER(LEN=48) :: KC
+      CHARACTER(LEN=128) :: KT
+      INTEGER :: IB, IOSD
+      REAL(rkind) :: DB, BV
 
       REAL(rkind),DIMENSION(:,:),ALLOCATABLE::  PSIRG,PSIZG,PSIRZG
       EXTERNAL PSIGD,PSIGZ0
@@ -48,7 +57,8 @@
 !
 !     ----- calculate position of magnetic axis -----
 !
-      CALL find_axis
+      CALL find_axis(IERR)
+      IF(IERR.NE.0) RETURN
 !
 !      WRITE(6,*) RAXIS,ZAXIS,PSIG(RAXIS,ZAXIS)
 !
@@ -74,6 +84,108 @@
          PSIPA=-PSI0
       ELSE
          WRITE(6,'(A)') 'XX EQAXIS: AXIS OUT OF PLASMA:'
+!        Say where the axis search ended and the window it was held to,
+!        for the C API's eq_last_error: a file load with MDLEQF >= 10
+!        reads the box RGMIN..ZGMAX too (default 1.5..4.5 x -2..2 m), and
+!        a small device's axis lies outside it (task-web-client #187).
+!        The point is the axis when NEWTN converged, and otherwise the
+!        best finite point it found (find_axis returns 102 for a point
+!        that is not finite, task-web-client #204).
+!        The bound the point crossed and by how much (task-web-client
+!        #214: at ZGMAX = 0 the axis ends about 1e-12 above it, which
+!        F16.4 prints as 0.0000), and inside EQLOOP the iteration
+!        (EQ_NLOOP, #188): from the second on the axis is the solve's,
+!        which moves as the solve goes on, so the window must hold its path.
+         IF(MDLEQF.LT.10) THEN
+            KBN(1)='RR-RB'
+            KBN(2)='RR+RB'
+            KBN(3)='-RKAP*RB'
+            KBN(4)='RKAP*RB'
+         ELSE
+            KBN(1)='RGMIN'
+            KBN(2)='RGMAX'
+            KBN(3)='ZGMIN'
+            KBN(4)='ZGMAX'
+         ENDIF
+         IB=0
+         IF(RAXIS.LT.RMIN) THEN
+            IB=1
+            DB=RMIN-RAXIS
+            BV=RMIN
+         ELSE IF(RAXIS.GT.RMAX) THEN
+            IB=2
+            DB=RAXIS-RMAX
+            BV=RMAX
+         ELSE IF(ZAXIS.LT.ZMIN) THEN
+            IB=3
+            DB=ZMIN-ZAXIS
+            BV=ZMIN
+         ELSE IF(ZAXIS.GT.ZMAX) THEN
+            IB=4
+            DB=ZAXIS-ZMAX
+            BV=ZMAX
+         ENDIF
+         KC=' '
+         KBE=' '
+         IF(IB.GT.0) THEN
+            WRITE(KD,'(ES8.1)',IOSTAT=IOSD) DB
+            IF(IOSD.EQ.0) WRITE(KBV,'(F16.4)',IOSTAT=IOSD) BV
+            IF(IOSD.EQ.0) THEN
+               IF(MOD(IB,2).EQ.1) THEN
+                  KC=', '//TRIM(ADJUSTL(KD))//' below '//TRIM(KBN(IB))
+               ELSE
+                  KC=', '//TRIM(ADJUSTL(KD))//' above '//TRIM(KBN(IB))
+               ENDIF
+               KBE=' = '//TRIM(ADJUSTL(KBV))
+            ENDIF
+         ENDIF
+         WRITE(KV,'(F16.4)') RAXIS,ZAXIS,RMIN,RMAX,ZMIN,ZMAX
+         WRITE(KN,'(I0)') EQ_NLOOP
+         IF(EQ_NLOOP.GE.2) THEN
+!           In the loop the crossing comes first: TR's tr_last_error keeps
+!           about 72 characters of this message.
+            IF(MDLEQF.GE.10) THEN
+               KT=': it moves as the solve goes on, and the box'// &
+                  ' (MDLEQF >= 10) must hold its path (ierr=103)'
+            ELSE
+               KT=', outside RR -/+ RB, -/+ RKAP*RB (MDLEQF < 10)'// &
+                  ' (ierr=103)'
+            ENDIF
+            IF(LEN_TRIM(KC).GT.2) THEN
+               WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
+                    'EQAXIS: the axis is ',TRIM(KC(3:)),TRIM(KBE), &
+                    ' at (R, Z) = (',TRIM(ADJUSTL(KV(1))),', ', &
+                    TRIM(ADJUSTL(KV(2))),'), in iteration ',TRIM(KN), &
+                    ' of the solve',TRIM(KT)
+            ELSE
+               WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
+                    'EQAXIS: the axis is at (R, Z) = (', &
+                    TRIM(ADJUSTL(KV(1))),', ',TRIM(ADJUSTL(KV(2))), &
+                    '), outside its window, in iteration ',TRIM(KN), &
+                    ' of the solve',TRIM(KT)
+            ENDIF
+         ELSE IF(MDLEQF.LT.10) THEN
+            WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
+                 'EQAXIS: the search for the magnetic axis ended at'// &
+                 ' (R, Z) = (',TRIM(ADJUSTL(KV(1))),', ', &
+                 TRIM(ADJUSTL(KV(2))),')',TRIM(KC),', outside RR -/+ RB = [', &
+                 TRIM(ADJUSTL(KV(3))),', ',TRIM(ADJUSTL(KV(4))), &
+                 '], -/+ RKAP*RB = [',TRIM(ADJUSTL(KV(5))),', ', &
+                 TRIM(ADJUSTL(KV(6))),'] (MDLEQF < 10) (ierr=103)'
+         ELSE
+            WRITE(EQ_ERRMSG,'(16A)',IOSTAT=IOS) &
+                 'EQAXIS: the search for the magnetic axis ended at'// &
+                 ' (R, Z) = (',TRIM(ADJUSTL(KV(1))),', ', &
+                 TRIM(ADJUSTL(KV(2))),')',TRIM(KC),', outside the box'// &
+                 ' RGMIN..RGMAX = [',TRIM(ADJUSTL(KV(3))),', ', &
+                 TRIM(ADJUSTL(KV(4))),'], ZGMIN..ZGMAX = [', &
+                 TRIM(ADJUSTL(KV(5))),', ',TRIM(ADJUSTL(KV(6))), &
+                 '] that MDLEQF >= 10 holds the axis to (ierr=103)'
+         ENDIF
+         IF(IOS.NE.0) EQ_ERRMSG= &
+              'EQAXIS: the search for the magnetic axis ended outside'// &
+              ' the window it is held to (values unprintable) (ierr=103)'
+         WRITE(6,'(2A)') '   ',TRIM(EQ_ERRMSG)
          IERR=103
          RETURN
       ENDIF
@@ -166,8 +278,13 @@
          ISTEP=ISTEP+1
          GOTO 100
       ENDIF
-      WRITE(6,*) 'XX EQMAGS: NOT ENOUGH N'
-      pause
+      WRITE(6,*) &
+     & 'XX EQMAGS: NOT ENOUGH N (near-axis under-resolved): N,NMAX=', &
+     & N,NMAX
+      WRITE(6,'(A,I5,A)') '   NSGMAX=',NSGMAX, &
+     &     ' : set NSGMAX>=128 in eqparm & rerun.'
+      IF(NPRINT.GE.1) WRITE(6,'(A,1P4E12.4)') &
+     &     '   R0,RAXIS,Yend=',RINIT,RAXIS,Y(1),Y(2)
       IERR=1
       RETURN
 
@@ -256,16 +373,32 @@
 !
 !     ***** calculate position of magnetic axis *****
 !
-      SUBROUTINE find_axis
+      SUBROUTINE find_axis(IERR)
 
+!     IERR: 102, with EQ_ERRMSG saying so, when NEWTN did not converge
+!     and ended at a point that is not finite; 0 otherwise. NEWTN hands
+!     back the best point it found (IER=1: its step fell below 1e-3 of a
+!     full one; IER=2: more than ILMAX steps), and the callers go on from
+!     a finite one as they always did: TR's MODELG 9 re-solves meet such
+!     failures and complete (of 60 runs, TR's defaults varied and its
+!     three fixtures, 23 met failed searches, IER 1 and 2, and 6 of them
+!     completed with finite results; measured,
+!     task-web-client #204). A point that is not finite failed later at
+!     EQAXIS's window ("(NaN, NaN)", ierr=103) or went on into EQJAEAR's
+!     edge and separatrix; this routine's IERR=102 was its own variable.
+      USE, INTRINSIC :: IEEE_ARITHMETIC, ONLY: IEEE_IS_FINITE
       USE eqlib
       USE plcomm
       USE eqcom0_mod
       USE eqcom1_mod
       USE eqcom2_mod
       IMPLICIT COMPLEX*16(C),REAL*8(A,B,D-F,H,O-Z)
+      INTEGER, INTENT(OUT) :: IERR
+      INTEGER :: IOS
+      CHARACTER(LEN=16) :: KV(2)
       EXTERNAL PSIGD
 
+      IERR=0
       DELT=1.D-8
       EPS=1.D-4
       ILMAX=40
@@ -280,6 +413,16 @@
          WRITE(6,'(A,I5,1P2E12.4)') &
               'XX EQAXIS: NEWTN ERROR: IER=',IER,RSAVE,ZSAVE
          WRITE(6,'(A)') 'XX EQAXIS: AXIS NOT FOUND:'
+         IF(IEEE_IS_FINITE(RAXIS).AND.IEEE_IS_FINITE(ZAXIS)) RETURN
+         WRITE(KV,'(F16.4)') RSAVE,ZSAVE
+         WRITE(EQ_ERRMSG,'(5A,I0,A)',IOSTAT=IOS) &
+              'EQAXIS: the search for the magnetic axis from (R, Z) = (', &
+              TRIM(ADJUSTL(KV(1))),', ',TRIM(ADJUSTL(KV(2))), &
+              ') did not converge (NEWTN IER=',IER, &
+              '): it ended at a point that is not finite (ierr=102)'
+         IF(IOS.NE.0) EQ_ERRMSG='EQAXIS: the search for the magnetic'// &
+              ' axis ended at a point that is not finite (ierr=102)'
+         WRITE(6,'(2A)') '   ',TRIM(EQ_ERRMSG)
          IERR=102
          RETURN
       ENDIF

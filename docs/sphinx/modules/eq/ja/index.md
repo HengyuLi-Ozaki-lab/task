@@ -3,8 +3,8 @@
 ```{admonition} この章で学ぶこと
 :class: tip
 
-TASK/EQ (**MHD 平衡** ソルバ: EQDSK 形式の平衡データ, または解析プロファ
-イルを入力に ψ サーフェスと派生量を計算) を Python から呼ぶ `eqlib`
+TASK/EQ (**MHD 平衡** ソルバ: 平衡ファイルを読み込むか, プロファイル係数から
+Grad-Shafranov 方程式を解いて ψ サーフェスと派生量を計算) を Python から呼ぶ `eqlib`
 の使い方を学びます. `tr` と異なり `eq` は **時間発展を持たない**
 モジュールで, `run()` の引数は `mode` (動作モード) です. また,
 **6 番目** の C ABI `eq_set_param_str` を持ち, `KNAMEQ` 等の文字列
@@ -16,12 +16,15 @@ TASK/EQ (**MHD 平衡** ソルバ: EQDSK 形式の平衡データ, または解�
 **TASK/EQ** はトカマクの **MHD 平衡** を解くモジュールです. 2 つの入り口を
 持ちます:
 
-- **`run(mode=0)`** — 解析的 Grad-Shafranov 解 (`EQCALC` + `EQCALQ`).
+- **`run(mode=0)`** — Grad-Shafranov 求解 (`EQCALC` + `EQCALQ`).
   圧力プロファイル係数 (`PP*`), 電流プロファイル係数 (`PJ*`),
-  $F(\psi)$ 係数 (`FF*`) を与えて解析的に解きます.
+  $F(\psi)$ 係数 (`FF*`) を与えると, 固定境界の平衡を数値的に解きます
+  (`EQCALC` は ψ の相対変化が `EPSEQ` を下回るまで反復).
   `MODELG=2` (既定) で使用. ファイル不要.
-- **`run(mode=1)`** — EQDSK 形式 (G-EQDSK) の平衡データファイル読み込み
-  (`equnit::eq_load`). `MODELG ∈ {3, 5, 8}` + `KNAMEQ` ファイル名指定が必要.
+- **`run(mode=1)`** — `MODELG` が指す形式の平衡ファイル読み込み
+  (`equnit::eq_load`): 3 と 9 は TASK/EQ 形式, 5 と 25 は G-EQDSK 形式で,
+  いずれも `KNAMEQ` のファイル. 8 は QST/JAEA 形式の 2 ファイル (`KNAMEQ` と
+  `KNAMEQ2`). 固定の `eqdb.dat` を読む 15 は拒否されます. 既定の `MODELG=2` では失敗します.
 
 両方とも出力としては磁気軸位置 (`raxis`, `zaxis`), 中心 q (`qaxis`),
 表面 q (`qsurf`), プラズマ $\beta$ (`betat`, `betap`), プラズマ体積
@@ -30,7 +33,7 @@ TASK/EQ (**MHD 平衡** ソルバ: EQDSK 形式の平衡データ, または解�
 
 ```{note}
 PR #164/#165 でライブラリ / Python ラッパ / `validate()` API が揃い,
-L-6 等価性ゲートを 1e-10 で通過済みです. `mode=0` (解析的経路) は
+L-6 等価性ゲートを 1e-10 で通過済みです. `mode=0` (Grad-Shafranov 求解) は
 元 `eqx2` CLI の `R` (Run) コマンド相当で, ライブラリ化に伴って
 復活させた経路です.
 ```
@@ -82,7 +85,7 @@ appendix-sensitivity
 初めて触る場合は次の順序がおすすめです:
 
 1. {doc}`build` — 共有ライブラリをビルドし, `import eqlib` できるようにする
-2. {doc}`hello-world` — 解析モード (`mode=0`) と EQDSK モード (`mode=1`) の両方の最短例
+2. {doc}`hello-world` — Grad-Shafranov 求解 (`mode=0`) とファイル読み込み (`mode=1`) の両方の最短例
 3. {doc}`parameters` — どんな入力パラメータがあるか (登録パラメータ完全リスト)
 4. {doc}`parameter-setting` — 入力パラメータ指定の 4 通り (スカラー / 配列 / **文字列** / `validate`)
 5. {doc}`state` — `eq.get_state()` で取れる出力パラメータ・物理量の一覧
@@ -99,5 +102,5 @@ appendix-sensitivity
 | **時間発展** | あり (`run(ntmax)`) | なし (`run(mode)`) |
 | **C ABI 関数数** | 5 + `validate` | **6** + `validate` |
 | **`set_param_str`** | (PR #172 で追加) | 設計初期から必須 |
-| **必須パラメータ** | `KNAMEQ` (MODELG=3,5,7,8 のとき) | `KNAMEQ` (MODELG=3,5,8 のとき) |
+| **必須パラメータ** | `KNAMEQ` (MODELG=3,5,7,8 のとき) | `KNAMEQ` (MODELG=3,5,8,9,25 のとき. 8 では `KNAMEQ2` も) |
 | **代表的な出力** | `T`, `WPT`, `BETAN`, profiles[nrmax][nsmax] | `raxis`, `qaxis`, `betat`, profiles[npsmax] |

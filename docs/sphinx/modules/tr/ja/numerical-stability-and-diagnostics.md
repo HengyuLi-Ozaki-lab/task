@@ -20,10 +20,10 @@ TR は陰的な時間積分を使います. 進行係数は `FADV` (`THETA` と
 混同しないこと; あれは別の用途で予約されている名前です):
 `FADV = 0.5` は Crank-Nicolson, `FADV = 1.0` は完全陰的です.
 値はタイムステップルーチン内に **直接書かれており** —
-`tr/trexec.f90:498` で `FADV = 1.D0` が無条件に代入されています —
+`tr/trexec.f90:548` で `FADV = 1.D0` が無条件に代入されています —
 TR は箱から出してそのままで完全陰的に動きます. ソースを書き換え
 ない限り Crank-Nicolson に切り替える公開のつまみはありません.
-スキーム選択肢のコメントは `tr/trexec.f90:494-498` にあります.
+スキーム選択肢のコメントは `tr/trexec.f90:544-546` にあります.
 
 具体的な帰結: 厳密な CFL 条件は **適用されません**. `DT` の
 選び方は移流型の安定性境界ではなく, 切断誤差と内側反復の収束
@@ -39,8 +39,8 @@ TR は箱から出してそのままで完全陰的に動きます. ソースを
   の負担が増え, ある点で `LMAXTR` 反復以内に残差を縮められ
   なくなります.
 
-デフォルトは `DT = 0.01 s` (`tr/trinit.f90:374`) と
-`NTMAX = 100` (`tr/trinit.f90:376`) で, 合わせて 1.0 s 進める
+デフォルトは `DT = 0.01 s` (`tr/trinit.f90:375`) と
+`NTMAX = 100` (`tr/trinit.f90:377`) で, 合わせて 1.0 s 進める
 設定です. これは平衡時間スケールの実行に向いています.
 ms 以下の `DT` が必要になるのはまれですが, ソース駆動の
 過渡応答 (下の `ht6m` 参照) では必要なときがあります.
@@ -66,9 +66,9 @@ ms 以下の `DT` が必要になるのはまれですが, ソース駆動の
 ### 内側反復の収束 (`EPSLTR`, `LMAXTR`)
 
 各タイムステップ内で `EPSLTR` (相対残差しきい値) に向かって
-内側反復が回ります. 収束チェックは `tr/trexec.f90:112-128`
+内側反復が回ります. 収束チェックは `tr/trexec.f90:113-129`
 にあります (種ごと, 半径セルごと). 反復回数の打ち切りガードは
-`tr/trexec.f90:138-141` で, カウンタが `LMAXTR` に達すると
+`tr/trexec.f90:139-142` で, カウンタが `LMAXTR` に達すると
 ループを **`IERR` を立てず**, **コンソールメッセージも書かずに**
 抜けます. このため最終的に到達した残差のまま走行は **黙って
 続行** します. 飽和を per-step に検知する旗はなく, 唯一の信号は
@@ -83,7 +83,7 @@ ms 以下の `DT` が必要になるのはまれですが, ソース駆動の
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) の診断
 
-`tr_api_run` (`tr/tr_api.f90:227-245`) は内部の `tr_prep` /
+`tr_api_run` (`tr/tr_api.f90:383,412`) は内部の `tr_prep` /
 `tr_loop` のいずれからの **非ゼロ戻り値** もすべて
 `TR_ERR_CALC_FAILED` に集約します. ラッパは故意に下流の
 失敗クラス全部を 1 つの ABI コードに潰しているため, `ierr=3`
@@ -143,49 +143,47 @@ KID 7/8 モード) には 4 個のスカラーが出ます:
 
 ### `validate()` 出力 (`TrDiagCode`) の物理的意味
 
-`tr.validate()` は診断のリストを返し, 各項目は `tr/tr_api.h:69-75`
-の enum (`python/trlib/_ffi.py:58-62` でミラー) の 5 つの
+`tr.validate()` は診断のリストを返し, 各項目は `tr/tr_api.h:76-82`
+の enum (`python/trlib/_ffi.py:74-78` でミラー) の 5 つの
 `TrDiagCode` 値のいずれかを持ちます. enum は 5 カテゴリを予約
-していますが, **現在の実装** の `tr_api_validate` が emit する
-のは `OUT_OF_RANGE` と `FILE_MISSING` の **2 つだけ** です.
-残り 3 つ (`INCONSISTENT_PAIR`, `OUT_OF_RANGE_AFTER_DEP`,
-`MISSING_REQUIRED`) は **将来カテゴリ用に予約済み** で, API 表面
-を安定させるために enum スロットだけが切られていますが, チェック
-本体はまだ配線されていません (`tr/tr_api.f90:365-378` に
-コメントあり).
-
-現状 emit される 2 カテゴリ:
+しており, `tr_api_validate` はそのうち 4 つを emit します.
+`MISSING_REQUIRED` は将来のカテゴリ用に予約されています
+(`tr/tr_api.f90:566`):
 
 - **`OUT_OF_RANGE`** — `tr_api_validate` がチェックする範囲を
   外れたパラメータ値. 例えば validate の `NSMAX` チェックは
   実行時の種数上限 `NSM = 4` (C ABI のコンパイル時上限
   `TR_MAX_NSMAX = 8` ではない) と比較するので, `NSMAX = 5` は
-  validate に到達しここで報告されます (`tr/tr_api.f90:402-403`).
+  validate に到達しここで報告されます (`tr/tr_api.f90:596`).
   注意: registry の宣言範囲を超える値 (例: `NSMAX > 8`) は
   validate が走る **前** に `set_param` で拒否されます
-  (`tr/tr_param_registry.f90:95-97`) ので, この診断リストには
+  (`tr/tr_param_registry.f90:160-162`) ので, この診断リストには
   現れません. validate の役割は registry が受理したが実行時には
-  使えない値を catch することです.
+  使えない値を catch することです. 同じコードで #189 の種ごとの
+  分布, 方程式のスイッチと粒子源 ({doc}`parameters` の 14 節),
+  `EXTERNAL_DRIVEN_I != 0` での `EXTERNAL_DRIVEN_RW <= 0`
+  (`tr/tr_api.f90:648-651`; 対ですが `INCONSISTENT_PAIR` ではなく
+  ここで報告) も報告されます.
 
-- **`FILE_MISSING`** — 必須ファイルパスが空, またはライブラリ
-  が開けないファイルを指している. 典型例: `MODELG ∈ {3, 5, 7, 8}`
-  かつ `KNAMEQ` が空.
+- **`OUT_OF_RANGE_AFTER_DEP`** — 自分の範囲は通るが他のパラメータ
+  が決める境界を通らない値: `NSMAX` 以下の種の `PN = PNS = 0` (#189), そのプロセスの最初の
+  準備の試み (失敗も含む) と異なる `NRMAX` (k-yoshimi/bpsd#7 まで TR のメッシュは 1 プロセスに 1 つ).
 
-予約カテゴリ (現実装では emit されない):
+- **`INCONSISTENT_PAIR`** — それぞれは通るが一緒には動かない
+  パラメータ: `MDLEQN = 1` なしの `MDLEQE` 1 か 2, 不純物密度
+  なし・UFILE なしの 2 種の水素系プラズマ以外での `MDLEQE = 2`
+  ({doc}`parameters` の 14 節). また報告だけのものとして, イオンの
+  電荷密度から大きい方の 1e-3 を超えて離れた `PN[1]` または
+  `PNS[1]` (準中性, {doc}`parameters` の 3 節; task-web-client #200).
+  UFILE モードでは報告せず, 種ごとの分布のチェック (`MODELG = 9` での
+  負の `RIPS`, `RIPE` を含む) の指摘があるときも報告しません.
 
-- **`INCONSISTENT_PAIR`** — 将来用に予約. 個別には範囲チェックを
-  通るが組み合わせで無効な構成になるパラメータ対を意図.
-  なお `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` の
-  チェックは現在ペアレベル診断ではなく `OUT_OF_RANGE` として
-  emit されています (`tr/tr_api.f90:419-425`).
+- **`FILE_MISSING`** — 実行が読むファイルの名前が空, または
+  ファイルが無い: `MODELG ∈ {3, 5, 7, 8}` の `KNAMEQ` (呼び出し時の作業
+  ディレクトリから探す). `MODELG = 8` では TR が設定できない `KNAMEQ2` が空.
 
-- **`OUT_OF_RANGE_AFTER_DEP`** — 将来用に予約. 宣言範囲は通る
-  が実行時に決まる境界 (例: 平衡 load 後の `NRMAX` が平衡格子で
-  頭打ちになる場合) と矛盾するパラメータを意図.
-
-- **`MISSING_REQUIRED`** — 将来用に予約. 必須パラメータが未設定
-  であることを示すためのカテゴリ (`OUT_OF_RANGE` とは区別される:
-  値ではなく **不在** が問題).
+`tr_run` は `FILE_MISSING`, `EXTERNAL_DRIVEN` の対, 準中性を除いて
+同じものを拒否します. その 3 つは `validate()` だけが報告します.
 
 推奨ワークフローは `set_params()` の後 `run()` の前に
 `validate()` を呼ぶこと. 詳しくは {doc}`parameter-setting`

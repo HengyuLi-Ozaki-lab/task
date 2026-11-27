@@ -16,20 +16,24 @@ Usage::
 from __future__ import annotations
 
 import ctypes
+import re
 import weakref
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Optional
+from typing import Dict, Iterable, List, Optional, Union
 
 from . import _ffi
-from .errors import TrlibError, TrlibParamError, TrlibStateError, raise_for_ierr
+from .errors import (
+    TrFailure, TrlibError, TrlibParamError, TrlibRunError, TrlibStateError,
+    raise_for_ierr,
+)
 from .state import TrState
 
 
 _MAX_C_STRING_BYTES = 63              # name buffer is CHARACTER(LEN=64)
-_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128);
-                                       # tr_api_set_param_str DO loop reads
-                                       # up to LEN(fvalue) chars so full 128 OK
+_MAX_C_STRING_VALUE_BYTES = 128       # value buffer is CHARACTER(LEN=128).
+                                       # KNAMEQ holds 80: the library refuses
+                                       # a longer value (rc 1), it is not cut
 
 
 def _encode_name(s: str, max_bytes: int = _MAX_C_STRING_BYTES) -> bytes:
@@ -91,6 +95,12 @@ class TrDiagEntryPy:
     param: str
     code: int
     message: str
+
+
+#: The largest count a C ``int`` holds. ctypes converts a Python integer to a
+#: ``c_int`` argument with no range check (it keeps the low 32 bits), so
+#: ``run`` checks the range itself.
+_C_INT_MAX = 2**31 - 1
 
 
 class Trlib:
@@ -233,12 +243,98 @@ class Trlib:
     def run(self, ntmax: int) -> None:
         """Advance the simulation ``ntmax`` time-steps.
 
-        ``ntmax=0`` is a valid no-op used by the smoke test.
+        ``ntmax=0`` prepares (when a parameter was set) and takes no step, but the loop's exit still sets RIPS =
+        RIPE: a pending current ramp is lost and RIP stays where it was (``tr/tr_api.h``). ``continue_run(0)`` only
+        checks.
+
+        Raises :class:`TrlibParamError`, before the library is called, for
+        a count outside 0 to 2**31 - 1: ``tr_run`` takes a C ``int``, and a
+        larger count would arrive modulo 2**32 (``2**32 + 20`` ran twenty
+        steps).
         """
         if self._closed:
             raise TrlibError("run on closed Trlib")
-        ierr = self._lib.tr_run(int(ntmax))
+        count = int(ntmax)
+        if not 0 <= count <= _C_INT_MAX:
+            raise TrlibParamError(
+                f"tr_run: the step count must be 0 to {_C_INT_MAX} "
+                "(tr_run takes a C int)"
+            )
+        ierr = self._lib.tr_run(count)
+        if ierr == _ffi.TR_ERR_CALC_FAILED:
+            # The library records the first failure of the run: say what it was.
+            raise TrlibRunError(f"tr_run({ntmax}): ierr={ierr}", failure=self._failure_or_none())
         raise_for_ierr(f"tr_run({ntmax})", ierr)
+
+    def continue_run(self, nsteps: int) -> None:
+        """Advance the prepared case ``nsteps`` more steps without preparing again (``tr_continue``).
+
+        The control parameters set since the last :meth:`run` or :meth:`continue_run` (:meth:`param_class` 1:
+        RIPE, PNBTOT, PICTOT, PECTOT, PLHTOT, NTEQIT, TPRST) take effect at its first step; ``nt`` and the history
+        go on, and RIP ramps from the last call's RIPE to RIPE over these steps. It equals ``tr2``'s ``C`` on the
+        same cut (not with NCLASS: ``tr/tr_api.h``); a run in several calls is not bit for bit one call (each call
+        begins with the loop's prologue).
+
+        Raises :class:`TrlibParamError` with ``failure`` (kind ``REFUSED``) when the library refuses: no prepared
+        case, the last run failed (until a :meth:`run` prepares again: after any set), a structural parameter set
+        since the preparation (``failure.detail`` names the last one; :meth:`run` prepares again), or a value
+        :meth:`run`'s checks refuse; and, before the call, for a count outside 0 to 2**31 - 1 (``failure`` None).
+        :class:`TrlibRunError` with ``failure`` when the loop fails, as :meth:`run`.
+        """
+        if self._closed:
+            raise TrlibError("continue_run on closed Trlib")
+        count = int(nsteps)
+        if not 0 <= count <= _C_INT_MAX:
+            raise TrlibParamError(
+                f"tr_continue: the step count must be 0 to {_C_INT_MAX} "
+                "(tr_continue takes a C int)"
+            )
+        ierr = self._scalar_fn("tr_continue")(count)
+        if ierr == _ffi.TR_ERR_CALC_FAILED:
+            raise TrlibRunError(f"tr_continue({nsteps}): ierr={ierr}", failure=self._failure_or_none())
+        if ierr == _ffi.TR_ERR_INVALID:
+            failure = self._failure_or_none()
+            why = f": {failure.detail}" if failure is not None else ""
+            raise TrlibParamError(f"tr_continue({nsteps}) refused{why}", failure=failure)
+        raise_for_ierr(f"tr_continue({nsteps})", ierr)
+
+    def param_class(self, name: str) -> int:
+        """1 for a control parameter (:meth:`continue_run` takes it in), 0 for a structural one (a name the setter
+        takes, or any ``eq:`` name: :meth:`run` prepares again after it), -1 for a name the setter does not know."""
+        if self._closed:
+            raise TrlibError("param_class on closed Trlib")
+        return int(self._scalar_fn("tr_param_class")(_encode_name(name)))
+
+    def _failure_or_none(self) -> Optional[TrFailure]:
+        try:
+            return self.last_error()
+        except TrlibError:  # a library built before tr_last_error
+            return None
+
+    def last_error(self) -> TrFailure:
+        """The first failure of the last :meth:`run` or :meth:`continue_run`, or ``kind == "NONE"``.
+
+        Cleared at the start of every ``run`` and ``continue_run``. Older builds without
+        ``tr_last_error`` raise :class:`TrlibError`.
+        """
+        if self._closed:
+            raise TrlibError("last_error on closed Trlib")
+        try:
+            fn = self._lib.tr_last_error
+        except AttributeError as exc:
+            raise TrlibError(
+                "libtrapi.so does not export tr_last_error; "
+                "rebuild the shared library."
+            ) from exc
+        e = _ffi.TrDiagEntry()
+        fn(ctypes.byref(e))
+        kind = e.param.decode("ascii", errors="replace").rstrip("\x00")
+        msg = e.msg.decode("ascii", errors="replace").rstrip("\x00")
+        nt, time, detail = 0, 0.0, msg
+        m = re.match(r"nt=(-?\d+) t=\s*(\S+) s: (.*)$", msg)
+        if m:
+            nt, time, detail = int(m.group(1)), float(m.group(2)), m.group(3)
+        return TrFailure(kind=kind, code=int(e.code), nt=nt, time=time, detail=detail)
 
     def get_state(self) -> TrState:
         """Copy the current simulation state into a :class:`TrState`."""
@@ -247,7 +343,128 @@ class Trlib:
         c = _ffi.TrStateC()
         ierr = self._lib.tr_get_state(ctypes.byref(c))
         raise_for_ierr("tr_get_state", ierr)
-        return TrState.from_c(c)
+        state = TrState.from_c(c)
+        # All the named scalars, in the library's order. The 14 of the struct keep the values tr_get_state copied
+        # (the 1e-10 baselines compare to_dict(), so a fault in that copy must still show); the others are read by
+        # name. A library built before the scalar table (PR 1's) keeps the 14 that from_c filled.
+        if hasattr(self._lib, "tr_scalar_count") and hasattr(self._lib, "tr_get_scalar"):
+            struct = dict(state.scalars)
+            named = {n: (struct[n] if n in struct else self.get_scalar(n)) for n in self.scalar_names()}
+            state.scalars = {**named, **{k: v for k, v in struct.items() if k not in named}}
+        return state
+
+    # --- outputs by name (PR 2 of #96) ----------------------------------
+    def _scalar_fn(self, symbol: str):
+        try:
+            return getattr(self._lib, symbol)
+        except AttributeError as exc:
+            raise TrlibError(
+                f"libtrapi.so does not export {symbol}; rebuild the shared library."
+            ) from exc
+
+    def scalar_names(self) -> List[str]:
+        """The names :meth:`get_scalar` accepts, in the library's order (31)."""
+        if self._closed:
+            raise TrlibError("scalar_names on closed Trlib")
+        count = int(self._scalar_fn("tr_scalar_count")())
+        fn = self._scalar_fn("tr_scalar_name")
+        names = []
+        for i in range(1, count + 1):
+            buf = ctypes.create_string_buffer(64)
+            raise_for_ierr(f"tr_scalar_name({i})", fn(i, buf, 64))
+            names.append(buf.value.decode("ascii"))
+        return names
+
+    def get_scalar(self, name: str) -> float:
+        """One global result by name, as of the last step TR computed the globals on.
+
+        TRGLOB computes them on output steps and on the last step of a run, so they are current after
+        :meth:`run` or :meth:`continue_run` of one step or more. ``run(0)`` evaluates no step: after a preparation (the first run, or a
+        run after a changed parameter) what it sets is new (``T`` 0; ``RIP``, which is ``RIPS`` or, under ``MODELG``
+        3, 5 and 8, the equilibrium's boundary current; ``Q0`` under ``MODELG`` 2, 3, 5, 7, 8 and 9) and what only a
+        step computes (the powers, ``WPT``) is still the run before's. Units are those of
+        ``tr/trrslt_globals.f90`` (``tr_mcp``'s state schema lists them; ``PNFT`` is the charged fusion products'
+        power, alpha only for D-T, and ``RIP`` the equilibrium's boundary current under ``MODELG`` 3, 5 and 8 and the
+        experimental data's under ``MDLUF`` 1 and 3).
+        An unknown name raises :class:`TrlibParamError`.
+        """
+        if self._closed:
+            raise TrlibError("get_scalar on closed Trlib")
+        fn = self._scalar_fn("tr_get_scalar")
+        value = ctypes.c_double(0.0)
+        ierr = fn(_encode_name(name), ctypes.byref(value))
+        raise_for_ierr(f"tr_get_scalar('{name}')", ierr)
+        return float(value.value)
+
+    # --- the run's history by name (PR 2 of #96, Task 5b) ----------------
+    def history_names(self) -> List[str]:
+        """The names of the recorded columns, "T" (the time) first."""
+        if self._closed:
+            raise TrlibError("history_names on closed Trlib")
+        count = int(self._scalar_fn("tr_history_count")())
+        fn = self._scalar_fn("tr_history_name")
+        names = []
+        for i in range(1, count + 1):
+            buf = ctypes.create_string_buffer(64)
+            raise_for_ierr(f"tr_history_name({i})", fn(i, buf, 64))
+            names.append(buf.value.decode("ascii"))
+        return names
+
+    def history_length(self) -> int:
+        """Rows recorded since the last preparation: the state at t = 0, then one per ``NGTSTP`` steps.
+
+        A row is recorded at every step that is a multiple of ``NGTSTP``, so a call of :meth:`run` adds the multiples among the
+        steps it runs (``nsteps // NGTSTP`` only when it starts on one: ``run(5)`` twice adds 3 and 3, ``run(1)`` adds 0 or 1). 0 before the
+        first run. ``tr_prep`` starts the history again, so a run after a changed parameter does.
+        """
+        if self._closed:
+            raise TrlibError("history_length on closed Trlib")
+        return int(self._scalar_fn("tr_history_length")())
+
+    def history_full(self) -> bool:
+        """True when the history holds 10001 rows (``NTM``): TR then stops recording, silently on its side."""
+        if self._closed:
+            raise TrlibError("history_full on closed Trlib")
+        return bool(self._scalar_fn("tr_history_full")())
+
+    def history(self, names: Union[None, str, Iterable[str]] = None) -> Dict[str, "object"]:
+        """The recorded columns by name, as ``{name: numpy.ndarray}`` of float64 (lists without numpy).
+
+        ``names`` is one name, several, or ``None`` for every column of :meth:`history_names`. The values are
+        TR's single-precision history. The last row agrees with :meth:`get_scalar` to about 1e-7 (relative) only
+        when the last step of the call was recorded (a multiple of ``NGTSTP`` reached before the buffer was full): after
+        ``run(1)`` with the defaults ``history("T")["T"][-1]`` is 0 while ``get_scalar("T")`` is ``DT``, and
+        recording stops at capacity (:meth:`history_full` is true), so the history lags the state once the run
+        advances past it; a history that fills exactly at the end of a call is still current. Under ``MODELG`` 9 a
+        step that ends with an EQ re-solve (a multiple of ``NTEQIT``) is recorded before the re-solve, which then
+        recomputes ``Q0``: that row's ``Q0`` is the one of before it. A run that fails on a negative temperature
+        (``TrlibRunError``, kind ``TR_CHECK``) or with a state that is not finite (``NONFINITE``) ends the history on
+        the last recorded step; the failed step is not a row (after ``TR_CHECK`` :meth:`get_scalar` gives the failed
+        iterate's globals, which ``tr_exec`` computes there). A failed preparation leaves no rows. An unknown name
+        raises :class:`TrlibParamError`.
+        """
+        if self._closed:
+            raise TrlibError("history on closed Trlib")
+        if names is None:
+            wanted = self.history_names()
+        elif isinstance(names, str):
+            wanted = [names]
+        else:
+            wanted = list(names)
+        fn = self._scalar_fn("tr_history_get")
+        rows = self.history_length()
+        out: Dict[str, object] = {}
+        for name in wanted:
+            buf = (ctypes.c_double * max(rows, 1))()
+            got = ctypes.c_int(0)
+            raise_for_ierr(f"tr_history_get('{name}')", fn(_encode_name(name), buf, rows, ctypes.byref(got)))
+            values = buf[: int(got.value)]
+            if _ffi.HAS_NUMPY:
+                import numpy as np
+                out[name] = np.array(values, dtype=np.float64)
+            else:  # pragma: no cover - numpy is optional
+                out[name] = list(values)
+        return out
 
     # --- validation (Issue #143) ---------------------------------------
     def validate(self) -> List[TrDiagEntryPy]:
@@ -291,6 +508,12 @@ class Trlib:
         buf = (_ffi.TrDiagEntry * cap)()
         ndiag = ctypes.c_int(0)
         ierr = fn(buf, cap, ctypes.byref(ndiag))
+        # tr_validate counts every finding, also those beyond the buffer, and
+        # changes no state: ask once more with room for all of them.
+        if ndiag.value > cap and ierr in (_ffi.TR_OK, _ffi.TR_ERR_INVALID):
+            cap = int(ndiag.value)
+            buf = (_ffi.TrDiagEntry * cap)()
+            ierr = fn(buf, cap, ctypes.byref(ndiag))
 
         # Contract: ierr==2 (NOT_INIT) is the only one that maps to an
         # exception; ierr==0 and ierr==1 both return the list (empty /

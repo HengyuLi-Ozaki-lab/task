@@ -101,6 +101,11 @@ typedef struct {
 
 int fp_init(void);
 int fp_run(int ntmax);
+/* fp_set_param and fp_set_param_str return FP_ERR_INVALID for a name of
+ * more than 64 characters, and fp_set_param_str for a value of more than
+ * 80 (KNAMEQ is CHARACTER(LEN=80)): neither is cut. Trailing blanks are
+ * not counted, as long as the string ends within 4096 characters of the
+ * buffer's end. */
 int fp_set_param(const char* name, double value);
 int fp_set_param_str(const char* name, const char* value);
 int fp_get_state(fp_state_t* state);
@@ -112,6 +117,55 @@ int fp_finalize(void);
    means the library and this header come from different commits. */
 int    fp_state_abi_version(void);
 size_t fp_state_size(void);
+
+/*
+ * The distribution function FNS(NTHMAX,NPMAX,NRMAX,NSAMAX), its grid and
+ * its normalisation (task-web-client #232).
+ *
+ * fp_fns_info_t has a layout version of its own, kept as for fp_state_t
+ * (#246): fields are appended at the end only, FP_FNS_INFO_ABI_VERSION
+ * goes up with the PARAMETER of that name in fp_state.f90, and
+ * fp_fns_info_abi_version() / fp_fns_info_size(), callable before
+ * fp_init, let a caller compare both.
+ *
+ * The three getters answer only while the run is prepared and no
+ * successful set (fp_set_param, fp_set_param_str, tot's "fp:") has been
+ * made since; otherwise, as before the first fp_run, FP_ERR_CALC_FAILED.
+ * FP_ERR_NOT_INIT before fp_init. FP_ERR_INVALID for nsa outside
+ * 1..NSAMAX, a NULL pointer, or a length other than the mesh's.
+ * The checks are made in this order: initialised (FP_ERR_NOT_INIT);
+ * prepared with no successful set since (FP_ERR_CALC_FAILED); nsa in range
+ * (FP_ERR_INVALID); allocated extents (FP_ERR_CALC_FAILED); pointers and
+ * lengths (FP_ERR_INVALID). So a NULL pointer before the first run returns
+ * FP_ERR_CALC_FAILED.
+ *
+ * fp_get_fns copies FNS(1:nthmax, 1:npmax, 1:nrmax, nsa) in Fortran
+ * order, so as a C array it is f[nr][np][nth]. The values are FP's own,
+ * unscaled: n = rnfp0 * sum(VOLP * f) [1e20 m^-3] for MODELA = 0, with
+ * VOLP = 2 pi sin(thm) pm^2 delp delth. pm, theta0, pmax and delp are
+ * indexed by the namelist species ns; ptfp0, vtfp0, amfp, aefp, rnfp0, rtfp0 and
+ * FNS by the kinetic one.
+ */
+#define FP_FNS_INFO_ABI_VERSION 1
+
+typedef struct {
+    int    nsa, ns;                /* kinetic species (1-origin) and its namelist species */
+    int    nthmax, npmax, nrmax;
+    int    modela;                 /* 1: bounce-averaged, theta is the value at B-min */
+    double timefp;                 /* s */
+    double amfp, aefp;             /* kg, C */
+    double rnfp0, rtfp0;           /* 1e20 m^-3, keV */
+    double ptfp0, vtfp0;           /* kg m/s, m/s */
+    double theta0;                 /* T/(m c^2) as FP uses it; 0 when MODELR = 0 */
+    double pmax, delp, delth;      /* normalised momentum range and steps; rad */
+} fp_fns_info_t;
+
+int    fp_fns_info_abi_version(void);
+size_t fp_fns_info_size(void);
+int    fp_get_fns_info(int nsa, fp_fns_info_t* info);
+int    fp_get_fns_grid(int nsa, double* pm, int npm, double* thm, int nthm,
+                       double* rm, int nrm);
+int    fp_get_fns(int nsa, double* buf, int nbuf);
 
 #ifdef __cplusplus
 }

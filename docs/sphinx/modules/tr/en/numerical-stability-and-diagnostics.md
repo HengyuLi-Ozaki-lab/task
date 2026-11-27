@@ -20,11 +20,11 @@ TR uses an implicit time-stepping scheme. The advancement
 coefficient is `FADV` (do not confuse with `THETA`, which is
 reserved elsewhere): `FADV = 0.5` is Crank-Nicolson and
 `FADV = 1.0` is fully implicit. The value is hard-coded inside
-the time-step routine itself — `tr/trexec.f90:498` assigns
+the time-step routine itself — `tr/trexec.f90:548` assigns
 `FADV = 1.D0` unconditionally — so TR runs fully implicit out
 of the box and there is no public knob to switch to
 Crank-Nicolson without editing the source. The scheme-selector
-comments at `tr/trexec.f90:494-498` document the meaning of
+comments at `tr/trexec.f90:544-546` document the meaning of
 each value.
 
 Concrete consequence: a strict CFL condition does NOT apply.
@@ -42,8 +42,8 @@ stability bound.
   (see below) work harder, and at some point the scheme can no
   longer reduce the residual within `LMAXTR` iterations.
 
-The defaults are `DT = 0.01 s` (`tr/trinit.f90:374`) and
-`NTMAX = 100` (`tr/trinit.f90:376`), which together advance the
+The defaults are `DT = 0.01 s` (`tr/trinit.f90:375`) and
+`NTMAX = 100` (`tr/trinit.f90:377`), which together advance the
 simulation by 1.0 s. These suit equilibrium-scale runs;
 sub-millisecond `DT` is rarely required for transport-time-scale
 studies but is sometimes necessary for source-driven transients
@@ -73,9 +73,9 @@ differ.
 
 Each time step runs an inner iteration that converges toward
 `EPSLTR` (relative residual threshold). The convergence checks
-live at `tr/trexec.f90:112-128` (per species, per radial
+live at `tr/trexec.f90:113-129` (per species, per radial
 cell). The exit-on-iteration-budget guard sits at
-`tr/trexec.f90:138-141`: when the iteration counter reaches
+`tr/trexec.f90:139-142`: when the iteration counter reaches
 `LMAXTR` the loop exits *without* setting `IERR` and *without*
 writing a console diagnostic, so the run **silently continues**
 with whatever residual was reached. There is no per-step flag
@@ -93,7 +93,7 @@ cell) rather than a sign of an underlying numerical problem.
 
 ### `tr_run` `ierr=3` (`CALC_FAILED`) diagnosis
 
-`tr_api_run` (`tr/tr_api.f90:227-245`) returns
+`tr_api_run` (`tr/tr_api.f90:383,412`) returns
 `TR_ERR_CALC_FAILED` for **any** non-zero result code from the
 underlying `tr_prep` / `tr_loop` routines. The wrapper
 deliberately collapses the full set of downstream failure
@@ -161,55 +161,53 @@ against `TrState` attributes.
 
 `tr.validate()` returns a list of diagnostics, each carrying
 one of five `TrDiagCode` values from the enum at
-`tr/tr_api.h:69-75` (mirrored in `python/trlib/_ffi.py:58-62`).
-The enum reserves five categories, but the **current
-implementation** of `tr_api_validate` only emits two of them:
-`OUT_OF_RANGE` and `FILE_MISSING`. The other three
-(`INCONSISTENT_PAIR`, `OUT_OF_RANGE_AFTER_DEP`,
-`MISSING_REQUIRED`) are reserved for future categories — the
-slots exist in the enum so the API surface is stable, but the
-checks have not been wired up yet (`tr/tr_api.f90:365-378`
-documents this).
-
-The two currently-emitted categories:
+`tr/tr_api.h:76-82` (mirrored in `python/trlib/_ffi.py:74-78`).
+The enum reserves five categories; `tr_api_validate` emits four
+of them, and `MISSING_REQUIRED` is reserved for a later category
+(`tr/tr_api.f90:566`):
 
 - **`OUT_OF_RANGE`** — a parameter value sits outside the
   range that `tr_api_validate` checks. Validate's `NSMAX`
   check, for example, compares against the run-time species
   bound `NSM = 4` (not the compile-time C ABI bound
   `TR_MAX_NSMAX = 8`), so `NSMAX = 5` reaches `validate()`
-  and is reported here (`tr/tr_api.f90:402-403`). Note: values
+  and is reported here (`tr/tr_api.f90:596`). Note: values
   beyond the registry's own range — e.g. `NSMAX > 8` — are
   rejected by `set_param` *before* validate runs
-  (`tr/tr_param_registry.f90:95-97`), so you will not see
+  (`tr/tr_param_registry.f90:160-162`), so you will not see
   them in the diagnostic list. Validate's job is to catch the
   values the registry accepted but the run-time still cannot
-  use.
+  use. The same code covers the per-species profiles of #189,
+  the equation switches and the particle sources (section 14 of
+  {doc}`parameters`), and `EXTERNAL_DRIVEN_RW <= 0` with
+  `EXTERNAL_DRIVEN_I != 0` (`tr/tr_api.f90:648-651`), a pair
+  that is reported here rather than as `INCONSISTENT_PAIR`.
 
-- **`FILE_MISSING`** — a required file path is empty or
-  points at a file the library cannot open. Typical example:
-  `MODELG ∈ {3, 5, 7, 8}` paired with empty `KNAMEQ`.
+- **`OUT_OF_RANGE_AFTER_DEP`** — a value that passes its own
+  range but not a bound another parameter sets: `PN = PNS = 0`
+  for a species up to `NSMAX` (#189), and an `NRMAX` other than
+  the one of the process's first preparation attempt, failed or
+  not (one TR mesh per process until k-yoshimi/bpsd#7).
 
-The reserved categories (no emissions in the current
-implementation):
+- **`INCONSISTENT_PAIR`** — parameters that each pass but
+  cannot run together: `MDLEQE` 1 or 2 without `MDLEQN = 1`,
+  and `MDLEQE = 2` outside a two-species hydrogenic plasma with
+  no impurity density and no UFILE (section 14 of
+  {doc}`parameters`); and, reported only, `PN[1]` or `PNS[1]`
+  away from the ions' charge density by more than 1e-3 of the
+  larger (quasi-neutrality, section 3 of {doc}`parameters`;
+  task-web-client #200), outside the UFILE modes and not beside
+  a finding of the species-profile checks (which include `RIPS`
+  or `RIPE` below 0 with `MODELG = 9`).
 
-- **`INCONSISTENT_PAIR`** — reserved for future use, intended
-  for pairs of parameters that individually pass range checks
-  but jointly form an invalid configuration. Note that the
-  `EXTERNAL_DRIVEN_I != 0` + `EXTERNAL_DRIVEN_RW <= 0` check
-  is currently emitted as `OUT_OF_RANGE` rather than as a
-  pair-level diagnostic
-  (`tr/tr_api.f90:419-425`).
+- **`FILE_MISSING`** — a file the run reads is blank or names
+  no file: `KNAMEQ` with `MODELG ∈ {3, 5, 7, 8}`, looked up relative
+  to the working directory at the time of the call, and with
+  `MODELG = 8` a blank `KNAMEQ2`, which TR cannot set.
 
-- **`OUT_OF_RANGE_AFTER_DEP`** — reserved for future use,
-  intended for parameters that pass their declared range but
-  conflict with a bound deduced at runtime (e.g. `NRMAX`
-  capped by the equilibrium grid).
-
-- **`MISSING_REQUIRED`** — reserved for future use, intended
-  to flag required parameters that were never set
-  (distinguished from `OUT_OF_RANGE` because the *absence* is
-  the problem, not the value).
+`tr_run` refuses the same findings except `FILE_MISSING`, the
+`EXTERNAL_DRIVEN` pair and quasi-neutrality, which only
+`validate()` reports.
 
 The recommended workflow is to call `validate()` after
 `set_params()` and before `run()`, which is exactly what

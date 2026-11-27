@@ -21,6 +21,11 @@ MODULE trcomm_ctrl
 ! TRADD (control part: iteration counter)
   INTEGER                      :: NTEQIT
 
+! --- P1: number of active libnf fusion reactions.  DERIVED state, written by
+!     set_usigmav_nf (tr/libnf.f90), never read from a namelist -- which is why
+!     it lives here and not among the trcomm_param knobs.
+  INTEGER:: nnfmax = 0
+
 !     ****** MODEL SELECTION VARIABLES ******
 ! TRMDS
   REAL(rkind)     :: SUMPBM

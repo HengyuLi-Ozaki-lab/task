@@ -169,6 +169,13 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.tot_run.restype = ctypes.c_int
     lib.tot_run.argtypes = [ctypes.c_int]
 
+    # Run control (PR 3 of #96); best-effort like the setter below.
+    try:
+        lib.tot_continue.restype = ctypes.c_int
+        lib.tot_continue.argtypes = [ctypes.c_int]
+    except AttributeError:  # pragma: no cover - only on builds before tot_continue
+        pass
+
     lib.tot_set_param.restype = ctypes.c_int
     lib.tot_set_param.argtypes = [ctypes.c_char_p, ctypes.c_double]
 
@@ -180,6 +187,29 @@ def _apply_prototypes(lib: ctypes.CDLL) -> ctypes.CDLL:
 
     lib.tot_get_state.restype = ctypes.c_int
     lib.tot_get_state.argtypes = [ctypes.POINTER(TotStateC)]
+
+    # Outputs by name (PR 2 of #96); best-effort like the setter above.
+    try:
+        lib.tot_get_scalar.restype = ctypes.c_int
+        lib.tot_get_scalar.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double)]
+    except AttributeError:  # pragma: no cover - only on builds before tot_get_scalar
+        pass
+
+    # The run's history by name (Task 5b of #96); best-effort as above.
+    try:
+        lib.tot_history_length.restype = ctypes.c_int
+        lib.tot_history_length.argtypes = []
+        lib.tot_history_full.restype = ctypes.c_int
+        lib.tot_history_full.argtypes = []
+        lib.tot_history_count.restype = ctypes.c_int
+        lib.tot_history_count.argtypes = []
+        lib.tot_history_name.restype = ctypes.c_int
+        lib.tot_history_name.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        lib.tot_history_get.restype = ctypes.c_int
+        lib.tot_history_get.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_double), ctypes.c_int,
+                                        ctypes.POINTER(ctypes.c_int)]
+    except AttributeError:  # pragma: no cover - only on builds before tot_history_*
+        pass
 
     lib.tot_finalize.restype = ctypes.c_int
     lib.tot_finalize.argtypes = []

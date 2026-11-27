@@ -58,9 +58,10 @@ COMPARE_SCRIPT = REPO / "test_run" / "scripts" / "compare_metrics.py"
 def _pushd(target: Path):
     """chdir to ``target`` inside a ``with`` block, restore on exit.
 
-    EQRTSK / EQDSK loads in eqfile.f90 open ``KNAMEQ`` relative to the
-    current working directory, so MODELG=3/5/8/15 fixtures must run
-    from ``test_run/test_output/<case>/`` where the eqdata file lives.
+    The loads EQ_READ (eq/eqfile.f90) dispatches open ``KNAMEQ``
+    relative to the current working directory, so MODELG=3/5/8 fixtures
+    must run from ``test_run/test_output/<case>/`` where the eqdata file
+    lives (run(1) refuses MODELG=15).
     """
     prev = Path.cwd()
     os.chdir(target)

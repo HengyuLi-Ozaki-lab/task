@@ -121,6 +121,19 @@ exported.
   `eqcom1_mod` / `eqcom2_mod` / `eqcom3_mod` module variables.
   Extending the registry is the only code change needed to expose
   new parameters.
+  `eq_set_param` refuses, with code 1 and before it assigns anything:
+  a malformed subscript, for a scalar too (`RR[zz]`, `PSIB[0]x`,
+  `RIPFC[1,2]`); a name longer than the 32 characters the registry
+  holds (it was cut, so `RR` followed by blanks and anything else was
+  `RR`); a value that is not finite, for every name; and for an
+  integer parameter a value outside `-HUGE(0)` to `HUGE(0)`: beyond the
+  default integer `INT()` is the compiler's choice (`value_refused`
+  lists the integer names: a new integer `CASE` goes there too). The C
+  entry points refuse a name longer than their 64 characters, and
+  `eq_set_param_str` a value longer than the 80 of its parameters
+  (trailing blanks are not counted); both used to be cut. A subscript
+  that is a whole number is still taken for a scalar (`RR[9]` sets
+  `RR`), and a fraction is truncated (`INT`; FP rounds).
 - Kernel code (`eqcalc`, `eqcalq`, `equnit`, `eqfile`, ...) is
   unchanged and shared with the `eq` binary.
 

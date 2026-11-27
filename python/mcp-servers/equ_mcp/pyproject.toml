@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "equ-mcp"
+version = "0.1.0"
+description = "Model Context Protocol (MCP) server for the TASK/EQU free-boundary equilibrium code (wraps python/equlib)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Same as TASK repository" }
+authors = [
+    { name = "TASK contributors" }
+]
+keywords = ["mcp", "model-context-protocol", "task", "plasma", "equilibrium", "free-boundary", "fortran", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+dependencies = [
+    # Python MCP SDK (https://github.com/modelcontextprotocol/python-sdk).
+    # FastMCP decorator API lives in mcp.server.fastmcp from 1.2.0 to 1.x.
+    "mcp>=1.2,<2",  # fastmcp since 1.2.0; 2.0 removed mcp.server.fastmcp
+    "numpy",        # get_psi_rz (equlib's get_psi_rz returns a numpy array)
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+]
+
+[project.scripts]
+equ-mcp = "equ_mcp.server:main"
+
+# pyproject.toml sits inside the equ_mcp/ package dir itself (flat layout),
+# so find_packages can't discover an "equ_mcp" subdirectory. Map the package
+# name explicitly to "." instead.
+[tool.setuptools]
+packages = ["equ_mcp"]
+
+[tool.setuptools.package-dir]
+equ_mcp = "."

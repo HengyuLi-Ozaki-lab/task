@@ -1,7 +1,10 @@
 /*
  * Phase L-4: test_run_so
  *
- * dlopen libfpapi.so, dlsym the 5 C ABI entry points, and exercise the
+ * dlopen libfpapi.so, dlsym the original five C ABI entry points
+ * (fp_init, fp_run, fp_set_param, fp_get_state, fp_finalize) and the
+ * task-web-client #232 functions (fp_set_param_str, fp_fns_info_abi_version,
+ * fp_fns_info_size, fp_get_fns_info, fp_get_fns_grid, fp_get_fns), and exercise the
  * full init -> set_param -> run -> get_state -> finalize cycle. This
  * proves the shared object is loadable, has the expected external
  * symbols, and that the Fortran-side lifecycle works when driven from
@@ -18,11 +21,16 @@
  *   91 = dlsym failed (one of the 5 entry points missing)
  *   92 = fp_state_abi_version / fp_state_size missing (library predates #246)
  *   93 = layout version or size differs from fp_api.h (#246)
+ *   20..49 = a check of the distribution function failed (task-web-client #232)
+ *   50..65 = a further check of the distribution function (task-web-client #232)
+ *   94 = fp_set_param_str or one of the five task-web-client #232 functions is missing
+ *   95 = fp_fns_info_t's layout version or size differs from fp_api.h
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dlfcn.h>
+#include <math.h>
 
 #include "fp_api.h"
 
@@ -31,6 +39,14 @@ typedef int (*fp_run_fn)(int);
 typedef int (*fp_set_param_fn)(const char *, double);
 typedef int (*fp_get_state_fn)(fp_state_t *);
 typedef int (*fp_finalize_fn)(void);
+
+/* task-web-client #232 */
+typedef int    (*fp_set_param_str_fn)(const char *, const char *);
+typedef int    (*fp_fns_info_abi_version_fn)(void);
+typedef size_t (*fp_fns_info_size_fn)(void);
+typedef int    (*fp_get_fns_info_fn)(int, fp_fns_info_t *);
+typedef int    (*fp_get_fns_grid_fn)(int, double *, int, double *, int, double *, int);
+typedef int    (*fp_get_fns_fn)(int, double *, int);
 
 int main(void) {
     const char *path = getenv("FPLIB_PATH");
@@ -86,6 +102,36 @@ int main(void) {
         return 93;
     }
 
+    /* task-web-client #232: the distribution function's five functions, and its record's
+     * layout query, which must agree with this header. */
+    fp_set_param_str_fn        f_set_str   = (fp_set_param_str_fn)        dlsym(h, "fp_set_param_str");
+    fp_fns_info_abi_version_fn f_fns_abi   = (fp_fns_info_abi_version_fn) dlsym(h, "fp_fns_info_abi_version");
+    fp_fns_info_size_fn        f_fns_size  = (fp_fns_info_size_fn)        dlsym(h, "fp_fns_info_size");
+    fp_get_fns_info_fn         f_fns_info  = (fp_get_fns_info_fn)         dlsym(h, "fp_get_fns_info");
+    fp_get_fns_grid_fn         f_fns_grid  = (fp_get_fns_grid_fn)         dlsym(h, "fp_get_fns_grid");
+    fp_get_fns_fn              f_fns       = (fp_get_fns_fn)              dlsym(h, "fp_get_fns");
+    if (!f_set_str || !f_fns_abi || !f_fns_size || !f_fns_info || !f_fns_grid || !f_fns) {
+        fprintf(stderr, "dlsym missing fp_set_param_str or one of the task-web-client #232 functions\n");
+        dlclose(h);
+        return 94;
+    }
+    if (f_fns_abi() != FP_FNS_INFO_ABI_VERSION || f_fns_size() != sizeof(fp_fns_info_t)) {
+        fprintf(stderr,
+                "fns_info layout mismatch: library v%d / %lu bytes, fp_api.h v%d / %lu bytes\n",
+                f_fns_abi(), (unsigned long) f_fns_size(),
+                FP_FNS_INFO_ABI_VERSION, (unsigned long) sizeof(fp_fns_info_t));
+        dlclose(h);
+        return 95;
+    }
+    {
+        fp_fns_info_t info;
+        double buf[4];
+        /* Before fp_init. */
+        if (f_fns_info(1, &info) != FP_ERR_NOT_INIT) { dlclose(h); return 20; }
+        if (f_fns_grid(1, buf, 1, buf, 1, buf, 1) != FP_ERR_NOT_INIT) { dlclose(h); return 21; }
+        if (f_fns(1, buf, 1) != FP_ERR_NOT_INIT) { dlclose(h); return 22; }
+    }
+
     /* Mirror the test_run.c cycle so the .so is proven to be a drop-in
      * replacement for the static libfp.a link path. */
     int rc;
@@ -93,6 +139,15 @@ int main(void) {
 
     rc = f_init();
     if (rc != FP_OK) { fprintf(stderr, "fp_init -> %d\n", rc); dlclose(h); return 1; }
+
+    {
+        /* task-web-client #232: no distribution before the first run. */
+        fp_fns_info_t info;
+        double buf[4];
+        if (f_fns_info(1, &info) != FP_ERR_CALC_FAILED) { dlclose(h); return 23; }
+        if (f_fns_grid(1, buf, 1, buf, 1, buf, 1) != FP_ERR_CALC_FAILED) { dlclose(h); return 24; }
+        if (f_fns(1, buf, 1) != FP_ERR_CALC_FAILED) { dlclose(h); return 25; }
+    }
 
     /* Minimum-cost configuration mirroring test_run.c. */
     rc = f_set_param("NSMAX",  1.0); if (rc != FP_OK) { dlclose(h); return 2; }
@@ -113,6 +168,90 @@ int main(void) {
         fprintf(stderr, "expected TIMEFP > 0 after fp_run(1), got %g\n", s.timefp);
         dlclose(h);
         return 11;
+    }
+
+    /* ---- the distribution function after a run (task-web-client #232) ---- */
+    {
+        fp_fns_info_t info;
+        double *pm, *thm, *rm, *f;
+        int i, nth, np, nr, n;
+
+        rc = f_fns_info(1, &info);
+        if (rc != FP_OK) { fprintf(stderr, "fp_get_fns_info -> %d\n", rc); dlclose(h); return 26; }
+        if (info.nsa != 1 || info.ns != 1 || info.nthmax != s.nthmax ||
+            info.npmax != s.npmax || info.nrmax != s.nrmax) {
+            fprintf(stderr, "fns_info dims %d %d %d %d %d\n", info.nsa, info.ns,
+                    info.nthmax, info.npmax, info.nrmax);
+            dlclose(h);
+            return 27;
+        }
+        if (!(info.ptfp0 > 0.0 && info.vtfp0 > 0.0 && info.delp > 0.0 && info.delth > 0.0 &&
+              info.timefp == s.timefp)) { dlclose(h); return 28; }
+        if (info.theta0 != 0.0) { dlclose(h); return 51; }   /* default MODELR = 0 */
+        nth = info.nthmax; np = info.npmax; nr = info.nrmax; n = nth * np * nr;
+        if (fabs(info.pmax - info.delp * np) > 1e-12 * info.pmax) { dlclose(h); return 52; }
+        pm = malloc(sizeof(double) * np); thm = malloc(sizeof(double) * nth);
+        rm = malloc(sizeof(double) * nr); f = malloc(sizeof(double) * n);
+        if (!pm || !thm || !rm || !f) { dlclose(h); return 29; }
+        for (i = 0; i < np; ++i) pm[i] = NAN;
+        for (i = 0; i < nth; ++i) thm[i] = NAN;
+        for (i = 0; i < nr; ++i) rm[i] = NAN;
+        for (i = 0; i < n; ++i) f[i] = NAN;
+
+        rc = f_fns_grid(1, pm, np, thm, nth, rm, nr);
+        if (rc != FP_OK) { fprintf(stderr, "fp_get_fns_grid -> %d\n", rc); dlclose(h); return 30; }
+        for (i = 0; i < np; ++i) if (pm[i] != info.delp * (i + 0.5)) { dlclose(h); return 31; }
+        for (i = 0; i < nth; ++i) if (thm[i] != info.delth * (i + 0.5)) { dlclose(h); return 32; }
+        for (i = 1; i < nr; ++i) if (!(rm[i] > rm[i - 1])) { dlclose(h); return 33; }
+
+        rc = f_fns(1, f, n);
+        if (rc != FP_OK) { fprintf(stderr, "fp_get_fns -> %d\n", rc); dlclose(h); return 34; }
+        for (i = 0; i < n; ++i) if (!isfinite(f[i])) { dlclose(h); return 35; }
+        if (!(f[0] > 0.0)) { dlclose(h); return 50; }
+
+        /* Refusals after a run. */
+        if (f_fns(1, f, n - 1) != FP_ERR_INVALID) { dlclose(h); return 36; }
+        if (f_fns(1, NULL, n) != FP_ERR_INVALID) { dlclose(h); return 37; }
+        if (f_fns(0, f, n) != FP_ERR_INVALID) { dlclose(h); return 38; }
+        if (f_fns(2, f, n) != FP_ERR_INVALID) { dlclose(h); return 39; }      /* NSAMAX = 1 */
+        if (f_fns_info(1, NULL) != FP_ERR_INVALID) { dlclose(h); return 40; }
+        if (f_fns_grid(1, pm, np - 1, thm, nth, rm, nr) != FP_ERR_INVALID) { dlclose(h); return 41; }
+        if (f_fns_grid(1, pm, np, NULL, nth, rm, nr) != FP_ERR_INVALID) { dlclose(h); return 42; }
+
+        /* A successful set makes them refuse until the next run (#253). */
+        if (f_set_param("DELT", 1.0e-3) != FP_OK) { dlclose(h); return 43; }
+        if (f_fns_info(1, &info) != FP_ERR_CALC_FAILED) { dlclose(h); return 44; }
+        if (f_fns(1, f, n) != FP_ERR_CALC_FAILED) { dlclose(h); return 45; }
+        if (f_run(1) != FP_OK) { dlclose(h); return 46; }
+        if (f_fns(1, f, n) != FP_OK) { dlclose(h); return 47; }
+        if (f_set_str("KNAMEQ", "eqdata") != FP_OK) { dlclose(h); return 48; }
+        if (f_fns_grid(1, pm, np, thm, nth, rm, nr) != FP_ERR_CALC_FAILED) { dlclose(h); return 49; }
+
+        /* A second pass on an asymmetric mesh: nr != nth != np. */
+        if (f_set_param("NRMAX", 3.0) != FP_OK) { dlclose(h); return 53; }
+        if (f_set_param("NTHMAX", 12.0) != FP_OK) { dlclose(h); return 54; }
+        if (f_run(0) != FP_OK) { dlclose(h); return 55; }
+        if (f_fns_info(1, &info) != FP_OK) { dlclose(h); return 56; }
+        if (!(info.nrmax == 3 && info.nthmax == 12 && info.npmax == 16)) { dlclose(h); return 57; }
+        free(pm); free(thm); free(rm); free(f);
+        nth = info.nthmax; np = info.npmax; nr = info.nrmax; n = nth * np * nr;
+        pm = malloc(sizeof(double) * np); thm = malloc(sizeof(double) * nth);
+        rm = malloc(sizeof(double) * nr); f = malloc(sizeof(double) * n);
+        if (!pm || !thm || !rm || !f) { dlclose(h); return 29; }
+        for (i = 0; i < np; ++i) pm[i] = NAN;
+        for (i = 0; i < nth; ++i) thm[i] = NAN;
+        for (i = 0; i < nr; ++i) rm[i] = NAN;
+        for (i = 0; i < n; ++i) f[i] = NAN;
+        if (f_fns_grid(1, pm, np, thm, nth, rm, nr) != FP_OK) { dlclose(h); return 58; }
+        if (f_fns(1, f, n) != FP_OK) { dlclose(h); return 59; }
+        for (i = 0; i < np; ++i) if (pm[i] != info.delp * (i + 0.5)) { dlclose(h); return 60; }
+        for (i = 0; i < nth; ++i) if (thm[i] != info.delth * (i + 0.5)) { dlclose(h); return 61; }
+        for (i = 1; i < nr; ++i) if (!(rm[i] > rm[i - 1])) { dlclose(h); return 62; }
+        for (i = 0; i < n; ++i) if (!isfinite(f[i])) { dlclose(h); return 63; }
+        if (!(f[0] > 0.0)) { dlclose(h); return 64; }
+        if (f_fns_grid(1, pm, nth, thm, np, rm, nr) != FP_ERR_INVALID) { dlclose(h); return 65; }
+
+        free(pm); free(thm); free(rm); free(f);
     }
 
     rc = f_finalize();

@@ -15,14 +15,21 @@ CONTAINS
 
       SUBROUTINE tr_set_metric(ierr)
 
-      USE trcomm, ONLY : modelg, nrmax, knameq, knameq2
-      USE trbpsd, ONLY: tr_bpsd_init,tr_bpsd_put,tr_bpsd_get
+      USE, INTRINSIC :: ieee_arithmetic, ONLY: ieee_is_finite
+      USE trcomm, ONLY : modelg, nrmax, knameq, knameq2, qpinv, rips
+      USE trbpsd, ONLY: tr_bpsd_init,tr_bpsd_put,tr_bpsd_get, &
+                        tr_rip_eq, tr_eq_init
       USE equnit, ONLY: eq_parm,eq_prof,eq_calc,eq_load
       USE plvmec, ONLY: pl_vmec
       implicit none
       integer, intent(out):: ierr
       character(len=80):: line
+      integer:: iter
+      integer, parameter:: niter_qscale=30
+      real(8):: sfac
+      logical:: scaled
 
+      ierr=0
       CALL trstgf
       CALL trgfrg
 
@@ -41,6 +48,7 @@ CONTAINS
          call eq_load(modelg,knameq,ierr) ! load eq data and calculate eq
          IF(ierr.NE.0) THEN
             WRITE(6,*) 'XX eq_load: ierr=',ierr
+            call tr_load_failure(ierr,'eq_load')
             RETURN
          ENDIF
          call tr_bpsd_get(ierr)  ! 
@@ -48,12 +56,84 @@ CONTAINS
 !         call trgout
       elseif(modelg.eq.7) then
          call pl_vmec(knameq,ierr) ! load vmec data
+!        A file pl_vmec cannot open returns here: the call below set ierr
+!        again, and the run went on without the metric, to non-finite
+!        results (task-web-client #201). A file that opens but does not
+!        read still ends the process (pl/plvmec.f90 reads without IOSTAT).
+         IF(ierr.NE.0) THEN
+            WRITE(6,*) 'XX pl_vmec: ierr=',ierr
+            call tr_load_failure(ierr,'pl_vmec')
+            RETURN
+         ENDIF
          call tr_bpsd_get(ierr)  ! 
 !         call trgout
       elseif(modelg.eq.9) then
+!        Every call builds a new initial state (tr_prep is the only caller),
+!        so the adoption of EQ's psi_p is switched on again: the flag is
+!        saved and a run before this one in the same process cleared it.
+         tr_eq_init=.true.
          call eq_prof ! initial calculation of eq
-         call eq_calc         ! recalculate eq
-         call tr_bpsd_get(ierr)  ! 
+!        --- Initial q-scaling. The cylindrical initial q (set in trprof) is
+!            not consistent with the commanded Ip on the real 2D equilibrium
+!            metric. Iterate the q-solver, scaling q (q ~ 1/Ip) until the
+!            equilibrium Ip matches RIPS, giving a consistent initial state.
+!            A step that fails (ierr of that step), a scale factor that is
+!            zero or not finite (ierr=-1), or no agreement after niter_qscale
+!            iterations (ierr=-2) ends the routine with ierr.ne.0 and
+!            tr_eq_init still set: the q reached so far is not an initial
+!            state to hand over. ---
+         scaled=.false.
+         do iter=1,niter_qscale
+            call eq_calc(ierr)    ! q-solver with current q
+            if(ierr.ne.0) then
+               write(6,'(A,I3,A,I6)') &
+                    ' XX tr_set_metric: eq_calc: iteration',iter, &
+                    ', ierr=',ierr
+               call tr_qscale_failure(ierr,iter,'eq_calc')
+               return
+            endif
+            call tr_bpsd_get(ierr)
+            if(ierr.ne.0) then
+               write(6,*) 'XX tr_set_metric: tr_bpsd_get: ierr=',ierr
+               call tr_qscale_failure(ierr,iter,'tr_bpsd_get')
+               return
+            endif
+            if(rips.le.0.d0) then               ! no current to scale to
+               scaled=.true.
+               exit
+            endif
+            sfac=tr_rip_eq/rips
+            if(.not.ieee_is_finite(sfac).or.sfac.eq.0.d0) then
+               write(6,'(A,1P2E12.4)') &
+                    ' XX tr_set_metric: q-scaling: Ip of EQ, RIPS=', &
+                    tr_rip_eq,rips
+               ierr=-1
+               call tr_qscale_failure(ierr,iter,'scale factor zero or not finite')
+               return
+            endif
+            if(abs(sfac-1.d0).lt.1.d-3) then
+               scaled=.true.
+               exit
+            endif
+            qpinv(1:nrmax)=qpinv(1:nrmax)/sfac  ! q -> q*sfac (only q is scaled)
+            call tr_bpsd_put(ierr)              ! push scaled q to EQ
+            if(ierr.ne.0) then
+               write(6,*) 'XX tr_set_metric: tr_bpsd_put: ierr=',ierr
+               call tr_qscale_failure(ierr,iter,'tr_bpsd_put')
+               return
+            endif
+         enddo
+         if(.not.scaled) then
+            write(6,'(A,I3,A,1PE12.4)') &
+                 ' XX tr_set_metric: q-scaling: no agreement after', &
+                 niter_qscale,' iterations: Ip of EQ / RIPS=',sfac
+            ierr=-2
+            call tr_qscale_failure(ierr,niter_qscale,'no agreement within 1e-3')
+            return
+         endif
+!        Init done: hand over the converged (Ip=RIPS) equilibrium. From here
+!        the transport owns psi_p (RDP) and the q-solver honors it.
+         tr_eq_init=.false.
 !         call trgout
       endif
 
@@ -214,4 +294,59 @@ CONTAINS
       RETURN
       END SUBROUTINE TRGFRG
 
+
+!     ***********************************************************
+
+!           RECORD THE FAILURE OF THE INITIAL Q-SCALING
+
+!     ***********************************************************
+
+!     tr_set_metric (MODELG=9) calls this at each of its failure exits, so that
+!     tr_last_error can say what failed (library mode reads the record).
+
+      SUBROUTINE tr_qscale_failure(code,it,what)
+      USE trcomm, ONLY : t
+      USE trfailure, ONLY : tr_failure_record, TRF_EQ_FAILED
+      IMPLICIT NONE
+      INTEGER, INTENT(IN) :: code, it
+      CHARACTER(LEN=*), INTENT(IN) :: what
+      CHARACTER(LEN=96) :: detail
+      WRITE(detail,'(A,I0,A,A)') 'tr_set_metric q-scaling, iteration ',it,': ',what
+      CALL tr_failure_record(TRF_EQ_FAILED,code,0,t,detail)
+      END SUBROUTINE tr_qscale_failure
+
+
+!     ***********************************************************
+
+!           RECORD A FILE THE PREPARATION COULD NOT LOAD
+
+!     ***********************************************************
+
+!     tr_set_metric calls this when equnit's eq_load (MODELG 3, 5, 8) or
+!     pl_vmec (MODELG 7) fails, so that tr_last_error says why: an
+!     EQ_FAILED record carries EQ's reason (EQ_ERRMSG), which for a file
+!     EQ_READ could not read names it; pl_vmec gives none, so the record
+!     names KNAMEQ, last, as tr_last_error cuts its message at 127
+!     characters (task-web-client #201).
+
+      SUBROUTINE tr_load_failure(code,what)
+      USE trcomm, ONLY : t, knameq
+      USE trfailure, ONLY : tr_failure_record, TRF_EQ_FAILED, TRF_PREP_FAILED
+      IMPLICIT NONE
+      INTEGER, INTENT(IN) :: code
+      CHARACTER(LEN=*), INTENT(IN) :: what
+      CHARACTER(LEN=200) :: detail
+      INTEGER :: ios
+      IF(what.EQ.'eq_load') THEN
+         CALL tr_failure_record(TRF_EQ_FAILED,code,0,t,'eq_load')
+      ELSE
+         WRITE(detail,'(A,I0,3A)',IOSTAT=ios) &
+              "pl_vmec (ierr=",code,") could not open KNAMEQ='", &
+              TRIM(knameq),"'"
+         IF(ios.NE.0) detail='pl_vmec could not open KNAMEQ'
+         CALL tr_failure_record(TRF_PREP_FAILED,code,0,t,detail)
+      ENDIF
+      END SUBROUTINE tr_load_failure
+
     END MODULE trmetric
+
